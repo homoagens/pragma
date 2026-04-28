@@ -1,0 +1,211 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Pragma</title>
+  <link rel="icon" type="image/png" href="/static/logo.png">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/static/style.css">
+  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+</head>
+<body>
+  <div id="app">
+
+    <!-- ── Sidebar ── -->
+    <aside id="sidebar">
+      <div id="sidebar-top">
+        <div class="sidebar-brand">
+          <img class="logo-icon" src="/static/logo.png" alt="">
+          <span>Pragma</span>
+        </div>
+        <button id="new-thread-btn" title="Start a new conversation">
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor"
+               stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M8 3v10M3 8h10"/>
+          </svg>
+          New conversation
+        </button>
+      </div>
+      <div id="thread-list"></div>
+    </aside>
+
+    <!-- ── Main ── -->
+    <div id="main">
+
+      <header>
+        <div id="status-pill">
+          <div id="status-dot"></div>
+          <span id="status-label">Connecting…</span>
+        </div>
+
+        <button id="quit-btn" title="Quit — shut down the server" onclick="quitApp()">
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor"
+               stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M3 3l10 10M13 3L3 13"/>
+          </svg>
+        </button>
+
+        <button id="settings-btn" title="LLM settings" onclick="openSettings()">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
+               stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="3"/>
+            <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+          </svg>
+        </button>
+
+        <button id="theme-toggle" title="Toggle dark / light mode">
+          <svg id="theme-icon-sun" viewBox="0 0 16 16" fill="none" stroke="currentColor"
+               stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="8" cy="8" r="3"/>
+            <path d="M8 1v1.5M8 13.5V15M1 8h1.5M13.5 8H15M3.05 3.05l1.06 1.06M11.89 11.89l1.06 1.06M3.05 12.95l1.06-1.06M11.89 4.11l1.06-1.06"/>
+          </svg>
+          <svg id="theme-icon-moon" viewBox="0 0 16 16" fill="none" stroke="currentColor"
+               stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" style="display:none">
+            <path d="M13.5 9.5A5.5 5.5 0 0 1 6.5 2.5a5.5 5.5 0 1 0 7 7z"/>
+          </svg>
+        </button>
+
+        <button id="workdir" title="Click to change working directory">
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor"
+               stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M1.5 4.5v8a1 1 0 0 0 1 1h11a1 1 0 0 0 1-1v-6a1 1 0 0 0-1-1H8L6.5 3.5h-4a1 1 0 0 0-1 1z"/>
+          </svg>
+          <span id="workdir-text">—</span>
+        </button>
+      </header>
+
+      <div id="messages">
+        <div id="welcome">
+          <img class="wlogo" src="/static/logo.png" alt="">
+          <h2>Pragma</h2>
+          <p>Describe a task. Pragma will plan and execute it step by step.</p>
+        </div>
+      </div>
+
+      <div id="input-area">
+        <div id="answer-label">✦ Pragma asks — type your answer below</div>
+        <div id="input-row">
+          <textarea
+            id="task-input"
+            rows="1"
+            placeholder="Ask Pragma to do something… (Enter to send, Shift+Enter for newline)"
+          ></textarea>
+          <button id="send-btn" title="Send (Enter)">
+            <svg viewBox="0 0 16 16" fill="none" stroke="currentColor"
+                 stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M2 8h12M9 3l5 5-5 5"/>
+            </svg>
+          </button>
+        </div>
+        <div id="hint-bar">
+          <span id="run-stats"></span>
+          <span id="model-badge"></span>
+          <span>Shift+Enter for newline</span>
+        </div>
+      </div>
+
+    </div><!-- /main -->
+  </div><!-- /app -->
+
+  <!-- ── Modal: edit cwd / new thread ── -->
+  <div id="modal-backdrop" class="hidden">
+    <div id="modal">
+      <div id="modal-title">Working directory</div>
+      <div id="modal-desc">Absolute path — the agent will operate here.</div>
+      <input id="modal-input" type="text" spellcheck="false"
+             placeholder="C:\Users\you\project">
+      <div id="modal-error"></div>
+      <div id="modal-actions">
+        <button id="modal-cancel" class="btn-secondary">Cancel</button>
+        <button id="modal-ok" class="btn-primary">Confirm</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Modal: settings (LLM provider/model/keys) ── -->
+  <div id="settings-backdrop" class="hidden">
+    <div id="settings-modal">
+      <div class="settings-header">
+        <div>
+          <div class="settings-title">LLM settings</div>
+          <div class="settings-desc">Saved to <code id="settings-envpath">.env</code></div>
+        </div>
+        <button class="settings-close" onclick="closeSettings()">✕</button>
+      </div>
+
+      <div class="settings-body">
+        <div class="sfield">
+          <label>Provider</label>
+          <select id="s-provider" onchange="updateProviderUI()">
+            <option value="openai">openai (Ollama, OpenAI, Groq…)</option>
+            <option value="backend">backend (custom proxy)</option>
+            <option value="anthropic">anthropic (native API)</option>
+          </select>
+        </div>
+
+        <div class="sfield" id="s-base-url-row">
+          <label>Base URL <span class="opt">(optional)</span></label>
+          <input id="s-base-url" type="text" spellcheck="false" placeholder="http://localhost:11434/v1">
+          <div class="hint" id="s-base-url-hint">Leave empty to use the provider default (Ollama for openai).</div>
+        </div>
+
+        <div class="sfield" id="s-api-key-row">
+          <label>API key <span class="opt">(leave empty to keep current)</span></label>
+          <input id="s-api-key" type="password" spellcheck="false" autocomplete="off" placeholder="">
+          <div class="hint" id="s-api-key-current"></div>
+        </div>
+
+        <div class="sfield" id="s-backend-url-row" style="display:none">
+          <label>Backend URL</label>
+          <input id="s-backend-url" type="text" spellcheck="false" placeholder="http://127.0.0.1:19000">
+        </div>
+
+        <div class="sfield" id="s-backend-key-row" style="display:none">
+          <label>Backend key <span class="opt">(leave empty to keep current)</span></label>
+          <input id="s-backend-key" type="password" spellcheck="false" autocomplete="off">
+          <div class="hint" id="s-backend-key-current"></div>
+        </div>
+
+        <div class="sfield">
+          <label>Default model</label>
+          <input id="s-default-model" type="text" spellcheck="false" placeholder="llama3.2">
+        </div>
+
+        <div class="sfield">
+          <label>Max steps</label>
+          <input id="s-max-steps" type="number" min="1" max="200" spellcheck="false" placeholder="15">
+          <div class="hint">Maximum ReAct loop iterations per task before asking to continue.</div>
+        </div>
+
+        <details class="settings-advanced">
+          <summary>Advanced — separate model for the <code>code</code> skill</summary>
+          <div class="sfield">
+            <label>Coding model <span class="opt">(empty = use default)</span></label>
+            <input id="s-coding-model" type="text" spellcheck="false" placeholder="qwen2.5-coder">
+          </div>
+          <div class="sfield">
+            <label>Coding provider <span class="opt">(empty = inherit)</span></label>
+            <input id="s-coding-provider" type="text" spellcheck="false" placeholder="">
+          </div>
+          <div class="sfield">
+            <label>Coding base URL <span class="opt">(empty = inherit)</span></label>
+            <input id="s-coding-base-url" type="text" spellcheck="false" placeholder="">
+          </div>
+        </details>
+
+        <div id="settings-error"></div>
+      </div>
+
+      <div class="settings-footer">
+        <button class="btn-secondary" onclick="closeSettings()">Cancel</button>
+        <button class="btn-primary" id="settings-save" onclick="saveSettings()">Save</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>
