@@ -13,6 +13,7 @@
 # corresponding kwargs. Without override, values from config are used,
 # which in turn respect environment variables.
 
+import threading
 import time
 import requests
 from rich.console import Console
@@ -20,6 +21,11 @@ from rich.console import Console
 import config
 
 _console = Console()
+
+
+class LLMInterrupted(Exception):
+    """Raised when the LLM HTTP call is aborted via stop_event."""
+    pass
 
 ANTHROPIC_BASE_URL = "https://api.anthropic.com"
 ANTHROPIC_VERSION  = "2023-06-01"
@@ -47,15 +53,64 @@ def _resolved_endpoint(provider, base_url, api_key):
 
 # ── HTTP helpers ───────────────────────────────────────────────────────────────
 
-def _post_with_retry(url, headers, payload, timeout, label):
-    """POST with retry on 502 (backoff 30/60/90/120s). Returns response."""
+def _interruptible_post(url, headers, payload, timeout, stop_event):
+    """POST that aborts mid-flight when stop_event is set.
+
+    Runs the request in a daemon thread; the main thread polls stop_event
+    every 100ms and, if set, closes the underlying Session — that forces
+    the in-flight HTTP request to raise ConnectionError, which we wrap
+    as LLMInterrupted so the agent loop can react cleanly.
+    """
+    if stop_event is None:
+        return requests.post(url, headers=headers, json=payload, timeout=timeout)
+
+    session = requests.Session()
+    holder: dict = {"resp": None, "exc": None}
+
+    def _do():
+        try:
+            holder["resp"] = session.post(
+                url, headers=headers, json=payload, timeout=timeout
+            )
+        except Exception as e:
+            holder["exc"] = e
+        finally:
+            try: session.close()
+            except Exception: pass
+
+    t = threading.Thread(target=_do, daemon=True)
+    t.start()
+    while t.is_alive():
+        if stop_event.is_set():
+            try: session.close()  # forces the in-flight request to abort
+            except Exception: pass
+            t.join(timeout=2)
+            raise LLMInterrupted("LLM call aborted by stop signal")
+        t.join(timeout=0.1)
+
+    if holder["exc"] is not None:
+        # Closed-by-stop manifests as ConnectionError after the loop above.
+        if stop_event.is_set():
+            raise LLMInterrupted("LLM call aborted by stop signal")
+        raise holder["exc"]
+    return holder["resp"]
+
+
+def _post_with_retry(url, headers, payload, timeout, label, stop_event=None):
+    """POST with retry on 502 (backoff 30/60/90/120s). Returns response.
+
+    If stop_event is provided and gets set, the call is aborted via
+    LLMInterrupted at the next check (mid-request or between retries).
+    """
     last = None
     for attempt in range(5):
+        if stop_event is not None and stop_event.is_set():
+            raise LLMInterrupted("LLM call aborted by stop signal")
         with _console.status(
             f"[bold cyan]{label} is thinking...[/bold cyan]",
             spinner="dots",
         ):
-            last = requests.post(url, headers=headers, json=payload, timeout=timeout)
+            last = _interruptible_post(url, headers, payload, timeout, stop_event)
         if last.status_code != 502:
             break
         wait = 30 * (attempt + 1)
@@ -63,14 +118,20 @@ def _post_with_retry(url, headers, payload, timeout, label):
             f"[yellow][llm_client] 502 — waiting {wait}s and retrying "
             f"({attempt + 1}/5)...[/yellow]"
         )
-        time.sleep(wait)
+        # Sleep in small slices so stop is responsive during backoff
+        slept = 0.0
+        while slept < wait:
+            if stop_event is not None and stop_event.is_set():
+                raise LLMInterrupted("LLM call aborted by stop signal")
+            time.sleep(min(0.2, wait - slept))
+            slept += 0.2
     last.raise_for_status()
     return last
 
 
 # ── Provider backends ──────────────────────────────────────────────────────────
 
-def _call_backend(messages, model, temperature, max_tokens, timeout, base_url, api_key):
+def _call_backend(messages, model, temperature, max_tokens, timeout, base_url, api_key, stop_event=None):
     """Custom proxy with schema {raw:{choices:[{message:{content}}]}}."""
     payload = {
         "messages":    messages,
@@ -82,7 +143,7 @@ def _call_backend(messages, model, temperature, max_tokens, timeout, base_url, a
         "Content-Type":  "application/json",
         "Authorization": f"Bearer {api_key}",
     }
-    resp   = _post_with_retry(f"{base_url}/llm", headers, payload, timeout, model)
+    resp   = _post_with_retry(f"{base_url}/llm", headers, payload, timeout, model, stop_event)
     data   = resp.json()
     msg    = data["raw"]["choices"][0]["message"]
     finish = data["raw"]["choices"][0].get("finish_reason", "")
@@ -90,7 +151,7 @@ def _call_backend(messages, model, temperature, max_tokens, timeout, base_url, a
     return text, finish
 
 
-def _call_openai_compatible(messages, model, temperature, max_tokens, timeout, base_url, api_key):
+def _call_openai_compatible(messages, model, temperature, max_tokens, timeout, base_url, api_key, stop_event=None):
     """Standard OpenAI /chat/completions — works with Groq, Ollama, vLLM, etc."""
     payload = {
         "model":       model,
@@ -101,7 +162,7 @@ def _call_openai_compatible(messages, model, temperature, max_tokens, timeout, b
     headers = {"Content-Type": "application/json"}
     if api_key:
         headers["Authorization"] = f"Bearer {api_key}"
-    resp   = _post_with_retry(f"{base_url}/chat/completions", headers, payload, timeout, model)
+    resp   = _post_with_retry(f"{base_url}/chat/completions", headers, payload, timeout, model, stop_event)
     data   = resp.json()
     choice = data["choices"][0]
     msg    = choice.get("message", {})
@@ -110,7 +171,7 @@ def _call_openai_compatible(messages, model, temperature, max_tokens, timeout, b
     return text, finish
 
 
-def _call_anthropic(messages, model, temperature, max_tokens, timeout, base_url, api_key):
+def _call_anthropic(messages, model, temperature, max_tokens, timeout, base_url, api_key, stop_event=None):
     """Native Anthropic API at /v1/messages.
 
     The Anthropic schema separates the system prompt from the rest:
@@ -149,7 +210,7 @@ def _call_anthropic(messages, model, temperature, max_tokens, timeout, base_url,
         "anthropic-version": ANTHROPIC_VERSION,
     }
 
-    resp = _post_with_retry(f"{base_url}/v1/messages", headers, payload, timeout, model)
+    resp = _post_with_retry(f"{base_url}/v1/messages", headers, payload, timeout, model, stop_event)
     data = resp.json()
 
     # Response: {content:[{type:"text", text:"..."}], stop_reason, ...}
@@ -169,7 +230,7 @@ def _call_anthropic(messages, model, temperature, max_tokens, timeout, base_url,
 # ── Public API ─────────────────────────────────────────────────────────────────
 
 def call_llm(messages, model=None, temperature=None, max_tokens=None, timeout=None,
-             provider=None, base_url=None, api_key=None):
+             provider=None, base_url=None, api_key=None, stop_event=None):
     """
     Send messages to the model and return the response as a string.
 
@@ -192,11 +253,11 @@ def call_llm(messages, model=None, temperature=None, max_tokens=None, timeout=No
     prov, url, key = _resolved_endpoint(provider, base_url, api_key)
 
     if prov == "backend":
-        text, finish = _call_backend(messages, model, temperature, max_tokens, timeout, url, key)
+        text, finish = _call_backend(messages, model, temperature, max_tokens, timeout, url, key, stop_event)
     elif prov == "openai":
-        text, finish = _call_openai_compatible(messages, model, temperature, max_tokens, timeout, url, key)
+        text, finish = _call_openai_compatible(messages, model, temperature, max_tokens, timeout, url, key, stop_event)
     elif prov == "anthropic":
-        text, finish = _call_anthropic(messages, model, temperature, max_tokens, timeout, url, key)
+        text, finish = _call_anthropic(messages, model, temperature, max_tokens, timeout, url, key, stop_event)
     else:
         raise ValueError(
             f"Unknown LLM provider: {prov!r}. "

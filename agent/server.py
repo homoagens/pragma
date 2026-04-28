@@ -368,11 +368,12 @@ async def api_delete_thread(thread_id: str):
 # (which would break concurrency across different WebSocket connections).
 
 def _build_thread_skills(thread_cwd: str,
-                         ws_ask_user) -> dict:
+                         ws_ask_user,
+                         stop_event=None) -> dict:
     skills = dict(GEMMA_SKILLS)
     skills["ask_user"] = ws_ask_user
 
-    # execute_command: default cwd = thread_cwd if not specified
+    # execute_command: default cwd = thread_cwd, plus stop_event for mid-run abort
     original_exec = GEMMA_SKILLS.get("execute_command")
     if original_exec:
         def exec_wrapped(command: str, cwd: str = "", timeout: int = 60,
@@ -380,7 +381,8 @@ def _build_thread_skills(thread_cwd: str,
             actual_cwd = cwd.strip() if cwd else thread_cwd
             return original_exec(command=command, cwd=actual_cwd, timeout=timeout,
                                  capture_stderr=capture_stderr,
-                                 max_output_chars=max_output_chars)
+                                 max_output_chars=max_output_chars,
+                                 stop_event=stop_event)
         skills["execute_command"] = exec_wrapped
 
     # understand_cwd: chiamata dentro _chdir_lock con chdir temporaneo
@@ -428,6 +430,7 @@ async def websocket_endpoint(ws: WebSocket):
 
     # Lock to prevent two concurrent tasks on the same thread
     task_running = threading.Event()
+    task_stop    = threading.Event()   # set() to interrupt the running task
 
     def persist_message(msg: dict):
         """Append a message to the thread and save to disk."""
@@ -447,8 +450,23 @@ async def websocket_endpoint(ws: WebSocket):
         pending_ask_user = dict(ev)
         persist_message(ev)
         loop.call_soon_threadsafe(async_queue.put_nowait, ev)
-        answered = answer_event.wait(timeout=600)
+
+        # Poll so a stop signal (which sets answer_event without filling
+        # answer_store) unblocks the wait promptly.
+        answered = False
+        elapsed  = 0.0
+        while elapsed < 600:
+            if answer_event.wait(timeout=0.5):
+                answered = True
+                break
+            if task_stop.is_set():
+                break
+            elapsed += 0.5
         answer_event.clear()
+
+        if task_stop.is_set():
+            pending_ask_user = None
+            return "(stopped)"
         if not answered:
             pending_ask_user = None
             return "(no response)"
@@ -538,6 +556,14 @@ async def websocket_endpoint(ws: WebSocket):
 
             mtype = msg.get("type")
 
+            # ── Stop current task ──────────────────────────────────────────
+            if mtype == "stop":
+                if task_running.is_set():
+                    task_stop.set()
+                    # Unblock any pending ask_user so the agent thread can return
+                    answer_event.set()
+                continue
+
             # ── New task ───────────────────────────────────────────────────
             if mtype == "task":
                 task_text = msg.get("content", "").strip()
@@ -571,10 +597,12 @@ async def websocket_endpoint(ws: WebSocket):
                     _save_thread(thread_data)
 
                 task_running.set()
+                task_stop.clear()   # reset any previous stop signal
                 task_max_steps = int(msg.get("max_steps") or baseline_config.MAX_STEPS)
 
                 def run_in_thread(raw_text: str = task_text,
-                                  _max_steps: int = task_max_steps):
+                                  _max_steps: int = task_max_steps,
+                                  _stop: threading.Event = task_stop):
                     try:
                         # Reload cwd from disk: it may have been updated
                         # via REST PATCH while this WS was already connected.
@@ -593,11 +621,12 @@ async def websocket_endpoint(ws: WebSocket):
                         cfg = AgentConfig(
                             name          = "Pragma",
                             system_prompt = system_prompt,
-                            skills        = _build_thread_skills(thread_cwd, ws_ask_user),
+                            skills        = _build_thread_skills(thread_cwd, ws_ask_user, _stop),
                             final_keys    = ("conclusion",),
                             model         = baseline_config.DEFAULT_MODEL,
                             temperature   = 0.2,
                             max_steps     = _max_steps,
+                            stop_event    = _stop,
                         )
 
                         _steps       = [0]

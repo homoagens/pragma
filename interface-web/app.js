@@ -61,6 +61,7 @@ document.addEventListener("DOMContentLoaded", () => {
 const $messages    = document.getElementById("messages");
 const $input       = document.getElementById("task-input");
 const $sendBtn     = document.getElementById("send-btn");
+const $stopBtn     = document.getElementById("stop-btn");
 const $statusDot   = document.getElementById("status-dot");
 const $statusLbl   = document.getElementById("status-label");
 const $workdir     = document.getElementById("workdir");
@@ -457,6 +458,16 @@ function handleEvent(ev) {
       pendingStats = ev;
       break;
 
+    case "stopped":
+      removeThinking();
+      clearInterval(timerInterval); timerInterval = null;
+      if ($runStats) { $runStats.className = ""; $runStats.textContent = "↓ Stopped"; }
+      resetBadges();
+      setStatus("connected", "Connected");
+      setRunning(false);
+      if ($stopBtn) { $stopBtn.disabled = false; }
+      break;
+
     case "done":
       removeThinking();
       clearInterval(timerInterval); timerInterval = null;
@@ -623,6 +634,7 @@ function setRunning(val) {
   running = val;
   $sendBtn.disabled = val || isReadOnly;
   $input.disabled   = val || isReadOnly;
+  if ($stopBtn) $stopBtn.style.display = val ? "flex" : "none";
 }
 
 
@@ -655,6 +667,11 @@ function submit() {
 }
 
 $sendBtn.addEventListener("click", submit);
+$stopBtn?.addEventListener("click", () => {
+  sendWS({ type: "stop" });
+  $stopBtn.style.display = "none";
+  $stopBtn.disabled = true;
+});
 $input.addEventListener("keydown", (e) => {
   if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); submit(); }
 });

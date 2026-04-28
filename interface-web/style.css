@@ -421,6 +421,16 @@ details[open] .line-chevron { transform: rotate(90deg); }
 #send-btn:disabled { opacity: 0.35; cursor: default; }
 #send-btn svg { width: 15px; height: 15px; }
 
+#stop-btn {
+  width: 38px; height: 38px; flex-shrink: 0;
+  border: none; border-radius: var(--radius);
+  background: #dc2626; color: #fff;
+  cursor: pointer; display: flex; align-items: center; justify-content: center;
+  transition: background 0.15s;
+}
+#stop-btn:hover { background: #b91c1c; }
+#stop-btn svg { width: 13px; height: 13px; }
+
 #hint-bar {
   margin-top: 7px; font-size: 11px; color: var(--text-subtle);
   display: flex; justify-content: space-between;

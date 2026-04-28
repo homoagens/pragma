@@ -276,7 +276,8 @@ def _kill_process_tree(proc: subprocess.Popen) -> None:
 
 def execute_command(command: str, cwd: str = "", timeout: int = 60,
                     capture_stderr: bool = True,
-                    max_output_chars: int = 10_000) -> str:
+                    max_output_chars: int = 10_000,
+                    stop_event=None) -> str:
     """
     Execute a shell command. Captures stdout, stderr, returncode.
     Returns a formatted string with all three values.
@@ -313,22 +314,43 @@ def execute_command(command: str, cwd: str = "", timeout: int = 60,
         return f"ERROR: {e}"
 
     timed_out = False
+    stopped   = False
+    out, err  = "", ""
     try:
-        out, err = proc.communicate(timeout=timeout)
-    except subprocess.TimeoutExpired:
-        timed_out = True
-        _kill_process_tree(proc)
-        # Drain any output already buffered. Give it a short grace period
-        # so the OS can reap descendants and close the pipes.
-        try:
-            out, err = proc.communicate(timeout=5)
-        except subprocess.TimeoutExpired:
-            # Pipes still not closed — force kill again and read what's there.
-            _kill_process_tree(proc)
+        if stop_event is not None:
+            # Poll communicate() in slices so we can react to stop_event mid-run
+            elapsed = 0.0
+            poll    = 0.25
+            while True:
+                if stop_event.is_set():
+                    stopped = True
+                    _kill_process_tree(proc)
+                    try: out, err = proc.communicate(timeout=2)
+                    except subprocess.TimeoutExpired: out, err = "", ""
+                    break
+                try:
+                    out, err = proc.communicate(timeout=poll)
+                    break
+                except subprocess.TimeoutExpired:
+                    elapsed += poll
+                    if elapsed >= timeout:
+                        timed_out = True
+                        _kill_process_tree(proc)
+                        try: out, err = proc.communicate(timeout=5)
+                        except subprocess.TimeoutExpired: out, err = "", ""
+                        break
+        else:
             try:
-                out, err = proc.communicate(timeout=2)
+                out, err = proc.communicate(timeout=timeout)
             except subprocess.TimeoutExpired:
-                out, err = "", ""
+                timed_out = True
+                _kill_process_tree(proc)
+                try:
+                    out, err = proc.communicate(timeout=5)
+                except subprocess.TimeoutExpired:
+                    _kill_process_tree(proc)
+                    try: out, err = proc.communicate(timeout=2)
+                    except subprocess.TimeoutExpired: out, err = "", ""
     except Exception as e:
         _kill_process_tree(proc)
         return f"ERROR: {e}"
@@ -340,6 +362,12 @@ def execute_command(command: str, cwd: str = "", timeout: int = 60,
         out = out[:max_output_chars] + f"\n... (truncated at {max_output_chars} chars)"
     if len(err) > max_output_chars:
         err = err[:max_output_chars] + f"\n... (truncated at {max_output_chars} chars)"
+
+    if stopped:
+        parts = ["INTERRUPTED: command killed by stop signal — process tree was terminated."]
+        if out: parts.append(f"stdout (partial):\n{out}")
+        if err and capture_stderr: parts.append(f"stderr (partial):\n{err}")
+        return "\n".join(parts)
 
     if timed_out:
         parts = [

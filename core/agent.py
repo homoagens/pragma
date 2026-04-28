@@ -16,6 +16,7 @@
 # system_prompt + skills. See README.md for an example.
 
 import json
+import threading
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable, Optional
@@ -46,6 +47,7 @@ class AgentConfig:
     # (e.g. case_dir, log_dir, session_id). None = not passed.
     skill_context: object = None
     skill_context_kwarg: str = "context"  # kwarg name used to inject it
+    stop_event: Optional[threading.Event] = None  # set() to interrupt the loop
 
 
 def _log_step(log_path: Path, entry: dict):
@@ -121,6 +123,11 @@ def run_agent(cfg: AgentConfig, user_task: str, log_path: Optional[Path] = None,
     step = 1
 
     while True:
+        # ── Stop requested ───────────────────────────────────────────────
+        if cfg.stop_event and cfg.stop_event.is_set():
+            _emit({"type": "stopped", "content": "Task interrupted by user."})
+            return None
+
         # ── Steps exhausted ───────────────────────────────────────────────
         if step > max_steps:
             ask_fn = cfg.skills.get("ask_user") if cfg.skills else None
@@ -161,7 +168,11 @@ def run_agent(cfg: AgentConfig, user_task: str, log_path: Optional[Path] = None,
             text = llm_client.call_llm(
                 messages=messages, model=model,
                 temperature=temperature, max_tokens=config.MAX_TOKENS,
+                stop_event=cfg.stop_event,
             )
+        except llm_client.LLMInterrupted:
+            _emit({"type": "stopped", "content": "Task interrupted by user."})
+            return None
         except Exception as e:
             if config.DEBUG:
                 console.print(f"[red]LLM error at step {step}: {e}[/red]")
@@ -224,6 +235,12 @@ def run_agent(cfg: AgentConfig, user_task: str, log_path: Optional[Path] = None,
         _emit({"type": "action", "name": action, "args": args, "step": step})
 
         observation = _call_skill(cfg, action, args)
+
+        # Stop may have been raised during the skill (e.g. ask_user, execute_command)
+        if cfg.stop_event and cfg.stop_event.is_set():
+            _emit({"type": "stopped", "content": "Task interrupted by user."})
+            return None
+
         if config.DEBUG:
             console.print(Panel(observation, title="OBSERVATION", style="cyan"))
         _emit({"type": "observation", "content": observation, "step": step})
@@ -259,8 +276,12 @@ def run_agent(cfg: AgentConfig, user_task: str, log_path: Optional[Path] = None,
         text = llm_client.call_llm(
             messages=messages, model=model,
             temperature=temperature, max_tokens=config.MAX_TOKENS,
+            stop_event=cfg.stop_event,
         )
         response = extract_json(text)
+    except llm_client.LLMInterrupted:
+        _emit({"type": "stopped", "content": "Task interrupted by user."})
+        return None
     except Exception as e:
         if config.DEBUG:
             console.print(f"[red]Forced verdict failed: {e}[/red]")
