@@ -13,7 +13,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/homo-agens/pragma/blob/main/LICENSE">
+  <a href="https://github.com/homoagens/pragma/blob/main/LICENSE">
     <img src="https://img.shields.io/badge/license-MIT-5c6bc0?style=flat-square" alt="License">
   </a>
 
@@ -25,7 +25,7 @@
 </p>
 
 <p align="center">
-  <a href="https://example.com/pragma-demo-video"><strong>▶ Watch it in action</strong></a>
+  <a href="pragma.mp4"><strong>▶ Watch it in action</strong></a>
 </p>
 
 ---
@@ -57,7 +57,7 @@ FastAPI · Vanilla JS · WebSocket. No framework magic. Every file is understand
 **Requirements:** Python 3.10+ · [Ollama](https://ollama.com) with at least one model
 
 ```bash
-git clone https://github.com/homo-agens/pragma
+git clone https://github.com/homoagens/pragma
 cd pragma
 ```
 
@@ -221,7 +221,7 @@ Pragma is the first public project under **[Homo Agens](https://github.com/homoa
 
 If you work on agents, local AI, open-source tooling, or developer experience — let's talk.
 
-[Email](mailto:homoagens1@gmail.com) &nbsp;·&nbsp; [LinkedIn](https://www.linkedin.com/company/homoagens) &nbsp;·&nbsp; [X / Twitter](https://x.com/homoagens)
+[Email](mailto:homoagens1@gmail.com) &nbsp;·&nbsp; [LinkedIn](https://www.linkedin.com/company/homoagens) &nbsp;·&nbsp; [X / Twitter](https://x.com/homoagens1)
 
 ---
 
