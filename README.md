@@ -152,7 +152,7 @@ The exact local setup used during development. Both models run entirely on Ollam
 
 | Role       | Model                      | Quantization | RAM   |
 | ---------- | -------------------------- | ------------ | ----- |
-| Reasoning  | Google Gemma 4 E4B         | Q8\_0        | ~5 GB |
+| Reasoning  | Google Gemma 4 E4B         | Q8\_0        | ~8 GB |
 | Code skill | Qwen 2.5 Coder 7B Instruct | Q4\_K\_M     | ~5 GB |
 
 **Step 1 — Download the GGUF files**
