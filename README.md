@@ -25,7 +25,7 @@
 </p>
 
 <p align="center">
-  <a href="pragma.mp4"><strong>▶ Watch it in action</strong></a>
+  <img src="pragma.gif" alt="Pragma demo" width="800">
 </p>
 
 ---
