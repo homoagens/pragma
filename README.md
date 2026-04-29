@@ -221,7 +221,7 @@ Pragma is the first public project under **[Homo Agens](https://github.com/homoa
 
 If you work on agents, local AI, open-source tooling, or developer experience — let's talk.
 
-[Email](mailto:homoagens1@gmail.com) &nbsp;·&nbsp; [LinkedIn](https://www.linkedin.com/company/homoagens) &nbsp;·&nbsp; [X / Twitter](https://x.com/homoagens1)
+[Email](mailto:homoagens1@gmail.com) &nbsp;·&nbsp; [X / Twitter](https://x.com/homoagens1)
 
 ---
 
