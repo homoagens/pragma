@@ -88,7 +88,7 @@ start.bat       # Windows
 ./start.sh      # Linux / macOS
 ```
 
-Opens at **http://localhost:8006**. Provider, model, and keys are also editable from the settings panel in the UI.
+Opens at **http://localhost:8006**. The settings panel in the UI shows the active `.env` entries (sensitive values masked) and lets you reload the config without restarting.
 
 ---
 
@@ -159,7 +159,6 @@ BACKEND_KEY=your-key
 DEFAULT_MODEL=your-model-name
 ```
 
-This is also configurable from the settings panel in the UI.
 
 </details>
 
@@ -216,14 +215,13 @@ pragma/
 | `llm_client.py` | Dispatches to OpenAI-compatible or Anthropic endpoints |
 | `agent.py`      | Generic ReAct loop with streaming `on_step` callback   |
 | `memory.py`     | Transparent context compression as conversations grow  |
-| `skills/`       | Filesystem · shell · planning · web · LLM calls        |
+| `skills/`       | One folder per skill — filesystem, shell, web, LLM, code… |
 
 **`agent/`** — Pragma-specific behavior on top of core:
 
 - Per-thread working directory, concurrency-safe
 - Thread persistence on disk as JSON
 - WebSocket streaming with async/thread bridging
-- `code` skill routed to the dedicated coding model
 
 ---
 
