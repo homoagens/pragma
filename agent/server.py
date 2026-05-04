@@ -306,6 +306,17 @@ async def save_settings(body: SettingsBody):
         _reload_config()
     return {"ok": True}
 
+
+@app.post("/api/settings/reload")
+async def reload_settings():
+    """Reload .env from disk into the running process."""
+    _reload_config()
+    return {
+        "ok":       True,
+        "env_path": str(_ENV_PATH),
+        "env_lines": _env_lines(),
+    }
+
 @app.get("/api/threads")
 async def api_list_threads():
     return {"threads": _list_threads()}

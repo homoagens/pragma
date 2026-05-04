@@ -774,6 +774,20 @@ function closeSettings() {
   $settingsBackdrop.classList.add("hidden");
 }
 
+async function reloadEnv() {
+  const $btn = document.getElementById("settings-reload-btn");
+  $btn.disabled = true;
+  try {
+    const res = await api("POST", "/api/settings/reload");
+    document.getElementById("s-env-lines").textContent =
+      res.env_lines && res.env_lines.length ? res.env_lines.join("\n") : "(no .env found)";
+  } catch (e) {
+    alert("Reload failed: " + e.message);
+  } finally {
+    $btn.disabled = false;
+  }
+}
+
 $settingsBackdrop.addEventListener("click", (e) => {
   if (e.target === $settingsBackdrop) closeSettings();
 });
