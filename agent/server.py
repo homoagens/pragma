@@ -46,7 +46,7 @@ run_agent   = _mod.run_agent
 
 import config as baseline_config
 import memory as baseline_memory
-from skills import ALL_SKILLS
+from skills import ALL_SKILLS, SKILLS_SUMMARY
 from agent.prompts import build_system_prompt
 from agent.code_skill import CODE_SKILLS
 
@@ -615,8 +615,9 @@ async def websocket_endpoint(ws: WebSocket):
                         coding_model = baseline_config.CODING_MODEL or baseline_config.DEFAULT_MODEL
                         system_prompt = build_system_prompt(
                             thread_cwd,
-                            default_model = baseline_config.DEFAULT_MODEL,
-                            coding_model  = coding_model,
+                            default_model  = baseline_config.DEFAULT_MODEL,
+                            coding_model   = coding_model,
+                            skills_summary = SKILLS_SUMMARY,
                         )
                         cfg = AgentConfig(
                             name          = "Pragma",

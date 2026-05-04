@@ -6,7 +6,8 @@
 from __future__ import annotations
 
 
-def build_system_prompt(cwd: str, default_model: str = "", coding_model: str = "") -> str:
+def build_system_prompt(cwd: str, default_model: str = "", coding_model: str = "",
+                        skills_summary: str = "") -> str:
     model_line = ""
     if default_model:
         coding_info = f", `code` skill → {coding_model}" if coding_model and coding_model != default_model else ""
@@ -123,52 +124,12 @@ Never emit free prose outside the JSON. Never emit two JSON objects in one respo
 
 ## Available skills
 
-### Filesystem
-- `read_file(path, start_line=None, end_line=None)` — read a file, optionally a line range
-- `write_file(path, content)` — create or overwrite a file
-- `list_dir(path)` — list directory contents with size and date
-- `glob_match(pattern, base_dir=".")` — find files by pattern, e.g. `**/*.py`
-- `grep_search(pattern, path, file_glob="*", context_lines=0)` — search text in files (regex)
-- `understand_cwd(max_depth=3)` — describe the directory tree of the working directory
-- `execute_command(command, cwd="", timeout=60)` — run a shell command, returns stdout+stderr+returncode.
-  Use `cwd` to set the working directory (REQUIRED when running scripts).
-  Each call is an independent subprocess — `cd` commands do NOT carry over.
+{skills_summary}
 
-### Planning
-- `todo_create(tasks, output_path="todo.json")` — create a structured task list
+- **get_skill_details**: Load the full parameter documentation for any skill listed above.
+- **code**: Delegate code generation or review to a specialized coding model.
+  `code(task, language="", context="", mode="generate")` — mode: "generate" | "review" | "explain" | "refactor" | "fix".
+  Use for non-trivial code blocks, then `write_file` the result.
 
-### Validation & Logging
-- `schema_validate(json_string, required_fields="", field_types="")`
-- `log_event(message, severity="INFO", context="", agent_id="", log_path="agent.log")`
-- `session_broadcast(event, payload, channel="main")`
-
-### Web
-- `web_fetch(url, max_chars=10000, timeout=30)`
-- `web_search(query, num_results=10)`
-
-### File editing (hybrid)
-- `edit_file(path, instruction)` — apply a natural-language patch to a file
-- `parse_document(content, doc_type="auto", extract="")`
-
-### Memory
-- `memory_store(content, memory_path="memory.json", tag="")`
-- `memory_retrieve(query, memory_path="memory.json", top_k=5)`
-
-### LLM & Vision
-- `llm_invoke(system_prompt, user_message, temperature=-1.0, max_tokens=0)` — call the default LLM
-- `code(task, language="", context="", mode="generate")` — delegate code generation/review
-  to a specialized coding model (or the default if no coding model is configured).
-  mode: "generate" | "review" | "explain" | "refactor" | "fix".
-  Use this for non-trivial code blocks, then `write_file` the result.
-- `vision_interpret(image_path, question, detail="auto")`
-- `context_compress(messages, label="context")`
-
-### Human interaction
-- `ask_user(topic, context="", mode="input")` — mode: "input" | "confirm" | "choice"
-
-### Quality
-- `critic_validate(output, criteria)`
-
-### Multi-agent
-- `call_agent(agent_name, task, input_data="", endpoint="")`
+Call `get_skill_details(name)` before using a skill when you need the exact parameter names or want to check available options.
 """

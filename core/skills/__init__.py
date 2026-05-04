@@ -39,4 +39,27 @@ def _load_skills():
 
 ALL_SKILLS, SKILLS_SUMMARY = _load_skills()
 
-__all__ = ["ALL_SKILLS", "SKILLS_SUMMARY"]
+
+def get_skill_details(name: str) -> str:
+    """
+    Load the full documentation for a skill.
+    Returns the complete README.md content (parameters, return value, notes).
+    Call this before using a skill you are unsure about.
+    """
+    readme = SKILLS_DIR / name / "README.md"
+    if not readme.exists():
+        available = sorted(
+            f.name for f in SKILLS_DIR.iterdir()
+            if f.is_dir() and not f.name.startswith("_")
+        )
+        return (
+            f"ERROR: no documentation found for skill '{name}'.\n"
+            f"Available skills: {available}"
+        )
+    return readme.read_text(encoding="utf-8")
+
+
+# Add get_skill_details to the registry so the agent can call it
+ALL_SKILLS["get_skill_details"] = get_skill_details
+
+__all__ = ["ALL_SKILLS", "SKILLS_SUMMARY", "get_skill_details"]
