@@ -583,6 +583,10 @@ details[open] .line-chevron { transform: rotate(90deg); }
   background: var(--surface-2); border: 1px solid var(--border);
   padding: 1px 5px; border-radius: 4px;
 }
+#settings-env-badge {
+  margin-left: 6px; font-size: 11px; font-weight: 500;
+  color: #16a34a; letter-spacing: 0.02em;
+}
 .settings-close {
   background: transparent; border: none; cursor: pointer;
   color: var(--text-muted); font-size: 16px;

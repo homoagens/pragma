@@ -765,6 +765,13 @@ async function openSettings() {
     return;
   }
   document.getElementById("settings-envpath").textContent = cfg.env_path;
+  const $envBadge = document.getElementById("settings-env-badge");
+  if (cfg.env_exists) {
+    $envBadge.textContent = "● loaded";
+    $envBadge.style.display = "";
+  } else {
+    $envBadge.style.display = "none";
+  }
   document.getElementById("s-provider").value         = cfg.provider || "openai";
   document.getElementById("s-base-url").value         = cfg.base_url || "";
   document.getElementById("s-default-model").value    = cfg.default_model || "";
@@ -792,15 +799,21 @@ function closeSettings() {
 }
 
 function updateProviderUI() {
-  const prov = document.getElementById("s-provider").value;
-  const isBackend = prov === "backend";
-  document.getElementById("s-backend-url-row").style.display = isBackend ? "" : "none";
-  document.getElementById("s-backend-key-row").style.display = isBackend ? "" : "none";
+  const prov        = document.getElementById("s-provider").value;
+  const isOpenai    = prov === "openai";
+  const isAnthropic = prov === "anthropic";
+  const isBackend   = prov === "backend";
+
+  // Base URL: relevant for openai only (anthropic is fixed, backend has its own field)
+  document.getElementById("s-base-url-row").style.display    = isOpenai   ? "" : "none";
+  // API key: for openai and anthropic, not backend
+  document.getElementById("s-api-key-row").style.display     = isBackend  ? "none" : "";
+  // Backend-specific fields
+  document.getElementById("s-backend-url-row").style.display = isBackend  ? "" : "none";
+  document.getElementById("s-backend-key-row").style.display = isBackend  ? "" : "none";
 
   const hint = document.getElementById("s-base-url-hint");
-  if (prov === "openai")    hint.textContent = "Leave empty to use the provider default (Ollama at http://localhost:11434/v1).";
-  if (prov === "anthropic") hint.textContent = "Leave empty to use https://api.anthropic.com (default).";
-  if (prov === "backend")   hint.textContent = "Optional — overrides the Backend URL field below.";
+  if (isOpenai) hint.textContent = "Leave empty for Ollama default (http://localhost:11434/v1).";
 }
 
 async function saveSettings() {
