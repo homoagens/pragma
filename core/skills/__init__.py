@@ -1,20 +1,42 @@
-# skills/__init__.py — skill palette baseline (24 skills)
-#
-# Imports the 3 skill families and builds the unified dict passed to AgentConfig.
-#
-# Usage:
-#   from skills import ALL_SKILLS
-#   cfg = AgentConfig(..., skills=ALL_SKILLS, ...)
-#
-# To extend with domain-specific skills:
-#   from skills import ALL_SKILLS
-#   from my_domain import extra_skill_a, extra_skill_b
-#   skills = {**ALL_SKILLS, "extra_skill_a": extra_skill_a, ...}
+# skills/__init__.py
+from __future__ import annotations
+import importlib.util
+import sys
+from pathlib import Path
 
-from skills.d import SKILLS as _D
-from skills.h import SKILLS as _H
-from skills.g import SKILLS as _G
+SKILLS_DIR = Path(__file__).parent
 
-ALL_SKILLS: dict = {**_D, **_H, **_G}
 
-__all__ = ["ALL_SKILLS"]
+def _load_skills():
+    registry = {}
+    summaries = []
+    for folder in sorted(SKILLS_DIR.iterdir()):
+        if not folder.is_dir() or folder.name.startswith("_"):
+            continue
+        skill_file = folder / "skill.py"
+        readme = folder / "README.md"
+        if not skill_file.exists():
+            continue
+        mod_name = f"skills.{folder.name}.skill"
+        spec = importlib.util.spec_from_file_location(mod_name, skill_file)
+        mod = importlib.util.module_from_spec(spec)
+        sys.modules[mod_name] = mod  # register BEFORE exec so late imports work
+        sys.modules[f"skills.{folder.name}"] = mod
+        spec.loader.exec_module(mod)
+        fn = getattr(mod, folder.name, None)
+        if fn is None:
+            continue
+        registry[folder.name] = fn
+        if readme.exists():
+            text = readme.read_text(encoding="utf-8")
+            summary_part = text.split("---")[0].strip()
+            # Extract just the description line (after the # title)
+            lines = [l for l in summary_part.splitlines() if l.strip() and not l.startswith("#")]
+            summary = lines[0] if lines else summary_part
+            summaries.append(f"**{folder.name}**: {summary}")
+    return registry, "\n".join(summaries)
+
+
+ALL_SKILLS, SKILLS_SUMMARY = _load_skills()
+
+__all__ = ["ALL_SKILLS", "SKILLS_SUMMARY"]
