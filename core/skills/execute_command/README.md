@@ -22,3 +22,19 @@ Formatted string with `returncode`, `stdout`, and `stderr` sections, or timeout/
 - On Windows, uses `taskkill /F /T` to kill the entire process tree; on POSIX, kills the process group.
 - Commands waiting for user input (input()) will time out — remove interactive calls before using.
 - Commands are not portable across platforms: use `python`/`git`/`pip` for portability.
+
+## Examples
+
+```json
+{ "action": "execute_command", "args": { "command": "python script.py", "cwd": "C:\\project" } }
+{ "action": "execute_command", "args": { "command": "pip install requests", "cwd": "C:\\project", "timeout": 120 } }
+{ "action": "execute_command", "args": { "command": "python -m pytest tests\\", "cwd": "C:\\project" } }
+```
+
+## Do not
+
+- Omit `cwd` when running scripts — without it the command runs in the server's directory, not the user's project
+- Use Unix commands: no `ls`, `cat`, `rm`, `grep`, `find`, `touch` — use filesystem skills or Windows equivalents
+- Run scripts that call `input()` or wait for stdin — they hang forever; remove `input()` or pipe the value
+- Chain directory changes with `&&`: `cd foo && python x.py` fails because each call is a fresh subprocess — use `cwd` instead
+- Rely on environment state from a previous call — every `execute_command` is an independent subprocess
