@@ -140,88 +140,74 @@
 
       <div class="settings-body">
 
-        <!-- .env toggle -->
-        <div class="sfield settings-env-toggle">
-          <label class="toggle-label">
-            <input type="checkbox" id="s-use-env" onchange="updateEnvMode()">
-            Use <code id="settings-envpath">.env</code> configuration
-          </label>
-          <div class="hint" id="s-use-env-hint"></div>
+        <div id="s-env-note" class="env-note" style="display:none">
+          <span class="env-note-dot">●</span> Loaded from <code id="settings-envpath">.env</code>
         </div>
 
-        <!-- read-only summary shown when .env is active -->
-        <div id="s-env-summary" style="display:none">
-          <div class="env-summary-grid" id="s-env-grid"></div>
+        <div class="sfield">
+          <label>Provider</label>
+          <select id="s-provider" onchange="updateProviderUI()">
+            <option value="openai">openai — Ollama, OpenAI, Groq…</option>
+            <option value="anthropic">anthropic — native API</option>
+            <option value="backend">backend — custom proxy</option>
+          </select>
         </div>
 
-        <!-- editable form shown when .env is NOT used -->
-        <div id="s-manual-form">
-          <div class="sfield">
-            <label>Provider</label>
-            <select id="s-provider" onchange="updateProviderUI()">
-              <option value="openai">openai — Ollama, OpenAI, Groq…</option>
-              <option value="anthropic">anthropic — native API</option>
-              <option value="backend">backend — custom proxy</option>
-            </select>
-          </div>
-
-          <div class="sfield" id="s-base-url-row">
-            <label>Base URL <span class="opt">(optional)</span></label>
-            <input id="s-base-url" type="text" spellcheck="false" placeholder="http://localhost:11434/v1">
-            <div class="hint">Leave empty for Ollama default (http://localhost:11434/v1).</div>
-          </div>
-
-          <div class="sfield" id="s-api-key-row">
-            <label>API key <span class="opt">(leave empty to keep current)</span></label>
-            <input id="s-api-key" type="password" spellcheck="false" autocomplete="off">
-            <div class="hint" id="s-api-key-current"></div>
-          </div>
-
-          <div class="sfield" id="s-backend-url-row" style="display:none">
-            <label>Backend URL</label>
-            <input id="s-backend-url" type="text" spellcheck="false" placeholder="http://127.0.0.1:19000">
-            <div class="hint">Your proxy must expose a <code>/llm</code> endpoint.</div>
-          </div>
-
-          <div class="sfield" id="s-backend-key-row" style="display:none">
-            <label>Backend key <span class="opt">(leave empty to keep current)</span></label>
-            <input id="s-backend-key" type="password" spellcheck="false" autocomplete="off">
-            <div class="hint" id="s-backend-key-current"></div>
-          </div>
-
-          <div class="sfield">
-            <label>Default model</label>
-            <input id="s-default-model" type="text" spellcheck="false" placeholder="llama3.2">
-          </div>
-
-          <details class="settings-advanced">
-            <summary>Separate model for the <code>code</code> skill</summary>
-            <div class="sfield">
-              <label>Coding model <span class="opt">(empty = use default)</span></label>
-              <input id="s-coding-model" type="text" spellcheck="false" placeholder="qwen2.5-coder">
-            </div>
-            <div class="sfield">
-              <label>Coding provider</label>
-              <select id="s-coding-provider">
-                <option value="">inherit from main</option>
-                <option value="openai">openai</option>
-                <option value="anthropic">anthropic</option>
-                <option value="backend">backend</option>
-              </select>
-            </div>
-            <div class="sfield">
-              <label>Coding base URL <span class="opt">(empty = inherit)</span></label>
-              <input id="s-coding-base-url" type="text" spellcheck="false" placeholder="">
-            </div>
-          </details>
+        <div class="sfield" id="s-base-url-row">
+          <label>Base URL <span class="opt">(optional)</span></label>
+          <input id="s-base-url" type="text" spellcheck="false" placeholder="http://localhost:11434/v1">
+          <div class="hint">Leave empty for Ollama default (http://localhost:11434/v1).</div>
         </div>
 
-        <!-- max steps always visible -->
+        <div class="sfield" id="s-api-key-row">
+          <label>API key <span class="opt">(leave empty to keep current)</span></label>
+          <input id="s-api-key" type="password" spellcheck="false" autocomplete="off">
+          <div class="hint" id="s-api-key-current"></div>
+        </div>
+
+        <div class="sfield" id="s-backend-url-row" style="display:none">
+          <label>Backend URL</label>
+          <input id="s-backend-url" type="text" spellcheck="false" placeholder="http://127.0.0.1:19000">
+          <div class="hint">Your proxy must expose a <code>/llm</code> endpoint.</div>
+        </div>
+
+        <div class="sfield" id="s-backend-key-row" style="display:none">
+          <label>Backend key <span class="opt">(leave empty to keep current)</span></label>
+          <input id="s-backend-key" type="password" spellcheck="false" autocomplete="off">
+          <div class="hint" id="s-backend-key-current"></div>
+        </div>
+
+        <div class="sfield">
+          <label>Default model</label>
+          <input id="s-default-model" type="text" spellcheck="false" placeholder="llama3.2">
+        </div>
+
         <div class="sfield">
           <label>Max steps</label>
           <input id="s-max-steps" type="number" min="1" max="200" spellcheck="false" placeholder="15">
           <div class="hint">Maximum ReAct loop iterations per task before asking to continue.</div>
         </div>
+
+        <details class="settings-advanced">
+          <summary>Separate model for the <code>code</code> skill</summary>
+          <div class="sfield">
+            <label>Coding model <span class="opt">(empty = use default)</span></label>
+            <input id="s-coding-model" type="text" spellcheck="false" placeholder="qwen2.5-coder">
+          </div>
+          <div class="sfield">
+            <label>Coding provider</label>
+            <select id="s-coding-provider">
+              <option value="">inherit from main</option>
+              <option value="openai">openai</option>
+              <option value="anthropic">anthropic</option>
+              <option value="backend">backend</option>
+            </select>
+          </div>
+          <div class="sfield">
+            <label>Coding base URL <span class="opt">(empty = inherit)</span></label>
+            <input id="s-coding-base-url" type="text" spellcheck="false" placeholder="">
+          </div>
+        </details>
 
         <div id="settings-error"></div>
       </div>

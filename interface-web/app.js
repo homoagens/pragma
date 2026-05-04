@@ -756,8 +756,6 @@ $workdir.addEventListener("click", async () => {
 
 const $settingsBackdrop = document.getElementById("settings-backdrop");
 
-let _settingsCfg = null;  // last loaded settings, used by saveSettings
-
 async function openSettings() {
   let cfg;
   try {
@@ -766,16 +764,17 @@ async function openSettings() {
     alert("Failed to load settings: " + e.message);
     return;
   }
-  _settingsCfg = cfg;
 
-  // env path label
-  document.getElementById("settings-envpath").textContent = cfg.env_path || ".env";
+  // .env note
+  const $note = document.getElementById("s-env-note");
+  if (cfg.env_exists) {
+    document.getElementById("settings-envpath").textContent = cfg.env_path || ".env";
+    $note.style.display = "";
+  } else {
+    $note.style.display = "none";
+  }
 
-  // checkbox: default ON if .env exists
-  const $cb = document.getElementById("s-use-env");
-  $cb.checked = !!cfg.env_exists;
-
-  // populate editable fields (used when checkbox is OFF)
+  // populate form with current values
   document.getElementById("s-provider").value        = cfg.provider || "openai";
   document.getElementById("s-base-url").value        = cfg.base_url || "";
   document.getElementById("s-default-model").value   = cfg.default_model || "";
@@ -787,48 +786,17 @@ async function openSettings() {
   document.getElementById("s-api-key").value         = "";
   document.getElementById("s-backend-key").value     = "";
   document.getElementById("s-api-key-current").textContent =
-    cfg.api_key_set ? `Currently set: ${cfg.api_key_preview}` : "Not set.";
+    cfg.api_key_set ? `set (${cfg.api_key_preview})` : "Not set.";
   document.getElementById("s-backend-key-current").textContent =
-    cfg.backend_key_set ? `Currently set: ${cfg.backend_key_preview}` : "Not set.";
+    cfg.backend_key_set ? `set (${cfg.backend_key_preview})` : "Not set.";
 
   document.getElementById("settings-error").textContent = "";
   $settingsBackdrop.classList.remove("hidden");
-  updateEnvMode();
+  updateProviderUI();
 }
 
 function closeSettings() {
   $settingsBackdrop.classList.add("hidden");
-}
-
-function updateEnvMode() {
-  const useEnv = document.getElementById("s-use-env").checked;
-  const cfg    = _settingsCfg || {};
-
-  document.getElementById("s-env-summary").style.display  = useEnv ? "" : "none";
-  document.getElementById("s-manual-form").style.display  = useEnv ? "none" : "";
-  document.getElementById("s-use-env-hint").textContent   = useEnv
-    ? "Settings are read from .env — edit the file to change them."
-    : "Settings below are saved to .env on Save.";
-
-  if (useEnv) {
-    // build read-only summary
-    const rows = [
-      ["Provider",      cfg.provider || "—"],
-      ["Base URL",      cfg.base_url || "(default)"],
-      ["Model",         cfg.default_model || "—"],
-      ["API key",       cfg.api_key_set ? `set (${cfg.api_key_preview})` : "not set"],
-      ["Backend URL",   cfg.backend_url || "—"],
-      ["Backend key",   cfg.backend_key_set ? `set (${cfg.backend_key_preview})` : "not set"],
-      ["Coding model",  cfg.coding_model || "(same as default)"],
-      ["Coding provider", cfg.coding_provider || "(inherit)"],
-    ].filter(([, v]) => v && v !== "—" && v !== "not set");
-
-    document.getElementById("s-env-grid").innerHTML = rows.map(
-      ([k, v]) => `<span class="env-key">${k}</span><span class="env-val">${v}</span>`
-    ).join("");
-  } else {
-    updateProviderUI();
-  }
 }
 
 function updateProviderUI() {
@@ -848,27 +816,20 @@ async function saveSettings() {
   $err.textContent = "";
 
   const maxStepsVal = parseInt(document.getElementById("s-max-steps").value, 10);
-  const useEnv = document.getElementById("s-use-env").checked;
-
-  // When using .env, only save max_steps (the only field always visible)
   const body = {
-    max_steps: isNaN(maxStepsVal) ? maxStepsConfig : Math.max(1, maxStepsVal),
+    provider:        document.getElementById("s-provider").value,
+    base_url:        document.getElementById("s-base-url").value.trim(),
+    default_model:   document.getElementById("s-default-model").value.trim(),
+    max_steps:       isNaN(maxStepsVal) ? maxStepsConfig : Math.max(1, maxStepsVal),
+    backend_url:     document.getElementById("s-backend-url").value.trim(),
+    coding_model:    document.getElementById("s-coding-model").value.trim(),
+    coding_provider: document.getElementById("s-coding-provider").value,
+    coding_base_url: document.getElementById("s-coding-base-url").value.trim(),
   };
-
-  if (!useEnv) {
-    // Manual mode: save all fields
-    body.provider        = document.getElementById("s-provider").value;
-    body.base_url        = document.getElementById("s-base-url").value.trim();
-    body.default_model   = document.getElementById("s-default-model").value.trim();
-    body.backend_url     = document.getElementById("s-backend-url").value.trim();
-    body.coding_model    = document.getElementById("s-coding-model").value.trim();
-    body.coding_provider = document.getElementById("s-coding-provider").value;
-    body.coding_base_url = document.getElementById("s-coding-base-url").value.trim();
-    const apiKey = document.getElementById("s-api-key").value;
-    const beKey  = document.getElementById("s-backend-key").value;
-    if (apiKey) body.api_key     = apiKey;
-    if (beKey)  body.backend_key = beKey;
-  }
+  const apiKey = document.getElementById("s-api-key").value;
+  const beKey  = document.getElementById("s-backend-key").value;
+  if (apiKey) body.api_key     = apiKey;
+  if (beKey)  body.backend_key = beKey;
 
   $btn.disabled = true;
   $btn.textContent = "Saving…";
