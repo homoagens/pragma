@@ -45,7 +45,7 @@ def _resolved_endpoint(provider, base_url, api_key):
         url = (base_url or config.LLM_BASE_URL or config.BACKEND_URL).rstrip("/")
         key = api_key  or config.LLM_API_KEY  or config.BACKEND_KEY
     else:  # "openai" or any compatible endpoint
-        url = (base_url or config.LLM_BASE_URL or "").rstrip("/")
+        url = (base_url or config.LLM_BASE_URL or "http://localhost:11434/v1").rstrip("/")
         key = api_key  or config.LLM_API_KEY
 
     return p, url, key
