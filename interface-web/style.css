@@ -575,18 +575,29 @@ details[open] .line-chevron { transform: rotate(90deg); }
   border-bottom: 1px solid var(--border);
 }
 .settings-title { font-size: 15px; font-weight: 600; color: var(--text); }
-.settings-desc {
-  font-size: 12px; color: var(--text-muted); margin-top: 4px;
+
+/* env toggle row */
+.settings-env-toggle { border-bottom: 1px solid var(--border); padding-bottom: 12px; margin-bottom: 4px; }
+.toggle-label {
+  display: flex; align-items: center; gap: 8px;
+  font-size: 13px; font-weight: 500; color: var(--text); cursor: pointer;
 }
-.settings-desc code {
+.toggle-label input[type="checkbox"] { width: 15px; height: 15px; cursor: pointer; accent-color: var(--accent); }
+.toggle-label code {
   font-family: var(--font-mono); font-size: 11px;
   background: var(--surface-2); border: 1px solid var(--border);
   padding: 1px 5px; border-radius: 4px;
 }
-#settings-env-badge {
-  margin-left: 6px; font-size: 11px; font-weight: 500;
-  color: #16a34a; letter-spacing: 0.02em;
+
+/* env read-only summary grid */
+.env-summary-grid {
+  display: grid; grid-template-columns: auto 1fr;
+  gap: 5px 12px; margin: 8px 0 4px;
+  background: var(--surface-2); border: 1px solid var(--border);
+  border-radius: var(--radius); padding: 10px 12px;
 }
+.env-key { font-size: 12px; color: var(--text-muted); white-space: nowrap; }
+.env-val { font-size: 12px; color: var(--text); font-family: var(--font-mono); overflow: hidden; text-overflow: ellipsis; }
 .settings-close {
   background: transparent; border: none; cursor: pointer;
   color: var(--text-muted); font-size: 16px;
