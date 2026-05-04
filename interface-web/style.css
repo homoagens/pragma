@@ -576,18 +576,23 @@ details[open] .line-chevron { transform: rotate(90deg); }
 }
 .settings-title { font-size: 15px; font-weight: 600; color: var(--text); }
 
-/* .env loaded note */
-.env-note {
-  font-size: 12px; color: #16a34a;
-  margin-bottom: 10px; padding: 6px 10px;
-  background: #f0fdf4; border: 1px solid #bbf7d0;
-  border-radius: var(--radius);
+/* env toggle row */
+.settings-env-toggle {
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 12px; margin-bottom: 4px;
 }
-.env-note code {
+.toggle-label {
+  display: flex; align-items: center; gap: 8px;
+  font-size: 13px; font-weight: 500; color: var(--text); cursor: pointer;
+}
+.toggle-label input[type="checkbox"] {
+  width: 15px; height: 15px; cursor: pointer; accent-color: var(--accent);
+}
+.toggle-label code {
   font-family: var(--font-mono); font-size: 11px;
-  background: transparent; padding: 0;
+  background: var(--surface-2); border: 1px solid var(--border);
+  padding: 1px 5px; border-radius: 4px;
 }
-.env-note-dot { margin-right: 4px; }
 .settings-close {
   background: transparent; border: none; cursor: pointer;
   color: var(--text-muted); font-size: 16px;

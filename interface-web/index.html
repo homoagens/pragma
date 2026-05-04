@@ -140,10 +140,15 @@
 
       <div class="settings-body">
 
-        <div id="s-env-note" class="env-note" style="display:none">
-          <span class="env-note-dot">●</span> Loaded from <code id="settings-envpath">.env</code>
+        <div class="sfield settings-env-toggle">
+          <label class="toggle-label">
+            <input type="checkbox" id="s-use-env" onchange="updateEnvMode()">
+            Use <code id="settings-envpath">.env</code>
+          </label>
+          <div class="hint" id="s-use-env-hint"></div>
         </div>
 
+        <div id="s-manual-form">
         <div class="sfield">
           <label>Provider</label>
           <select id="s-provider" onchange="updateProviderUI()">
@@ -208,6 +213,8 @@
             <input id="s-coding-base-url" type="text" spellcheck="false" placeholder="">
           </div>
         </details>
+
+        </div><!-- /s-manual-form -->
 
         <div id="settings-error"></div>
       </div>

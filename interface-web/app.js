@@ -756,6 +756,8 @@ $workdir.addEventListener("click", async () => {
 
 const $settingsBackdrop = document.getElementById("settings-backdrop");
 
+const SETTINGS_USE_ENV_KEY = "pragma_use_env";
+
 async function openSettings() {
   let cfg;
   try {
@@ -765,16 +767,15 @@ async function openSettings() {
     return;
   }
 
-  // .env note
-  const $note = document.getElementById("s-env-note");
-  if (cfg.env_exists) {
-    document.getElementById("settings-envpath").textContent = cfg.env_path || ".env";
-    $note.style.display = "";
-  } else {
-    $note.style.display = "none";
-  }
+  // env path label
+  document.getElementById("settings-envpath").textContent = cfg.env_path || ".env";
 
-  // populate form with current values
+  // restore checkbox from localStorage (default ON if .env exists, OFF otherwise)
+  const savedPref = localStorage.getItem(SETTINGS_USE_ENV_KEY);
+  const useEnv = savedPref !== null ? savedPref === "1" : !!cfg.env_exists;
+  document.getElementById("s-use-env").checked = useEnv;
+
+  // populate form fields (always, so they're ready if user unchecks)
   document.getElementById("s-provider").value        = cfg.provider || "openai";
   document.getElementById("s-base-url").value        = cfg.base_url || "";
   document.getElementById("s-default-model").value   = cfg.default_model || "";
@@ -792,11 +793,21 @@ async function openSettings() {
 
   document.getElementById("settings-error").textContent = "";
   $settingsBackdrop.classList.remove("hidden");
-  updateProviderUI();
+  updateEnvMode();
 }
 
 function closeSettings() {
   $settingsBackdrop.classList.add("hidden");
+}
+
+function updateEnvMode() {
+  const useEnv = document.getElementById("s-use-env").checked;
+  localStorage.setItem(SETTINGS_USE_ENV_KEY, useEnv ? "1" : "0");
+  document.getElementById("s-manual-form").style.display = useEnv ? "none" : "";
+  document.getElementById("s-use-env-hint").textContent  = useEnv
+    ? "Pragma uses your .env as-is. Edit the file to change settings."
+    : "Fill in the fields below and click Save to write to .env.";
+  if (!useEnv) updateProviderUI();
 }
 
 function updateProviderUI() {
@@ -811,25 +822,31 @@ function updateProviderUI() {
 }
 
 async function saveSettings() {
-  const $btn = document.getElementById("settings-save");
-  const $err = document.getElementById("settings-error");
+  const $btn   = document.getElementById("settings-save");
+  const $err   = document.getElementById("settings-error");
   $err.textContent = "";
 
+  const useEnv      = document.getElementById("s-use-env").checked;
   const maxStepsVal = parseInt(document.getElementById("s-max-steps").value, 10);
+
+  // When using .env, only persist max_steps (user explicitly controls the rest via file)
   const body = {
-    provider:        document.getElementById("s-provider").value,
-    base_url:        document.getElementById("s-base-url").value.trim(),
-    default_model:   document.getElementById("s-default-model").value.trim(),
-    max_steps:       isNaN(maxStepsVal) ? maxStepsConfig : Math.max(1, maxStepsVal),
-    backend_url:     document.getElementById("s-backend-url").value.trim(),
-    coding_model:    document.getElementById("s-coding-model").value.trim(),
-    coding_provider: document.getElementById("s-coding-provider").value,
-    coding_base_url: document.getElementById("s-coding-base-url").value.trim(),
+    max_steps: isNaN(maxStepsVal) ? maxStepsConfig : Math.max(1, maxStepsVal),
   };
-  const apiKey = document.getElementById("s-api-key").value;
-  const beKey  = document.getElementById("s-backend-key").value;
-  if (apiKey) body.api_key     = apiKey;
-  if (beKey)  body.backend_key = beKey;
+
+  if (!useEnv) {
+    body.provider        = document.getElementById("s-provider").value;
+    body.base_url        = document.getElementById("s-base-url").value.trim();
+    body.default_model   = document.getElementById("s-default-model").value.trim();
+    body.backend_url     = document.getElementById("s-backend-url").value.trim();
+    body.coding_model    = document.getElementById("s-coding-model").value.trim();
+    body.coding_provider = document.getElementById("s-coding-provider").value;
+    body.coding_base_url = document.getElementById("s-coding-base-url").value.trim();
+    const apiKey = document.getElementById("s-api-key").value;
+    const beKey  = document.getElementById("s-backend-key").value;
+    if (apiKey) body.api_key     = apiKey;
+    if (beKey)  body.backend_key = beKey;
+  }
 
   $btn.disabled = true;
   $btn.textContent = "Saving…";
