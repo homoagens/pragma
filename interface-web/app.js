@@ -756,8 +756,6 @@ $workdir.addEventListener("click", async () => {
 
 const $settingsBackdrop = document.getElementById("settings-backdrop");
 
-const SETTINGS_USE_ENV_KEY = "pragma_use_env";
-
 async function openSettings() {
   let cfg;
   try {
@@ -766,105 +764,14 @@ async function openSettings() {
     alert("Failed to load settings: " + e.message);
     return;
   }
-
-  // env path label
   document.getElementById("settings-envpath").textContent = cfg.env_path || ".env";
-
-  // restore checkbox from localStorage (default ON if .env exists, OFF otherwise)
-  const savedPref = localStorage.getItem(SETTINGS_USE_ENV_KEY);
-  const useEnv = savedPref !== null ? savedPref === "1" : !!cfg.env_exists;
-  document.getElementById("s-use-env").checked = useEnv;
-
-  // populate form fields (always, so they're ready if user unchecks)
-  document.getElementById("s-provider").value        = cfg.provider || "openai";
-  document.getElementById("s-base-url").value        = cfg.base_url || "";
-  document.getElementById("s-default-model").value   = cfg.default_model || "";
-  document.getElementById("s-max-steps").value       = cfg.max_steps ?? maxStepsConfig;
-  document.getElementById("s-backend-url").value     = cfg.backend_url || "";
-  document.getElementById("s-coding-model").value    = cfg.coding_model || "";
-  document.getElementById("s-coding-provider").value = cfg.coding_provider || "";
-  document.getElementById("s-coding-base-url").value = cfg.coding_base_url || "";
-  document.getElementById("s-api-key").value         = "";
-  document.getElementById("s-backend-key").value     = "";
-  document.getElementById("s-api-key-current").textContent =
-    cfg.api_key_set ? `set (${cfg.api_key_preview})` : "Not set.";
-  document.getElementById("s-backend-key-current").textContent =
-    cfg.backend_key_set ? `set (${cfg.backend_key_preview})` : "Not set.";
-
-  document.getElementById("settings-error").textContent = "";
+  document.getElementById("s-env-lines").textContent =
+    cfg.env_lines && cfg.env_lines.length ? cfg.env_lines.join("\n") : "(no .env found)";
   $settingsBackdrop.classList.remove("hidden");
-  updateEnvMode();
 }
 
 function closeSettings() {
   $settingsBackdrop.classList.add("hidden");
-}
-
-function updateEnvMode() {
-  const useEnv = document.getElementById("s-use-env").checked;
-  localStorage.setItem(SETTINGS_USE_ENV_KEY, useEnv ? "1" : "0");
-  document.getElementById("s-manual-form").style.display = useEnv ? "none" : "";
-  document.getElementById("s-use-env-hint").textContent  = useEnv
-    ? "Pragma uses your .env as-is. Edit the file to change settings."
-    : "Fill in the fields below and click Save to write to .env.";
-  if (!useEnv) updateProviderUI();
-}
-
-function updateProviderUI() {
-  const prov      = document.getElementById("s-provider").value;
-  const isBackend = prov === "backend";
-  const isOpenai  = prov === "openai";
-
-  document.getElementById("s-base-url-row").style.display    = isOpenai  ? "" : "none";
-  document.getElementById("s-api-key-row").style.display     = isBackend ? "none" : "";
-  document.getElementById("s-backend-url-row").style.display = isBackend ? "" : "none";
-  document.getElementById("s-backend-key-row").style.display = isBackend ? "" : "none";
-}
-
-async function saveSettings() {
-  const $btn   = document.getElementById("settings-save");
-  const $err   = document.getElementById("settings-error");
-  $err.textContent = "";
-
-  const useEnv      = document.getElementById("s-use-env").checked;
-  const maxStepsVal = parseInt(document.getElementById("s-max-steps").value, 10);
-
-  // When using .env, only persist max_steps (user explicitly controls the rest via file)
-  const body = {
-    max_steps: isNaN(maxStepsVal) ? maxStepsConfig : Math.max(1, maxStepsVal),
-  };
-
-  if (!useEnv) {
-    body.provider        = document.getElementById("s-provider").value;
-    body.base_url        = document.getElementById("s-base-url").value.trim();
-    body.default_model   = document.getElementById("s-default-model").value.trim();
-    body.backend_url     = document.getElementById("s-backend-url").value.trim();
-    body.coding_model    = document.getElementById("s-coding-model").value.trim();
-    body.coding_provider = document.getElementById("s-coding-provider").value;
-    body.coding_base_url = document.getElementById("s-coding-base-url").value.trim();
-    const apiKey = document.getElementById("s-api-key").value;
-    const beKey  = document.getElementById("s-backend-key").value;
-    if (apiKey) body.api_key     = apiKey;
-    if (beKey)  body.backend_key = beKey;
-  }
-
-  $btn.disabled = true;
-  $btn.textContent = "Saving…";
-  try {
-    await api("POST", "/api/settings", body);
-    closeSettings();
-    try {
-      const cfg = await api("GET", "/api/config");
-      llmConfig      = cfg.llm || null;
-      maxStepsConfig = cfg.max_steps ?? maxStepsConfig;
-      renderModelBadge();
-    } catch (_) {}
-  } catch (e) {
-    $err.textContent = "Save failed: " + e.message;
-  } finally {
-    $btn.disabled = false;
-    $btn.textContent = "Save";
-  }
 }
 
 $settingsBackdrop.addEventListener("click", (e) => {

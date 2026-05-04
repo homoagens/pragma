@@ -259,55 +259,51 @@ def _mask(value: str) -> str:
     return "•" * (len(value) - 4) + value[-4:]
 
 
+_SENSITIVE_KEYS = {"KEY", "SECRET", "TOKEN", "PASSWORD"}
+
+def _env_lines() -> list[str]:
+    """Read .env and return active (non-comment, non-empty) lines.
+    Values whose key contains a sensitive word are masked."""
+    if not _ENV_PATH.exists():
+        return []
+    pat = re.compile(r"^([A-Z_][A-Z0-9_]*)=(.*)$")
+    out = []
+    for line in _ENV_PATH.read_text(encoding="utf-8").splitlines():
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#"):
+            continue
+        m = pat.match(stripped)
+        if m:
+            key, val = m.group(1), m.group(2)
+            if any(s in key for s in _SENSITIVE_KEYS) and val:
+                val = _mask(val)
+            out.append(f"{key}={val}")
+        else:
+            out.append(stripped)
+    return out
+
+
 @app.get("/api/settings")
 async def get_settings():
     return {
-        "provider":         baseline_config.LLM_PROVIDER,
-        "base_url":         baseline_config.LLM_BASE_URL,
-        "api_key_set":      bool(baseline_config.LLM_API_KEY),
-        "api_key_preview":  _mask(baseline_config.LLM_API_KEY),
-        "default_model":    baseline_config.DEFAULT_MODEL,
-        "max_steps":        baseline_config.MAX_STEPS,
-        "backend_url":      baseline_config.BACKEND_URL,
-        "backend_key_set":  bool(baseline_config.BACKEND_KEY),
-        "backend_key_preview": _mask(baseline_config.BACKEND_KEY),
-        "coding_model":     baseline_config.CODING_MODEL,
-        "coding_provider":  baseline_config.CODING_PROVIDER,
-        "coding_base_url":  baseline_config.CODING_BASE_URL,
-        "env_path":         str(_ENV_PATH),
-        "env_exists":       _ENV_PATH.exists(),
+        "env_path":   str(_ENV_PATH),
+        "env_exists": _ENV_PATH.exists(),
+        "env_lines":  _env_lines(),
+        # kept for /api/config consumers
+        "max_steps":  baseline_config.MAX_STEPS,
     }
 
 
 class SettingsBody(BaseModel):
-    provider:        Optional[str] = None
-    base_url:        Optional[str] = None
-    api_key:         Optional[str] = None  # None = leave unchanged, "" = clear
-    default_model:   Optional[str] = None
-    max_steps:       Optional[int] = None
-    backend_url:     Optional[str] = None
-    backend_key:     Optional[str] = None
-    coding_model:    Optional[str] = None
-    coding_provider: Optional[str] = None
-    coding_base_url: Optional[str] = None
+    max_steps: Optional[int] = None
 
 
 @app.post("/api/settings")
 async def save_settings(body: SettingsBody):
-    updates: dict = {}
-    if body.provider        is not None: updates["LLM_PROVIDER"]    = body.provider
-    if body.base_url        is not None: updates["LLM_BASE_URL"]    = body.base_url
-    if body.api_key         is not None: updates["LLM_API_KEY"]     = body.api_key
-    if body.default_model   is not None: updates["DEFAULT_MODEL"]   = body.default_model
-    if body.max_steps       is not None: updates["MAX_STEPS"]       = str(body.max_steps)
-    if body.backend_url     is not None: updates["BACKEND_URL"]     = body.backend_url
-    if body.backend_key     is not None: updates["BACKEND_KEY"]     = body.backend_key
-    if body.coding_model    is not None: updates["CODING_MODEL"]    = body.coding_model
-    if body.coding_provider is not None: updates["CODING_PROVIDER"] = body.coding_provider
-    if body.coding_base_url is not None: updates["CODING_BASE_URL"] = body.coding_base_url
-
-    _upsert_env(_ENV_PATH, updates)
-    _reload_config()
+    """Only max_steps is runtime-writable. All other config lives in .env."""
+    if body.max_steps is not None:
+        _upsert_env(_ENV_PATH, {"MAX_STEPS": str(body.max_steps)})
+        _reload_config()
     return {"ok": True}
 
 @app.get("/api/threads")
