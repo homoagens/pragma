@@ -776,15 +776,25 @@ function closeSettings() {
 
 async function reloadEnv() {
   const $btn = document.getElementById("settings-reload-btn");
+  if ($btn.disabled) return;
   $btn.disabled = true;
+  $btn.dataset.orig = $btn.innerHTML;
+  $btn.innerHTML = '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M13.5 8A5.5 5.5 0 1 1 10 3.07"/><polyline points="10 1 10 4 13 4"/></svg> Loading…';
   try {
     const res = await api("POST", "/api/settings/reload");
     document.getElementById("s-env-lines").textContent =
       res.env_lines && res.env_lines.length ? res.env_lines.join("\n") : "(no .env found)";
+    $btn.innerHTML = '✓ Loaded';
+    $btn.classList.add("btn-loaded");
+    setTimeout(() => {
+      $btn.innerHTML = $btn.dataset.orig;
+      $btn.classList.remove("btn-loaded");
+      $btn.disabled = false;
+    }, 1500);
   } catch (e) {
-    alert("Reload failed: " + e.message);
-  } finally {
+    $btn.innerHTML = $btn.dataset.orig;
     $btn.disabled = false;
+    alert("Reload failed: " + e.message);
   }
 }
 

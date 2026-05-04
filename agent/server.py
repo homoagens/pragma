@@ -48,10 +48,8 @@ import config as baseline_config
 import memory as baseline_memory
 from skills import ALL_SKILLS, SKILLS_SUMMARY
 from agent.prompts import build_system_prompt
-from agent.code_skill import CODE_SKILLS
 
-# Merge baseline skill palette + Pragma custom skills
-GEMMA_SKILLS: dict = {**ALL_SKILLS, **CODE_SKILLS}
+GEMMA_SKILLS: dict = dict(ALL_SKILLS)
 
 
 # ── Storage ───────────────────────────────────────────────────────────────────

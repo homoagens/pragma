@@ -623,3 +623,11 @@ details[open] .line-chevron { transform: rotate(90deg); }
   margin-right: auto;
 }
 #settings-reload-btn svg { width: 13px; height: 13px; }
+#settings-reload-btn.btn-loaded {
+  color: #16a34a; border-color: #86efac;
+  background: #f0fdf4;
+}
+[data-theme="dark"] #settings-reload-btn.btn-loaded {
+  color: #4ade80; border-color: #166534;
+  background: #052e16;
+}
