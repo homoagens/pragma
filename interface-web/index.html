@@ -147,6 +147,7 @@
           <select id="s-provider" onchange="updateProviderUI()">
             <option value="openai">openai (Ollama, OpenAI, Groq…)</option>
             <option value="anthropic">anthropic (native API)</option>
+            <option value="backend">backend (custom proxy)</option>
           </select>
         </div>
 
@@ -160,6 +161,18 @@
           <label>API key <span class="opt">(leave empty to keep current)</span></label>
           <input id="s-api-key" type="password" spellcheck="false" autocomplete="off" placeholder="">
           <div class="hint" id="s-api-key-current"></div>
+        </div>
+
+        <div class="sfield" id="s-backend-url-row" style="display:none">
+          <label>Backend URL</label>
+          <input id="s-backend-url" type="text" spellcheck="false" placeholder="http://127.0.0.1:19000">
+          <div class="hint">Base URL of your custom proxy (must expose <code>/llm</code>).</div>
+        </div>
+
+        <div class="sfield" id="s-backend-key-row" style="display:none">
+          <label>Backend key <span class="opt">(leave empty to keep current)</span></label>
+          <input id="s-backend-key" type="password" spellcheck="false" autocomplete="off">
+          <div class="hint" id="s-backend-key-current"></div>
         </div>
 
         <div class="sfield">

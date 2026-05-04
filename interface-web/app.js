@@ -769,14 +769,18 @@ async function openSettings() {
   document.getElementById("s-base-url").value         = cfg.base_url || "";
   document.getElementById("s-default-model").value    = cfg.default_model || "";
   document.getElementById("s-max-steps").value        = cfg.max_steps ?? maxStepsConfig;
+  document.getElementById("s-backend-url").value      = cfg.backend_url || "";
   document.getElementById("s-coding-model").value     = cfg.coding_model || "";
   document.getElementById("s-coding-provider").value  = cfg.coding_provider || "";
   document.getElementById("s-coding-base-url").value  = cfg.coding_base_url || "";
 
   // Don't pre-fill keys; show preview as hint
   document.getElementById("s-api-key").value = "";
+  document.getElementById("s-backend-key").value = "";
   document.getElementById("s-api-key-current").textContent =
     cfg.api_key_set ? `Currently set: ${cfg.api_key_preview}` : "Not set.";
+  document.getElementById("s-backend-key-current").textContent =
+    cfg.backend_key_set ? `Currently set: ${cfg.backend_key_preview}` : "Not set.";
 
   document.getElementById("settings-error").textContent = "";
   $settingsBackdrop.classList.remove("hidden");
@@ -789,9 +793,14 @@ function closeSettings() {
 
 function updateProviderUI() {
   const prov = document.getElementById("s-provider").value;
+  const isBackend = prov === "backend";
+  document.getElementById("s-backend-url-row").style.display = isBackend ? "" : "none";
+  document.getElementById("s-backend-key-row").style.display = isBackend ? "" : "none";
+
   const hint = document.getElementById("s-base-url-hint");
   if (prov === "openai")    hint.textContent = "Leave empty to use the provider default (Ollama at http://localhost:11434/v1).";
   if (prov === "anthropic") hint.textContent = "Leave empty to use https://api.anthropic.com (default).";
+  if (prov === "backend")   hint.textContent = "Optional — overrides the Backend URL field below.";
 }
 
 async function saveSettings() {
@@ -805,13 +814,16 @@ async function saveSettings() {
     base_url:        document.getElementById("s-base-url").value.trim(),
     default_model:   document.getElementById("s-default-model").value.trim(),
     max_steps:       isNaN(maxStepsVal) ? maxStepsConfig : Math.max(1, maxStepsVal),
+    backend_url:     document.getElementById("s-backend-url").value.trim(),
     coding_model:    document.getElementById("s-coding-model").value.trim(),
     coding_provider: document.getElementById("s-coding-provider").value.trim(),
     coding_base_url: document.getElementById("s-coding-base-url").value.trim(),
   };
-  // Only send key if user typed something — empty means "keep current"
+  // Only send keys if user typed something — empty means "keep current"
   const apiKey = document.getElementById("s-api-key").value;
-  if (apiKey) body.api_key = apiKey;
+  const beKey  = document.getElementById("s-backend-key").value;
+  if (apiKey) body.api_key     = apiKey;
+  if (beKey)  body.backend_key = beKey;
 
   $btn.disabled = true;
   $btn.textContent = "Saving…";

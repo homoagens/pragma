@@ -144,6 +144,25 @@ DEFAULT_MODEL=claude-haiku-4-5
 
 </details>
 
+<summary><strong>Custom backend proxy</strong></summary>
+
+If you run your own inference proxy with a non-standard response schema, Pragma has a dedicated `backend` provider that handles it. The proxy must expose a `/llm` endpoint and return:
+
+```json
+{ "raw": { "choices": [{ "message": { "content": "..." } }] } }
+```
+
+```env
+LLM_PROVIDER=backend
+BACKEND_URL=http://your-proxy-host:port
+BACKEND_KEY=your-key
+DEFAULT_MODEL=your-model-name
+```
+
+This is also configurable from the settings panel in the UI.
+
+</details>
+
 ---
 
 ## 📦 Reference setup
