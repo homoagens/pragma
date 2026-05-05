@@ -34,20 +34,14 @@ jobs:
 
       - name: Server imports
         run: |
-          cd pragma 2>/dev/null || true
-          PYTHONPATH=core:agent python -c "
-          import sys
-          sys.path.insert(0, 'core')
-          sys.path.insert(0, 'agent')
+          PYTHONPATH=core:. python -c "
           from agent.server import app
           print('OK: server imports cleanly')
           "
 
       - name: Skill loader
         run: |
-          PYTHONPATH=core python -c "
-          import sys
-          sys.path.insert(0, 'core')
+          PYTHONPATH=core:. python -c "
           from skills import ALL_SKILLS, SKILLS_SUMMARY
           assert 'code' in ALL_SKILLS, 'code skill missing'
           assert 'execute_command' in ALL_SKILLS, 'execute_command missing'
