@@ -5,4 +5,4 @@ ignore = [
     "E402",   # module-level import not at top — intentional in server.py (path setup)
     "E701",   # multiple statements on one line — intentional compact style for try/except
 ]
-exclude = ["venv", ".git", "core/skills/_template"]
+exclude = ["venv", ".git", "core/skills/_template", "*/_template/*"]
