@@ -30,7 +30,7 @@ jobs:
 
       - name: Lint (ruff)
         run: |
-          ruff check . --exclude venv --select E,F,W --ignore E501
+          ruff check .
 
       - name: Server imports
         run: |

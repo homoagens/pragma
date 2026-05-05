@@ -17,7 +17,7 @@
 
 import json
 import threading
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable, Optional
 
@@ -258,7 +258,7 @@ def run_agent(cfg: AgentConfig, user_task: str, log_path: Optional[Path] = None,
 
     # ── Steps exhausted — forced verdict ─────────────────────────────
     if config.DEBUG:
-        console.print(f"[yellow]Steps exhausted — requesting forced verdict...[/yellow]")
+        console.print("[yellow]Steps exhausted — requesting forced verdict...[/yellow]")
     final_list = " or ".join(f'"{k}"' for k in cfg.final_keys)
     messages.append({
         "role": "user",

@@ -37,7 +37,7 @@ def main():
         os.chdir(target)
 
     cwd = os.getcwd()
-    print(f"Pragma")
+    print("Pragma")
     print(f"  workdir : {cwd}")
     print(f"  server  : http://{args.host}:{args.port}")
     print(f"  UI      : http://{args.host}:{args.port}/")

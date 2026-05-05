@@ -38,7 +38,7 @@ def todo_create(tasks, output_path: str = "todo.json") -> str:
                 raw = [parsed]
         except json.JSONDecodeError:
             # Plain text: one task per line
-            lines = [l.strip() for l in tasks.strip().splitlines() if l.strip()]
+            lines = [ln.strip() for ln in tasks.strip().splitlines() if ln.strip()]
             raw = lines  # will be handled as strings in step 2
     else:
         return f"ERROR: unexpected tasks type: {type(tasks).__name__}"

@@ -6,7 +6,6 @@ from pathlib import Path
 from typing import Any
 
 import llm_client
-import config
 
 
 def vision_interpret(image_path: str, question: str,

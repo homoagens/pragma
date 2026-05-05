@@ -31,7 +31,7 @@ def _load_skills():
             text = readme.read_text(encoding="utf-8")
             summary_part = text.split("---")[0].strip()
             # Extract just the description line (after the # title)
-            lines = [l for l in summary_part.splitlines() if l.strip() and not l.startswith("#")]
+            lines = [ln for ln in summary_part.splitlines() if ln.strip() and not ln.startswith("#")]
             summary = lines[0] if lines else summary_part
             summaries.append(f"**{folder.name}**: {summary}")
     return registry, "\n".join(summaries)

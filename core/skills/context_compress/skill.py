@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from typing import Any
 
-import config
 
 
 def context_compress(messages: list[dict], label: str = "context",

@@ -24,7 +24,7 @@ from pathlib import Path
 from typing import Optional
 
 from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
@@ -161,7 +161,8 @@ async def index():
 
 @app.post("/api/quit")
 async def quit_app():
-    import asyncio, os as _os
+    import asyncio
+    import os as _os
     asyncio.get_event_loop().call_later(0.3, lambda: _os._exit(0))
     return {"ok": True}
 
@@ -520,7 +521,7 @@ async def websocket_endpoint(ws: WebSocket):
             lines.append(f"User: {h['user']}")
             lines.append(f"Pragma: {h['conclusion']}")
         return (
-            f"[Previous conversation — use as context]\n" +
+            "[Previous conversation — use as context]\n" +
             "\n".join(lines) +
             f"\n\n[Current request]\n{task_text}"
         )

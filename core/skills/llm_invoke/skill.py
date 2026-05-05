@@ -3,7 +3,6 @@ from __future__ import annotations
 from typing import Any
 
 import llm_client
-import config
 
 
 def llm_invoke(system_prompt: str, user_message: str,
