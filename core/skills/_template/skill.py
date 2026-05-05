@@ -16,8 +16,8 @@
 from __future__ import annotations
 
 # Import standard — ok a top-level perché sempre disponibili
-import json
-from pathlib import Path
+import json  # noqa: F401
+from pathlib import Path  # noqa: F401
 
 # Import dal core — ok a top-level (core/ è in sys.path)
 # import llm_client          # per skill H e G
@@ -33,7 +33,7 @@ from pathlib import Path
 #       ...
 
 # Utility condivise
-from skills._utils import _now   # timestamp UTC
+from skills._utils import _now   # noqa: F401  # timestamp UTC
 
 
 # ── Helper interni ────────────────────────────────────────────
