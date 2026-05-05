@@ -196,6 +196,20 @@ CODING_MODEL=qwen2.5-coder
 
 > New to Ollama? Two-minute setup at [ollama.com](https://ollama.com).
 
+#### Hardware requirements
+
+Pragma runs wherever Ollama runs well. The bottleneck is always the model, not Pragma itself.
+
+| | Minimum | Tested on |
+|---|---|---|
+| GPU VRAM | ~12 GB | NVIDIA RTX A2000 12 GB |
+| RAM | 16 GB | 128 GB |
+| CPU | Any modern x86\_64 | Intel Xeon Silver 4314 (32 cores) |
+
+- **12 GB VRAM** is enough to run Gemma 4 E4B Q8 or similar reasoning models.
+- **24 GB VRAM** gives comfortable headroom for both models loaded simultaneously.
+- CPU-only is possible with smaller/quantized models but will be slow.
+
 ---
 
 ## 🗂 Architecture
