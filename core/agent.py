@@ -48,6 +48,7 @@ class AgentConfig:
     skill_context: object = None
     skill_context_kwarg: str = "context"  # kwarg name used to inject it
     stop_event: Optional[threading.Event] = None  # set() to interrupt the loop
+    on_token:   Optional[Callable] = None          # called with each streamed text chunk
 
 
 def _log_step(log_path: Path, entry: dict):
@@ -165,11 +166,18 @@ def run_agent(cfg: AgentConfig, user_task: str, log_path: Optional[Path] = None,
 
         # ── LLM call ─────────────────────────────────────────────────
         try:
-            text = llm_client.call_llm(
-                messages=messages, model=model,
-                temperature=temperature, max_tokens=config.MAX_TOKENS,
-                stop_event=cfg.stop_event,
-            )
+            if cfg.on_token is not None:
+                text = llm_client.stream_llm(
+                    messages=messages, model=model,
+                    temperature=temperature, max_tokens=config.MAX_TOKENS,
+                    stop_event=cfg.stop_event, on_token=cfg.on_token,
+                )
+            else:
+                text = llm_client.call_llm(
+                    messages=messages, model=model,
+                    temperature=temperature, max_tokens=config.MAX_TOKENS,
+                    stop_event=cfg.stop_event,
+                )
         except llm_client.LLMInterrupted:
             _emit({"type": "stopped", "content": "Task interrupted by user."})
             return None
@@ -273,11 +281,18 @@ def run_agent(cfg: AgentConfig, user_task: str, log_path: Optional[Path] = None,
                                f"forced {cfg.name}", model=model)
 
     try:
-        text = llm_client.call_llm(
-            messages=messages, model=model,
-            temperature=temperature, max_tokens=config.MAX_TOKENS,
-            stop_event=cfg.stop_event,
-        )
+        if cfg.on_token is not None:
+            text = llm_client.stream_llm(
+                messages=messages, model=model,
+                temperature=temperature, max_tokens=config.MAX_TOKENS,
+                stop_event=cfg.stop_event, on_token=cfg.on_token,
+            )
+        else:
+            text = llm_client.call_llm(
+                messages=messages, model=model,
+                temperature=temperature, max_tokens=config.MAX_TOKENS,
+                stop_event=cfg.stop_event,
+            )
         response = extract_json(text)
     except llm_client.LLMInterrupted:
         _emit({"type": "stopped", "content": "Task interrupted by user."})

@@ -265,6 +265,17 @@ header {
   margin: 6px 0;
 }
 
+/* ── Streaming tokens ── */
+.block-streaming {
+  font-family: var(--font-mono); font-size: 11.5px;
+  color: var(--text-muted);
+  padding: 4px 10px;
+  white-space: pre-wrap; word-break: break-word;
+  border-left: 2px solid var(--border-2);
+  margin: 2px 0;
+  max-height: 180px; overflow-y: auto;
+}
+
 /* ── Thinking spinner ── */
 .block-thinking {
   background: transparent; border: none;

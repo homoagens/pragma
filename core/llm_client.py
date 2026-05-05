@@ -227,6 +227,146 @@ def _call_anthropic(messages, model, temperature, max_tokens, timeout, base_url,
     return text, finish
 
 
+# ── Streaming helpers ──────────────────────────────────────────────────────────
+
+def _stream_openai_compatible(messages, model, temperature, max_tokens, timeout,
+                               base_url, api_key, stop_event, on_token):
+    """Stream from an OpenAI-compatible /chat/completions endpoint (SSE)."""
+    import json as _json
+    payload = {
+        "model":       model,
+        "messages":    messages,
+        "temperature": temperature,
+        "max_tokens":  max_tokens,
+        "stream":      True,
+    }
+    headers = {"Content-Type": "application/json"}
+    if api_key:
+        headers["Authorization"] = f"Bearer {api_key}"
+
+    text = ""
+    finish = ""
+    with requests.Session() as session:
+        with session.post(
+            f"{base_url}/chat/completions",
+            headers=headers, json=payload,
+            stream=True, timeout=timeout,
+        ) as resp:
+            resp.raise_for_status()
+            for line in resp.iter_lines():
+                if stop_event and stop_event.is_set():
+                    raise LLMInterrupted("LLM call aborted by stop signal")
+                if not line:
+                    continue
+                if isinstance(line, bytes):
+                    line = line.decode("utf-8")
+                if not line.startswith("data: "):
+                    continue
+                data = line[6:].strip()
+                if data == "[DONE]":
+                    break
+                try:
+                    chunk = _json.loads(data)
+                except Exception:
+                    continue
+                choice = chunk.get("choices", [{}])[0]
+                content = (choice.get("delta") or {}).get("content") or ""
+                if content:
+                    text += content
+                    if on_token:
+                        on_token(content)
+                fin = choice.get("finish_reason")
+                if fin:
+                    finish = fin
+
+    if finish == "length":
+        raise RuntimeError(
+            f"Response truncated (finish_reason=length). Partial: {text[:100]!r}"
+        )
+    if not text:
+        raise RuntimeError("The model returned an empty response.")
+    return text
+
+
+def _stream_anthropic(messages, model, temperature, max_tokens, timeout,
+                       base_url, api_key, stop_event, on_token):
+    """Stream from the native Anthropic API (SSE)."""
+    import json as _json
+
+    system_content = ""
+    user_messages = []
+    for m in messages:
+        if m.get("role") == "system" and not user_messages:
+            system_content = m.get("content", "")
+        else:
+            role = m.get("role", "user")
+            if role not in ("user", "assistant"):
+                role = "user"
+            user_messages.append({"role": role, "content": m.get("content", "")})
+    if not user_messages:
+        user_messages = [{"role": "user", "content": ""}]
+
+    payload = {
+        "model":       model,
+        "messages":    user_messages,
+        "max_tokens":  max_tokens,
+        "temperature": temperature,
+        "stream":      True,
+    }
+    if system_content:
+        payload["system"] = system_content
+
+    headers = {
+        "Content-Type":      "application/json",
+        "x-api-key":         api_key,
+        "anthropic-version": ANTHROPIC_VERSION,
+    }
+
+    text = ""
+    finish = ""
+    with requests.Session() as session:
+        with session.post(
+            f"{base_url}/v1/messages",
+            headers=headers, json=payload,
+            stream=True, timeout=timeout,
+        ) as resp:
+            resp.raise_for_status()
+            for line in resp.iter_lines():
+                if stop_event and stop_event.is_set():
+                    raise LLMInterrupted("LLM call aborted by stop signal")
+                if not line:
+                    continue
+                if isinstance(line, bytes):
+                    line = line.decode("utf-8")
+                if not line.startswith("data: "):
+                    continue
+                data = line[6:].strip()
+                try:
+                    ev = _json.loads(data)
+                except Exception:
+                    continue
+                ev_type = ev.get("type", "")
+                if ev_type == "content_block_delta":
+                    delta = ev.get("delta", {})
+                    if delta.get("type") == "text_delta":
+                        content = delta.get("text", "")
+                        if content:
+                            text += content
+                            if on_token:
+                                on_token(content)
+                elif ev_type == "message_delta":
+                    if ev.get("delta", {}).get("stop_reason") == "max_tokens":
+                        finish = "length"
+
+    if finish == "length":
+        raise RuntimeError(
+            f"Response truncated (finish_reason=length). Partial: {text[:100]!r}"
+        )
+    if not text:
+        raise RuntimeError("The model returned an empty response.")
+    return text
+
+
 # ── Public API ─────────────────────────────────────────────────────────────────
 
 def call_llm(messages, model=None, temperature=None, max_tokens=None, timeout=None,
@@ -273,6 +413,55 @@ def call_llm(messages, model=None, temperature=None, max_tokens=None, timeout=No
         raise RuntimeError("The model returned an empty response.")
 
     return text
+
+
+def stream_llm(messages, model=None, temperature=None, max_tokens=None, timeout=None,
+               provider=None, base_url=None, api_key=None, stop_event=None,
+               on_token=None):
+    """
+    Like call_llm but calls on_token(chunk: str) for each text fragment as it arrives.
+    Returns the complete response text when done.
+
+    The 'backend' provider does not support SSE streaming — it falls back to a
+    regular call_llm and invokes on_token once with the full response.
+    """
+    if model       is None: model       = config.DEFAULT_MODEL
+    if temperature is None: temperature = config.DEFAULT_TEMPERATURE
+    if max_tokens  is None: max_tokens  = config.MAX_TOKENS
+    if timeout     is None: timeout     = config.TIMEOUT
+
+    prov, url, key = _resolved_endpoint(provider, base_url, api_key)
+
+    if prov == "backend":
+        # No streaming support — regular call, then fire on_token once with the
+        # thought portion (or the full text if parsing fails) as a preview.
+        text, finish = _call_backend(
+            messages, model, temperature, max_tokens, timeout, url, key, stop_event
+        )
+        if finish == "length":
+            raise RuntimeError(
+                f"Response truncated (finish_reason=length). Partial: {text[:100]!r}"
+            )
+        if not text:
+            raise RuntimeError("The model returned an empty response.")
+        if on_token:
+            import json as _json
+            try:
+                _preview = _json.loads(text).get("thought") or text
+            except Exception:
+                _preview = text
+            on_token(_preview)
+        return text
+    elif prov == "openai":
+        return _stream_openai_compatible(
+            messages, model, temperature, max_tokens, timeout, url, key, stop_event, on_token
+        )
+    elif prov == "anthropic":
+        return _stream_anthropic(
+            messages, model, temperature, max_tokens, timeout, url, key, stop_event, on_token
+        )
+    else:
+        raise ValueError(f"Unknown LLM provider: {prov!r}.")
 
 
 if __name__ == "__main__":

@@ -82,6 +82,7 @@ let running     = false;
 let isReadOnly  = false;
 let answerMode  = false;
 let thinkingEl  = null;
+let streamingEl = null;
 let askUserEl   = null;
 
 let defaultCwd     = "";
@@ -412,9 +413,24 @@ function handleEvent(ev) {
       reloadThreads();
       break;
 
+    case "token":
+      removeThinking();
+      if (!streamingEl) {
+        hideWelcome();
+        streamingEl = document.createElement("div");
+        streamingEl.className = "block-streaming";
+        streamingEl.dataset.raw = "";
+        $messages.appendChild(streamingEl);
+      }
+      streamingEl.dataset.raw += ev.content;
+      streamingEl.textContent = extractStreamingPreview(streamingEl.dataset.raw);
+      scrollBottom();
+      break;
+
     case "thought":
       if (ev.step != null) liveStep = ev.step;
       liveChars += (ev.content || "").length;
+      removeStreaming();
       removeThinking();
       activateBadge("reasoning");
       appendCollapsible("thought", "Thought", ev.content, ev.step);
@@ -440,11 +456,13 @@ function handleEvent(ev) {
 
     case "final":
       liveChars += (ev.content || "").length;
+      removeStreaming();
       removeThinking();
       appendFinal(ev.content);
       break;
 
     case "error":
+      removeStreaming();
       removeThinking();
       appendCollapsible("error", "Error", ev.content, ev.step);
       break;
@@ -485,6 +503,73 @@ function handleEvent(ev) {
 
 function hideWelcome() { document.getElementById("welcome")?.remove(); }
 
+/**
+ * Extract an unescaped JSON string value starting right after the opening ".
+ * Returns the decoded text (partial if the closing " hasn't arrived yet).
+ */
+function _jsonStrValue(raw, afterOpenQuote) {
+  const content = raw.slice(afterOpenQuote);
+  let result = "";
+  for (let i = 0; i < content.length; i++) {
+    if (content[i] === "\\") {
+      i++;
+      if (i < content.length) {
+        if      (content[i] === "n") result += "\n";
+        else if (content[i] === "t") result += "\t";
+        else                          result += content[i];
+      }
+    } else if (content[i] === '"') {
+      break;
+    } else {
+      result += content[i];
+    }
+  }
+  return result;
+}
+
+/**
+ * Given a buffer of streaming tokens from the model (raw JSON like
+ * {"thought":"...","action":"...","args":{...}}), build a human-readable
+ * preview extracting thought, action name, and args as they arrive.
+ * If the buffer is not JSON (backend provider already extracts thought),
+ * return it as-is.
+ */
+function extractStreamingPreview(raw) {
+  // Strip optional markdown code fence (```json ... ``` or ``` ... ```)
+  const stripped = raw.replace(/^```[a-z]*\n?/i, "").replace(/```\s*$/, "").trim();
+  if (!stripped.startsWith("{")) return stripped;
+
+  const parts = [];
+
+  // ── thought ──────────────────────────────────────────────────────────────
+  const tMatch = stripped.match(/"thought"\s*:\s*"/);
+  if (tMatch) {
+    const thought = _jsonStrValue(stripped, tMatch.index + tMatch[0].length);
+    if (thought) parts.push(thought);
+  }
+
+  // ── action ───────────────────────────────────────────────────────────────
+  const aMatch = stripped.match(/"action"\s*:\s*"/);
+  if (aMatch) {
+    const action = _jsonStrValue(stripped, aMatch.index + aMatch[0].length);
+    if (action) {
+      // ── args (optional, may still be streaming) ───────────────────────
+      const argsMatch = stripped.match(/"args"\s*:\s*(\{[^}]*\}?)/);
+      const argsStr   = argsMatch ? argsMatch[1].replace(/\s+/g, " ").trim() : "";
+      parts.push("→ " + action + (argsStr ? " " + argsStr : ""));
+    }
+  }
+
+  // ── conclusion (final answer, no action) ─────────────────────────────────
+  const cMatch = stripped.match(/"conclusion"\s*:\s*"/);
+  if (cMatch && !aMatch) {
+    const concl = _jsonStrValue(stripped, cMatch.index + cMatch[0].length);
+    if (concl) parts.push(concl);
+  }
+
+  return parts.join("\n");
+}
+
 function appendUserMessage(text) {
   hideWelcome();
   const div = document.createElement("div");
@@ -505,6 +590,10 @@ function showThinking(label = "Thinking…") {
 
 function removeThinking() {
   if (thinkingEl) { thinkingEl.remove(); thinkingEl = null; }
+}
+
+function removeStreaming() {
+  if (streamingEl) { streamingEl.remove(); streamingEl = null; }
 }
 
 // Compact inline collapsible — arrow + label + step, body reveals on click.

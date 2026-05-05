@@ -373,25 +373,31 @@ async def api_delete_thread(thread_id: str):
 # We wrap them to use the thread's cwd, without doing a global os.chdir
 # (which would break concurrency across different WebSocket connections).
 
+def _abs_path(path: str, base: str) -> str:
+    """Return an absolute path: relative paths are anchored to base."""
+    p = Path(path)
+    return str(p) if p.is_absolute() else str(Path(base) / path)
+
+
 def _build_thread_skills(thread_cwd: str,
                          ws_ask_user,
                          stop_event=None) -> dict:
     skills = dict(GEMMA_SKILLS)
     skills["ask_user"] = ws_ask_user
 
-    # execute_command: default cwd = thread_cwd, plus stop_event for mid-run abort
+    # ── execute_command: default cwd = thread_cwd + stop_event ───────────────
     original_exec = GEMMA_SKILLS.get("execute_command")
     if original_exec:
         def exec_wrapped(command: str, cwd: str = "", timeout: int = 60,
                          capture_stderr: bool = True, max_output_chars: int = 10_000):
-            actual_cwd = cwd.strip() if cwd else thread_cwd
+            actual_cwd = _abs_path(cwd.strip(), thread_cwd) if cwd.strip() else thread_cwd
             return original_exec(command=command, cwd=actual_cwd, timeout=timeout,
                                  capture_stderr=capture_stderr,
                                  max_output_chars=max_output_chars,
                                  stop_event=stop_event)
         skills["execute_command"] = exec_wrapped
 
-    # understand_cwd: chiamata dentro _chdir_lock con chdir temporaneo
+    # ── understand_cwd: temporary chdir so Path.cwd() returns thread_cwd ──────
     original_uc = GEMMA_SKILLS.get("understand_cwd")
     if original_uc:
         def uc_wrapped(max_depth: int = 3):
@@ -404,6 +410,49 @@ def _build_thread_skills(thread_cwd: str,
                 finally:
                     os.chdir(saved)
         skills["understand_cwd"] = uc_wrapped
+
+    # ── Filesystem skills: resolve relative / empty paths against thread_cwd ──
+    #
+    # list_dir, glob_match, grep_search default to "." which would resolve
+    # against os.getcwd() (the Pragma process root), NOT the user's project.
+    # read_file / write_file / edit_file require explicit paths, but the model
+    # sometimes passes relative names — anchor them too.
+
+    orig_ld = GEMMA_SKILLS.get("list_dir")
+    if orig_ld:
+        def list_dir_wrapped(path: str = "", show_hidden: bool = False,
+                             max_entries: int = 200):
+            return orig_ld(path=_abs_path(path, thread_cwd) if path else thread_cwd,
+                           show_hidden=show_hidden, max_entries=max_entries)
+        skills["list_dir"] = list_dir_wrapped
+
+    orig_gm = GEMMA_SKILLS.get("glob_match")
+    if orig_gm:
+        def glob_match_wrapped(pattern: str, base_path: str = ""):
+            return orig_gm(pattern=pattern,
+                           base_path=_abs_path(base_path, thread_cwd) if base_path else thread_cwd)
+        skills["glob_match"] = glob_match_wrapped
+
+    orig_gs = GEMMA_SKILLS.get("grep_search")
+    if orig_gs:
+        def grep_search_wrapped(pattern: str, path: str = "",
+                                file_glob: str = "*", ignore_case: bool = False,
+                                max_results: int = 100):
+            return orig_gs(pattern=pattern,
+                           path=_abs_path(path, thread_cwd) if path else thread_cwd,
+                           file_glob=file_glob, ignore_case=ignore_case,
+                           max_results=max_results)
+        skills["grep_search"] = grep_search_wrapped
+
+    for _name in ("read_file", "write_file", "edit_file"):
+        _orig = GEMMA_SKILLS.get(_name)
+        if _orig:
+            def _make_wrapped(fn):
+                def wrapped(path: str, **kwargs):
+                    return fn(path=_abs_path(path, thread_cwd), **kwargs)
+                wrapped.__name__ = fn.__name__
+                return wrapped
+            skills[_name] = _make_wrapped(_orig)
 
     return skills
 
@@ -426,7 +475,7 @@ async def websocket_endpoint(ws: WebSocket):
         # Notify the client of the new thread_id
         await ws.send_json({"type": "thread_created", "thread": thread_data})
 
-    loop = asyncio.get_event_loop()
+    loop = asyncio.get_running_loop()
     async_queue: asyncio.Queue = asyncio.Queue()
 
     # ask_user state
@@ -625,6 +674,12 @@ async def websocket_endpoint(ws: WebSocket):
                             coding_model   = coding_model,
                             skills_summary = SKILLS_SUMMARY,
                         )
+                        def on_token(chunk: str):
+                            loop.call_soon_threadsafe(
+                                async_queue.put_nowait,
+                                {"type": "token", "content": chunk},
+                            )
+
                         cfg = AgentConfig(
                             name          = "Pragma",
                             system_prompt = system_prompt,
@@ -634,6 +689,7 @@ async def websocket_endpoint(ws: WebSocket):
                             temperature   = 0.2,
                             max_steps     = _max_steps,
                             stop_event    = _stop,
+                            on_token      = on_token,
                         )
 
                         _steps       = [0]
