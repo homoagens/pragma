@@ -1,0 +1,65 @@
+name: CI
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+    branches: [master]
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install ruff
+
+      - name: Syntax check (all .py files)
+        run: |
+          find . -name "*.py" -not -path "./.git/*" -not -path "./venv/*" \
+            | xargs python -m py_compile
+
+      - name: Lint (ruff)
+        run: |
+          ruff check . --exclude venv --select E,F,W --ignore E501
+
+      - name: Server imports
+        run: |
+          cd pragma 2>/dev/null || true
+          PYTHONPATH=core:agent python -c "
+          import sys
+          sys.path.insert(0, 'core')
+          sys.path.insert(0, 'agent')
+          from agent.server import app
+          print('OK: server imports cleanly')
+          "
+
+      - name: Skill loader
+        run: |
+          PYTHONPATH=core python -c "
+          import sys
+          sys.path.insert(0, 'core')
+          from skills import ALL_SKILLS, SKILLS_SUMMARY
+          assert 'code' in ALL_SKILLS, 'code skill missing'
+          assert 'execute_command' in ALL_SKILLS, 'execute_command missing'
+          assert 'read_file' in ALL_SKILLS, 'read_file missing'
+          print(f'OK: {len(ALL_SKILLS)} skills loaded')
+          print(ALL_SKILLS.keys())
+          "
+
+      - name: No .env in repo
+        run: |
+          if git ls-files | grep -qE '^\.env$'; then
+            echo "ERROR: .env is tracked by git — remove it immediately"
+            exit 1
+          fi
+          echo "OK: .env is not in repo"
