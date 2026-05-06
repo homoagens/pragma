@@ -420,7 +420,7 @@ function handleEvent(ev) {
       if (!reasoningStreamEl) {
         hideWelcome();
         reasoningStreamEl = document.createElement("div");
-        reasoningStreamEl.className = "block-streaming";
+        reasoningStreamEl.className = "block-streaming block-streaming-reasoning";
         reasoningStreamRaw = "";
         $messages.appendChild(reasoningStreamEl);
       }
