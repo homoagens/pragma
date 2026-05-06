@@ -83,7 +83,8 @@ let isReadOnly  = false;
 let answerMode  = false;
 let thinkingEl  = null;
 let streamingEl = null;
-let reasoningEl = null;   // live <details> for reasoning_content (thinking phase)
+let reasoningStreamEl  = null;   // lightweight live preview while reasoning_content streams
+let reasoningStreamRaw = "";     // accumulated reasoning text
 let askUserEl   = null;
 
 let defaultCwd     = "";
@@ -416,21 +417,21 @@ function handleEvent(ev) {
 
     case "reasoning":
       removeThinking();
-      if (!reasoningEl) {
-        // Use the same structure as thought/observation/etc. for graphical alignment
-        reasoningEl = appendCollapsible("reasoning", "Thinking", "", null);
-        reasoningEl.open = true;
-        reasoningEl.dataset.raw = "";
+      if (!reasoningStreamEl) {
+        hideWelcome();
+        reasoningStreamEl = document.createElement("div");
+        reasoningStreamEl.className = "block-streaming";
+        reasoningStreamRaw = "";
+        $messages.appendChild(reasoningStreamEl);
       }
-      reasoningEl.dataset.raw += ev.content;
-      reasoningEl.querySelector(".line-body").innerHTML =
-        renderMd(reasoningEl.dataset.raw);
+      reasoningStreamRaw += ev.content;
+      reasoningStreamEl.textContent = reasoningStreamRaw;
       scrollBottom();
       break;
 
     case "token":
       removeThinking();
-      collapseReasoning();
+      finalizeReasoning();
       if (!streamingEl) {
         hideWelcome();
         streamingEl = document.createElement("div");
@@ -448,7 +449,7 @@ function handleEvent(ev) {
       liveChars += (ev.content || "").length;
       removeStreaming();
       removeThinking();
-      collapseReasoning();
+      finalizeReasoning();
       activateBadge("reasoning");
       appendCollapsible("thought", "Thought", ev.content, ev.step);
       showThinking();
@@ -475,14 +476,14 @@ function handleEvent(ev) {
       liveChars += (ev.content || "").length;
       removeStreaming();
       removeThinking();
-      collapseReasoning();
+      finalizeReasoning();
       appendFinal(ev.content);
       break;
 
     case "error":
       removeStreaming();
       removeThinking();
-      collapseReasoning();
+      finalizeReasoning();
       appendCollapsible("error", "Error", ev.content, ev.step);
       break;
 
@@ -497,6 +498,7 @@ function handleEvent(ev) {
 
     case "stopped":
       removeThinking();
+      finalizeReasoning();
       clearInterval(timerInterval); timerInterval = null;
       if ($runStats) { $runStats.className = ""; $runStats.textContent = "↓ Stopped"; }
       resetBadges();
@@ -507,6 +509,7 @@ function handleEvent(ev) {
 
     case "done":
       removeThinking();
+      finalizeReasoning();
       clearInterval(timerInterval); timerInterval = null;
       showFinalStats();
       resetBadges();
@@ -615,11 +618,18 @@ function removeStreaming() {
   if (streamingEl) { streamingEl.remove(); streamingEl = null; }
 }
 
-function collapseReasoning() {
-  if (reasoningEl) {
-    reasoningEl.open = false;
-    reasoningEl = null;
-  }
+/**
+ * Replace the lightweight live reasoning stream with a collapsed
+ * `· REASONING` summary line (same structure as thought/observation),
+ * clickable to expand the full accumulated text.
+ */
+function finalizeReasoning() {
+  if (!reasoningStreamEl) return;
+  reasoningStreamEl.remove();
+  reasoningStreamEl = null;
+  const text = reasoningStreamRaw.trim();
+  reasoningStreamRaw = "";
+  if (text) appendCollapsible("reasoning", "Reasoning", text, null);
 }
 
 // Compact inline collapsible — arrow + label + step, body reveals on click.
