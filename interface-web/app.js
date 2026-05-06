@@ -429,7 +429,7 @@ function handleEvent(ev) {
         reasoningEl.appendChild(rBody);
         $messages.appendChild(reasoningEl);
       }
-      reasoningEl.querySelector(".line-body-reasoning").textContent += ev.content;
+      reasoningEl.querySelector(".line-body").textContent += ev.content;
       scrollBottom();
       break;
 
