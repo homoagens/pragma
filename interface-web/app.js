@@ -417,19 +417,14 @@ function handleEvent(ev) {
     case "reasoning":
       removeThinking();
       if (!reasoningEl) {
-        hideWelcome();
-        reasoningEl = document.createElement("details");
-        reasoningEl.className = "agent-line line-reasoning";
+        // Use the same structure as thought/observation/etc. for graphical alignment
+        reasoningEl = appendCollapsible("reasoning", "Thinking", "", null);
         reasoningEl.open = true;
-        const rSum = document.createElement("summary");
-        rSum.innerHTML = `<span class="line-chevron">▸</span><span class="line-type">thinking</span>`;
-        const rBody = document.createElement("div");
-        rBody.className = "line-body";
-        reasoningEl.appendChild(rSum);
-        reasoningEl.appendChild(rBody);
-        $messages.appendChild(reasoningEl);
+        reasoningEl.dataset.raw = "";
       }
-      reasoningEl.querySelector(".line-body").textContent += ev.content;
+      reasoningEl.dataset.raw += ev.content;
+      reasoningEl.querySelector(".line-body").innerHTML =
+        renderMd(reasoningEl.dataset.raw);
       scrollBottom();
       break;
 
@@ -623,9 +618,6 @@ function removeStreaming() {
 function collapseReasoning() {
   if (reasoningEl) {
     reasoningEl.open = false;
-    // Belt-and-suspenders: explicitly hide the body so no empty card remains
-    const body = reasoningEl.querySelector(".line-body");
-    if (body) body.style.display = "none";
     reasoningEl = null;
   }
 }
@@ -649,7 +641,8 @@ function appendCollapsible(type, label, content, step, actionName = "") {
   `;
 
   const body = document.createElement("div");
-  const useMarkdown = (type === "thought" || type === "observation" || type === "error");
+  const useMarkdown = (type === "thought" || type === "observation"
+                       || type === "error" || type === "reasoning");
   if (useMarkdown) {
     body.className = "line-body markdown-body";
     body.innerHTML = renderMd(content);
@@ -662,6 +655,7 @@ function appendCollapsible(type, label, content, step, actionName = "") {
   el.appendChild(body);
   $messages.appendChild(el);
   scrollBottom();
+  return el;
 }
 
 function appendFinal(text) {
