@@ -230,7 +230,8 @@ def _call_anthropic(messages, model, temperature, max_tokens, timeout, base_url,
 # ── Streaming helpers ──────────────────────────────────────────────────────────
 
 def _stream_openai_compatible(messages, model, temperature, max_tokens, timeout,
-                               base_url, api_key, stop_event, on_token):
+                               base_url, api_key, stop_event, on_token,
+                               on_reasoning=None):
     """Stream from an OpenAI-compatible /chat/completions endpoint (SSE)."""
     import json as _json
     payload = {
@@ -270,7 +271,11 @@ def _stream_openai_compatible(messages, model, temperature, max_tokens, timeout,
                 except Exception:
                     continue
                 choice = chunk.get("choices", [{}])[0]
-                content = (choice.get("delta") or {}).get("content") or ""
+                delta = choice.get("delta") or {}
+                reasoning = delta.get("reasoning_content") or ""
+                content   = delta.get("content") or ""
+                if reasoning and on_reasoning:
+                    on_reasoning(reasoning)
                 if content:
                     text += content
                     if on_token:
@@ -289,7 +294,8 @@ def _stream_openai_compatible(messages, model, temperature, max_tokens, timeout,
 
 
 def _stream_anthropic(messages, model, temperature, max_tokens, timeout,
-                       base_url, api_key, stop_event, on_token):
+                       base_url, api_key, stop_event, on_token,
+                       on_reasoning=None):
     """Stream from the native Anthropic API (SSE)."""
     import json as _json
 
@@ -348,7 +354,11 @@ def _stream_anthropic(messages, model, temperature, max_tokens, timeout,
                 ev_type = ev.get("type", "")
                 if ev_type == "content_block_delta":
                     delta = ev.get("delta", {})
-                    if delta.get("type") == "text_delta":
+                    if delta.get("type") == "thinking_delta":
+                        reasoning = delta.get("thinking", "")
+                        if reasoning and on_reasoning:
+                            on_reasoning(reasoning)
+                    elif delta.get("type") == "text_delta":
                         content = delta.get("text", "")
                         if content:
                             text += content
@@ -368,7 +378,7 @@ def _stream_anthropic(messages, model, temperature, max_tokens, timeout,
 
 
 def _stream_backend(messages, model, temperature, max_tokens, timeout,
-                    base_url, api_key, stop_event, on_token):
+                    base_url, api_key, stop_event, on_token, on_reasoning=None):
     """Stream from the backend's /llm/stream SSE endpoint.
 
     The backend proxies llama.cpp's SSE verbatim, so the format is identical
@@ -410,8 +420,12 @@ def _stream_backend(messages, model, temperature, max_tokens, timeout,
                     chunk = _json.loads(data)
                 except Exception:
                     continue
-                choice  = chunk.get("choices", [{}])[0]
-                content = (choice.get("delta") or {}).get("content") or ""
+                choice    = chunk.get("choices", [{}])[0]
+                delta     = choice.get("delta") or {}
+                reasoning = delta.get("reasoning_content") or ""
+                content   = delta.get("content") or ""
+                if reasoning and on_reasoning:
+                    on_reasoning(reasoning)
                 if content:
                     text += content
                     if on_token:
@@ -479,7 +493,7 @@ def call_llm(messages, model=None, temperature=None, max_tokens=None, timeout=No
 
 def stream_llm(messages, model=None, temperature=None, max_tokens=None, timeout=None,
                provider=None, base_url=None, api_key=None, stop_event=None,
-               on_token=None):
+               on_token=None, on_reasoning=None):
     """
     Like call_llm but calls on_token(chunk: str) for each text fragment as it arrives.
     Returns the complete response text when done.

@@ -47,8 +47,9 @@ class AgentConfig:
     # (e.g. case_dir, log_dir, session_id). None = not passed.
     skill_context: object = None
     skill_context_kwarg: str = "context"  # kwarg name used to inject it
-    stop_event: Optional[threading.Event] = None  # set() to interrupt the loop
-    on_token:   Optional[Callable] = None          # called with each streamed text chunk
+    stop_event:    Optional[threading.Event] = None  # set() to interrupt the loop
+    on_token:      Optional[Callable] = None  # called with each streamed text chunk
+    on_reasoning:  Optional[Callable] = None  # called with each reasoning_content chunk
 
 
 def _log_step(log_path: Path, entry: dict):
@@ -171,6 +172,7 @@ def run_agent(cfg: AgentConfig, user_task: str, log_path: Optional[Path] = None,
                     messages=messages, model=model,
                     temperature=temperature, max_tokens=config.MAX_TOKENS,
                     stop_event=cfg.stop_event, on_token=cfg.on_token,
+                    on_reasoning=cfg.on_reasoning,
                 )
             else:
                 text = llm_client.call_llm(
@@ -286,6 +288,7 @@ def run_agent(cfg: AgentConfig, user_task: str, log_path: Optional[Path] = None,
                 messages=messages, model=model,
                 temperature=temperature, max_tokens=config.MAX_TOKENS,
                 stop_event=cfg.stop_event, on_token=cfg.on_token,
+                on_reasoning=cfg.on_reasoning,
             )
         else:
             text = llm_client.call_llm(

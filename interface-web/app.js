@@ -83,6 +83,7 @@ let isReadOnly  = false;
 let answerMode  = false;
 let thinkingEl  = null;
 let streamingEl = null;
+let reasoningEl = null;   // live <details> for reasoning_content (thinking phase)
 let askUserEl   = null;
 
 let defaultCwd     = "";
@@ -413,6 +414,25 @@ function handleEvent(ev) {
       reloadThreads();
       break;
 
+    case "reasoning":
+      removeThinking();
+      if (!reasoningEl) {
+        hideWelcome();
+        reasoningEl = document.createElement("details");
+        reasoningEl.className = "agent-line line-reasoning";
+        reasoningEl.open = true;
+        const rSum = document.createElement("summary");
+        rSum.innerHTML = `<span class="line-chevron">▸</span><span class="line-type">thinking</span>`;
+        const rBody = document.createElement("div");
+        rBody.className = "line-body line-body-reasoning";
+        reasoningEl.appendChild(rSum);
+        reasoningEl.appendChild(rBody);
+        $messages.appendChild(reasoningEl);
+      }
+      reasoningEl.querySelector(".line-body-reasoning").textContent += ev.content;
+      scrollBottom();
+      break;
+
     case "token":
       removeThinking();
       if (!streamingEl) {
@@ -432,6 +452,7 @@ function handleEvent(ev) {
       liveChars += (ev.content || "").length;
       removeStreaming();
       removeThinking();
+      collapseReasoning();
       activateBadge("reasoning");
       appendCollapsible("thought", "Thought", ev.content, ev.step);
       showThinking();
@@ -458,12 +479,14 @@ function handleEvent(ev) {
       liveChars += (ev.content || "").length;
       removeStreaming();
       removeThinking();
+      collapseReasoning();
       appendFinal(ev.content);
       break;
 
     case "error":
       removeStreaming();
       removeThinking();
+      collapseReasoning();
       appendCollapsible("error", "Error", ev.content, ev.step);
       break;
 
@@ -594,6 +617,13 @@ function removeThinking() {
 
 function removeStreaming() {
   if (streamingEl) { streamingEl.remove(); streamingEl = null; }
+}
+
+function collapseReasoning() {
+  if (reasoningEl) {
+    reasoningEl.open = false;   // auto-collapse when thought arrives
+    reasoningEl = null;         // detach from tracker (element stays in DOM)
+  }
 }
 
 // Compact inline collapsible — arrow + label + step, body reveals on click.

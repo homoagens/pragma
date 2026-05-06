@@ -680,6 +680,12 @@ async def websocket_endpoint(ws: WebSocket):
                                 {"type": "token", "content": chunk},
                             )
 
+                        def on_reasoning(chunk: str):
+                            loop.call_soon_threadsafe(
+                                async_queue.put_nowait,
+                                {"type": "reasoning", "content": chunk},
+                            )
+
                         cfg = AgentConfig(
                             name          = "Pragma",
                             system_prompt = system_prompt,
@@ -690,6 +696,7 @@ async def websocket_endpoint(ws: WebSocket):
                             max_steps     = _max_steps,
                             stop_event    = _stop,
                             on_token      = on_token,
+                            on_reasoning  = on_reasoning,
                         )
 
                         _steps       = [0]

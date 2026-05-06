@@ -339,6 +339,21 @@ details[open] .line-chevron { transform: rotate(90deg); }
 .line-observation .line-type { color: var(--obs-color);     }
 .line-error   .line-type     { color: var(--error-color);   }
 .line-error   .line-label    { color: var(--error-color);   }
+.line-reasoning .line-type   { color: #7c3aed; }
+
+/* ── Reasoning / thinking content body ── */
+.line-body-reasoning {
+  font-family: var(--font-mono); font-size: 11px;
+  color: var(--text-subtle);
+  white-space: pre-wrap; word-break: break-word;
+  margin: 4px 0 6px 22px;
+  max-height: 220px; overflow-y: auto;
+  border-left: 2px solid #ede9fe;
+  padding-left: 10px;
+}
+[data-theme="dark"] .line-body-reasoning {
+  border-left-color: #3b1f6e;
+}
 
 .line-body {
   margin: 4px 0 8px 22px;
