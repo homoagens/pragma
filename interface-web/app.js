@@ -435,6 +435,7 @@ function handleEvent(ev) {
 
     case "token":
       removeThinking();
+      collapseReasoning();
       if (!streamingEl) {
         hideWelcome();
         streamingEl = document.createElement("div");
