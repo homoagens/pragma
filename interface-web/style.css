@@ -297,6 +297,7 @@ details.agent-line {
   border: none; background: transparent;
   margin: 0;
 }
+details.agent-line:not([open]) > :not(summary) { display: none; }
 
 details.agent-line summary {
   display: flex; align-items: center; gap: 6px;

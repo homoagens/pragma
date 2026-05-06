@@ -622,8 +622,11 @@ function removeStreaming() {
 
 function collapseReasoning() {
   if (reasoningEl) {
-    reasoningEl.open = false;   // auto-collapse when thought arrives
-    reasoningEl = null;         // detach from tracker (element stays in DOM)
+    reasoningEl.open = false;
+    // Belt-and-suspenders: explicitly hide the body so no empty card remains
+    const body = reasoningEl.querySelector(".line-body");
+    if (body) body.style.display = "none";
+    reasoningEl = null;
   }
 }
 
