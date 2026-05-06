@@ -367,6 +367,68 @@ def _stream_anthropic(messages, model, temperature, max_tokens, timeout,
     return text
 
 
+def _stream_backend(messages, model, temperature, max_tokens, timeout,
+                    base_url, api_key, stop_event, on_token):
+    """Stream from the backend's /llm/stream SSE endpoint.
+
+    The backend proxies llama.cpp's SSE verbatim, so the format is identical
+    to a standard OpenAI /chat/completions stream.
+    """
+    import json as _json
+    payload = {
+        "messages":    messages,
+        "model":       model,
+        "temperature": temperature,
+        "max_tokens":  max_tokens,
+    }
+    headers = {
+        "Content-Type":  "application/json",
+        "Authorization": f"Bearer {api_key}",
+    }
+    text   = ""
+    finish = ""
+    with requests.Session() as session:
+        with session.post(
+            f"{base_url}/llm/stream",
+            headers=headers, json=payload,
+            stream=True, timeout=timeout,
+        ) as resp:
+            resp.raise_for_status()
+            for line in resp.iter_lines():
+                if stop_event and stop_event.is_set():
+                    raise LLMInterrupted("LLM call aborted by stop signal")
+                if not line:
+                    continue
+                if isinstance(line, bytes):
+                    line = line.decode("utf-8")
+                if not line.startswith("data: "):
+                    continue
+                data = line[6:].strip()
+                if data == "[DONE]":
+                    break
+                try:
+                    chunk = _json.loads(data)
+                except Exception:
+                    continue
+                choice  = chunk.get("choices", [{}])[0]
+                content = (choice.get("delta") or {}).get("content") or ""
+                if content:
+                    text += content
+                    if on_token:
+                        on_token(content)
+                fin = choice.get("finish_reason")
+                if fin:
+                    finish = fin
+
+    if finish == "length":
+        raise RuntimeError(
+            f"Response truncated (finish_reason=length). Partial: {text[:100]!r}"
+        )
+    if not text:
+        raise RuntimeError("The model returned an empty response.")
+    return text
+
+
 # ── Public API ─────────────────────────────────────────────────────────────────
 
 def call_llm(messages, model=None, temperature=None, max_tokens=None, timeout=None,
@@ -433,8 +495,21 @@ def stream_llm(messages, model=None, temperature=None, max_tokens=None, timeout=
     prov, url, key = _resolved_endpoint(provider, base_url, api_key)
 
     if prov == "backend":
-        # No streaming support — regular call, then fire on_token once with the
-        # thought portion (or the full text if parsing fails) as a preview.
+        # Try the SSE streaming endpoint /llm/stream first.
+        # Fall back to the blocking /llm call if the endpoint is not available
+        # (404) so older deployments continue to work unchanged.
+        try:
+            return _stream_backend(
+                messages, model, temperature, max_tokens, timeout,
+                url, key, stop_event, on_token,
+            )
+        except requests.HTTPError as _e:
+            if _e.response is not None and _e.response.status_code == 404:
+                if config.DEBUG:
+                    _console.print("[yellow]/llm/stream not found — falling back to /llm[/yellow]")
+            else:
+                raise
+        # Fallback: blocking call + single on_token with thought preview
         text, finish = _call_backend(
             messages, model, temperature, max_tokens, timeout, url, key, stop_event
         )
