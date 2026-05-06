@@ -144,16 +144,24 @@ def _delete_thread(thread_id: str) -> bool:
 app = FastAPI(title="Pragma")
 
 _STATIC  = _ROOT / "interface-web"
-_VERSION = str(int(time.time()))
 
 app.mount("/static", StaticFiles(directory=str(_STATIC)), name="static")
+
+
+def _asset_v(name: str) -> str:
+    """Cache-bust version derived from the file's mtime — updates whenever
+    the asset is edited, even without a server restart."""
+    try:
+        return str(int((_STATIC / name).stat().st_mtime))
+    except Exception:
+        return str(int(time.time()))
 
 
 @app.get("/")
 async def index():
     html = (_STATIC / "index.html").read_text(encoding="utf-8")
-    html = html.replace("/static/style.css", f"/static/style.css?v={_VERSION}")
-    html = html.replace("/static/app.js",    f"/static/app.js?v={_VERSION}")
+    html = html.replace("/static/style.css", f"/static/style.css?v={_asset_v('style.css')}")
+    html = html.replace("/static/app.js",    f"/static/app.js?v={_asset_v('app.js')}")
     return HTMLResponse(html)
 
 
