@@ -162,7 +162,11 @@ async def index():
     html = (_STATIC / "index.html").read_text(encoding="utf-8")
     html = html.replace("/static/style.css", f"/static/style.css?v={_asset_v('style.css')}")
     html = html.replace("/static/app.js",    f"/static/app.js?v={_asset_v('app.js')}")
-    return HTMLResponse(html)
+    return HTMLResponse(html, headers={
+        "Cache-Control": "no-cache, no-store, must-revalidate",
+        "Pragma":        "no-cache",
+        "Expires":       "0",
+    })
 
 
 # ── REST API ──────────────────────────────────────────────────────────────────
