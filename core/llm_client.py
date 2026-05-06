@@ -515,7 +515,7 @@ def stream_llm(messages, model=None, temperature=None, max_tokens=None, timeout=
         try:
             return _stream_backend(
                 messages, model, temperature, max_tokens, timeout,
-                url, key, stop_event, on_token,
+                url, key, stop_event, on_token, on_reasoning,
             )
         except requests.HTTPError as _e:
             if _e.response is not None and _e.response.status_code == 404:
@@ -543,11 +543,13 @@ def stream_llm(messages, model=None, temperature=None, max_tokens=None, timeout=
         return text
     elif prov == "openai":
         return _stream_openai_compatible(
-            messages, model, temperature, max_tokens, timeout, url, key, stop_event, on_token
+            messages, model, temperature, max_tokens, timeout,
+            url, key, stop_event, on_token, on_reasoning,
         )
     elif prov == "anthropic":
         return _stream_anthropic(
-            messages, model, temperature, max_tokens, timeout, url, key, stop_event, on_token
+            messages, model, temperature, max_tokens, timeout,
+            url, key, stop_event, on_token, on_reasoning,
         )
     else:
         raise ValueError(f"Unknown LLM provider: {prov!r}.")
