@@ -424,7 +424,7 @@ function handleEvent(ev) {
         const rSum = document.createElement("summary");
         rSum.innerHTML = `<span class="line-chevron">▸</span><span class="line-type">thinking</span>`;
         const rBody = document.createElement("div");
-        rBody.className = "line-body line-body-reasoning";
+        rBody.className = "line-body";
         reasoningEl.appendChild(rSum);
         reasoningEl.appendChild(rBody);
         $messages.appendChild(reasoningEl);
