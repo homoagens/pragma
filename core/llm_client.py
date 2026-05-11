@@ -246,6 +246,7 @@ def _stream_openai_compatible(messages, model, temperature, max_tokens, timeout,
         headers["Authorization"] = f"Bearer {api_key}"
 
     text = ""
+    reasoning_buf = ""
     finish = ""
     with requests.Session() as session:
         with session.post(
@@ -274,8 +275,10 @@ def _stream_openai_compatible(messages, model, temperature, max_tokens, timeout,
                 delta = choice.get("delta") or {}
                 reasoning = delta.get("reasoning_content") or ""
                 content   = delta.get("content") or ""
-                if reasoning and on_reasoning:
-                    on_reasoning(reasoning)
+                if reasoning:
+                    reasoning_buf += reasoning
+                    if on_reasoning:
+                        on_reasoning(reasoning)
                 if content:
                     text += content
                     if on_token:
@@ -288,6 +291,11 @@ def _stream_openai_compatible(messages, model, temperature, max_tokens, timeout,
         raise RuntimeError(
             f"Response truncated (finish_reason=length). Partial: {text[:100]!r}"
         )
+    # Fallback: some reasoning models (e.g. Qwen3) emit the entire answer
+    # inside the <think> block as reasoning_content and never produce content.
+    # Use the reasoning buffer as the response text in that case.
+    if not text and reasoning_buf:
+        text = reasoning_buf
     if not text:
         raise RuntimeError("The model returned an empty response.")
     return text
@@ -329,6 +337,7 @@ def _stream_anthropic(messages, model, temperature, max_tokens, timeout,
     }
 
     text = ""
+    reasoning_buf = ""
     finish = ""
     with requests.Session() as session:
         with session.post(
@@ -356,8 +365,10 @@ def _stream_anthropic(messages, model, temperature, max_tokens, timeout,
                     delta = ev.get("delta", {})
                     if delta.get("type") == "thinking_delta":
                         reasoning = delta.get("thinking", "")
-                        if reasoning and on_reasoning:
-                            on_reasoning(reasoning)
+                        if reasoning:
+                            reasoning_buf += reasoning
+                            if on_reasoning:
+                                on_reasoning(reasoning)
                     elif delta.get("type") == "text_delta":
                         content = delta.get("text", "")
                         if content:
@@ -372,6 +383,8 @@ def _stream_anthropic(messages, model, temperature, max_tokens, timeout,
         raise RuntimeError(
             f"Response truncated (finish_reason=length). Partial: {text[:100]!r}"
         )
+    if not text and reasoning_buf:
+        text = reasoning_buf
     if not text:
         raise RuntimeError("The model returned an empty response.")
     return text
@@ -395,8 +408,9 @@ def _stream_backend(messages, model, temperature, max_tokens, timeout,
         "Content-Type":  "application/json",
         "Authorization": f"Bearer {api_key}",
     }
-    text   = ""
-    finish = ""
+    text          = ""
+    reasoning_buf = ""
+    finish        = ""
     with requests.Session() as session:
         with session.post(
             f"{base_url}/llm/stream",
@@ -424,8 +438,10 @@ def _stream_backend(messages, model, temperature, max_tokens, timeout,
                 delta     = choice.get("delta") or {}
                 reasoning = delta.get("reasoning_content") or ""
                 content   = delta.get("content") or ""
-                if reasoning and on_reasoning:
-                    on_reasoning(reasoning)
+                if reasoning:
+                    reasoning_buf += reasoning
+                    if on_reasoning:
+                        on_reasoning(reasoning)
                 if content:
                     text += content
                     if on_token:
@@ -438,6 +454,11 @@ def _stream_backend(messages, model, temperature, max_tokens, timeout,
         raise RuntimeError(
             f"Response truncated (finish_reason=length). Partial: {text[:100]!r}"
         )
+    # Fallback: some reasoning models (e.g. Qwen3) emit the entire answer
+    # inside the <think> block as reasoning_content and never produce content.
+    # Use the reasoning buffer as the response text in that case.
+    if not text and reasoning_buf:
+        text = reasoning_buf
     if not text:
         raise RuntimeError("The model returned an empty response.")
     return text

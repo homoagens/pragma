@@ -65,8 +65,32 @@ CODING_MAX_TOKENS  = int(os.environ.get("CODING_MAX_TOKENS",  "4096"))
 # GENERAL PARAMETERS
 # ─────────────────────────────────────────────
 
-MAX_TOKENS     = 4096
+MAX_TOKENS     = int(os.environ.get("MAX_TOKENS", "4096"))
 TIMEOUT        = 300   # seconds — increase for slow or large-context models
+
+# Quota of MAX_TOKENS available to LLM calls made INSIDE a skill
+# (edit_file, code, llm_invoke, ...). Skills should never hardcode their
+# own token budget — they read it from config so it scales with .env.
+SKILL_MAX_TOKENS_RATIO = float(os.environ.get("SKILL_MAX_TOKENS_RATIO", "0.5"))
+SKILL_MAX_TOKENS       = int(os.environ.get("SKILL_MAX_TOKENS",
+                                            str(int(MAX_TOKENS * SKILL_MAX_TOKENS_RATIO))))
+
+# When True, skills that don't need reasoning (edit_file, deterministic
+# patches) prefix the user message with /no_think — Qwen3-family models
+# recognize it and skip the <think> block, freeing the entire budget
+# for the JSON output. Harmless on models that don't support it.
+DISABLE_THINKING_IN_SKILLS = os.environ.get(
+    "DISABLE_THINKING_IN_SKILLS", "true"
+).lower() in ("1", "true", "yes")
+
+# write_file emits a soft warning in the observation when content exceeds
+# this many bytes — the agent learns to prefer incremental edits.
+WRITE_FILE_SOFT_LIMIT = int(os.environ.get("WRITE_FILE_SOFT_LIMIT", "8000"))
+
+# Observations longer than this get summarized in the conversation history
+# (the actual return value is unaffected — only the message stored for
+# the next LLM turn is compacted). 0 disables the feature.
+OBSERVATION_SOFT_LIMIT = int(os.environ.get("OBSERVATION_SOFT_LIMIT", "4000"))
 
 # Maximum number of ReAct loop steps before a forced verdict is requested.
 MAX_STEPS = int(os.environ.get("MAX_STEPS", "15"))

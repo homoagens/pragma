@@ -184,9 +184,29 @@ def run_agent(cfg: AgentConfig, user_task: str, log_path: Optional[Path] = None,
             _emit({"type": "stopped", "content": "Task interrupted by user."})
             return None
         except Exception as e:
+            err_str = str(e)
             if config.DEBUG:
-                console.print(f"[red]LLM error at step {step}: {e}[/red]")
-            _emit({"type": "error", "content": f"LLM error at step {step}: {e}"})
+                console.print(f"[red]LLM error at step {step}: {err_str}[/red]")
+            _emit({"type": "error", "content": f"LLM error at step {step}: {err_str}"})
+
+            # If the response was truncated (finish_reason=length), give the
+            # model an explicit hint so it changes strategy next turn instead
+            # of repeating the same oversized response.
+            if "truncated" in err_str.lower() or "finish_reason=length" in err_str.lower():
+                messages.append({
+                    "role": "user",
+                    "content": (
+                        "[SYSTEM]: Your previous response was TRUNCATED because it "
+                        "exceeded the token limit. To recover:\n"
+                        "1. Drastically shorten the `thought` field (one sentence max).\n"
+                        "2. Do NOT rewrite entire files. Use `edit_file`, "
+                        "`insert_after`, `insert_before`, `append_file`, or "
+                        "`replace_in_file` for incremental changes.\n"
+                        "3. If the task is large, call `todo_create` ONCE to "
+                        "split it into small steps, then execute one step per turn.\n"
+                        "Reply now with a SINGLE concise JSON action."
+                    ),
+                })
             step += 1
             continue
 
@@ -261,8 +281,25 @@ def run_agent(cfg: AgentConfig, user_task: str, log_path: Optional[Path] = None,
                 "action": action, "args": args, "observation": observation,
             })
 
+        # Compact very large observations in the conversation history.
+        # The full observation is still emitted to the UI (for the user) and
+        # logged to disk; only the copy stored for the next LLM turn gets
+        # truncated, so the model doesn't carry a 10kB file content forward.
+        soft_limit = getattr(config, "OBSERVATION_SOFT_LIMIT", 0)
+        if soft_limit > 0 and len(observation) > soft_limit:
+            head = observation[: soft_limit // 2]
+            tail = observation[-soft_limit // 4 :]
+            stored_obs = (
+                f"{head}\n"
+                f"\n[... observation truncated — full length {len(observation)} chars. "
+                f"Use read_file with start_line/end_line or grep_search for targeted access ...]\n"
+                f"\n{tail}"
+            )
+        else:
+            stored_obs = observation
+
         messages.append({"role": "assistant", "content": text})
-        messages.append({"role": "user",      "content": f"[OBSERVATION]: {observation}"})
+        messages.append({"role": "user",      "content": f"[OBSERVATION]: {stored_obs}"})
 
         step += 1  # advance step counter for the while loop
 

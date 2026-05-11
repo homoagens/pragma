@@ -456,7 +456,9 @@ def _build_thread_skills(thread_cwd: str,
                            max_results=max_results)
         skills["grep_search"] = grep_search_wrapped
 
-    for _name in ("read_file", "write_file", "edit_file"):
+    for _name in ("read_file", "write_file", "edit_file",
+                  "insert_after", "insert_before", "append_file",
+                  "replace_in_file"):
         _orig = GEMMA_SKILLS.get(_name)
         if _orig:
             def _make_wrapped(fn):

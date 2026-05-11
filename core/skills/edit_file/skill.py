@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import config
 import llm_client
 from json_parser import extract_json
 
@@ -12,9 +13,36 @@ Given a file content and an instruction, produce a JSON object with these keys:
 
 Rules:
 - old_text must be copied character-for-character from the file, including whitespace and indentation
+- Keep old_text MINIMAL — the shortest unique substring that anchors the change.
+  Do NOT copy huge surrounding context; copy only what is being replaced.
 - If the instruction refers to something that does not exist in the file, return old_text="" and new_text="" with a reason explaining what was not found
 - If the instruction requires adding content at the end of the file, old_text can be the last line
-- Respond with ONLY the JSON object, no explanation"""
+- Respond with ONLY the JSON object, no explanation, no prose, no markdown fences"""
+
+
+_NO_THINK_PREFIX = "/no_think\n\n" if getattr(config, "DISABLE_THINKING_IN_SKILLS", False) else ""
+
+
+def _ask_llm_for_patch(content: str, instruction: str, terse: bool = False) -> dict:
+    """Single LLM call → patch dict. Raises on failure."""
+    extra = (
+        "\n\nIMPORTANT: be ultra concise. Output ONLY the JSON. "
+        "old_text must be a SHORT unique anchor (one or two lines)."
+        if terse else ""
+    )
+    user_msg = (
+        f"{_NO_THINK_PREFIX}File content:\n```\n{content}\n```\n\n"
+        f"Instruction: {instruction}{extra}"
+    )
+    raw = llm_client.call_llm(
+        messages=[
+            {"role": "system", "content": _EDIT_SYSTEM},
+            {"role": "user",   "content": user_msg},
+        ],
+        temperature=0.0,
+        max_tokens=config.SKILL_MAX_TOKENS,
+    )
+    return extract_json(raw)
 
 
 def edit_file(path: str, instruction: str) -> str:
@@ -35,18 +63,16 @@ def edit_file(path: str, instruction: str) -> str:
     if content.startswith("ERROR"):
         return content
 
-    # 2. Ask the LLM for the patch [H]
-    user_msg = f"File content:\n```\n{content}\n```\n\nInstruction: {instruction}"
+    # 2. Ask the LLM for the patch [H] — with one retry on truncation
     try:
-        raw = llm_client.call_llm(
-            messages=[
-                {"role": "system", "content": _EDIT_SYSTEM},
-                {"role": "user",   "content": user_msg},
-            ],
-            temperature=0.0,
-            max_tokens=2048,
-        )
-        patch = extract_json(raw)
+        try:
+            patch = _ask_llm_for_patch(content, instruction, terse=False)
+        except RuntimeError as e:
+            # finish_reason=length → retry once asking for ultra-concise output
+            if "truncated" in str(e).lower():
+                patch = _ask_llm_for_patch(content, instruction, terse=True)
+            else:
+                raise
     except Exception as e:
         return f"ERROR: LLM call failed — {e}"
 
@@ -62,7 +88,8 @@ def edit_file(path: str, instruction: str) -> str:
         return (
             f"ERROR: old_text not found in file.\n"
             f"LLM produced: {old_text!r}\n"
-            f"Hint: the LLM may have altered whitespace or indentation."
+            f"Hint: the LLM may have altered whitespace or indentation. "
+            f"Try replace_in_file with an exact short string instead."
         )
 
     # 4. Apply the replacement [D]

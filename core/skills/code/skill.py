@@ -70,6 +70,11 @@ def code(task: str,
         parts.append("Context:\n" + context.strip())
     user_message = "\n\n".join(parts)
 
+    # Token budget: explicit CODING_MAX_TOKENS wins; otherwise fall back to
+    # SKILL_MAX_TOKENS (a proportion of MAX_TOKENS) so the .env stays the
+    # single source of truth.
+    coding_tokens = config.CODING_MAX_TOKENS or config.SKILL_MAX_TOKENS
+
     try:
         out = llm_client.call_llm(
             messages=[
@@ -78,7 +83,7 @@ def code(task: str,
             ],
             model       = model,
             temperature = config.CODING_TEMPERATURE,
-            max_tokens  = config.CODING_MAX_TOKENS,
+            max_tokens  = coding_tokens,
             provider    = provider or None,
             base_url    = base_url or None,
             api_key     = api_key  or None,
