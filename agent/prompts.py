@@ -139,6 +139,9 @@ Never emit free prose outside the JSON. Never emit two JSON objects in one respo
   execution.
 - If `write_file` produces invalid Python (syntax error at runtime), re-read the file and
   use `edit_file` to fix it — don't rewrite the whole file blindly.
+- **If a skill call fails with an argument error** (unexpected keyword, missing argument,
+  wrong type): do NOT retry with guessed parameters. Call `get_skill_details("skill_name")`
+  FIRST, read the parameter list, then retry with the correct arguments.
 - If the same action fails twice in a row, STOP immediately — do not retry a third time.
   Either `ask_user` or conclude with an explanation of what failed and why.
 

@@ -466,6 +466,35 @@ def _build_thread_skills(thread_cwd: str,
                 return wrapped
             skills[_name] = _make_wrapped(_orig)
 
+    # ── slide_plan: anchor output_path to thread_cwd ─────────────────────────
+    orig_sp = GEMMA_SKILLS.get("slide_plan")
+    if orig_sp:
+        def slide_plan_wrapped(topic: str, output_path: str = "slide_plan.json"):
+            return orig_sp(topic=topic,
+                           output_path=_abs_path(output_path, thread_cwd))
+        slide_plan_wrapped.__name__ = "slide_plan"
+        skills["slide_plan"] = slide_plan_wrapped
+
+    # ── slide_plan_revise: anchor plan_path to thread_cwd ────────────────────
+    orig_spr = GEMMA_SKILLS.get("slide_plan_revise")
+    if orig_spr:
+        def slide_plan_revise_wrapped(plan_path: str, feedback: str):
+            return orig_spr(plan_path=_abs_path(plan_path, thread_cwd),
+                            feedback=feedback)
+        slide_plan_revise_wrapped.__name__ = "slide_plan_revise"
+        skills["slide_plan_revise"] = slide_plan_revise_wrapped
+
+    # ── slide_gen: anchor plan_path and output_dir to thread_cwd ─────────────
+    orig_sg = GEMMA_SKILLS.get("slide_gen")
+    if orig_sg:
+        def slide_gen_wrapped(plan_path: str, output_dir: str = ".",
+                              filename: str = ""):
+            return orig_sg(plan_path=_abs_path(plan_path, thread_cwd),
+                           output_dir=_abs_path(output_dir, thread_cwd),
+                           filename=filename)
+        slide_gen_wrapped.__name__ = "slide_gen"
+        skills["slide_gen"] = slide_gen_wrapped
+
     return skills
 
 
@@ -504,13 +533,17 @@ async def websocket_endpoint(ws: WebSocket):
         thread_data["messages"].append(msg)
         _save_thread(thread_data)
 
-    def ws_ask_user(topic: str, context: str = "", mode: str = "input") -> str:
+    def ws_ask_user(topic: str = "", context: str = "", mode: str = "input",
+                    prompt: str = "", question: str = "") -> str:
         nonlocal pending_ask_user
-        question = context if context else topic
-        hint     = topic   if context else ""
+        # Accept common aliases for topic
+        if not topic:
+            topic = prompt or question
+        display_question = context if context else topic
+        hint             = topic   if context else ""
         ev = {
             "type":     "ask_user",
-            "question": question,
+            "question": display_question,
             "hint":     hint,
             "mode":     mode,
         }

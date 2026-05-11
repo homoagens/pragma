@@ -16,6 +16,9 @@ venv/
 .venv/
 env/
 
+# Skills in testing (wip_ prefix — rename folder to publish)
+core/skills/wip_*/
+
 # Pragma data (threads, logs)
 /data/
 *.log

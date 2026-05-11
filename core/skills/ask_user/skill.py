@@ -18,17 +18,21 @@ For confirm mode, phrase it as a yes/no question.
 For choice mode, list the options clearly inside the question."""
 
 
-def ask_user(topic: str, context: str = "", mode: str = "input") -> str:
+def ask_user(topic: str = "", context: str = "", mode: str = "input",
+             prompt: str = "", question: str = "") -> str:
     """
     [H] Pause execution and request input or approval from the user.
     Deterministic mechanism: input() from console.
     LLM judgment: formulates the question clearly and in context.
 
-    topic   : subject to ask about
+    topic   : subject to ask about (also accepts: prompt, question)
     context : additional context for formulating the question
     mode    : "input" (free text) | "confirm" (y/n) | "choice" (option list)
     Returns : user answer as a string; "yes"/"no" for confirm mode
     """
+    # Accept common aliases for topic
+    if not topic:
+        topic = prompt or question
     # 1. Build the message for the LLM [H]
     user_msg = f"Topic: {topic}"
     if context:

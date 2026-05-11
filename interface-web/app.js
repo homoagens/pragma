@@ -425,7 +425,12 @@ function handleEvent(ev) {
         $messages.appendChild(reasoningStreamEl);
       }
       reasoningStreamRaw += ev.content;
-      reasoningStreamEl.textContent = reasoningStreamRaw;
+      // Show at most 600 chars of reasoning live — avoids the block growing
+      // endlessly when the model streams long JSON content (e.g. write_file args).
+      const reasoningPreview = reasoningStreamRaw.length > 600
+        ? reasoningStreamRaw.slice(0, 600) + " …"
+        : reasoningStreamRaw;
+      reasoningStreamEl.textContent = reasoningPreview;
       scrollBottom();
       break;
 
@@ -452,7 +457,8 @@ function handleEvent(ev) {
       finalizeReasoning();
       activateBadge("reasoning");
       appendCollapsible("thought", "Thought", ev.content, ev.step);
-      showThinking();
+      // Do not show a spinner here — the action event will show "Executing…"
+      // Showing "Thinking…" at this point is misleading if a tool is about to run.
       break;
 
     case "action":
@@ -563,30 +569,27 @@ function extractStreamingPreview(raw) {
 
   const parts = [];
 
-  // ── thought ──────────────────────────────────────────────────────────────
-  const tMatch = stripped.match(/"thought"\s*:\s*"/);
-  if (tMatch) {
-    const thought = _jsonStrValue(stripped, tMatch.index + tMatch[0].length);
-    if (thought) parts.push(thought);
-  }
-
-  // ── action ───────────────────────────────────────────────────────────────
+  // ── action — once detected, show only "→ name" and stop. ────────────────
+  // Never show args: they can contain full file contents (thousands of chars).
   const aMatch = stripped.match(/"action"\s*:\s*"/);
   if (aMatch) {
     const action = _jsonStrValue(stripped, aMatch.index + aMatch[0].length);
-    if (action) {
-      // ── args (optional, may still be streaming) ───────────────────────
-      const argsMatch = stripped.match(/"args"\s*:\s*(\{[^}]*\}?)/);
-      const argsStr   = argsMatch ? argsMatch[1].replace(/\s+/g, " ").trim() : "";
-      parts.push("→ " + action + (argsStr ? " " + argsStr : ""));
-    }
+    if (action) parts.push("→ " + action);
+    return parts.join("\n");
+  }
+
+  // ── thought — only while action hasn't appeared yet ───────────────────
+  const tMatch = stripped.match(/"thought"\s*:\s*"/);
+  if (tMatch) {
+    const thought = _jsonStrValue(stripped, tMatch.index + tMatch[0].length);
+    if (thought) parts.push(thought.length > 300 ? thought.slice(0, 300) + " …" : thought);
   }
 
   // ── conclusion (final answer, no action) ─────────────────────────────────
   const cMatch = stripped.match(/"conclusion"\s*:\s*"/);
-  if (cMatch && !aMatch) {
+  if (cMatch) {
     const concl = _jsonStrValue(stripped, cMatch.index + cMatch[0].length);
-    if (concl) parts.push(concl);
+    if (concl) parts.push(concl.length > 300 ? concl.slice(0, 300) + " …" : concl);
   }
 
   return parts.join("\n");
@@ -746,7 +749,14 @@ function escHtml(s) {
     .replace(/>/g, "&gt;");
 }
 
-function scrollBottom() { $messages.scrollTop = $messages.scrollHeight; }
+// Only auto-scroll if the user is already near the bottom (within 120px).
+// This lets the user freely scroll up during streaming without being dragged back.
+function scrollBottom() {
+  const distFromBottom = $messages.scrollHeight - $messages.scrollTop - $messages.clientHeight;
+  if (distFromBottom < 120) {
+    $messages.scrollTop = $messages.scrollHeight;
+  }
+}
 
 function setReadOnly(val) {
   isReadOnly = val;

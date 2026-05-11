@@ -23,17 +23,21 @@ def _load_skills():
         sys.modules[mod_name] = mod  # register BEFORE exec so late imports work
         sys.modules[f"skills.{folder.name}"] = mod
         spec.loader.exec_module(mod)
-        fn = getattr(mod, folder.name, None)
+        # Strip wip_ prefix to find the actual function name and registry key.
+        # This allows skill folders to be prefixed with wip_ for testing
+        # without changing the function name or the agent-visible skill name.
+        skill_name = folder.name[len("wip_"):] if folder.name.startswith("wip_") else folder.name
+        fn = getattr(mod, skill_name, None)
         if fn is None:
             continue
-        registry[folder.name] = fn
+        registry[skill_name] = fn
         if readme.exists():
             text = readme.read_text(encoding="utf-8")
             summary_part = text.split("---")[0].strip()
             # Extract just the description line (after the # title)
             lines = [ln for ln in summary_part.splitlines() if ln.strip() and not ln.startswith("#")]
             summary = lines[0] if lines else summary_part
-            summaries.append(f"**{folder.name}**: {summary}")
+            summaries.append(f"**{skill_name}**: {summary}")
     return registry, "\n".join(summaries)
 
 
