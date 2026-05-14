@@ -20,9 +20,6 @@ Rules:
 - Respond with ONLY the JSON object, no explanation, no prose, no markdown fences"""
 
 
-_NO_THINK_PREFIX = "/no_think\n\n" if getattr(config, "DISABLE_THINKING_IN_SKILLS", False) else ""
-
-
 def _ask_llm_for_patch(content: str, instruction: str, terse: bool = False) -> dict:
     """Single LLM call → patch dict. Raises on failure."""
     extra = (
@@ -31,7 +28,7 @@ def _ask_llm_for_patch(content: str, instruction: str, terse: bool = False) -> d
         if terse else ""
     )
     user_msg = (
-        f"{_NO_THINK_PREFIX}File content:\n```\n{content}\n```\n\n"
+        f"File content:\n```\n{content}\n```\n\n"
         f"Instruction: {instruction}{extra}"
     )
     raw = llm_client.call_llm(

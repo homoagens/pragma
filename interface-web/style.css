@@ -19,7 +19,7 @@
   --action-color:    #44403c;
   --obs-color:       #64748b;
   --error-color:     #dc2626;
-  --reasoning-color: #7c3aed;
+  --thinking-color:  #7c3aed;
 
   --final-bg:     #f0fdf4;
   --final-border: #86efac;
@@ -61,7 +61,7 @@
   --action-color:    #60a5fa;
   --obs-color:       #94a3b8;
   --error-color:     #f87171;
-  --reasoning-color: #a78bfa;
+  --thinking-color:  #a78bfa;
 
   --final-bg:     #052e16;
   --final-border: #166534;
@@ -270,7 +270,7 @@ header {
 /* ── Streaming tokens ──
  * The live preview borrows the color of the collapsed line it will become:
  *   - default (token stream → thought)         → thought-color
- *   - .block-streaming-reasoning (→ reasoning) → reasoning-color
+ *   - .block-streaming-thinking (→ thinking) → thinking-color
  */
 .block-streaming {
   font-family: var(--font-mono); font-size: 11.5px;
@@ -281,9 +281,17 @@ header {
   margin: 2px 0;
   max-height: 180px; overflow-y: auto;
 }
-.block-streaming.block-streaming-reasoning {
-  color: var(--reasoning-color);
-  border-left-color: var(--reasoning-color);
+.block-streaming.block-streaming-thinking {
+  color: var(--thinking-color);
+  border-left-color: var(--thinking-color);
+}
+/* Live char counter: appears at the end of the streaming text. Reassures
+   the user that the stream is alive even when the visible tail scrolls slowly. */
+.block-streaming[data-chars]::after {
+  content: " · " attr(data-chars) " chars";
+  color: var(--text-subtle);
+  font-size: 10px;
+  opacity: 0.7;
 }
 
 /* ── Thinking spinner ── */
@@ -350,7 +358,7 @@ details[open] .line-chevron { transform: rotate(90deg); }
 .line-observation .line-type { color: var(--obs-color);     }
 .line-error   .line-type     { color: var(--error-color);   }
 .line-error   .line-label    { color: var(--error-color);   }
-.line-reasoning .line-type   { color: var(--reasoning-color); }
+.line-thinking .line-type    { color: var(--thinking-color); }
 
 .line-body {
   margin: 4px 0 8px 22px;

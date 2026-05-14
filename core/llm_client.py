@@ -27,6 +27,78 @@ class LLMInterrupted(Exception):
     """Raised when the LLM HTTP call is aborted via stop_event."""
     pass
 
+
+class LLMLooped(Exception):
+    """Raised when the watchdog detects the model is repeating itself
+    inside the <think> block — i.e. the reasoning_content stream is
+    producing the same paragraph over and over without converging.
+    The caller (agent loop) catches this and injects a recovery hint
+    so the model can change strategy on the next turn."""
+    pass
+
+
+class _ReasoningLoopGuard:
+    """Repetition detector for streaming reasoning text.
+
+    Approach: every `check_every` characters of accumulated reasoning, take
+    the trailing `window` chars and count how many times that exact string
+    appears in the recent buffer (`scope` chars). When the count reaches
+    `threshold`, the model is repeating itself and we abort.
+
+    Counting via str.count is O(scope) per check — bounded, since `scope`
+    is clamped (defaults to 8000 chars). Across the whole stream the total
+    cost stays linear in the reasoning length.
+
+    Why not fingerprint-and-hash: the loop period rarely matches the
+    sampling period, so identical text sampled at different offsets gives
+    different fingerprints and the loop goes undetected. Counting the
+    actual trailing substring is offset-agnostic.
+    """
+
+    __slots__ = ("window", "check_every", "threshold", "scope",
+                 "_next_sample_at", "_disabled")
+
+    def __init__(self, window: int = 200, check_every: int = 400,
+                 threshold: int = 3, scope: int = 8000,
+                 enabled: bool = True):
+        self.window          = window
+        self.check_every     = check_every
+        self.threshold       = threshold
+        self.scope           = scope
+        self._next_sample_at = check_every
+        self._disabled       = (not enabled) or window <= 0 or threshold < 2
+
+    def observe(self, chunk: str, buf: str) -> None:
+        """Called after each reasoning chunk. `buf` is the full accumulated
+        reasoning so far. Raises LLMLooped when a loop is detected."""
+        if self._disabled:
+            return
+        total = len(buf)
+        if total < self._next_sample_at or total < self.window * self.threshold:
+            return
+        self._next_sample_at = total + self.check_every
+        tail  = buf[-self.window:]
+        # Bound the search range so cost stays O(scope) per check.
+        view  = buf[-self.scope:] if total > self.scope else buf
+        n     = view.count(tail)
+        if n >= self.threshold:
+            raise LLMLooped(
+                f"Reasoning loop detected: the trailing {self.window}-char "
+                f"window appears {n} times in the last {len(view)} chars."
+            )
+
+
+def _make_loop_guard():
+    """Build a watchdog using the current config values."""
+    import config as _cfg
+    return _ReasoningLoopGuard(
+        window      = getattr(_cfg, "REASONING_LOOP_WINDOW", 200),
+        check_every = getattr(_cfg, "REASONING_LOOP_CHECK_EVERY", 400),
+        threshold   = getattr(_cfg, "REASONING_LOOP_THRESHOLD", 3),
+        enabled     = getattr(_cfg, "REASONING_LOOP_ENABLED", True),
+    )
+
+
 ANTHROPIC_BASE_URL = "https://api.anthropic.com"
 ANTHROPIC_VERSION  = "2023-06-01"
 
@@ -248,6 +320,7 @@ def _stream_openai_compatible(messages, model, temperature, max_tokens, timeout,
     text = ""
     reasoning_buf = ""
     finish = ""
+    guard = _make_loop_guard()
     with requests.Session() as session:
         with session.post(
             f"{base_url}/chat/completions",
@@ -279,6 +352,7 @@ def _stream_openai_compatible(messages, model, temperature, max_tokens, timeout,
                     reasoning_buf += reasoning
                     if on_reasoning:
                         on_reasoning(reasoning)
+                    guard.observe(reasoning, reasoning_buf)
                 if content:
                     text += content
                     if on_token:
@@ -339,6 +413,7 @@ def _stream_anthropic(messages, model, temperature, max_tokens, timeout,
     text = ""
     reasoning_buf = ""
     finish = ""
+    guard = _make_loop_guard()
     with requests.Session() as session:
         with session.post(
             f"{base_url}/v1/messages",
@@ -369,6 +444,7 @@ def _stream_anthropic(messages, model, temperature, max_tokens, timeout,
                             reasoning_buf += reasoning
                             if on_reasoning:
                                 on_reasoning(reasoning)
+                            guard.observe(reasoning, reasoning_buf)
                     elif delta.get("type") == "text_delta":
                         content = delta.get("text", "")
                         if content:
@@ -411,6 +487,7 @@ def _stream_backend(messages, model, temperature, max_tokens, timeout,
     text          = ""
     reasoning_buf = ""
     finish        = ""
+    guard         = _make_loop_guard()
     with requests.Session() as session:
         with session.post(
             f"{base_url}/llm/stream",
@@ -442,6 +519,7 @@ def _stream_backend(messages, model, temperature, max_tokens, timeout,
                     reasoning_buf += reasoning
                     if on_reasoning:
                         on_reasoning(reasoning)
+                    guard.observe(reasoning, reasoning_buf)
                 if content:
                     text += content
                     if on_token:

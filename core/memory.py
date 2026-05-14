@@ -58,10 +58,18 @@ def compress(messages, threshold=None, context="conversation", model=None):
     if not to_compress:
         return messages
 
-    text = "\n".join(
-        f"{m['role'].upper()}: {m['content'][:500]}"
-        for m in to_compress
-    )
+    # Per-message truncation: 500 chars was too aggressive (file reads got
+    # gutted before they reached the summarizer). The cap is now configurable
+    # via MESSAGE_COMPRESS_TRUNC. A "[+ N more chars]" marker is appended
+    # when content is clipped so the summarizer knows information was lost.
+    trunc = getattr(config, "MESSAGE_COMPRESS_TRUNC", 2000)
+    parts = []
+    for m in to_compress:
+        body = m.get("content", "") or ""
+        if len(body) > trunc:
+            body = body[:trunc] + f" [+ {len(body) - trunc} more chars]"
+        parts.append(f"{m['role'].upper()}: {body}")
+    text = "\n".join(parts)
 
     if config.DEBUG:
         print(f"[memory] Compressing {len(to_compress)} messages ({context})...")

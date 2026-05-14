@@ -183,6 +183,33 @@ def run_agent(cfg: AgentConfig, user_task: str, log_path: Optional[Path] = None,
         except llm_client.LLMInterrupted:
             _emit({"type": "stopped", "content": "Task interrupted by user."})
             return None
+        except llm_client.LLMLooped as e:
+            # Watchdog detected the model is stuck repeating itself inside
+            # the <think> block. Abort this turn and inject a recovery hint
+            # so the model breaks out of the loop on the next attempt.
+            err_str = str(e)
+            if config.DEBUG:
+                console.print(f"[red]Reasoning loop at step {step}: {err_str}[/red]")
+            _emit({"type": "error",
+                   "content": f"Reasoning loop detected at step {step}. "
+                              f"Aborted to prevent runaway thinking."})
+            messages.append({
+                "role": "user",
+                "content": (
+                    "[SYSTEM]: The watchdog detected that you were REPEATING "
+                    "the same paragraph inside your <think> block without "
+                    "converging. To recover:\n"
+                    "1. STOP analyzing the same code over and over.\n"
+                    "2. Either pick the most likely hypothesis and TEST IT "
+                    "with a tool call (run, edit, read a specific line), or "
+                    "call `ask_user` to request clarification or a runtime "
+                    "log from the user (e.g. browser console output).\n"
+                    "3. Keep the next `thought` to one sentence.\n"
+                    "Reply now with a SINGLE concise JSON action."
+                ),
+            })
+            step += 1
+            continue
         except Exception as e:
             err_str = str(e)
             if config.DEBUG:
@@ -196,8 +223,8 @@ def run_agent(cfg: AgentConfig, user_task: str, log_path: Optional[Path] = None,
                 messages.append({
                     "role": "user",
                     "content": (
-                        "[SYSTEM]: Your previous response was TRUNCATED because it "
-                        "exceeded the token limit. To recover:\n"
+                        "[SYSTEM]: Your previous response was TRUNCATED "
+                        "because it exceeded the token limit. To recover:\n"
                         "1. Drastically shorten the `thought` field (one sentence max).\n"
                         "2. Do NOT rewrite entire files. Use `edit_file`, "
                         "`insert_after`, `insert_before`, `append_file`, or "
@@ -299,7 +326,10 @@ def run_agent(cfg: AgentConfig, user_task: str, log_path: Optional[Path] = None,
             stored_obs = observation
 
         messages.append({"role": "assistant", "content": text})
-        messages.append({"role": "user",      "content": f"[OBSERVATION]: {stored_obs}"})
+        messages.append({
+            "role":    "user",
+            "content": f"[OBSERVATION]: {stored_obs}",
+        })
 
         step += 1  # advance step counter for the while loop
 

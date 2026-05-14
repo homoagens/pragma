@@ -46,7 +46,7 @@ def build_system_prompt(cwd: str, default_model: str = "", coding_model: str = "
     model_line = ""
     if default_model:
         coding_info = f", `code` skill → {coding_model}" if coding_model and coding_model != default_model else ""
-        model_line = f"\nActive models: reasoning → {default_model}{coding_info}"
+        model_line = f"\nActive models: default → {default_model}{coding_info}"
     os_env = _os_environment(cwd)
     return f"""You are Pragma, an autonomous coding assistant that operates on the local filesystem.
 You reason step by step and use tools (skills) to read, write, search, execute and modify files.
@@ -116,7 +116,13 @@ Never emit free prose outside the JSON. Never emit two JSON objects in one respo
 - **Complex multi-step tasks** (creating a small project, multi-file refactor, pipeline):
   call `todo_create` ONCE at the very beginning to plan. Then execute tasks one-by-one
   using the appropriate skill — do NOT call `todo_execute`, and do NOT recreate the todo list.
-- **Never guess file contents.** Always `read_file` before `edit_file`.
+- **Before reading any unknown file, run `file_outline(path)` first.**
+  It returns the line count, top-level symbols (functions, classes, headings)
+  and the last few lines — all without putting the full content in context.
+  Use the outline to decide whether to `read_file` fully, `read_file` with
+  `start_line`/`end_line`, or skip straight to an `insert_after` / `replace_in_file`.
+- **Never guess file contents.** Always `file_outline` (and possibly `read_file`)
+  before `edit_file`.
 - **`write_file`** is for NEW files only. Never use it to "update" an existing file —
   rewriting the whole content is expensive and risks hitting the token limit.
 - **For changes to EXISTING files, choose the cheapest skill that fits:**
@@ -129,8 +135,12 @@ Never emit free prose outside the JSON. Never emit two JSON objects in one respo
 - **Keep `thought` SHORT — one sentence.** Long thoughts compete with action args
   for the token budget and risk truncating the JSON.
 - **On large files (>200 lines): never call `write_file` to update them.**
-  Use `read_file` with `start_line`/`end_line` for targeted reading, and the
-  deterministic insert/replace skills above for edits.
+  Run `file_outline` first, then use the deterministic insert/replace skills above for edits.
+- **Cross-thread learnings.** At the start of a task you may receive a block
+  titled `[Relevant prior learnings]`. Treat it as soft heuristics: useful
+  reminders from past tasks, NOT mandatory rules. Use `recall_learnings(query)`
+  to fetch more if useful. The store is updated automatically by `session_reflect`
+  at the end of each task — you normally don't need to call it manually.
 - **`execute_command`** for running tests, scripts, installs. Always pass `cwd="{cwd}"`
   (or a deeper path inside it) so the command runs where the user expects.
 - **`ask_user`** only when a decision truly requires the user (ambiguous requirements,

@@ -61,6 +61,7 @@ def memory_retrieve(query: str, memory_path: str = "memory.json",
     )
 
     # 3. Ask the LLM which entries are relevant [H]
+    import config as _cfg
     try:
         raw = llm_client.call_llm(
             messages=[
@@ -68,6 +69,7 @@ def memory_retrieve(query: str, memory_path: str = "memory.json",
                 {"role": "user",   "content": user_msg},
             ],
             temperature=0.0,
+            max_tokens=_cfg.SKILL_MAX_TOKENS,
         )
         result = extract_json(raw)
     except Exception as e:

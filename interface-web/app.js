@@ -83,8 +83,8 @@ let isReadOnly  = false;
 let answerMode  = false;
 let thinkingEl  = null;
 let streamingEl = null;
-let reasoningStreamEl  = null;   // lightweight live preview while reasoning_content streams
-let reasoningStreamRaw = "";     // accumulated reasoning text
+let thinkingStreamEl  = null;   // live preview while the model's <think> block streams
+let thinkingStreamRaw = "";     // accumulated <think> text
 let askUserEl   = null;
 
 let defaultCwd     = "";
@@ -360,7 +360,7 @@ function startNewTask() {
   clearInterval(timerInterval);
   timerInterval = setInterval(updateRunStats, 500);
   if ($runStats) { $runStats.className = "running"; }
-  activateBadge("reasoning");  // highlight immediately; model is thinking
+  activateBadge("default");  // highlight the default-role model on start
 }
 
 
@@ -415,28 +415,35 @@ function handleEvent(ev) {
       reloadThreads();
       break;
 
-    case "reasoning":
+    case "thinking":
       removeThinking();
-      if (!reasoningStreamEl) {
+      if (!thinkingStreamEl) {
         hideWelcome();
-        reasoningStreamEl = document.createElement("div");
-        reasoningStreamEl.className = "block-streaming block-streaming-reasoning";
-        reasoningStreamRaw = "";
-        $messages.appendChild(reasoningStreamEl);
+        thinkingStreamEl = document.createElement("div");
+        thinkingStreamEl.className = "block-streaming block-streaming-thinking";
+        thinkingStreamRaw = "";
+        $messages.appendChild(thinkingStreamEl);
       }
-      reasoningStreamRaw += ev.content;
-      // Show at most 600 chars of reasoning live — avoids the block growing
-      // endlessly when the model streams long JSON content (e.g. write_file args).
-      const reasoningPreview = reasoningStreamRaw.length > 600
-        ? reasoningStreamRaw.slice(0, 600) + " …"
-        : reasoningStreamRaw;
-      reasoningStreamEl.textContent = reasoningPreview;
+      thinkingStreamRaw += ev.content;
+      // Live preview: show the TAIL of the <think> stream so the user sees
+      // motion (text scrolls like a terminal). Earlier we showed a fixed
+      // head and the visible text froze once the cap was hit, making long
+      // thinking look stuck. A counter beside it confirms the stream is alive.
+      {
+        const TAIL = 1200;
+        const total = thinkingStreamRaw.length;
+        const tail = total > TAIL
+          ? "… " + thinkingStreamRaw.slice(-TAIL)
+          : thinkingStreamRaw;
+        thinkingStreamEl.textContent = tail;
+        thinkingStreamEl.dataset.chars = String(total);
+      }
       scrollBottom();
       break;
 
     case "token":
       removeThinking();
-      finalizeReasoning();
+      finalizeThinking();
       if (!streamingEl) {
         hideWelcome();
         streamingEl = document.createElement("div");
@@ -446,6 +453,7 @@ function handleEvent(ev) {
       }
       streamingEl.dataset.raw += ev.content;
       streamingEl.textContent = extractStreamingPreview(streamingEl.dataset.raw);
+      streamingEl.dataset.chars = String(streamingEl.dataset.raw.length);
       scrollBottom();
       break;
 
@@ -454,8 +462,8 @@ function handleEvent(ev) {
       liveChars += (ev.content || "").length;
       removeStreaming();
       removeThinking();
-      finalizeReasoning();
-      activateBadge("reasoning");
+      finalizeThinking();
+      activateBadge("default");
       appendCollapsible("thought", "Thought", ev.content, ev.step);
       // Do not show a spinner here — the action event will show "Executing…"
       // Showing "Thinking…" at this point is misleading if a tool is about to run.
@@ -464,7 +472,7 @@ function handleEvent(ev) {
     case "action":
       liveChars += (ev.content || "").length + JSON.stringify(ev.args || {}).length;
       removeThinking();
-      activateBadge(ev.name === "code" ? "coding" : "reasoning");
+      activateBadge(ev.name === "code" ? "coding" : "default");
       appendCollapsible("action", ev.name || "Action", formatArgs(ev.args), ev.step, ev.name);
       showThinking("Executing…");
       break;
@@ -473,7 +481,7 @@ function handleEvent(ev) {
       if (ev.step != null) liveStep = ev.step;
       liveChars += (ev.content || "").length;
       removeThinking();
-      activateBadge("reasoning");
+      activateBadge("default");
       appendCollapsible("observation", "Observation", ev.content, ev.step);
       showThinking();
       break;
@@ -482,14 +490,14 @@ function handleEvent(ev) {
       liveChars += (ev.content || "").length;
       removeStreaming();
       removeThinking();
-      finalizeReasoning();
+      finalizeThinking();
       appendFinal(ev.content);
       break;
 
     case "error":
       removeStreaming();
       removeThinking();
-      finalizeReasoning();
+      finalizeThinking();
       appendCollapsible("error", "Error", ev.content, ev.step);
       break;
 
@@ -504,7 +512,7 @@ function handleEvent(ev) {
 
     case "stopped":
       removeThinking();
-      finalizeReasoning();
+      finalizeThinking();
       clearInterval(timerInterval); timerInterval = null;
       if ($runStats) { $runStats.className = ""; $runStats.textContent = "↓ Stopped"; }
       resetBadges();
@@ -515,7 +523,7 @@ function handleEvent(ev) {
 
     case "done":
       removeThinking();
-      finalizeReasoning();
+      finalizeThinking();
       clearInterval(timerInterval); timerInterval = null;
       showFinalStats();
       resetBadges();
@@ -578,18 +586,24 @@ function extractStreamingPreview(raw) {
     return parts.join("\n");
   }
 
+  // Show a sliding TAIL while streaming long fields (was head-capped, which
+  // froze the visible text once the cap was hit — the user could not tell
+  // the stream was still alive). 1200 chars matches the thinking preview.
+  const TAIL = 1200;
+  const _tail = (s) => s.length > TAIL ? "… " + s.slice(-TAIL) : s;
+
   // ── thought — only while action hasn't appeared yet ───────────────────
   const tMatch = stripped.match(/"thought"\s*:\s*"/);
   if (tMatch) {
     const thought = _jsonStrValue(stripped, tMatch.index + tMatch[0].length);
-    if (thought) parts.push(thought.length > 300 ? thought.slice(0, 300) + " …" : thought);
+    if (thought) parts.push(_tail(thought));
   }
 
   // ── conclusion (final answer, no action) ─────────────────────────────────
   const cMatch = stripped.match(/"conclusion"\s*:\s*"/);
   if (cMatch) {
     const concl = _jsonStrValue(stripped, cMatch.index + cMatch[0].length);
-    if (concl) parts.push(concl.length > 300 ? concl.slice(0, 300) + " …" : concl);
+    if (concl) parts.push(_tail(concl));
   }
 
   return parts.join("\n");
@@ -622,17 +636,17 @@ function removeStreaming() {
 }
 
 /**
- * Replace the lightweight live reasoning stream with a collapsed
- * `· REASONING` summary line (same structure as thought/observation),
+ * Replace the lightweight live thinking stream with a collapsed
+ * `· THINKING` summary line (same structure as thought/observation),
  * clickable to expand the full accumulated text.
  */
-function finalizeReasoning() {
-  if (!reasoningStreamEl) return;
-  reasoningStreamEl.remove();
-  reasoningStreamEl = null;
-  const text = reasoningStreamRaw.trim();
-  reasoningStreamRaw = "";
-  if (text) appendCollapsible("reasoning", "Reasoning", text, null);
+function finalizeThinking() {
+  if (!thinkingStreamEl) return;
+  thinkingStreamEl.remove();
+  thinkingStreamEl = null;
+  const text = thinkingStreamRaw.trim();
+  thinkingStreamRaw = "";
+  if (text) appendCollapsible("thinking", "Thinking", text, null);
 }
 
 // Compact inline collapsible — arrow + label + step, body reveals on click.
@@ -655,7 +669,7 @@ function appendCollapsible(type, label, content, step, actionName = "") {
 
   const body = document.createElement("div");
   const useMarkdown = (type === "thought" || type === "observation"
-                       || type === "error" || type === "reasoning");
+                       || type === "error" || type === "thinking");
   if (useMarkdown) {
     body.className = "line-body markdown-body";
     body.innerHTML = renderMd(content);
@@ -957,10 +971,10 @@ function renderModelBadge() {
   $badge.innerHTML = "";
 
   const $r = document.createElement("span");
-  $r.id = "badge-reasoning";
+  $r.id = "badge-default";
   $r.className = "badge-item";
-  $r.textContent = `reasoning: ${def}`;
-  $r.title = `Reasoning: ${def}\nProvider: ${llmConfig.provider}`;
+  $r.textContent = `default: ${def}`;
+  $r.title = `Default model (reasoning role of the ReAct loop): ${def}\nProvider: ${llmConfig.provider}`;
   $badge.appendChild($r);
 
   if (distinct) {
@@ -979,13 +993,13 @@ function renderModelBadge() {
 }
 
 function activateBadge(which) {
-  document.getElementById("badge-reasoning")?.classList.toggle("active", which === "reasoning");
-  document.getElementById("badge-coding")   ?.classList.toggle("active", which === "coding");
+  document.getElementById("badge-default")?.classList.toggle("active", which === "default");
+  document.getElementById("badge-coding") ?.classList.toggle("active", which === "coding");
 }
 
 function resetBadges() {
-  document.getElementById("badge-reasoning")?.classList.remove("active");
-  document.getElementById("badge-coding")   ?.classList.remove("active");
+  document.getElementById("badge-default")?.classList.remove("active");
+  document.getElementById("badge-coding") ?.classList.remove("active");
 }
 
 (async function boot() {

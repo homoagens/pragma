@@ -35,6 +35,7 @@ def memory_store(content: str, memory_path: str = "memory.json",
     Returns     : "SAVED: key" or "SKIP: reason"
     """
     # 1. Ask the LLM whether it is worth saving [H]
+    import config as _cfg
     try:
         raw = llm_client.call_llm(
             messages=[
@@ -42,6 +43,7 @@ def memory_store(content: str, memory_path: str = "memory.json",
                 {"role": "user",   "content": f"Content to evaluate:\n{content}"},
             ],
             temperature=0.0,
+            max_tokens=_cfg.SKILL_MAX_TOKENS,
         )
         decision = extract_json(raw)
     except Exception as e:

@@ -458,7 +458,7 @@ def _build_thread_skills(thread_cwd: str,
 
     for _name in ("read_file", "write_file", "edit_file",
                   "insert_after", "insert_before", "append_file",
-                  "replace_in_file"):
+                  "replace_in_file", "file_outline"):
         _orig = GEMMA_SKILLS.get(_name)
         if _orig:
             def _make_wrapped(fn):
@@ -607,16 +607,37 @@ async def websocket_endpoint(ws: WebSocket):
         except Exception:
             pass
 
+    def _recall_learnings_block(task_text: str) -> str:
+        """Pull a few relevant entries from the cross-thread learnings store
+        and format them as an injection block. Pure keyword overlap; no LLM
+        call. Empty string if the store is empty / unavailable."""
+        try:
+            from skills.recall_learnings.skill import recall_learnings as _recall
+        except Exception:
+            return ""
+        try:
+            out = _recall(query=task_text)
+        except Exception:
+            return ""
+        if not out or out.startswith("(no learnings") or out.startswith("ERROR"):
+            return ""
+        return (
+            "[Relevant prior learnings — short heuristics from past tasks, "
+            "use only if they fit the current request]\n" + out + "\n\n"
+        )
+
     def build_task_with_history(task_text: str) -> str:
         compress_history_if_needed()
         ch = thread_data["conversation_history"]
+        learnings = _recall_learnings_block(task_text)
         if not ch:
-            return task_text
+            return learnings + task_text if learnings else task_text
         lines = []
         for h in ch:
             lines.append(f"User: {h['user']}")
             lines.append(f"Pragma: {h['conclusion']}")
         return (
+            learnings +
             "[Previous conversation — use as context]\n" +
             "\n".join(lines) +
             f"\n\n[Current request]\n{task_text}"
@@ -728,9 +749,15 @@ async def websocket_endpoint(ws: WebSocket):
                             )
 
                         def on_reasoning(chunk: str):
+                            # Event type is "thinking" in the UI protocol:
+                            # disambiguates from the agent-level "reasoning"
+                            # role (model that does reasoning vs coding).
+                            # The callback keeps its name `on_reasoning`
+                            # because the source channel is OpenAI/llama.cpp's
+                            # `reasoning_content` SSE field.
                             loop.call_soon_threadsafe(
                                 async_queue.put_nowait,
-                                {"type": "reasoning", "content": chunk},
+                                {"type": "thinking", "content": chunk},
                             )
 
                         cfg = AgentConfig(
@@ -769,6 +796,54 @@ async def websocket_endpoint(ws: WebSocket):
                                     "conclusion": result["conclusion"],
                                 })
                                 _save_thread(thread_data)
+
+                                # ── Auto session_reflect ─────────────────
+                                # Build a compact transcript from the persisted
+                                # messages of this task and feed it to the
+                                # reflection skill. Runs in this same worker
+                                # thread, after the task has produced a
+                                # conclusion, so the user never waits for it
+                                # in the UI critical path of the next message.
+                                if getattr(baseline_config, "AUTO_REFLECT", False):
+                                    try:
+                                        from skills.session_reflect.skill import session_reflect as _reflect
+                                        # Take only the events of THIS task:
+                                        # everything after the last "user" message.
+                                        msgs = thread_data.get("messages", [])
+                                        last_user_idx = max(
+                                            (i for i, m in enumerate(msgs)
+                                             if m.get("type") == "user"),
+                                            default=-1,
+                                        )
+                                        task_events = msgs[last_user_idx:] if last_user_idx >= 0 else msgs
+                                        # Compact representation — kind: short text
+                                        transcript_parts = []
+                                        for ev in task_events:
+                                            t = ev.get("type", "")
+                                            if t == "user":
+                                                transcript_parts.append(f"USER: {ev.get('content','')}")
+                                            elif t == "thought":
+                                                transcript_parts.append(f"THOUGHT: {ev.get('content','')[:300]}")
+                                            elif t == "action":
+                                                transcript_parts.append(
+                                                    f"ACTION: {ev.get('name','')}({ev.get('args','')})"[:300])
+                                            elif t == "observation":
+                                                transcript_parts.append(f"OBS: {ev.get('content','')[:300]}")
+                                            elif t == "final":
+                                                transcript_parts.append(f"FINAL: {ev.get('content','')[:300]}")
+                                            elif t == "error":
+                                                transcript_parts.append(f"ERROR: {ev.get('content','')[:300]}")
+                                        transcript = "\n".join(transcript_parts)
+                                        if transcript.strip():
+                                            reflect_result = _reflect(transcript=transcript,
+                                                                      label=f"thread:{thread_id}")
+                                            persist_message({
+                                                "type": "reflection",
+                                                "content": reflect_result,
+                                            })
+                                    except Exception as _re:
+                                        if baseline_config.DEBUG:
+                                            print(f"[auto-reflect] failed: {_re}")
 
                             stats_ev = {
                                 "type":    "stats",
