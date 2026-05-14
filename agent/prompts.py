@@ -127,6 +127,14 @@ Never emit free prose outside the JSON. Never emit two JSON objects in one respo
   unless you pass `overwrite=true`. Rewriting the whole content is expensive and
   is the #1 cause of `finish_reason=length` truncation — only opt in when no
   surgical skill fits and the file is small.
+- **Decomposition is NOT only about multiple files.** A SINGLE new file with
+  more than ~5 KB of structured content (list of 30+ items, styled HTML page
+  with embedded data, CSV, fixtures, dense markdown) MUST be built incrementally:
+    1. `write_file` with the SCAFFOLDING only (wrappers, CSS, empty containers)
+    2. `append_file` ONCE PER SECTION (each category, each chunk, each function)
+    3. (optional) a final `append_file` for the closing footer.
+  `write_file` will refuse content over `WRITE_FILE_HARD_LIMIT` (default 6 KB)
+  with an explicit error pointing you back to this pattern.
 - **For changes to EXISTING files, choose the cheapest skill that fits:**
     - `replace_in_file(path, old, new)` — when you know the exact string to change. Deterministic, no LLM call.
     - `insert_after(path, anchor, content)` / `insert_before(path, anchor, content)` —

@@ -16,11 +16,13 @@ Create a NEW file with the given content. Refuses to overwrite existing files un
 
 - `"OK: written N bytes to <path>"` on success. When N exceeds `WRITE_FILE_SOFT_LIMIT` a soft warning is appended advising future edits to use the surgical skills.
 - `"ERROR: file already exists at <path> ..."` when the target exists and `overwrite` is `False`. The error lists the recommended surgical skills.
+- `"ERROR: content too large ..."` when the supplied content exceeds `WRITE_FILE_HARD_LIMIT` (default 6000 bytes). The error explains the incremental-build pattern (scaffolding + append_file per section).
 - `"ERROR writing ..."` on I/O failure.
 
 ## Notes
 
 - Default behavior is intentionally restrictive: rewriting an existing file ships the whole new content inside the JSON action and is the #1 cause of `finish_reason=length` truncation. Surgical skills are cheaper and safer.
+- For large NEW files the same problem applies — a single write of ~8 KB can truncate the LLM's JSON response mid-string. The hard limit forces incremental construction.
 - Parent directories are created by default.
 
 ## Examples

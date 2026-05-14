@@ -79,6 +79,12 @@ SKILL_MAX_TOKENS       = int(os.environ.get("SKILL_MAX_TOKENS",
 # this many bytes — the agent learns to prefer incremental edits.
 WRITE_FILE_SOFT_LIMIT = int(os.environ.get("WRITE_FILE_SOFT_LIMIT", "8000"))
 
+# write_file REFUSES content larger than this in a single call. Above this
+# size, the JSON-encoded args of the LLM response are likely to exceed
+# MAX_TOKENS and truncate, breaking the call. The agent is then guided to
+# build the file incrementally: write_file scaffolding + append_file sections.
+WRITE_FILE_HARD_LIMIT = int(os.environ.get("WRITE_FILE_HARD_LIMIT", "6000"))
+
 # Observations longer than this get summarized in the conversation history
 # (the actual return value is unaffected — only the message stored for
 # the next LLM turn is compacted). 0 disables the feature.

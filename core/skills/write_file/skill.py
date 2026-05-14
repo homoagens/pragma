@@ -53,6 +53,33 @@ def write_file(path: str, content: str, encoding: str = "utf-8",
             f"call write_file again with overwrite=True."
         )
 
+    # ── Refuse single writes larger than the hard limit ──
+    # Above this size the JSON-encoded args of the LLM response are likely
+    # to exceed MAX_TOKENS and truncate mid-string (often inside a \uXXXX
+    # escape sequence). The right pattern is incremental construction:
+    # write the scaffolding, then append each section. Force the agent into
+    # that pattern by refusing oversized single writes.
+    try:
+        import config as _cfg
+        hard = getattr(_cfg, "WRITE_FILE_HARD_LIMIT", 0)
+    except Exception:
+        hard = 0
+    if hard > 0:
+        n_preview = len(content.encode(encoding))
+        if n_preview > hard:
+            return (
+                f"ERROR: content too large ({n_preview} bytes > hard limit {hard}). "
+                f"A single write_file of this size risks JSON truncation in the "
+                f"LLM response. Build the file incrementally instead:\n"
+                f"  1. write_file with the SCAFFOLDING only (~1-2 KB): wrappers, "
+                f"     CSS, empty containers / placeholder sections.\n"
+                f"  2. append_file ONCE PER SECTION (~1 KB each): each category, "
+                f"     each table chunk, each function definition.\n"
+                f"  3. (optional) a final append_file with closing tags or footer.\n"
+                f"If you must bypass (rare), split your content into two or three "
+                f"write_file calls yourself — but this skill will still cap each call."
+            )
+
     try:
         if create_parents:
             p.parent.mkdir(parents=True, exist_ok=True)
