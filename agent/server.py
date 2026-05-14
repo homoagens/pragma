@@ -835,15 +835,37 @@ async def websocket_endpoint(ws: WebSocket):
                                                 transcript_parts.append(f"ERROR: {ev.get('content','')[:300]}")
                                         transcript = "\n".join(transcript_parts)
                                         if transcript.strip():
-                                            reflect_result = _reflect(transcript=transcript,
-                                                                      label=f"thread:{thread_id}")
-                                            persist_message({
-                                                "type": "reflection",
+                                            # Notify the UI that reflection is
+                                            # starting — the task already has a
+                                            # conclusion but the worker is still
+                                            # busy. Without this the user thinks
+                                            # the agent is frozen.
+                                            start_ev = {"type": "reflection_start"}
+                                            persist_message(start_ev)
+                                            loop.call_soon_threadsafe(
+                                                async_queue.put_nowait, start_ev)
+
+                                            reflect_result = _reflect(
+                                                transcript=transcript,
+                                                label=f"thread:{thread_id}",
+                                            )
+                                            done_ev = {
+                                                "type":    "reflection",
                                                 "content": reflect_result,
-                                            })
+                                            }
+                                            persist_message(done_ev)
+                                            loop.call_soon_threadsafe(
+                                                async_queue.put_nowait, done_ev)
                                     except Exception as _re:
                                         if baseline_config.DEBUG:
                                             print(f"[auto-reflect] failed: {_re}")
+                                        err_ev = {
+                                            "type":    "reflection",
+                                            "content": f"ERROR: {_re}",
+                                        }
+                                        persist_message(err_ev)
+                                        loop.call_soon_threadsafe(
+                                            async_queue.put_nowait, err_ev)
 
                             stats_ev = {
                                 "type":    "stats",

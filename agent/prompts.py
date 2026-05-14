@@ -123,8 +123,10 @@ Never emit free prose outside the JSON. Never emit two JSON objects in one respo
   `start_line`/`end_line`, or skip straight to an `insert_after` / `replace_in_file`.
 - **Never guess file contents.** Always `file_outline` (and possibly `read_file`)
   before `edit_file`.
-- **`write_file`** is for NEW files only. Never use it to "update" an existing file —
-  rewriting the whole content is expensive and risks hitting the token limit.
+- **`write_file`** is for NEW files only. It refuses to overwrite an existing file
+  unless you pass `overwrite=true`. Rewriting the whole content is expensive and
+  is the #1 cause of `finish_reason=length` truncation — only opt in when no
+  surgical skill fits and the file is small.
 - **For changes to EXISTING files, choose the cheapest skill that fits:**
     - `replace_in_file(path, old, new)` — when you know the exact string to change. Deterministic, no LLM call.
     - `insert_after(path, anchor, content)` / `insert_before(path, anchor, content)` —

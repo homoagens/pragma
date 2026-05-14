@@ -11,38 +11,45 @@ async function quitApp() {
 }
 
 // ── Theme ──────────────────────────────────────────────────────────────────
+// Single source of truth = localStorage. The IIFE applies the attribute before
+// the page paints (no FOUC). DOMContentLoaded only updates icons and wires the
+// toggle — it MUST NOT re-derive the theme, otherwise a missing attribute (rare
+// race) would silently downgrade dark to light and overwrite localStorage.
+
+function _resolveTheme() {
+  const saved = localStorage.getItem("pragma-theme");
+  if (saved === "dark" || saved === "light") return saved;
+  return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+}
 
 (function initTheme() {
-  const saved = localStorage.getItem("pragma-theme");
-  const prefersDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
-  const theme = saved || (prefersDark ? "dark" : "light");
-  document.documentElement.setAttribute("data-theme", theme);
+  document.documentElement.setAttribute("data-theme", _resolveTheme());
 })();
 
 function setTheme(theme) {
+  if (theme !== "dark" && theme !== "light") return;  // refuse invalid values
   document.documentElement.setAttribute("data-theme", theme);
   localStorage.setItem("pragma-theme", theme);
   const sun  = document.getElementById("theme-icon-sun");
   const moon = document.getElementById("theme-icon-moon");
-  if (!sun || !moon) return;
-  if (theme === "dark") {
-    sun.style.display  = "block";
-    moon.style.display = "none";
-    document.getElementById("theme-toggle").title = "Switch to light mode";
-  } else {
-    sun.style.display  = "none";
-    moon.style.display = "block";
-    document.getElementById("theme-toggle").title = "Switch to dark mode";
+  const tgl  = document.getElementById("theme-toggle");
+  if (sun && moon) {
+    sun.style.display  = theme === "dark" ? "block" : "none";
+    moon.style.display = theme === "dark" ? "none"  : "block";
+  }
+  if (tgl) {
+    tgl.title = theme === "dark" ? "Switch to light mode" : "Switch to dark mode";
   }
 }
 
 document.addEventListener("DOMContentLoaded", () => {
-  const current = document.documentElement.getAttribute("data-theme") || "light";
-  setTheme(current);
+  // Re-apply the resolved theme — but use the SAME resolver, never trust
+  // the DOM attribute. Idempotent and safe.
+  setTheme(_resolveTheme());
   document.getElementById("theme-toggle")
     ?.addEventListener("click", () => {
-      const c = document.documentElement.getAttribute("data-theme") || "light";
-      setTheme(c === "dark" ? "light" : "dark");
+      const next = _resolveTheme() === "dark" ? "light" : "dark";
+      setTheme(next);
     });
 });
 
@@ -99,10 +106,29 @@ let maxStepsConfig = 15;         // synced from /api/config, editable via settin
 
 function renderMd(text) {
   if (!text) return "";
-  if (typeof marked === "undefined")      return escHtml(text);
-  if (typeof marked.parse === "function") return marked.parse(text);
-  if (typeof marked === "function")       return marked(text);
-  return escHtml(text);
+  let html;
+  if (typeof marked === "undefined")           html = escHtml(text);
+  else if (typeof marked.parse === "function") html = marked.parse(text);
+  else if (typeof marked === "function")       html = marked(text);
+  else                                          html = escHtml(text);
+  return _sanitizeRenderedHtml(html);
+}
+
+// Models often include <style> / <script> blocks in their conclusion text
+// when they're showing generated CSS/JS to the user. marked.parse() passes
+// raw HTML through verbatim, so those blocks get injected into the page DOM
+// and apply GLOBALLY — typically overriding the active theme. We strip them
+// here. Other potentially scope-leaking or unsafe tags get the same treatment.
+const _DANGEROUS_TAGS = ["style", "script", "link", "iframe", "object", "embed", "meta", "base"];
+
+function _sanitizeRenderedHtml(html) {
+  if (!html || typeof DOMParser === "undefined") return html;
+  // Use a detached document so the dangerous tags don't run / load as we parse.
+  const doc = new DOMParser().parseFromString(`<body>${html}</body>`, "text/html");
+  for (const tag of _DANGEROUS_TAGS) {
+    doc.body.querySelectorAll(tag).forEach(el => el.remove());
+  }
+  return doc.body.innerHTML;
 }
 
 
@@ -296,6 +322,16 @@ function reconstructMessages(msgs) {
       case "observation": appendCollapsible("observation", "Observation", m.content, m.step); break;
       case "final":       appendFinal(m.content); break;
       case "error":       appendCollapsible("error", "Error", m.content, m.step); break;
+      case "reflection_start": /* historical: rendered as final reflection below */ break;
+      case "reflection": {
+        // History restore: skip the spinner phase, render only the final
+        // result (compact label), without fading.
+        showReflectionIndicator("", false);
+        finalizeReflectionIndicator(m.content || "");
+        if (reflectionFadeTimer) { clearTimeout(reflectionFadeTimer); reflectionFadeTimer = null; }
+        reflectionIndicatorEl = null;  // detach so the next task starts fresh
+        break;
+      }
       case "ask_user": {
         const el = appendAskUserInert(m.question, m.hint, m.mode);
         if (m.answer !== undefined) {
@@ -510,6 +546,20 @@ function handleEvent(ev) {
       pendingStats = ev;
       break;
 
+    case "reflection_start":
+      // Auto session_reflect kicked off after a successful conclusion.
+      // Show a small inline indicator so the user knows the worker is
+      // still busy (consolidating learnings) and not frozen.
+      showReflectionIndicator("Consolidating learnings…", true);
+      break;
+
+    case "reflection":
+      // session_reflect finished. Replace the spinner with the result
+      // ("OK: saved N learnings", "SKIP: nothing worth saving",
+      // "ERROR: ...") and fade the indicator out after a few seconds.
+      finalizeReflectionIndicator(ev.content || "(no result)");
+      break;
+
     case "stopped":
       removeThinking();
       finalizeThinking();
@@ -695,6 +745,66 @@ function appendFinal(text) {
   el.appendChild(body);
   $messages.appendChild(el);
   scrollBottom();
+}
+
+
+// ── Reflection indicator ──────────────────────────────────────────────────
+// Shown while the auto-reflect skill runs after a successful conclusion.
+// Lives in the messages flow so it scrolls with everything else.
+
+let reflectionIndicatorEl = null;
+let reflectionFadeTimer   = null;
+
+function showReflectionIndicator(text, spinning) {
+  hideWelcome();
+  if (reflectionFadeTimer) { clearTimeout(reflectionFadeTimer); reflectionFadeTimer = null; }
+  if (!reflectionIndicatorEl) {
+    reflectionIndicatorEl = document.createElement("div");
+    reflectionIndicatorEl.className = "block-reflection";
+    $messages.appendChild(reflectionIndicatorEl);
+  }
+  reflectionIndicatorEl.classList.remove("block-reflection-done", "block-reflection-fade");
+  reflectionIndicatorEl.innerHTML =
+    (spinning ? `<span class="spin"></span>` : `<span class="block-reflection-icon">📚</span>`) +
+    `<span class="block-reflection-text">${escHtml(text)}</span>`;
+  scrollBottom();
+}
+
+function finalizeReflectionIndicator(rawResult) {
+  if (!reflectionIndicatorEl) {
+    // The "start" event was missed for some reason — create the element now.
+    showReflectionIndicator("…", false);
+  }
+  // Compact the message: "OK: saved learnings to ... (lessons=2 ...)" → "Saved 2 lessons, 1 pattern"
+  let label = rawResult;
+  const m = /^OK:.*lessons=(\d+)\s+patterns=(\d+)\s+user_prefs=(\d+)\s+mistakes=(\d+)/.exec(rawResult || "");
+  if (m) {
+    const parts = [];
+    if (+m[1]) parts.push(`${m[1]} lesson${+m[1] > 1 ? "s" : ""}`);
+    if (+m[2]) parts.push(`${m[2]} pattern${+m[2] > 1 ? "s" : ""}`);
+    if (+m[3]) parts.push(`${m[3]} pref${+m[3] > 1 ? "s" : ""}`);
+    if (+m[4]) parts.push(`${m[4]} mistake${+m[4] > 1 ? "s" : ""}`);
+    label = parts.length ? `Saved ${parts.join(", ")}` : "Saved learnings";
+  } else if (/^SKIP:/i.test(rawResult || "")) {
+    label = "Nothing worth saving";
+  } else if (/^ERROR:/i.test(rawResult || "")) {
+    label = rawResult.length > 80 ? rawResult.slice(0, 77) + "…" : rawResult;
+  }
+  reflectionIndicatorEl.classList.add("block-reflection-done");
+  reflectionIndicatorEl.innerHTML =
+    `<span class="block-reflection-icon">📚</span>` +
+    `<span class="block-reflection-text">${escHtml(label)}</span>`;
+  // Fade out after a few seconds.
+  reflectionFadeTimer = setTimeout(() => {
+    if (!reflectionIndicatorEl) return;
+    reflectionIndicatorEl.classList.add("block-reflection-fade");
+    setTimeout(() => {
+      if (reflectionIndicatorEl) {
+        reflectionIndicatorEl.remove();
+        reflectionIndicatorEl = null;
+      }
+    }, 1000);
+  }, 4000);
 }
 
 function appendAskUserInert(question, hint, mode) {

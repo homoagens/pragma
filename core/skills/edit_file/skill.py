@@ -93,7 +93,8 @@ def edit_file(path: str, instruction: str) -> str:
     new_content = content.replace(old_text, new_text, 1)
 
     # 5. Write the file [D]
-    result = write_file(path, new_content)
+    # edit_file always modifies an existing file by design — opt in to overwrite.
+    result = write_file(path, new_content, overwrite=True)
     if result.startswith("ERROR"):
         return result
 

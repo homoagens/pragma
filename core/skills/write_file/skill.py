@@ -4,15 +4,55 @@ from pathlib import Path
 
 
 def write_file(path: str, content: str, encoding: str = "utf-8",
-               create_parents: bool = True) -> str:
+               create_parents: bool = True, overwrite: bool = False) -> str:
     """
-    Create or overwrite a file.
-    If create_parents=True, creates intermediate directories.
-    Returns "OK: written N bytes to <path>" or an error message.
-    For large writes (> WRITE_FILE_SOFT_LIMIT) the OK message includes a
-    warning that suggests preferring incremental edits next time.
+    Create a file with the given content.
+
+    By default REFUSES to overwrite existing files. Rewriting a whole file
+    is expensive (the entire content travels through the JSON args of the
+    LLM response) and a frequent cause of finish_reason=length truncation.
+    Use the surgical skills for existing files:
+        replace_in_file / insert_after / insert_before / append_file / edit_file
+
+    Parameters
+    ----------
+    path           : target file path
+    content        : text to write
+    encoding       : file encoding (default utf-8)
+    create_parents : if True, create intermediate directories
+    overwrite      : if True, allow replacing an existing file. Use only
+                     when the surgical skills genuinely don't fit (e.g.
+                     wholesale regeneration of a small config file).
+
+    Returns
+    -------
+    "OK: written N bytes to <path>"  on success (with size warning
+    appended when content exceeds WRITE_FILE_SOFT_LIMIT bytes),
+    "ERROR: file already exists ..." if the file is present and
+    `overwrite=False`,
+    "ERROR writing ..."              on I/O failure.
     """
     p = Path(path)
+
+    # ── Refuse to clobber an existing file unless explicitly authorized ──
+    if p.exists() and not overwrite:
+        try:
+            current_size = p.stat().st_size
+        except Exception:
+            current_size = -1
+        return (
+            f"ERROR: file already exists at {path} "
+            f"({current_size} bytes). write_file is for NEW files only.\n"
+            f"To modify it, use one of:\n"
+            f"  - replace_in_file(path, old, new)   exact substring replace, no LLM\n"
+            f"  - insert_after(path, anchor, content)   add a block after a known line\n"
+            f"  - insert_before(path, anchor, content)  add a block before a known line\n"
+            f"  - append_file(path, content)        add at the end\n"
+            f"  - edit_file(path, instruction)      interpret-and-patch via LLM (last resort)\n"
+            f"If you truly need to rewrite the whole file from scratch, "
+            f"call write_file again with overwrite=True."
+        )
+
     try:
         if create_parents:
             p.parent.mkdir(parents=True, exist_ok=True)
