@@ -21,7 +21,7 @@
 
 <img src="https://img.shields.io/badge/frontend-vanilla%20JS%2C%20no%20build-43a047?style=flat-square" alt="No build step">
 
-<img src="https://img.shields.io/badge/runs%20on-Ollama-f97316?style=flat-square" alt="Ollama">
+<img src="https://img.shields.io/badge/runs%20on-llama.cpp%20%2F%20Ollama-f97316?style=flat-square" alt="llama.cpp / Ollama">
 </p>
 
 <p align="center">
@@ -30,7 +30,7 @@
 
 ---
 
-Most AI agents are cloud-dependent black boxes. **Pragma runs** entirely **on your machine**, uses **open-source models** through **Ollama**, and streams every reasoning step live in the UI as it happens. You see the thinking, the tools, the observations — nothing hidden.
+Most AI agents are cloud-dependent black boxes. **Pragma runs** entirely **on your machine**, uses **open-source models** served by **llama.cpp** or **Ollama**, and streams every reasoning step live in the UI as it happens. You see the thinking, the tools, the observations — nothing hidden.
 
 *From the Greek pragma — something accomplished through action.*
 
@@ -39,7 +39,7 @@ Most AI agents are cloud-dependent black boxes. **Pragma runs** entirely **on yo
 ## ✦ What makes it different
 
 **🏠 Everything runs locally.**
-Ollama, your models, your files. No data leaves your machine. No account, no API key, no vendor.
+llama.cpp / Ollama, your models, your files. No data leaves your machine. No account, no API key, no vendor.
 
 **🔍 The reasoning loop is visible.**
 Every thought, action, and observation streams live in the UI. Watch the agent plan, execute, and react — step by step, in real time.
@@ -54,7 +54,7 @@ FastAPI · Vanilla JS · WebSocket. No framework magic. Every file is understand
 
 ## ⚡ Quickstart
 
-**Requirements:** Python 3.10+ · [Ollama](https://ollama.com) with at least one model
+**Requirements:** Python 3.10+ · a local LLM endpoint that speaks the OpenAI `/v1` protocol — typically [llama.cpp](https://github.com/ggerganov/llama.cpp) (reference setup, see below) or [Ollama](https://ollama.com)
 
 ```bash
 git clone https://github.com/homoagens/pragma
@@ -77,7 +77,7 @@ cp .env.example .env
 
 ```env
 LLM_PROVIDER=openai
-LLM_BASE_URL=http://localhost:11434/v1
+LLM_BASE_URL=http://localhost:8091/v1   # llama.cpp default — use 11434 for Ollama
 DEFAULT_MODEL=your-model-name
 ```
 
@@ -92,28 +92,36 @@ Opens at **http://localhost:8006**. The settings panel in the UI shows the activ
 
 ---
 
-## 🦙 Local models with Ollama
+## 🦙 Local models
 
-Ollama is the primary and most tested way to run Pragma. Pull any model and point Pragma at it.
+Pragma talks to any OpenAI-compatible `/v1/chat/completions` endpoint, so it
+runs on top of:
+
+- **llama.cpp** — primary reference, fastest path to large MoE models with
+  custom KV-cache quantization and offloading. See the [Reference setup](#-reference-setup)
+  below for the exact command.
+- **Ollama** — easiest install if you don't want to manage flags. Pull a model
+  with `ollama pull <name>` then point Pragma at `http://localhost:11434/v1`.
 
 ```env
 LLM_PROVIDER=openai
-LLM_BASE_URL=http://localhost:11434/v1
+LLM_BASE_URL=http://localhost:8091/v1   # llama.cpp default — use 11434 for Ollama
 LLM_API_KEY=
 DEFAULT_MODEL=your-model-name
 ```
 
-#### Separate model for code
+#### Separate model for code (optional)
 
-One of Pragma's strongest features: the `code` skill uses a dedicated coding model instead of burdening the reasoning model with everything. The two active models are shown and highlighted in the UI as each one is used.
+The `code` skill can route to a dedicated coding model instead of using the
+default one. The two active models are shown and highlighted in the UI as
+each one is used. Leave the same value to use a single model for everything
+(the reference setup does exactly this — one Qwen3 MoE handles both roles).
 
 ```env
 CODING_MODEL=qwen2.5-coder
 CODING_PROVIDER=openai
 CODING_BASE_URL=http://localhost:11434/v1
 ```
-
-Keep a small general model for orchestration, route code generation to something specialized — `qwen2.5-coder`, `deepseek-coder`, or any other coding-focused model available in Ollama.
 
 ---
 
@@ -166,49 +174,72 @@ DEFAULT_MODEL=your-model-name
 
 ## 📦 Reference setup
 
-The exact local setup used during development. Both models run entirely on Ollama — no internet connection needed after download.
+The exact local setup used during development. A single MoE model handles both
+the ReAct reasoning loop and the `code` skill — no internet connection needed
+after download.
 
-| Role       | Model                      | Quantization | RAM   |
-| ---------- | -------------------------- | ------------ | ----- |
-| Reasoning  | Google Gemma 4 E4B         | Q8\_0        | ~8 GB |
-| Code skill | Qwen 2.5 Coder 7B Instruct | Q4\_K\_M     | ~5 GB |
+| Role             | Model                          | Quantization | Context |
+| ---------------- | ------------------------------ | ------------ | ------- |
+| Default + Code   | Qwen 3.6 35B A3B (MoE)         | Q5\_K\_M     | 128k    |
 
-**Step 1 — Download the GGUF files**
+**Step 1 — Download the GGUF**
 
-- [bartowski/google\_gemma-4-E4B-it-GGUF](https://huggingface.co/bartowski/google_gemma-4-E4B-it-GGUF) → `google_gemma-4-E4B-it-Q8_0.gguf`
-- [bartowski/Qwen2.5-Coder-7B-Instruct-GGUF](https://huggingface.co/bartowski/Qwen2.5-Coder-7B-Instruct-GGUF) → `Qwen2.5-Coder-7B-Instruct-Q4_K_M.gguf`
+[bartowski/Qwen\_Qwen3.6-35B-A3B-GGUF](https://huggingface.co/bartowski/Qwen_Qwen3.6-35B-A3B-GGUF)
+→ `Qwen_Qwen3.6-35B-A3B-Q5_K_M.gguf`
+(optional) the matching `mmproj-f16.gguf` for vision input.
 
-**Step 2 — Register with Ollama**
-
-The Modelfiles are in [`ollama/`](./ollama/). Place each GGUF in the same folder as its Modelfile, then:
+**Step 2 — Serve it with llama.cpp**
 
 ```bash
-ollama create gemma4-e4b     -f ollama/gemma4-e4b.Modelfile
-ollama create qwen2.5-coder  -f ollama/qwen2.5-coder.Modelfile
+llama-server \
+    -hf bartowski/Qwen_Qwen3.6-35B-A3B-GGUF \
+    -hff Qwen_Qwen3.6-35B-A3B-Q5_K_M.gguf \
+    --mmproj /path/to/qwen36-35b-a3b-mmproj-f16.gguf \
+    --port 8091 \
+    -ngl 999 \
+    -ncmoe 27 \
+    -c 131072 \
+    -ctk q4_0 \
+    -ctv q4_0 \
+    --flash-attn on \
+    -t 16 \
+    --no-mmap \
+    --jinja
 ```
 
-**Step 3 — Point Pragma at them**
+Key flags:
+- `-c 131072` — full 128k context (matches `CONTEXT_WINDOW` in `.env`).
+- `-ctk q4_0 -ctv q4_0` — KV cache quantized to 4-bit, fits the 12 GB VRAM budget.
+- `-ncmoe 27` — keeps 27 MoE expert layers on CPU so the model loads in tight VRAM.
+- `-ngl 999` — push everything else to GPU.
+- `--jinja` — required for Qwen3's chat template.
+
+**Step 3 — Point Pragma at the server**
 
 ```env
-DEFAULT_MODEL=gemma4-e4b
-CODING_MODEL=qwen2.5-coder
+LLM_PROVIDER=openai
+LLM_BASE_URL=http://localhost:8091/v1
+DEFAULT_MODEL=qwen36-35b-a3b
+CODING_MODEL=qwen36-35b-a3b
+CONTEXT_WINDOW=131072
+MAX_TOKENS=32768
 ```
 
-> New to Ollama? Two-minute setup at [ollama.com](https://ollama.com).
+#### Hardware
 
-#### Hardware requirements
+Tested daily on:
 
-Pragma runs wherever Ollama runs well. The bottleneck is always the model, not Pragma itself.
+| Component | Tested on |
+|---|---|
+| GPU VRAM | NVIDIA RTX A2000 12 GB |
+| System RAM | 128 GB |
+| CPU | Intel Xeon Silver 4314 (32 cores, 16 threads used via `-t 16`) |
 
-| | Minimum | Tested on |
-|---|---|---|
-| GPU VRAM | ~12 GB | NVIDIA RTX A2000 12 GB |
-| RAM | 16 GB | 128 GB |
-| CPU | Any modern x86\_64 | Intel Xeon Silver 4314 (32 cores) |
-
-- **12 GB VRAM** is enough to run Gemma 4 E4B Q8 or similar reasoning models.
-- **24 GB VRAM** gives comfortable headroom for both models loaded simultaneously.
-- CPU-only is possible with smaller/quantized models but will be slow.
+- The 12 GB VRAM holds the active experts, KV cache (q4\_0), and the vision projector.
+- The 128 GB RAM is what makes `-ncmoe 27` viable: 27 MoE expert layers stay on
+  CPU and stream in as needed.
+- CPU-only is possible with smaller / more quantized models but will be slow.
+- If you have more VRAM, drop `-ncmoe` and you'll get a substantial speedup.
 
 ---
 
@@ -219,7 +250,7 @@ pragma/
   agent/          FastAPI server · ReAct orchestration · skill wrappers
   core/           LLM client · memory compression · skill palette
   interface-web/  Vanilla JS + WebSocket UI — no build step
-  ollama/         Modelfiles for the reference local setup
+  ollama/         Optional Modelfiles for older Ollama-based setups
 ```
 
 **`core/`** — provider-agnostic, reusable:
