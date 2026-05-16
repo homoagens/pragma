@@ -106,6 +106,21 @@ REASONING_LOOP_ENABLED     = os.environ.get(
     "REASONING_LOOP_ENABLED", "true"
 ).lower() in ("1", "true", "yes")
 
+# Action loop watchdog: even when the reasoning text doesn't repeat, small
+# models often emit the SAME tool call with the SAME arguments turn after
+# turn while observations keep returning ERROR. The agent's mental model of
+# the system state has diverged from reality. This watchdog detects that
+# pattern at the action layer and injects a coercive recovery hint that
+# tells the model to STOP repeating and CHANGE STRATEGY (typically: read_file
+# first to see the actual state).
+#   _THRESHOLD : N identical (action, args) calls in a row, all returning
+#                ERROR, before the hint fires.
+#   _ENABLED   : kill switch.
+ACTION_LOOP_THRESHOLD = int(os.environ.get("ACTION_LOOP_THRESHOLD", "3"))
+ACTION_LOOP_ENABLED   = os.environ.get(
+    "ACTION_LOOP_ENABLED", "true"
+).lower() in ("1", "true", "yes")
+
 # Maximum number of ReAct loop steps before a forced verdict is requested.
 MAX_STEPS = int(os.environ.get("MAX_STEPS", "15"))
 

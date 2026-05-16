@@ -54,15 +54,7 @@ FastAPI · Vanilla JS · WebSocket. No framework magic. Every file is understand
 
 ## ⚡ Quickstart
 
-You need three things, in order:
-
-1. **Python 3.10+**
-2. **A running `llama.cpp` server** with a model loaded (one terminal, kept open)
-3. **Pragma** (another terminal, points to llama.cpp)
-
-The rest of this section walks you through each step. If you've never used `llama.cpp` before, see [§ Don't know llama.cpp?](#-dont-know-llamacpp) further down — there's a ready-to-paste prompt that asks any LLM to generate the install + launch commands for your specific OS and hardware.
-
----
+Three things, two terminals, you're online.
 
 ### 1. Install Pragma
 
@@ -79,50 +71,17 @@ install.bat          :: Windows
 chmod +x install.sh start.sh && ./install.sh    # Linux / macOS
 ```
 
----
+### 2. Serve a model
 
-### 2. Run a model with llama.cpp
+Pragma talks to any OpenAI-compatible endpoint. The path of least resistance is `llama.cpp`:
 
-Download a prebuilt binary from [github.com/ggml-org/llama.cpp/releases](https://github.com/ggml-org/llama.cpp/releases) (CUDA for NVIDIA, Vulkan for AMD/Intel, AVX2 for CPU-only).
+1. Grab a prebuilt binary from [github.com/ggml-org/llama.cpp/releases](https://github.com/ggml-org/llama.cpp/releases) (CUDA for NVIDIA, Vulkan for AMD/Intel, AVX2 for CPU-only).
+2. Copy a ready-made setup from **[CONFIGS.md](./CONFIGS.md)**:
+   - 🪶 **4 GB VRAM laptop** with Qwen 3 4B (the "I just want to try it" option)
+   - 🐉 **12 GB VRAM workstation** with Qwen 3.6 35B A3B MoE (the daily-driver reference)
+3. Run it. Leave the terminal open.
 
-This is the **reference setup** used to develop Pragma — Qwen 3.6 35B A3B (MoE) with full 128k context, tight 12 GB VRAM budget thanks to MoE expert offloading and 4-bit KV cache:
-
-```bash
-llama-server \
-    -hf bartowski/Qwen_Qwen3.6-35B-A3B-GGUF \
-    -hff Qwen_Qwen3.6-35B-A3B-Q5_K_M.gguf \
-    --mmproj /path/to/qwen36-35b-a3b-mmproj-f16.gguf \
-    --port 8091 \
-    -ngl 999 \
-    -ncmoe 27 \
-    -c 131072 \
-    -ctk q4_0 \
-    -ctv q4_0 \
-    --flash-attn on \
-    -t 16 \
-    --no-mmap \
-    --jinja
-```
-
-The notable flags:
-- `-c 131072` — full 128k context window. Must match `CONTEXT_WINDOW` in `.env`.
-- `-ctk q4_0 -ctv q4_0` — 4-bit KV cache. Halves VRAM with no measurable quality loss.
-- `-ncmoe 27` — keeps 27 MoE expert layers on CPU (and host RAM) so the model fits in tight VRAM. Drop this if you have ≥ 24 GB VRAM.
-- `-ngl 999` — push every non-offloaded layer to GPU.
-- `--jinja` — required for Qwen3's chat template.
-
-Smaller hardware? Same `llama-server` binary, just swap the model:
-- 16 GB VRAM → Qwen 14B Q4_K_M, no `-ncmoe`
-- 8 GB VRAM → Llama 3.1 8B Q4_K_M
-- CPU only → Qwen 2.5 7B Q4_K_M
-
-Verify the server is up:
-
-```bash
-curl http://127.0.0.1:8091/v1/models
-```
-
----
+Different hardware? See [Don't know llama.cpp?](#-dont-know-llamacpp) below — there's a prompt you can paste into any LLM and it generates a tuned command for your exact box.
 
 ### 3. Point Pragma at it
 
@@ -130,34 +89,23 @@ curl http://127.0.0.1:8091/v1/models
 cp .env.example .env
 ```
 
-Edit `.env`:
-
-```env
-LLM_PROVIDER=openai
-LLM_BASE_URL=http://127.0.0.1:8091/v1
-LLM_API_KEY=
-DEFAULT_MODEL=Qwen_Qwen3.6-35B-A3B-Q5_K_M    # use the name llama-server reports
-CODING_PROVIDER=openai
-CODING_BASE_URL=http://127.0.0.1:8091/v1
-CODING_MODEL=Qwen_Qwen3.6-35B-A3B-Q5_K_M
-CONTEXT_WINDOW=131072
-MAX_TOKENS=32768
-```
-
-Start Pragma:
+Open the [matching `.env` block](./CONFIGS.md) for your hardware tier and paste the values. Then:
 
 ```bat
 start.bat       :: Windows
 ./start.sh      # Linux / macOS
 ```
 
-Opens at **http://localhost:8006**. The settings panel in the UI shows the active `.env` entries (sensitive values masked) and lets you reload the config without restarting.
+Opens at **http://localhost:8006**. The settings panel in the UI shows the active `.env` entries and the global learnings store; you can reload config without restarting.
 
 ---
 
 ## 🤖 Don't know llama.cpp?
 
-You don't actually need to learn llama.cpp's flags from scratch. Paste the following prompt into any LLM (Claude, ChatGPT, Gemini, even a local model) and it will produce **OS-specific install commands plus a tuned `llama-server` invocation for your exact hardware**.
+You don't actually need to learn the flags from scratch. Paste this prompt into any LLM (Claude, ChatGPT, Gemini, even a local model) and it produces **OS- and hardware-specific install commands + a tuned `llama-server` invocation + the matching `.env`**.
+
+<details>
+<summary>Show the prompt</summary>
 
 ```
 I need to run llama.cpp locally as the inference backend for an OpenAI-compatible
@@ -181,15 +129,16 @@ Tell me, step by step:
      - MoE expert offloading (-ncmoe) if the model is MoE and VRAM is tight
      - KV cache quantization (-ctk / -ctv) if memory is tight
      - flash attention (--flash-attn on)
+     - 2 parallel slots (-np 2) so async background reflection runs in parallel
      - threads (-t) = my CPU physical core count
      - --jinja for chat template handling on Qwen-family models
-   The server must listen on port 8091.
+   The server must listen on port 11434.
 
 4. A curl command to verify the server is responding on /v1/models.
 
 5. The .env values I should put in Pragma:
      LLM_PROVIDER=openai
-     LLM_BASE_URL=http://127.0.0.1:8091/v1
+     LLM_BASE_URL=http://127.0.0.1:11434/v1
      DEFAULT_MODEL=<the name llama-server reports for the loaded model>
      CONTEXT_WINDOW=<same value used with -c in the server>
      MAX_TOKENS=<sensible output cap, typically context/4>
@@ -203,20 +152,22 @@ My hardware:
 Be concrete: filenames, full commands, expected output. No prose, no theory.
 ```
 
-Fill in the four hardware lines at the bottom and you get a ready-to-run setup. Pragma is unchanged regardless of what the LLM produces — the contract is just "an OpenAI-compatible server on port 8091".
+</details>
+
+Fill in the four hardware lines, run what comes back, you're done.
 
 ---
 
-## 🔌 Cloud providers
+## 🔌 Cloud providers (optional)
 
-Pragma can also talk to a hosted endpoint instead of a local server. Less tested, but it works.
+Prefer a hosted API to a local server? Pragma also speaks OpenAI-compatible and Anthropic.
 
 <details>
-<summary><strong>OpenAI / OpenAI-compatible APIs</strong> (Groq, Mistral, OpenRouter, DeepSeek, …)</summary>
+<summary>OpenAI / OpenAI-compatible (Groq, OpenRouter, DeepSeek, …)</summary>
 
 ```env
 LLM_PROVIDER=openai
-LLM_BASE_URL=https://api.openai.com/v1   # or any compatible endpoint
+LLM_BASE_URL=https://api.openai.com/v1
 LLM_API_KEY=sk-...
 DEFAULT_MODEL=gpt-4o-mini
 ```
@@ -224,7 +175,7 @@ DEFAULT_MODEL=gpt-4o-mini
 </details>
 
 <details>
-<summary><strong>Anthropic</strong></summary>
+<summary>Anthropic</summary>
 
 ```env
 LLM_PROVIDER=anthropic
@@ -233,24 +184,6 @@ DEFAULT_MODEL=claude-haiku-4-5
 ```
 
 </details>
-
----
-
-## 🖥 Reference hardware
-
-The setup above is tested daily on:
-
-| Component | Tested on |
-|---|---|
-| GPU VRAM | NVIDIA RTX A2000 12 GB |
-| System RAM | 128 GB |
-| CPU | Intel Xeon Silver 4314 (32 cores, 16 threads used via `-t 16`) |
-
-Notes:
-- The 12 GB VRAM holds the active MoE experts, the (q4\_0) KV cache, and the vision projector.
-- The 128 GB RAM is what makes `-ncmoe 27` viable — 27 MoE expert layers stay on CPU and stream in as needed.
-- CPU-only is possible with smaller / more quantized models, just slow.
-- More VRAM → drop `-ncmoe` for a substantial speedup.
 
 ---
 

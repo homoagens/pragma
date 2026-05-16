@@ -124,6 +124,21 @@ def run_agent(cfg: AgentConfig, user_task: str, log_path: Optional[Path] = None,
     original_max_steps = max_steps
     step = 1
 
+    # ── Action-loop watchdog state ──
+    # Tracks (action_name, args_hash, was_error) for the most recent steps.
+    # When N identical entries in a row all return ERROR, we inject a coercive
+    # hint to force the model to change strategy (typically: read_file first
+    # to see the real state instead of guessing). See config.ACTION_LOOP_*.
+    _recent_actions: list[tuple[str, str, bool]] = []
+
+    def _hash_args(a) -> str:
+        try:
+            import hashlib
+            payload = json.dumps(a, sort_keys=True, default=str)
+        except Exception:
+            payload = str(a)
+        return hashlib.md5(payload.encode("utf-8", errors="ignore")).hexdigest()
+
     while True:
         # ── Stop requested ───────────────────────────────────────────────
         if cfg.stop_event and cfg.stop_event.is_set():
@@ -330,6 +345,51 @@ def run_agent(cfg: AgentConfig, user_task: str, log_path: Optional[Path] = None,
             "role":    "user",
             "content": f"[OBSERVATION]: {stored_obs}",
         })
+
+        # ── Action-loop watchdog ──
+        # Record this (action, args, was_error) triple and check if the
+        # model is hammering the same failing call. If yes, append a coercive
+        # recovery hint to nudge it toward a different strategy.
+        if getattr(config, "ACTION_LOOP_ENABLED", True):
+            is_error = isinstance(observation, str) and observation.lstrip().startswith("ERROR")
+            _recent_actions.append((action, _hash_args(args), is_error))
+            if len(_recent_actions) > 10:
+                _recent_actions[:] = _recent_actions[-10:]
+            threshold = getattr(config, "ACTION_LOOP_THRESHOLD", 3)
+            tail = _recent_actions[-threshold:]
+            if (len(tail) == threshold
+                    and all(t[0] == action and t[1] == tail[0][1] and t[2]
+                            for t in tail)):
+                _emit({
+                    "type": "error",
+                    "content": (
+                        f"Action loop detected at step {step}: "
+                        f"`{action}` called {threshold}× in a row with identical "
+                        f"arguments, every call returned ERROR."
+                    ),
+                })
+                messages.append({
+                    "role": "user",
+                    "content": (
+                        f"[SYSTEM]: ACTION LOOP DETECTED. You have called "
+                        f"`{action}` with IDENTICAL arguments {threshold} times "
+                        f"in a row and every call returned ERROR. Your mental "
+                        f"model of the file/system state has diverged from "
+                        f"reality. STOP repeating this call.\n\n"
+                        f"Mandatory recovery, in order:\n"
+                        f"1. Call `read_file` (or `file_outline` for large files) "
+                        f"on the path involved to SEE the actual current content.\n"
+                        f"2. Base your next action on what you READ, not on what "
+                        f"you remember writing.\n"
+                        f"3. If `replace_in_file` / `edit_file` / `insert_after` "
+                        f"reported 'substring not found', the `old` text you sent "
+                        f"does NOT exist in the file verbatim — re-copy it from "
+                        f"the read result.\n"
+                        f"4. Do NOT call `{action}` with the same arguments again."
+                    ),
+                })
+                # Reset so we don't fire on EVERY subsequent step indefinitely.
+                _recent_actions.clear()
 
         step += 1  # advance step counter for the while loop
 
