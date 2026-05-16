@@ -322,16 +322,20 @@ function reconstructMessages(msgs) {
       case "observation": appendCollapsible("observation", "Observation", m.content, m.step); break;
       case "final":       appendFinal(m.content); break;
       case "error":       appendCollapsible("error", "Error", m.content, m.step); break;
-      case "reflection_start": /* historical: rendered as final reflection below */ break;
+      case "reflection_queued": /* historical: superseded by final reflection event */ break;
+      case "reflection_start":  /* historical: superseded by final reflection event */ break;
       case "reflection": {
-        // History restore: skip the spinner phase, render only the final
-        // result (compact label), without fading.
+        // History restore: skip the queued/spinner phases and render only the
+        // final result with the (persisted) entries available for expansion.
+        // finalizeReflectionIndicator detaches the element so the next
+        // reflection in the thread gets its own block.
         showReflectionIndicator("", false);
-        finalizeReflectionIndicator(m.content || "");
-        if (reflectionFadeTimer) { clearTimeout(reflectionFadeTimer); reflectionFadeTimer = null; }
-        reflectionIndicatorEl = null;  // detach so the next task starts fresh
+        finalizeReflectionIndicator(m.content || "", m.added || []);
         break;
       }
+      case "knowledge_cleared":
+        appendKnowledgeClearedMarker(m.removed, m.ts);
+        break;
       case "ask_user": {
         const el = appendAskUserInert(m.question, m.hint, m.mode);
         if (m.answer !== undefined) {
@@ -546,18 +550,35 @@ function handleEvent(ev) {
       pendingStats = ev;
       break;
 
+    case "reflection_queued":
+      // Reflection has been pushed to the background queue but the worker
+      // hasn't picked it up yet (something is running ahead of it).
+      // Emit a static indicator so the user sees the work is acknowledged.
+      showReflectionIndicator("Consolidating learnings… (queued)", false);
+      break;
+
     case "reflection_start":
-      // Auto session_reflect kicked off after a successful conclusion.
-      // Show a small inline indicator so the user knows the worker is
-      // still busy (consolidating learnings) and not frozen.
+      // The background worker picked this reflection up and started the
+      // LLM call. Swap the indicator to a spinning state.
       showReflectionIndicator("Consolidating learnings…", true);
       break;
 
     case "reflection":
-      // session_reflect finished. Replace the spinner with the result
-      // ("OK: saved N learnings", "SKIP: nothing worth saving",
-      // "ERROR: ...") and fade the indicator out after a few seconds.
-      finalizeReflectionIndicator(ev.content || "(no result)");
+      // session_reflect finished. Replace the spinner with the final result
+      // and leave it permanently visible in the conversation. `ev.added`
+      // contains the specific entries written to the global store (one of
+      // {lessons, patterns, user_prefs, mistakes}); clicking the indicator
+      // expands to show them.
+      finalizeReflectionIndicator(ev.content || "(no result)", ev.added || []);
+      break;
+
+    case "knowledge_cleared":
+      // The user wiped the global learnings store (from Settings →
+      // Knowledge). Drop a permanent visual marker in this conversation
+      // so it's clear that everything Pragma had learned up to here is
+      // gone — anything the model does next can no longer rely on prior
+      // consolidations.
+      appendKnowledgeClearedMarker(ev.removed, ev.ts);
       break;
 
     case "stopped":
@@ -748,6 +769,35 @@ function appendFinal(text) {
 }
 
 
+// ── Knowledge cleared marker ──────────────────────────────────────────────
+// Permanent in-conversation trace that the user wiped the global learnings
+// store from Settings → Knowledge. Rendered as a centered divider, similar
+// to "this is the start of a new chapter".
+
+function appendKnowledgeClearedMarker(removed, ts) {
+  hideWelcome();
+  const el = document.createElement("div");
+  el.className = "block-knowledge-cleared";
+  const ago = (() => {
+    if (!ts) return "";
+    try {
+      const d = new Date(ts);
+      return d.toLocaleString(undefined, { hour: "2-digit", minute: "2-digit",
+        day: "2-digit", month: "short" });
+    } catch (_) { return ""; }
+  })();
+  const removedStr = (typeof removed === "number" && removed > 0)
+    ? ` · ${removed} entr${removed === 1 ? "y" : "ies"} removed` : "";
+  el.innerHTML =
+    `<span class="kc-line"></span>` +
+    `<span class="kc-label">🧹 Knowledge cleared${removedStr}` +
+    (ago ? ` <span class="kc-ts">· ${escHtml(ago)}</span>` : "") +
+    `</span>` +
+    `<span class="kc-line"></span>`;
+  $messages.appendChild(el);
+  scrollBottom();
+}
+
 // ── Reflection indicator ──────────────────────────────────────────────────
 // Shown while the auto-reflect skill runs after a successful conclusion.
 // Lives in the messages flow so it scrolls with everything else.
@@ -770,9 +820,17 @@ function showReflectionIndicator(text, spinning) {
   scrollBottom();
 }
 
-function finalizeReflectionIndicator(rawResult) {
+const _KIND_ICON = {
+  lessons:    "💡",
+  patterns:   "🔧",
+  user_prefs: "👤",
+  mistakes:   "💥",
+};
+
+function finalizeReflectionIndicator(rawResult, added) {
   if (!reflectionIndicatorEl) {
-    // The "start" event was missed for some reason — create the element now.
+    // The "queued" / "start" events were missed (e.g. UI reopened mid-flight).
+    // Create the element now so we have something to finalize.
     showReflectionIndicator("…", false);
   }
   // Compact the message: "OK: saved learnings to ... (lessons=2 ...)" → "Saved 2 lessons, 1 pattern"
@@ -790,21 +848,63 @@ function finalizeReflectionIndicator(rawResult) {
   } else if (/^ERROR:/i.test(rawResult || "")) {
     label = rawResult.length > 80 ? rawResult.slice(0, 77) + "…" : rawResult;
   }
+
   reflectionIndicatorEl.classList.add("block-reflection-done");
+
+  // Build header (chevron + icon + label). Clickable only if there are
+  // entries to expand.
+  const hasEntries = Array.isArray(added) && added.length > 0;
+  const chevron = hasEntries
+    ? `<span class="block-reflection-chevron">▸</span>`
+    : `<span class="block-reflection-chevron block-reflection-chevron-mute">·</span>`;
   reflectionIndicatorEl.innerHTML =
-    `<span class="block-reflection-icon">📚</span>` +
-    `<span class="block-reflection-text">${escHtml(label)}</span>`;
-  // Fade out after a few seconds.
-  reflectionFadeTimer = setTimeout(() => {
-    if (!reflectionIndicatorEl) return;
-    reflectionIndicatorEl.classList.add("block-reflection-fade");
-    setTimeout(() => {
-      if (reflectionIndicatorEl) {
-        reflectionIndicatorEl.remove();
-        reflectionIndicatorEl = null;
-      }
-    }, 1000);
-  }, 4000);
+    `<div class="block-reflection-header">` +
+      chevron +
+      `<span class="block-reflection-icon">📚</span>` +
+      `<span class="block-reflection-text">${escHtml(label)}</span>` +
+    `</div>`;
+
+  if (hasEntries) {
+    // Pre-render the body, hidden by default. Click on header toggles.
+    const body = document.createElement("div");
+    body.className = "block-reflection-body";
+    body.style.display = "none";
+    // Group by kind, preserve order from `added`.
+    const groups = { lessons: [], patterns: [], user_prefs: [], mistakes: [] };
+    for (const e of added) {
+      if (groups[e.kind]) groups[e.kind].push(e);
+    }
+    const groupHtml = [];
+    for (const kind of ["lessons", "patterns", "user_prefs", "mistakes"]) {
+      if (!groups[kind].length) continue;
+      groupHtml.push(
+        `<div class="block-reflection-group-title">` +
+          `${_KIND_ICON[kind] || "·"} ${kind.replace("_", " ")} ` +
+          `<span class="block-reflection-count">(${groups[kind].length})</span>` +
+        `</div>` +
+        `<ul class="block-reflection-list">` +
+          groups[kind].map(e => `<li>${escHtml(e.text)}</li>`).join("") +
+        `</ul>`
+      );
+    }
+    body.innerHTML = groupHtml.join("");
+    reflectionIndicatorEl.appendChild(body);
+
+    const header = reflectionIndicatorEl.querySelector(".block-reflection-header");
+    header.style.cursor = "pointer";
+    header.addEventListener("click", () => {
+      const open = body.style.display !== "none";
+      body.style.display = open ? "none" : "block";
+      const ch = header.querySelector(".block-reflection-chevron");
+      if (ch) ch.textContent = open ? "▸" : "▾";
+    });
+  }
+
+  // Detach the reference so the NEXT task's reflection creates a brand
+  // new indicator block instead of overwriting this one. The user gets a
+  // permanent visual log of every consolidation that ran in this thread.
+  if (reflectionFadeTimer) { clearTimeout(reflectionFadeTimer); reflectionFadeTimer = null; }
+  reflectionIndicatorEl = null;
 }
 
 function appendAskUserInert(question, hint, mode) {
@@ -1028,7 +1128,107 @@ async function openSettings() {
   document.getElementById("settings-envpath").textContent = cfg.env_path || ".env";
   document.getElementById("s-env-lines").textContent =
     cfg.env_lines && cfg.env_lines.length ? cfg.env_lines.join("\n") : "(no .env found)";
+  // Default to the Configuration tab whenever the modal opens.
+  switchSettingsTab("config");
   $settingsBackdrop.classList.remove("hidden");
+}
+
+function switchSettingsTab(name) {
+  document.querySelectorAll(".settings-tab").forEach(b =>
+    b.classList.toggle("active", b.dataset.tab === name));
+  document.getElementById("settings-tab-config")
+    .classList.toggle("hidden", name !== "config");
+  document.getElementById("settings-tab-knowledge")
+    .classList.toggle("hidden", name !== "knowledge");
+  if (name === "knowledge") loadLearnings();
+}
+
+async function loadLearnings() {
+  const $box = document.getElementById("learnings-container");
+  const $path = document.getElementById("settings-learnings-path");
+  $box.innerHTML = `<div class="hint">Loading…</div>`;
+  let data;
+  try {
+    data = await api("GET", "/api/learnings");
+  } catch (e) {
+    $box.innerHTML = `<div class="hint" style="color:var(--error-color)">Failed: ${escHtml(e.message)}</div>`;
+    return;
+  }
+  if (data.path) $path.textContent = data.path;
+  const entries = data.entries || [];
+  if (!entries.length) {
+    $box.innerHTML = `<div class="hint">No learnings yet. Complete a task and Pragma will consolidate one.</div>`;
+    return;
+  }
+  // Group by kind, preserving insertion order for stable display.
+  const groups = { lessons: [], patterns: [], user_prefs: [], mistakes: [] };
+  for (const e of entries) {
+    if (groups[e.kind]) groups[e.kind].push(e);
+    else (groups[e.kind] = []).push(e);
+  }
+  const html = [];
+  html.push(`<div class="learnings-total">${entries.length} total entries</div>`);
+  for (const kind of ["lessons", "patterns", "user_prefs", "mistakes"]) {
+    const items = groups[kind] || [];
+    if (!items.length) continue;
+    html.push(
+      `<div class="learnings-group">` +
+        `<div class="learnings-group-title">` +
+          `${_KIND_ICON[kind] || "·"} ${kind.replace("_"," ")} ` +
+          `<span class="block-reflection-count">(${items.length})</span>` +
+        `</div>` +
+        `<ul class="learnings-list">` +
+          items.map(e =>
+            `<li>` +
+              `<span class="learnings-text">${escHtml(e.text)}</span>` +
+              (e.label ? ` <span class="learnings-meta">[${escHtml(e.label)}]</span>` : "") +
+              `<button class="learnings-del" title="Delete this learning" data-text="${escHtml(e.text)}">✕</button>` +
+            `</li>`
+          ).join("") +
+        `</ul>` +
+      `</div>`
+    );
+  }
+  $box.innerHTML = html.join("");
+  // Wire delete buttons.
+  $box.querySelectorAll(".learnings-del").forEach(btn => {
+    btn.addEventListener("click", async () => {
+      const text = btn.dataset.text;
+      if (!confirm("Remove this learning permanently?")) return;
+      try {
+        await api("POST", "/api/learnings/delete", { text });
+        loadLearnings();
+      } catch (e) {
+        alert("Delete failed: " + e.message);
+      }
+    });
+  });
+}
+
+async function clearAllLearnings() {
+  const $btn = document.getElementById("learnings-clear-btn");
+  if ($btn && $btn.disabled) return;
+  if (!confirm(
+    "Wipe ALL consolidated knowledge?\n\n" +
+    "This deletes every entry from the global store and drops a " +
+    "'knowledge cleared' marker into every conversation so you have a " +
+    "visual trace of when it happened.\n\nThis cannot be undone."
+  )) return;
+  if ($btn) { $btn.disabled = true; $btn.textContent = "Clearing…"; }
+  try {
+    const res = await api("POST", "/api/learnings/clear");
+    loadLearnings();
+    if ($btn) {
+      $btn.textContent = `Cleared ${res.removed} (marked ${res.threads_marked} threads)`;
+      setTimeout(() => {
+        $btn.textContent = "🧹 Clear all knowledge";
+        $btn.disabled = false;
+      }, 2200);
+    }
+  } catch (e) {
+    if ($btn) { $btn.disabled = false; $btn.textContent = "🧹 Clear all knowledge"; }
+    alert("Clear failed: " + e.message);
+  }
 }
 
 function closeSettings() {

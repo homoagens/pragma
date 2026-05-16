@@ -51,23 +51,24 @@ def _save_store(path: Path, data: dict) -> None:
     path.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
 
 
-def session_reflect(transcript: str = "",
-                    store_path: str = "",
-                    label: str = "") -> str:
+def session_reflect_detailed(transcript: str = "",
+                             store_path: str = "",
+                             label: str = "") -> dict:
     """
-    [H] Run a reflection pass on a completed task and persist durable learnings
-    to the cross-thread learnings store.
+    Internal version of session_reflect that returns a structured result
+    instead of just the summary string. Used by the server's reflection
+    worker to surface the specific entries it added to the UI (so the
+    user can expand the "📚 Saved 2 lessons" indicator and see what they
+    actually contain).
 
-    transcript : the task narrative (thoughts + actions + observations).
-                 If empty, the skill returns ERROR (the caller must provide it).
-    store_path : where to persist. Defaults to config.LEARNINGS_PATH.
-    label      : optional short tag, attached to every entry produced this round.
-
-    Returns "OK: saved N learnings (lessons=a patterns=b user_prefs=c mistakes=d)"
-    or "ERROR: ..." or "SKIP: nothing to learn" if the model returns empty arrays.
+    Returns:
+      { "status":  "ok" | "skip" | "error",
+        "summary": "<short human label, same as session_reflect() str>",
+        "added":   [ {kind, text, label, ts}, ... ]   # newly persisted only
+      }
     """
     if not transcript or not transcript.strip():
-        return "ERROR: transcript is empty"
+        return {"status": "error", "summary": "ERROR: transcript is empty", "added": []}
 
     target = Path(store_path) if store_path else Path(config.LEARNINGS_PATH)
 
@@ -83,7 +84,9 @@ def session_reflect(transcript: str = "",
         )
         result = extract_json(raw)
     except Exception as e:
-        return f"ERROR: reflect LLM call failed — {e}"
+        return {"status": "error",
+                "summary": f"ERROR: reflect LLM call failed — {e}",
+                "added": []}
 
     buckets = {
         "lessons":    result.get("lessons", []) or [],
@@ -91,12 +94,14 @@ def session_reflect(transcript: str = "",
         "user_prefs": result.get("user_prefs", []) or [],
         "mistakes":   result.get("mistakes", []) or [],
     }
-    total = sum(len(v) for v in buckets.values())
-    if total == 0:
-        return "SKIP: nothing worth learning from this session"
+    if sum(len(v) for v in buckets.values()) == 0:
+        return {"status": "skip",
+                "summary": "SKIP: nothing worth learning from this session",
+                "added": []}
 
     store = _load_store(target)
     ts    = _now()
+    added: list[dict] = []
     for kind, items in buckets.items():
         for it in items:
             if not isinstance(it, str) or not it.strip():
@@ -105,21 +110,52 @@ def session_reflect(transcript: str = "",
             # Cheap dedup: skip if an entry with the same text already exists.
             if any(e.get("text") == text for e in store["entries"]):
                 continue
-            store["entries"].append({
-                "kind":  kind,
-                "text":  text,
-                "label": label or "",
-                "ts":    ts,
-            })
+            entry = {"kind": kind, "text": text, "label": label or "", "ts": ts}
+            store["entries"].append(entry)
+            added.append(entry)
 
     try:
         _save_store(target, store)
     except Exception as e:
-        return f"ERROR writing learnings store: {e}"
+        return {"status": "error",
+                "summary": f"ERROR writing learnings store: {e}",
+                "added": []}
 
-    saved = (
+    # Report counts of what was actually persisted (post-dedup), not what
+    # the model proposed.
+    counts = {k: 0 for k in buckets}
+    for a in added:
+        counts[a["kind"]] = counts.get(a["kind"], 0) + 1
+    summary = (
         f"OK: saved learnings to {target} "
-        f"(lessons={len(buckets['lessons'])} patterns={len(buckets['patterns'])} "
-        f"user_prefs={len(buckets['user_prefs'])} mistakes={len(buckets['mistakes'])})"
+        f"(lessons={counts['lessons']} patterns={counts['patterns']} "
+        f"user_prefs={counts['user_prefs']} mistakes={counts['mistakes']})"
     )
-    return saved
+    if not added:
+        # Everything the model proposed was a duplicate.
+        return {"status": "skip",
+                "summary": "SKIP: all proposed learnings were duplicates",
+                "added": []}
+    return {"status": "ok", "summary": summary, "added": added}
+
+
+def session_reflect(transcript: str = "",
+                    store_path: str = "",
+                    label: str = "") -> str:
+    """
+    [H] Run a reflection pass on a completed task and persist durable learnings
+    to the cross-thread learnings store.
+
+    transcript : the task narrative (thoughts + actions + observations).
+                 If empty, the skill returns ERROR (the caller must provide it).
+    store_path : where to persist. Defaults to config.LEARNINGS_PATH.
+    label      : optional short tag, attached to every entry produced this round.
+
+    Returns "OK: saved N learnings (lessons=a patterns=b user_prefs=c mistakes=d)"
+    or "ERROR: ..." or "SKIP: nothing to learn" if the model returns empty arrays.
+
+    This is the string-returning wrapper expected by the agent skill protocol.
+    For structured output (used by the server's background worker to show the
+    added entries in the UI) call session_reflect_detailed() directly.
+    """
+    return session_reflect_detailed(transcript, store_path, label)["summary"]

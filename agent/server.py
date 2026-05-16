@@ -65,14 +65,18 @@ THREADS_DIR.mkdir(parents=True, exist_ok=True)
 
 # Lock for cwd operations (chdir-based skills) — serializes across agent threads
 _chdir_lock = threading.Lock()
-# Lock for thread file writes on disk
-_file_locks: dict[str, threading.Lock] = {}
+# Lock for thread file writes on disk. RLock so nested acquisitions from the
+# same thread don't deadlock — needed because _persist_event_to_thread holds
+# the lock while loading the thread, then calls _save_thread which also
+# acquires it. Without RLock we'd deadlock; without ANY lock we'd race with
+# concurrent persist_message calls and `os.replace` would fail on Windows.
+_file_locks: dict[str, threading.RLock] = {}
 _file_locks_master = threading.Lock()
 
-def _lock_for(thread_id: str) -> threading.Lock:
+def _lock_for(thread_id: str) -> threading.RLock:
     with _file_locks_master:
         if thread_id not in _file_locks:
-            _file_locks[thread_id] = threading.Lock()
+            _file_locks[thread_id] = threading.RLock()
         return _file_locks[thread_id]
 
 def _thread_path(thread_id: str) -> Path:
@@ -137,6 +141,122 @@ def _delete_thread(thread_id: str) -> bool:
     with _lock_for(thread_id):
         p.unlink()
     return True
+
+
+# ── Background reflection worker ──────────────────────────────────────────────
+#
+# session_reflect is moved off the foreground task path: as soon as a task ends
+# with a conclusion, the transcript is pushed to a global queue and the WS
+# worker is freed. A single dedicated thread drains the queue one item at a
+# time (FIFO), runs session_reflect, persists the events to the thread's
+# message log, and — if the same thread still has an active WebSocket — pushes
+# `reflection_start` / `reflection` events live so the UI can react.
+#
+# Why one worker, not a pool: session_reflect is a single LLM call. With
+# `llama-server -np 2` the backend can serve user-facing requests concurrently
+# with the reflection call, which is the speed-up the user gets. Running more
+# than one reflection in parallel would compete with foreground requests for
+# llama.cpp's parallel slots, defeating the point.
+
+import queue
+
+# {thread_id -> (asyncio loop, async_queue)} for live WS deliveries.
+# Populated when a WS connects, cleared when it disconnects.
+_thread_ws_registry: "dict[str, tuple[object, object]]" = {}
+_thread_ws_lock = threading.Lock()
+
+_reflection_queue: "queue.Queue[dict | None]" = queue.Queue()
+
+
+def _emit_to_thread(thread_id: str, event: dict) -> None:
+    """Deliver an event to the live WS of `thread_id`, if one is connected.
+    Silently dropped if the thread is not currently being viewed — the event
+    is persisted to disk by the caller anyway, so the user will see it on
+    next thread open."""
+    with _thread_ws_lock:
+        target = _thread_ws_registry.get(thread_id)
+    if not target:
+        return
+    loop, async_queue = target
+    try:
+        loop.call_soon_threadsafe(async_queue.put_nowait, event)
+    except Exception:
+        pass  # WS might have just closed
+
+
+def _reflection_worker_loop() -> None:
+    while True:
+        item = _reflection_queue.get()
+        try:
+            if item is None:
+                return  # shutdown sentinel
+            thread_id = item["thread_id"]
+            transcript = item["transcript"]
+            label      = item.get("label", "")
+            thread_path = item["thread_path"]
+
+            # Notify UI that this reflection has started running (not just queued).
+            start_ev = {"type": "reflection_start"}
+            _persist_event_to_thread(thread_path, start_ev)
+            _emit_to_thread(thread_id, start_ev)
+
+            # Run the actual reflection (single LLM call). Use the detailed
+            # variant so we can ship the persisted entries to the UI for
+            # inspection (the user expands the indicator to see what was
+            # actually saved).
+            try:
+                from skills.session_reflect.skill import session_reflect_detailed as _reflect
+                res = _reflect(transcript=transcript, label=label)
+                done_ev = {
+                    "type":    "reflection",
+                    "content": res.get("summary", ""),
+                    "added":   res.get("added", []),
+                }
+            except Exception as e:
+                done_ev = {
+                    "type":    "reflection",
+                    "content": f"ERROR: {e}",
+                    "added":   [],
+                }
+
+            _persist_event_to_thread(thread_path, done_ev)
+            _emit_to_thread(thread_id, done_ev)
+        except Exception as outer:
+            try:
+                if baseline_config.DEBUG:
+                    print(f"[reflection-worker] failure: {outer}")
+            except Exception:
+                pass
+        finally:
+            _reflection_queue.task_done()
+
+
+def _persist_event_to_thread(thread_path, event: dict) -> None:
+    """Append an event to the thread's JSON message log on disk.
+    Hold the per-thread lock for the entire load → modify → save cycle to
+    serialize with concurrent persist_message calls from the foreground
+    task. Lock is an RLock so the nested acquisition inside _save_thread
+    is safe."""
+    try:
+        from pathlib import Path as _Path
+        p = _Path(thread_path)
+        if not p.exists():
+            return
+        thread_id = p.stem
+        with _lock_for(thread_id):
+            data = _load_thread(thread_id)
+            if data is None:
+                return
+            data.setdefault("messages", []).append(event)
+            _save_thread(data)
+    except Exception:
+        pass  # never let persistence failure crash the worker
+
+
+_reflection_worker_thread = threading.Thread(
+    target=_reflection_worker_loop, name="reflection-worker", daemon=True,
+)
+_reflection_worker_thread.start()
 
 
 # ── FastAPI app ───────────────────────────────────────────────────────────────
@@ -327,6 +447,108 @@ async def reload_settings():
         "env_path": str(_ENV_PATH),
         "env_lines": _env_lines(),
     }
+
+@app.get("/api/learnings")
+async def api_learnings():
+    """
+    Return the global cross-thread learnings store. Used by the UI's
+    "Knowledge" tab in the settings panel. Entries are grouped by kind on
+    the client side.
+    """
+    try:
+        from pathlib import Path as _P
+        import json as _json
+        p = _P(baseline_config.LEARNINGS_PATH)
+        if not p.exists():
+            return {"path": str(p), "entries": []}
+        data = _json.loads(p.read_text(encoding="utf-8"))
+        return {
+            "path":       str(p),
+            "created_at": data.get("created_at", ""),
+            "entries":    data.get("entries", []),
+        }
+    except Exception as e:
+        raise HTTPException(500, f"Could not read learnings store: {e}")
+
+
+class DeleteLearningBody(BaseModel):
+    text: str
+
+
+@app.post("/api/learnings/delete")
+async def api_learnings_delete(body: DeleteLearningBody):
+    """
+    Remove a single learning entry from the store by its exact text.
+    Lets the user prune obviously-bad learnings from the UI without
+    editing the JSON by hand.
+    """
+    try:
+        from pathlib import Path as _P
+        import json as _json
+        p = _P(baseline_config.LEARNINGS_PATH)
+        if not p.exists():
+            return {"removed": 0}
+        data = _json.loads(p.read_text(encoding="utf-8"))
+        before = len(data.get("entries", []))
+        data["entries"] = [e for e in data.get("entries", [])
+                           if e.get("text") != body.text]
+        removed = before - len(data["entries"])
+        p.write_text(_json.dumps(data, indent=2, ensure_ascii=False),
+                     encoding="utf-8")
+        return {"removed": removed}
+    except Exception as e:
+        raise HTTPException(500, f"Could not update learnings store: {e}")
+
+
+@app.post("/api/learnings/clear")
+async def api_learnings_clear():
+    """
+    Wipe ALL cross-thread learnings and drop a `knowledge_cleared` marker
+    into every thread's message log so the user has a clear visual trace
+    in each conversation that the store was emptied. Active WebSocket
+    sessions also receive the marker live so the indicator appears
+    immediately in the open tabs.
+    """
+    from pathlib import Path as _P
+    import json as _json
+
+    # 1. Clear the global learnings file.
+    removed = 0
+    p = _P(baseline_config.LEARNINGS_PATH)
+    try:
+        if p.exists():
+            data = _json.loads(p.read_text(encoding="utf-8"))
+            removed = len(data.get("entries", []))
+            data["entries"] = []
+            p.write_text(_json.dumps(data, indent=2, ensure_ascii=False),
+                         encoding="utf-8")
+    except Exception as e:
+        raise HTTPException(500, f"Could not clear learnings store: {e}")
+
+    # 2. Drop a `knowledge_cleared` marker into every thread on disk and
+    #    push it live to any open WS.
+    marker = {
+        "type":    "knowledge_cleared",
+        "removed": removed,
+        "ts":      _now_iso(),
+    }
+    touched = 0
+    for tp in THREADS_DIR.glob("*.json"):
+        try:
+            thread_id = tp.stem
+            with _lock_for(thread_id):
+                tdata = _load_thread(thread_id)
+                if tdata is None:
+                    continue
+                tdata.setdefault("messages", []).append(marker)
+                _save_thread(tdata)
+            _emit_to_thread(thread_id, marker)
+            touched += 1
+        except Exception:
+            continue
+
+    return {"removed": removed, "threads_marked": touched}
+
 
 @app.get("/api/threads")
 async def api_list_threads():
@@ -521,6 +743,12 @@ async def websocket_endpoint(ws: WebSocket):
     loop = asyncio.get_running_loop()
     async_queue: asyncio.Queue = asyncio.Queue()
 
+    # Register this WS in the global registry so the background reflection
+    # worker can deliver `reflection_start` / `reflection` events live while
+    # this thread is being viewed. Cleared in the `finally` of websocket_endpoint.
+    with _thread_ws_lock:
+        _thread_ws_registry[thread_id] = (loop, async_queue)
+
     # ask_user state
     answer_event = threading.Event()
     answer_store: dict[str, str] = {"value": ""}
@@ -644,20 +872,31 @@ async def websocket_endpoint(ws: WebSocket):
         )
 
     async def relay_events():
+        """Single long-lived pump for the lifetime of this WebSocket.
+        Reads every event from the per-WS async queue and forwards it to
+        the client. A `None` item is a sentinel meaning 'foreground task
+        finished' — we emit a `done` event so the UI re-enables input,
+        but we DON'T exit the loop, because background events (e.g.
+        reflection_start, reflection from the consolidation worker)
+        may still arrive while no foreground task is active."""
         while True:
             event = await async_queue.get()
             if event is None:
                 try:
                     await ws.send_json({"type": "done"})
                 except Exception:
-                    pass
-                break
+                    return
+                continue
             try:
                 await ws.send_json(event)
             except Exception:
-                break
+                return
 
-    relay_task: Optional[asyncio.Task] = None
+    # Start the per-WS event pump once, before any task. It lives for the
+    # full lifetime of the WS so background-emitted events (reflection_start,
+    # reflection from the consolidation worker) reach the client even when
+    # no foreground task is running.
+    relay_task: Optional[asyncio.Task] = asyncio.create_task(relay_events())
 
     try:
         # Send initial thread state (including cwd)
@@ -699,13 +938,11 @@ async def websocket_endpoint(ws: WebSocket):
                     })
                     continue
 
-                if relay_task and not relay_task.done():
-                    relay_task.cancel()
-
-                # Drain residual queue events
-                while not async_queue.empty():
-                    try: async_queue.get_nowait()
-                    except asyncio.QueueEmpty: break
+                # NB: the relay_task is created ONCE (below, on WS open) and
+                # kept alive for the whole connection. Do NOT cancel or drain
+                # it here — otherwise background events (reflection_start,
+                # reflection) emitted by the consolidation worker between
+                # tasks would be lost.
 
                 answer_event.clear()
                 answer_store["value"] = ""
@@ -797,16 +1034,20 @@ async def websocket_endpoint(ws: WebSocket):
                                 })
                                 _save_thread(thread_data)
 
-                                # ── Auto session_reflect ─────────────────
+                                # ── Auto session_reflect (asynchronous) ──
                                 # Build a compact transcript from the persisted
-                                # messages of this task and feed it to the
-                                # reflection skill. Runs in this same worker
-                                # thread, after the task has produced a
-                                # conclusion, so the user never waits for it
-                                # in the UI critical path of the next message.
+                                # messages of this task and PUSH it to the
+                                # global reflection queue. A single dedicated
+                                # background worker thread will run the actual
+                                # LLM call. The user-facing task is NOT held
+                                # back: as soon as we push, this worker frees
+                                # the task lock and the UI can start a new task
+                                # immediately. With `llama-server -np 2` the
+                                # reflection runs in parallel with the user's
+                                # next request. If multiple reflections are
+                                # pending, they execute FIFO one at a time.
                                 if getattr(baseline_config, "AUTO_REFLECT", False):
                                     try:
-                                        from skills.session_reflect.skill import session_reflect as _reflect
                                         # Take only the events of THIS task:
                                         # everything after the last "user" message.
                                         msgs = thread_data.get("messages", [])
@@ -835,37 +1076,23 @@ async def websocket_endpoint(ws: WebSocket):
                                                 transcript_parts.append(f"ERROR: {ev.get('content','')[:300]}")
                                         transcript = "\n".join(transcript_parts)
                                         if transcript.strip():
-                                            # Notify the UI that reflection is
-                                            # starting — the task already has a
-                                            # conclusion but the worker is still
-                                            # busy. Without this the user thinks
-                                            # the agent is frozen.
-                                            start_ev = {"type": "reflection_start"}
-                                            persist_message(start_ev)
+                                            # Emit a "queued" event immediately so
+                                            # the UI shows the indicator without
+                                            # waiting for the worker to wake up.
+                                            queued_ev = {"type": "reflection_queued"}
+                                            persist_message(queued_ev)
                                             loop.call_soon_threadsafe(
-                                                async_queue.put_nowait, start_ev)
+                                                async_queue.put_nowait, queued_ev)
 
-                                            reflect_result = _reflect(
-                                                transcript=transcript,
-                                                label=f"thread:{thread_id}",
-                                            )
-                                            done_ev = {
-                                                "type":    "reflection",
-                                                "content": reflect_result,
-                                            }
-                                            persist_message(done_ev)
-                                            loop.call_soon_threadsafe(
-                                                async_queue.put_nowait, done_ev)
+                                            _reflection_queue.put({
+                                                "thread_id":   thread_id,
+                                                "thread_path": str(_thread_path(thread_id)),
+                                                "transcript":  transcript,
+                                                "label":       f"thread:{thread_id}",
+                                            })
                                     except Exception as _re:
                                         if baseline_config.DEBUG:
-                                            print(f"[auto-reflect] failed: {_re}")
-                                        err_ev = {
-                                            "type":    "reflection",
-                                            "content": f"ERROR: {_re}",
-                                        }
-                                        persist_message(err_ev)
-                                        loop.call_soon_threadsafe(
-                                            async_queue.put_nowait, err_ev)
+                                            print(f"[auto-reflect enqueue] failed: {_re}")
 
                             stats_ev = {
                                 "type":    "stats",
@@ -884,7 +1111,8 @@ async def websocket_endpoint(ws: WebSocket):
                         task_running.clear()
 
                 threading.Thread(target=run_in_thread, daemon=True).start()
-                relay_task = asyncio.create_task(relay_events())
+                # relay_task is created once per WS (see WS open block);
+                # do NOT re-create here or we'd spawn a new pump per task.
 
             # ── ask_user answer ─────────────────────────────────────────────
             elif mtype == "user_answer":
@@ -907,3 +1135,12 @@ async def websocket_endpoint(ws: WebSocket):
     except WebSocketDisconnect:
         if relay_task:
             relay_task.cancel()
+    finally:
+        # Stop receiving live reflection events for this thread when the
+        # WS closes. The background worker will still persist them to disk.
+        with _thread_ws_lock:
+            current = _thread_ws_registry.get(thread_id)
+            # Only remove if it's still pointing at *this* WS (another tab
+            # may have reconnected on the same thread in the meantime).
+            if current and current[1] is async_queue:
+                _thread_ws_registry.pop(thread_id, None)

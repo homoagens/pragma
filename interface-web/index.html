@@ -134,16 +134,36 @@
   <div id="settings-backdrop" class="hidden">
     <div id="settings-modal">
       <div class="settings-header">
-        <div class="settings-title">Configuration</div>
+        <div class="settings-title">Settings</div>
         <button class="settings-close" onclick="closeSettings()">✕</button>
       </div>
 
-      <div class="settings-body">
+      <div class="settings-tabs">
+        <button class="settings-tab active" data-tab="config" onclick="switchSettingsTab('config')">Configuration</button>
+        <button class="settings-tab"        data-tab="knowledge" onclick="switchSettingsTab('knowledge')">Knowledge</button>
+      </div>
+
+      <div class="settings-body" id="settings-tab-config">
         <div class="env-path-row">
           <code id="settings-envpath">.env</code>
           <span class="hint">— loaded at startup, restart to apply changes</span>
         </div>
         <pre id="s-env-lines" class="env-lines">(no .env found)</pre>
+      </div>
+
+      <div class="settings-body hidden" id="settings-tab-knowledge">
+        <div class="env-path-row">
+          <code id="settings-learnings-path">~/.pragma/learnings.json</code>
+          <span class="hint">— cross-thread store, populated by session_reflect</span>
+        </div>
+        <div class="learnings-toolbar">
+          <button id="learnings-clear-btn" class="btn-danger" onclick="clearAllLearnings()" title="Wipe every learning. A marker is dropped into every conversation so you see when this happened.">
+            🧹 Clear all knowledge
+          </button>
+        </div>
+        <div id="learnings-container">
+          <div class="hint">Loading…</div>
+        </div>
       </div>
 
       <div class="settings-footer">

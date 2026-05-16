@@ -286,23 +286,70 @@ header {
   border-left-color: var(--thinking-color);
 }
 
+/* ── Knowledge cleared marker ──
+   Permanent divider in the conversation flow showing the user wiped
+   the global learnings store from Settings → Knowledge. */
+.block-knowledge-cleared {
+  display: flex; align-items: center; gap: 10px;
+  margin: 16px 0;
+  color: var(--text-subtle);
+  font-size: 11px; font-family: var(--font-mono);
+  text-transform: uppercase; letter-spacing: 0.06em;
+}
+.block-knowledge-cleared .kc-line {
+  flex: 1; height: 1px; background: var(--border);
+}
+.block-knowledge-cleared .kc-label {
+  white-space: nowrap;
+}
+.block-knowledge-cleared .kc-ts {
+  color: var(--text-subtle); text-transform: none;
+  font-family: var(--font-ui); letter-spacing: 0;
+}
+
 /* ── Reflection indicator ──
    Shown after a successful conclusion while session_reflect runs.
-   Lightweight: small left-border accent, monospace, fades out when done. */
+   Lightweight: small left-border accent, monospace. Expandable when the
+   reflection produced entries (click on the header to reveal them). */
 .block-reflection {
-  display: flex; align-items: center; gap: 8px;
+  display: block;
   padding: 4px 10px;
   margin: 6px 0;
   font-family: var(--font-mono); font-size: 11.5px;
   color: var(--text-subtle);
   border-left: 2px solid var(--text-subtle);
-  opacity: 1;
-  transition: opacity 1s ease;
 }
 .block-reflection-done { color: var(--text); border-left-color: var(--accent); }
-.block-reflection-fade { opacity: 0; }
+.block-reflection-header {
+  display: flex; align-items: center; gap: 6px;
+  user-select: none;
+}
+.block-reflection-chevron {
+  display: inline-block; width: 10px; text-align: center;
+  color: var(--text-muted); font-size: 10px;
+  transition: transform 0.1s ease;
+}
+.block-reflection-chevron-mute { opacity: 0.4; }
 .block-reflection-icon { font-size: 14px; line-height: 1; }
 .block-reflection-text { line-height: 1.4; }
+.block-reflection-body {
+  margin-top: 6px; padding: 4px 0 6px 16px;
+  border-top: 1px dashed var(--border);
+  color: var(--text);
+}
+.block-reflection-group-title {
+  font-weight: 600; color: var(--text-muted);
+  margin: 6px 0 2px; font-size: 11px;
+  text-transform: uppercase; letter-spacing: 0.04em;
+}
+.block-reflection-count { color: var(--text-subtle); font-weight: 400; }
+.block-reflection-list {
+  list-style: disc; padding-left: 20px; margin: 0 0 4px;
+}
+.block-reflection-list li {
+  margin: 2px 0; line-height: 1.5; font-family: var(--font-ui);
+  font-size: 12.5px;
+}
 /* Live char counter: appears at the end of the streaming text. Reassures
    the user that the stream is alive even when the visible tail scrolls slowly. */
 .block-streaming[data-chars]::after {
@@ -638,6 +685,81 @@ details[open] .line-chevron { transform: rotate(90deg); }
   overflow-y: auto;
   display: flex; flex-direction: column; gap: 10px;
 }
+.settings-body.hidden { display: none; }
+
+.settings-tabs {
+  display: flex; gap: 4px;
+  padding: 4px 16px 0;
+  border-bottom: 1px solid var(--border);
+}
+.settings-tab {
+  background: transparent; border: none; cursor: pointer;
+  padding: 8px 14px;
+  font-size: 12.5px; color: var(--text-muted);
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+}
+.settings-tab:hover { color: var(--text); }
+.settings-tab.active {
+  color: var(--text); font-weight: 600;
+  border-bottom-color: var(--accent);
+}
+
+/* ── Knowledge tab (cross-thread learnings store) ── */
+.learnings-toolbar {
+  display: flex; justify-content: flex-end; margin: -4px 0 8px;
+}
+.btn-danger {
+  background: transparent;
+  color: var(--danger);
+  border: 1px solid var(--danger);
+  padding: 6px 12px;
+  font-size: 12px; font-weight: 500;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s;
+}
+.btn-danger:hover:not(:disabled) {
+  background: var(--danger); color: #fff;
+}
+.btn-danger:disabled { opacity: 0.6; cursor: default; }
+
+.learnings-total {
+  font-size: 11.5px; color: var(--text-subtle);
+  margin-bottom: 4px;
+}
+.learnings-group {
+  background: var(--surface-2); border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 8px 12px; margin-bottom: 8px;
+}
+.learnings-group-title {
+  font-size: 11.5px; font-weight: 600; color: var(--text-muted);
+  text-transform: uppercase; letter-spacing: 0.04em;
+  margin-bottom: 4px;
+}
+.learnings-list {
+  list-style: none; padding: 0; margin: 0;
+}
+.learnings-list li {
+  display: flex; align-items: flex-start; gap: 8px;
+  padding: 6px 0;
+  font-size: 12.5px; line-height: 1.5; color: var(--text);
+  border-bottom: 1px solid var(--border);
+}
+.learnings-list li:last-child { border-bottom: none; }
+.learnings-text { flex: 1; }
+.learnings-meta {
+  font-family: var(--font-mono); font-size: 10.5px;
+  color: var(--text-subtle);
+}
+.learnings-del {
+  background: transparent; border: none; cursor: pointer;
+  color: var(--text-subtle); font-size: 12px;
+  width: 20px; height: 20px; border-radius: 3px; flex-shrink: 0;
+  display: flex; align-items: center; justify-content: center;
+}
+.learnings-del:hover { background: var(--surface); color: var(--danger); }
 
 .env-path-row {
   display: flex; align-items: baseline; gap: 6px; flex-wrap: wrap;
