@@ -63,14 +63,63 @@ def _log_step(log_path: Path, entry: dict):
 
 
 def _call_skill(cfg: AgentConfig, action: str, args: dict) -> str:
-    """Execute a skill with error handling. Always returns a string."""
+    """Execute a skill with error handling. Always returns a string.
+
+    Before invoking the skill, validate its signature against the supplied
+    args via inspect.signature.bind. This lets us produce a clear,
+    actionable error message when the model omits a required arg —
+    instead of the cryptic 'missing 1 required positional argument'
+    traceback that mentions internal wrapper names."""
     if action not in cfg.skills:
         return f"ERROR: skill '{action}' does not exist. Available: {list(cfg.skills)}"
+    fn = cfg.skills[action]
+    kwargs = dict(args) if args else {}
+    if cfg.skill_context is not None:
+        kwargs.setdefault(cfg.skill_context_kwarg, cfg.skill_context)
+
+    # ── Validate signature BEFORE calling ──
+    import inspect as _inspect
     try:
-        fn = cfg.skills[action]
-        kwargs = dict(args)
-        if cfg.skill_context is not None:
-            kwargs.setdefault(cfg.skill_context_kwarg, cfg.skill_context)
+        _inspect.signature(fn).bind(**kwargs)
+    except TypeError as e:
+        # Surface a friendly error that names the missing/unexpected args
+        # explicitly. The raw msg ("missing 1 required positional argument:
+        # 'path'") is shown after, so the model has both.
+        try:
+            sig = _inspect.signature(fn)
+            required = [p.name for p in sig.parameters.values()
+                        if p.default is _inspect.Parameter.empty
+                        and p.kind in (_inspect.Parameter.POSITIONAL_ONLY,
+                                       _inspect.Parameter.POSITIONAL_OR_KEYWORD,
+                                       _inspect.Parameter.KEYWORD_ONLY)
+                        and p.name not in (cfg.skill_context_kwarg,)]
+            sent_keys = sorted(k for k in kwargs.keys()
+                               if k != cfg.skill_context_kwarg)
+            missing = [r for r in required if r not in kwargs]
+            extra   = [k for k in sent_keys if k not in sig.parameters
+                       and not any(p.kind == _inspect.Parameter.VAR_KEYWORD
+                                   for p in sig.parameters.values())]
+            lines = [
+                f"ERROR: invalid arguments for skill `{action}`.",
+                f"  you sent     : {sent_keys}",
+                f"  required     : {required}",
+            ]
+            if missing:
+                lines.append(f"  MISSING      : {missing}")
+            if extra:
+                lines.append(f"  unexpected   : {extra}")
+            lines.append(f"  raw error    : {e}")
+            lines.append(
+                "Hint: this often happens when your JSON `args` was "
+                "malformed and json-repair dropped fields during recovery. "
+                "Re-emit the action with the full args dict, double-checking "
+                "every required field is present."
+            )
+            return "\n".join(lines)
+        except Exception:
+            return f"ERROR executing {action}: {e}"
+
+    try:
         return str(fn(**kwargs))
     except Exception as e:
         return f"ERROR executing {action}: {e}"
@@ -272,6 +321,11 @@ def run_agent(cfg: AgentConfig, user_task: str, log_path: Optional[Path] = None,
                 step += 1
                 continue
 
+        # Pull out the json-repair sentinels (if any) and drop them from the
+        # response so they don't leak into downstream consumers.
+        _was_repaired = response.pop("__pragma_json_repaired__", False)
+        _lost_keys    = response.pop("__pragma_json_lost_keys__", []) or []
+
         thought = response.get("thought", "")
         if config.DEBUG:
             console.print(Panel(thought, title="THOUGHT", style="bold yellow"))
@@ -307,6 +361,35 @@ def run_agent(cfg: AgentConfig, user_task: str, log_path: Optional[Path] = None,
         _emit({"type": "action", "name": action, "args": args, "step": step})
 
         observation = _call_skill(cfg, action, args)
+
+        # If json-repair ran AND the skill failed AND the repair dropped
+        # known agent-keys, append a diagnostic note. Most failures of this
+        # shape are caused exactly by that. Without this hint the model
+        # sees a generic "missing arg" and assumes the skill itself is
+        # broken (which is what happened in the snake-game session).
+        if (_was_repaired and _lost_keys
+                and isinstance(observation, str)
+                and observation.lstrip().startswith("ERROR")):
+            observation = (
+                observation
+                + "\n\n[JSON-REPAIR NOTE]: your JSON args were malformed "
+                "and recovered by the lenient parser. These keys appeared "
+                f"in your raw output but did NOT make it into the parsed "
+                f"args: {_lost_keys}. Re-emit the action with simpler / "
+                "shorter values for these fields (or base64-encode them "
+                "via replace_in_file_b64) so the JSON layer doesn't drop "
+                "them."
+            )
+        elif _was_repaired and _lost_keys:
+            # Skill succeeded but the repair still lost fields — still warn
+            # in case the success was partial / wrong, so the model can
+            # double-check the next step.
+            observation = (
+                observation
+                + f"\n\n[JSON-REPAIR NOTE]: parsed via lenient recovery; "
+                f"these keys may have been dropped from your args: {_lost_keys}. "
+                "Verify the next read_file shows the file in the expected state."
+            )
 
         # Stop may have been raised during the skill (e.g. ask_user, execute_command)
         if cfg.stop_event and cfg.stop_event.is_set():
@@ -396,6 +479,47 @@ def run_agent(cfg: AgentConfig, user_task: str, log_path: Optional[Path] = None,
                 })
                 # Reset so we don't fire on EVERY subsequent step indefinitely.
                 _recent_actions.clear()
+
+        # ── Error-rate watchdog ──
+        # Complements the strict (action,args) loop above. Detects the
+        # "thrashing across different skills, all erroring" pattern where
+        # the model tries 5 different things and none work. The strict
+        # watchdog misses this case by design.
+        if getattr(config, "ACTION_LOOP_ENABLED", True) and _recent_actions:
+            window = getattr(config, "ERROR_RATE_WINDOW", 5)
+            thresh = getattr(config, "ERROR_RATE_THRESHOLD", 0.75)
+            recent = _recent_actions[-window:]
+            if len(recent) >= window:
+                err_n = sum(1 for t in recent if t[2])
+                if err_n / window >= thresh:
+                    _emit({
+                        "type": "error",
+                        "content": (
+                            f"High error rate at step {step}: "
+                            f"{err_n}/{window} of recent actions returned ERROR."
+                        ),
+                    })
+                    messages.append({
+                        "role": "user",
+                        "content": (
+                            f"[SYSTEM]: HIGH ERROR RATE — {err_n} of your last "
+                            f"{window} tool calls returned ERROR, even though "
+                            f"you tried different skills. You are not progressing.\n\n"
+                            "Stop and reset. Mandatory next move — pick ONE:\n"
+                            "  a) Call `ask_user` with a clear summary of what "
+                            "you tried, what failed, and a SPECIFIC question or "
+                            "list of options. The user can unblock you.\n"
+                            "  b) Call `read_file` / `file_outline` / `list_dir` "
+                            "to ground yourself in the actual current state, "
+                            "then start fresh with one small action.\n"
+                            "  c) If the task is too ambiguous to proceed, "
+                            "produce a `conclusion` explaining what you tried, "
+                            "why it failed, and what info you'd need to retry.\n\n"
+                            "Do NOT try a 6th different skill blindly."
+                        ),
+                    })
+                    # Clear so we don't re-fire every step
+                    _recent_actions.clear()
 
         step += 1  # advance step counter for the while loop
 

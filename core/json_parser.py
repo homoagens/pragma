@@ -22,11 +22,55 @@ except Exception:  # pragma: no cover — optional dependency
     _HAS_REPAIR = False
 
 
+import re as _re
+
+# Keys we tag onto recovered dicts to signal that JSON repair fired and may
+# have dropped fields. agent.py reads these and surfaces a hint to the model.
+REPAIR_FLAG_KEY    = "__pragma_json_repaired__"
+REPAIR_LOST_KEY    = "__pragma_json_lost_keys__"
+
+# Heuristic list of arg-like keys that commonly appear in agent action
+# payloads. We only flag a "lost" key when one of THESE appears as a JSON
+# key in the raw text but is missing from the recovered dict (top-level OR
+# under args). Avoids false positives on prose that happens to contain
+# words like "path:" in user content.
+_KNOWN_KEYS = (
+    "path", "action", "args", "content", "old", "new", "anchor",
+    "instruction", "old_b64", "new_b64", "pattern", "command", "cwd",
+    "topic", "question",
+)
+_KEY_PATTERN = _re.compile(
+    r'"\s*(' + "|".join(_KNOWN_KEYS) + r')\s*"\s*:', _re.IGNORECASE,
+)
+
+
+def _detect_lost_keys(raw: str, recovered) -> list[str]:
+    """Compare the keys that look JSON-encoded in `raw` against the keys
+    present in `recovered` (top-level and under `args`). Returns the names
+    that were in the raw text but did NOT make it into the parsed dict.
+    Heuristic — only the known agent keys above are checked."""
+    if not isinstance(recovered, dict):
+        return []
+    raw_keys = {m.group(1).lower() for m in _KEY_PATTERN.finditer(raw or "")}
+    if not raw_keys:
+        return []
+    present = {k.lower() for k in recovered.keys()}
+    args_obj = recovered.get("args")
+    if isinstance(args_obj, dict):
+        present.update(k.lower() for k in args_obj.keys())
+    lost = sorted(raw_keys - present)
+    # Drop internal repair flag names from the result (they're never lost
+    # in a meaningful sense even though they could match the pattern).
+    return [k for k in lost if not k.startswith("__pragma")]
+
+
 def _parse_or_repair(candidate: str):
     """Try strict json.loads, fall back to json_repair on failure.
     Raises json.JSONDecodeError if both fail (so callers can re-raise as
-    RuntimeError with context). Repaired output is logged at debug level
-    so we know when it happens."""
+    RuntimeError with context). When repair fires, the returned dict is
+    tagged with REPAIR_FLAG_KEY=True and (when applicable) REPAIR_LOST_KEY
+    listing the agent-known keys that appear in the raw text but didn't
+    survive parsing — the agent loop uses these to warn the model."""
     try:
         return json.loads(candidate)
     except json.JSONDecodeError as strict_err:
@@ -42,6 +86,14 @@ def _parse_or_repair(candidate: str):
         # json_repair returns an empty string when truly hopeless.
         if repaired == "" or repaired is None:
             raise strict_err
+        # Annotate the recovered dict so the agent layer can surface a hint
+        # to the model. Non-dict recoveries (lists, scalars) are returned
+        # as-is — annotation only fits on dicts.
+        if isinstance(repaired, dict):
+            repaired[REPAIR_FLAG_KEY] = True
+            lost = _detect_lost_keys(candidate, repaired)
+            if lost:
+                repaired[REPAIR_LOST_KEY] = lost
         return repaired
 
 

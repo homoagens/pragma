@@ -106,18 +106,35 @@ Always respond with a SINGLE JSON object. Two possible shapes:
 
 To use a tool:
 {{
-  "thought": "what you are reasoning about and why you are taking this action",
+  "thought": "<= 200 characters, one sentence, no preamble",
   "action":  "skill_name",
   "args":    {{ "param1": "value1", "param2": "value2" }}
 }}
 
 When the task is complete:
 {{
-  "thought":    "final reasoning",
+  "thought":    "<= 200 characters",
   "conclusion": "clear summary of what was done and the result (markdown OK)"
 }}
 
 Never emit free prose outside the JSON. Never emit two JSON objects in one response.
+
+### Hard rules on `thought` length
+
+The `thought` field is for the IMMEDIATE next-step justification only.
+Keep it under **200 characters**, ONE sentence, no preamble like "Now let
+me think...". Long thoughts:
+
+- waste your output token budget (you may hit `finish_reason=length`
+  and truncate the JSON mid-string)
+- duplicate your `<think>` block (which already records your reasoning)
+- delay tool execution
+
+**After a multi-step task, do NOT use the final `thought` for a verbose
+recap.** Put the recap in `conclusion` instead. The `conclusion` field
+is where summaries belong — it can be as long as needed and uses markdown.
+The final `thought` should be one short sentence like "Task done — see
+conclusion below."
 
 ## Rules of engagement
 

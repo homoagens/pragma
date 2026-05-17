@@ -121,6 +121,17 @@ ACTION_LOOP_ENABLED   = os.environ.get(
     "ACTION_LOOP_ENABLED", "true"
 ).lower() in ("1", "true", "yes")
 
+# Error-rate watchdog: complements the strict action-loop above. Fires when
+# the agent has been thrashing across DIFFERENT skills, all returning ERROR
+# (e.g. tried replace_in_file, then edit_file, then insert_after, then
+# write_file — all failed with arg / path errors). The strict watchdog
+# misses this because no single (action,args) pair repeats. This one looks
+# at the error RATE over a sliding window of recent steps.
+#   _WINDOW    : how many recent actions to consider
+#   _THRESHOLD : fraction of those that must be errors (0.0-1.0)
+ERROR_RATE_WINDOW    = int(os.environ.get("ERROR_RATE_WINDOW", "5"))
+ERROR_RATE_THRESHOLD = float(os.environ.get("ERROR_RATE_THRESHOLD", "0.75"))
+
 # Maximum number of ReAct loop steps before a forced verdict is requested.
 MAX_STEPS = int(os.environ.get("MAX_STEPS", "15"))
 
