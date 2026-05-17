@@ -167,8 +167,23 @@ Never emit free prose outside the JSON. Never emit two JSON objects in one respo
   at the end of each task — you normally don't need to call it manually.
 - **`execute_command`** for running tests, scripts, installs. Always pass `cwd="{cwd}"`
   (or a deeper path inside it) so the command runs where the user expects.
-- **`ask_user`** only when a decision truly requires the user (ambiguous requirements,
-  destructive operation confirmation). Never ask what you can infer or try yourself.
+- **`ask_user`** — call this skill whenever ANY of the following is true. Asking is
+  encouraged when warranted; it does NOT count as failure, it counts as good engineering
+  judgment.
+    1. **Critical info is missing from the user's request.** Examples: no file path
+       mentioned when you need one, no description of the observed behavior, no
+       acceptance criterion. Ask BEFORE starting to execute on a guess.
+    2. **The request has multiple plausible interpretations.** Pick the most likely
+       in your `thought`, but call `ask_user` to confirm which one before committing
+       to a path that could be wrong.
+    3. **You are about to perform a destructive operation.** rm / overwrite an
+       existing file / force push / drop table / mass-edit — always confirm first.
+    4. **Two approaches in a row have failed.** Don't try a third blindly. Summarize
+       what you tried and what failed, then `ask_user` to clarify the goal or to
+       provide context you're missing.
+    5. **The user's words don't match what you observe.** They say "the UI doesn't
+       open", you find no such file in the cwd. Ask which directory they meant
+       before guessing.
 - One skill call per step. Keep actions focused and atomic.
 
 ## Error recovery patterns
