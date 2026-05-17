@@ -1,17 +1,30 @@
 # Pragma — ready-made setups
 
-Two tested `llama.cpp` configurations to copy-paste, with the matching
+Three tested `llama.cpp` configurations to copy-paste, with the matching
 `.env` values for Pragma. Pick the one closest to your hardware.
 
-Both setups expose the same OpenAI-compatible API on port `11434`, so
-the only difference Pragma sees is the model name and context size.
+All three expose the same OpenAI-compatible API on port `11434`, so the
+only thing Pragma sees is the model name and context size.
+
+> [!IMPORTANT]
+> **`-np 2` is mandatory** in every setup. It enables two parallel slots
+> on the llama.cpp server: one for your foreground task, one for the
+> background consolidation worker (`session_reflect`) that learns from
+> each completed task. With `-np 1` Pragma still works but the UI stays
+> blocked on "Consolidating learnings…" while the worker runs serially
+> behind every user message.
 
 ---
 
-## 🪶 Small — 4 GB VRAM laptop
+## 🐦 Starter — 4 GB VRAM, partial GPU offload  (RECOMMENDED for first-time users)
 
-For a portable setup that runs anywhere. Model: **Qwen 3 4B** dense.
-Limited context (32k), but fast and responsive on a modest GPU.
+Model: **Qwen 3.5 9B** dense, `Q4_K_M` (~5.5 GB). Roughly half the layers
+go on GPU, the rest on CPU. Around **10 tok/s** on an RTX 3050 Ti Laptop
+(4 GB VRAM). Slower than the 4B but actually completes multi-step
+debugging / refactor tasks without spiraling.
+
+This is the sweet spot if you want to **try Pragma and have it work**
+without buying a workstation GPU.
 
 ### `llama-server` (Windows batch)
 
@@ -20,13 +33,13 @@ Limited context (32k), but fast and responsive on a modest GPU.
 set PATH=C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v13.2\bin\x64;%PATH%
 cd C:\Users\io\llama.cpp
 llama-server.exe ^
-  -hf bartowski/Qwen_Qwen3-4B-GGUF ^
-  -hff Qwen_Qwen3-4B-Q5_K_M.gguf ^
-  -ngl 999 ^
-  -c 32768 ^
+  -hf bartowski/Qwen_Qwen3.5-9B-GGUF ^
+  -hff Qwen_Qwen3.5-9B-Q4_K_M.gguf ^
+  -ngl 20 ^
   -np 2 ^
-  -ctk q4_0 ^
-  -ctv q4_0 ^
+  -c 32768 ^
+  -ctk q8_0 ^
+  -ctv q8_0 ^
   --flash-attn on ^
   -t 8 ^
   --no-mmap ^
@@ -35,16 +48,12 @@ llama-server.exe ^
   --port 11434
 ```
 
-Linux/macOS equivalent: same flags, single line with `\` for line continuation,
-and adjust the CUDA path if needed (or drop it entirely for ROCm/Vulkan/CPU).
-
-What each flag does:
-- `-c 32768` — the maximum supported by Qwen3 4B.
-- `-np 2` — two parallel slots: the consolidation worker (`session_reflect`) can run while your next task starts.
-- `-ctk q4_0 -ctv q4_0` — 4-bit KV cache, fits the tight VRAM budget.
-- `-ngl 999` — push everything to GPU.
-- `--flash-attn on`, `--jinja` — necessary for Qwen-family chat templates and modern attention.
-- `-t 8` — set to your CPU's physical core count.
+Tuning knobs:
+- `-ngl 20` — number of layers placed on GPU (~half of the 9B's layers). On 4 GB VRAM start at 20; if VRAM overflows drop to 18; if you have headroom go up to 24.
+- `-c 32768` — max supported by Qwen 3.5 9B.
+- `-ctk q8_0 -ctv q8_0` — 8-bit KV cache (better quality than q4_0; you can afford it because the model itself is partially on CPU).
+- `-np 2` — see banner above.
+- `-t 8` — physical core count.
 
 ### Matching `.env`
 
@@ -52,29 +61,25 @@ What each flag does:
 LLM_PROVIDER=openai
 LLM_BASE_URL=http://127.0.0.1:11434/v1
 LLM_API_KEY=
-DEFAULT_MODEL=Qwen_Qwen3-4B-Q5_K_M
+DEFAULT_MODEL=Qwen_Qwen3.5-9B-Q4_K_M
 
 CODING_PROVIDER=openai
 CODING_BASE_URL=http://127.0.0.1:11434/v1
-CODING_MODEL=Qwen_Qwen3-4B-Q5_K_M
+CODING_MODEL=Qwen_Qwen3.5-9B-Q4_K_M
 
 CONTEXT_WINDOW=32768
 MAX_TOKENS=8192
 CODING_MAX_TOKENS=8192
 ```
 
-Notes:
-- `CONTEXT_WINDOW=32768` matches `-c 32768` on the server.
-- `MAX_TOKENS=8192` is the output cap PER STEP of the ReAct loop. Keeping it ≤ 25% of the context window leaves room for the conversation history.
-- For very long tasks Pragma will compress the message history automatically.
-
 ---
 
-## 🐉 Reference — 12 GB VRAM workstation
+## 🐉 Reference — 12 GB VRAM workstation  (daily driver)
 
 The setup used to develop Pragma. Model: **Qwen 3.6 35B A3B** (MoE) with
-full 128k context. Larger model = better tool use and longer reasoning.
-Heavier RAM requirement because most MoE experts live on CPU.
+full **128k context**. Larger model = better tool use, longer reasoning,
+robust JSON compliance. Needs lots of host RAM because most MoE experts
+live on CPU.
 
 ### `llama-server`
 
@@ -97,12 +102,11 @@ llama-server \
     --host 127.0.0.1
 ```
 
-What each flag does:
+Tuning knobs:
 - `-c 131072` — full 128k context window.
-- `-ncmoe 27` — keeps 27 MoE expert layers on CPU/RAM so the rest fits in 12 GB VRAM. Drop this flag if you have ≥ 24 GB VRAM.
-- `-ctk q4_0 -ctv q4_0` — 4-bit KV cache. Halves VRAM with no measurable quality loss.
-- `-np 2` — two parallel slots (foreground task + background reflection).
-- `-ngl 999` — push every non-offloaded layer to GPU.
+- `-ncmoe 27` — keeps 27 MoE expert layers on CPU/RAM so the rest fits in 12 GB VRAM. Drop entirely if you have ≥ 24 GB VRAM.
+- `-ctk q4_0 -ctv q4_0` — 4-bit KV cache. Required at 128k context on 12 GB.
+- `-np 2` — see banner above.
 - `--jinja` — required for Qwen3's chat template.
 
 ### Matching `.env`
@@ -132,19 +136,71 @@ CODING_MAX_TOKENS=32768
 
 - 128 GB RAM is what makes `-ncmoe 27` viable.
 - With more VRAM, drop `-ncmoe` for a substantial speedup.
-- CPU-only is possible with smaller / more quantized models — use the 4 GB recipe above as a starting point.
+
+---
+
+## ⚡ Ultra-light — 4 GB VRAM, maximum speed  (advanced, expect rough edges)
+
+Model: **Qwen 3 4B** `Q5_K_M`, **all on GPU**. Around **25–35 tok/s** on
+an RTX 3050 Ti Laptop. Fast, but small enough that on multi-step
+debugging it sometimes loops — Pragma's action-loop watchdog mitigates
+this but doesn't eliminate it.
+
+Pick this only if you've already used the Starter tier and want
+maximum throughput, knowing that the model itself will occasionally
+need to be steered back on track.
+
+### `llama-server` (Windows batch)
+
+```bat
+@echo off
+set PATH=C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v13.2\bin\x64;%PATH%
+cd C:\Users\io\llama.cpp
+llama-server.exe ^
+  -hf bartowski/Qwen_Qwen3-4B-GGUF ^
+  -hff Qwen_Qwen3-4B-Q5_K_M.gguf ^
+  -ngl 999 ^
+  -c 32768 ^
+  -np 2 ^
+  -ctk q4_0 ^
+  -ctv q4_0 ^
+  --flash-attn on ^
+  -t 8 ^
+  --no-mmap ^
+  --jinja ^
+  --host 127.0.0.1 ^
+  --port 11434
+```
+
+### Matching `.env`
+
+```env
+LLM_PROVIDER=openai
+LLM_BASE_URL=http://127.0.0.1:11434/v1
+LLM_API_KEY=
+DEFAULT_MODEL=Qwen_Qwen3-4B-Q5_K_M
+
+CODING_PROVIDER=openai
+CODING_BASE_URL=http://127.0.0.1:11434/v1
+CODING_MODEL=Qwen_Qwen3-4B-Q5_K_M
+
+CONTEXT_WINDOW=32768
+MAX_TOKENS=8192
+CODING_MAX_TOKENS=8192
+```
 
 ---
 
 ## Tuning rules of thumb
 
-A few patterns that apply to either recipe:
+Patterns that apply to every tier:
 
 1. **`CONTEXT_WINDOW` must match `-c` on the server.** If they disagree, Pragma's memory compression triggers at the wrong time.
-2. **`MAX_TOKENS` should sit at roughly 25 % of `CONTEXT_WINDOW`.** Higher = the model has more headroom for long files in `write_file`; lower = more room for conversation history. The defaults above are conservative.
-3. **`-np 2`** is what makes the asynchronous reflection genuinely parallel. With `-np 1` Pragma still works but the reflection runs after the next foreground task instead of beside it.
-4. **`Q5_K_M`** is the sweet spot for size vs quality. Try `Q4_K_M` for ~20 % less VRAM at a small quality loss, or `Q6_K`/`Q8_0` if you have headroom.
-5. **Two-model split (optional).** Set `CODING_MODEL` / `CODING_BASE_URL` to a second `llama-server` instance running a coding specialist (e.g. `qwen2.5-coder-7b` or `deepseek-coder-v2`) to route the `code` skill to it. Leave them identical to use a single model everywhere.
+2. **`MAX_TOKENS` ≈ 25 % of `CONTEXT_WINDOW`** is a safe default. Higher = more room for `write_file` content; lower = more room for conversation history.
+3. **`-np 2` is mandatory** for the asynchronous consolidation worker to run in parallel with foreground tasks. Without it the UI stays blocked.
+4. **`Q5_K_M`** is the size/quality sweet spot. Try `Q4_K_M` for ~20 % less VRAM at a small quality loss. Avoid Q4 quantization on models < 7B — accuracy drops sharply.
+5. **`-ctk q8_0 -ctv q8_0`** (KV cache 8-bit) is preferable when VRAM allows; drop to `q4_0` only on the 12 GB / 128k context tier where it's strictly required.
+6. **Two-model split** is optional. Point `CODING_*` to a second `llama-server` instance running a coding specialist (e.g. `qwen2.5-coder-7b`, `deepseek-coder-v2`) to route the `code` skill there. Leave the values identical to use one model for everything.
 
 ---
 

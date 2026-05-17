@@ -77,8 +77,9 @@ Pragma talks to any OpenAI-compatible endpoint. The path of least resistance is 
 
 1. Grab a prebuilt binary from [github.com/ggml-org/llama.cpp/releases](https://github.com/ggml-org/llama.cpp/releases) (CUDA for NVIDIA, Vulkan for AMD/Intel, AVX2 for CPU-only).
 2. Copy a ready-made setup from **[CONFIGS.md](./CONFIGS.md)**:
-   - 🪶 **4 GB VRAM laptop** with Qwen 3 4B (the "I just want to try it" option)
-   - 🐉 **12 GB VRAM workstation** with Qwen 3.6 35B A3B MoE (the daily-driver reference)
+   - 🐦 **Starter** — 4 GB VRAM, Qwen 3.5 9B with partial GPU offload. Recommended for first-time users.
+   - 🐉 **Reference** — 12 GB VRAM, Qwen 3.6 35B A3B MoE with 128k context. Daily-driver setup.
+   - ⚡ **Ultra-light** — 4 GB VRAM, Qwen 3 4B all-on-GPU. Maximum speed, expect rough edges.
 3. Run it. Leave the terminal open.
 
 Different hardware? See [Don't know llama.cpp?](#-dont-know-llamacpp) below — there's a prompt you can paste into any LLM and it generates a tuned command for your exact box.
@@ -129,7 +130,9 @@ Tell me, step by step:
      - MoE expert offloading (-ncmoe) if the model is MoE and VRAM is tight
      - KV cache quantization (-ctk / -ctv) if memory is tight
      - flash attention (--flash-attn on)
-     - 2 parallel slots (-np 2) so async background reflection runs in parallel
+     - **MANDATORY: -np 2** so the foreground task and the background
+       consolidation worker (session_reflect) run in parallel. Without this
+       Pragma's UI blocks waiting for the worker to finish serially.
      - threads (-t) = my CPU physical core count
      - --jinja for chat template handling on Qwen-family models
    The server must listen on port 11434.
