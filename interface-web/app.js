@@ -1026,6 +1026,7 @@ function submit() {
     appendUserMessage(val);
     $input.value = "";
     autoResize();
+    document.getElementById("prompt-coach")?.classList.add("hidden");
     resolveAskUser(val);
     return;
   }
@@ -1041,6 +1042,9 @@ function submit() {
   showThinking();
   $input.value = "";
   autoResize();
+  // Hide the coach: the user committed to this prompt, no point nagging
+  // about it now. It re-evaluates on the next keystroke.
+  document.getElementById("prompt-coach")?.classList.add("hidden");
 }
 
 $sendBtn.addEventListener("click", submit);
@@ -1058,6 +1062,86 @@ function autoResize() {
   $input.style.height = Math.min($input.scrollHeight, 150) + "px";
 }
 $input.addEventListener("input", autoResize);
+
+
+// ── Prompt coach ───────────────────────────────────────────────────────────
+// Soft, never-blocking hints shown above the textarea while the user types.
+// Purely heuristic, no LLM call. The goal is to nudge the user toward
+// including the kind of context Pragma typically needs to avoid early-step
+// fumbling: which file, what was observed, what was expected.
+
+const $coach = document.getElementById("prompt-coach");
+
+// Each rule returns either null (not applicable) or a string (the hint).
+// At most ONE hint is shown at a time — the first matching rule wins, so
+// rules are ordered most-actionable-first.
+const _COACH_RULES = [
+  // Very short prompts — almost always need elaboration.
+  (text) => {
+    const words = text.trim().split(/\s+/).filter(Boolean);
+    if (words.length > 0 && words.length < 4) {
+      return "💡 Very short — consider what Pragma would need: which file? what to do? what's the expected result?";
+    }
+    return null;
+  },
+
+  // Symptom words without observation/expectation contrast.
+  (text) => {
+    const symptom = /\b(broken|doesn[' ]?t work|doesn[' ]?t open|fails?|crashes?|nothing happens|not working|hangs?)\b/i;
+    const expectation = /\b(should|expected?|supposed|want it to)\b/i;
+    if (symptom.test(text) && !expectation.test(text)) {
+      return "💡 You're describing a symptom. Add what you EXPECT to happen vs what you actually SEE — Pragma diagnoses faster with both sides.";
+    }
+    return null;
+  },
+
+  // Pronouns or vague references without a filename / path.
+  (text) => {
+    const vague = /^\s*(fix|find|check|debug|update|change|make)\s+(this|it|that|the\s+(bug|thing|issue|problem))\b/i;
+    const hasFile = /[\w-]+\.[a-z]{1,5}\b|[A-Za-z]:[\\/][^\s]+|\/[\w-./]+\.[a-z]{1,5}/i;
+    if (vague.test(text) && !hasFile.test(text)) {
+      return "💡 'this / it' is ambiguous. Mention the specific file or path, or describe where Pragma should look.";
+    }
+    return null;
+  },
+
+  // Build/create requests without spec details — soft nudge only.
+  (text) => {
+    const verb = /^\s*(create|build|make|write|generate)\b/i;
+    if (verb.test(text) && text.trim().split(/\s+/).length < 8) {
+      return "💡 Building something — a one-line spec helps (language? framework? files? interface?).";
+    }
+    return null;
+  },
+];
+
+function _runCoach() {
+  const txt = $input.value;
+  if (!txt.trim()) {
+    $coach.classList.add("hidden");
+    $coach.textContent = "";
+    return;
+  }
+  for (const rule of _COACH_RULES) {
+    const hint = rule(txt);
+    if (hint) {
+      $coach.textContent = hint;
+      $coach.classList.remove("hidden");
+      return;
+    }
+  }
+  $coach.classList.add("hidden");
+  $coach.textContent = "";
+}
+
+// Debounce so we don't recompute on every keystroke of a long paragraph.
+let _coachTimer = null;
+$input.addEventListener("input", () => {
+  if (_coachTimer) clearTimeout(_coachTimer);
+  _coachTimer = setTimeout(_runCoach, 180);
+});
+// Also hide after submit (the textarea is cleared elsewhere).
+$input.addEventListener("blur", _runCoach);
 
 
 // ── Modal (cwd selector) ───────────────────────────────────────────────────

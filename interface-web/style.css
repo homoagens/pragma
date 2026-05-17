@@ -487,6 +487,21 @@ details[open] .line-chevron { transform: rotate(90deg); }
 #input-area.answer-mode #task-input { border-color: var(--ask-border); }
 #input-area.answer-mode #send-btn { background: var(--ask-icon); }
 
+/* ── Prompt coach ──
+   Soft, never-blocking hint shown above the textarea as the user types.
+   Pure JS heuristics, no LLM call. Hidden by default. */
+#prompt-coach {
+  font-size: 11.5px; line-height: 1.45;
+  color: var(--text-muted);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-left: 2px solid var(--thinking-color);
+  border-radius: var(--radius-sm);
+  padding: 6px 10px;
+  margin-bottom: 6px;
+}
+#prompt-coach.hidden { display: none; }
+
 /* ── Input area ── */
 #input-area {
   border-top: 1px solid var(--border);
