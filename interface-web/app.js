@@ -1168,16 +1168,21 @@ async function loadLearnings() {
   }
   const html = [];
   html.push(`<div class="learnings-total">${entries.length} total entries</div>`);
+  // Each kind becomes a collapsible group — closed by default to mirror the
+  // conversation collapsibles (thought/action/observation). Click the header
+  // to reveal the bullets.
   for (const kind of ["lessons", "patterns", "user_prefs", "mistakes"]) {
     const items = groups[kind] || [];
     if (!items.length) continue;
     html.push(
       `<div class="learnings-group">` +
-        `<div class="learnings-group-title">` +
-          `${_KIND_ICON[kind] || "·"} ${kind.replace("_"," ")} ` +
+        `<div class="learnings-group-title" data-kind="${kind}">` +
+          `<span class="learnings-group-chevron">▸</span>` +
+          `<span class="learnings-group-icon">${_KIND_ICON[kind] || "·"}</span>` +
+          `<span class="learnings-group-label">${kind.replace("_"," ")}</span>` +
           `<span class="block-reflection-count">(${items.length})</span>` +
         `</div>` +
-        `<ul class="learnings-list">` +
+        `<ul class="learnings-list" style="display:none">` +
           items.map(e =>
             `<li>` +
               `<span class="learnings-text">${escHtml(e.text)}</span>` +
@@ -1190,9 +1195,26 @@ async function loadLearnings() {
     );
   }
   $box.innerHTML = html.join("");
-  // Wire delete buttons.
+
+  // Wire group toggles.
+  $box.querySelectorAll(".learnings-group-title").forEach(hdr => {
+    hdr.addEventListener("click", (ev) => {
+      // Ignore clicks on the delete buttons (they bubble from the list,
+      // but the list is hidden until we open it — defensive anyway).
+      if (ev.target.closest(".learnings-del")) return;
+      const list = hdr.parentElement.querySelector(".learnings-list");
+      if (!list) return;
+      const open = list.style.display !== "none";
+      list.style.display = open ? "none" : "block";
+      const ch = hdr.querySelector(".learnings-group-chevron");
+      if (ch) ch.textContent = open ? "▸" : "▾";
+    });
+  });
+
+  // Wire delete buttons. stopPropagation so clicking ✕ doesn't toggle the group.
   $box.querySelectorAll(".learnings-del").forEach(btn => {
-    btn.addEventListener("click", async () => {
+    btn.addEventListener("click", async (ev) => {
+      ev.stopPropagation();
       const text = btn.dataset.text;
       if (!confirm("Remove this learning permanently?")) return;
       try {
@@ -1209,23 +1231,44 @@ async function summarizeLearnings() {
   const $btn = document.getElementById("learnings-summarize-btn");
   const $box = document.getElementById("learnings-summary");
   if ($btn && $btn.disabled) return;
-  if ($btn) { $btn.disabled = true; $btn.textContent = "Summarizing…"; }
+  if ($btn) {
+    $btn.disabled = true;
+    $btn.innerHTML = `<span class="spin"></span> Summarizing…`;
+  }
   $box.classList.remove("hidden");
-  $box.innerHTML = `<div class="hint">Running a single LLM call over the store… this can take a few seconds.</div>`;
+  $box.innerHTML =
+    `<div class="hint" style="display:flex;align-items:center;gap:8px">` +
+      `<span class="spin"></span>` +
+      `<span>Running a single LLM call over the store… this can take a few seconds.</span>` +
+    `</div>`;
   try {
     const res = await api("POST", "/api/learnings/summarize");
     const md  = res.summary || "_(empty)_";
+    // Render the summary as a collapsible block, open by default (the user
+    // just clicked Summarize so they obviously want to see the result).
     $box.innerHTML =
-      `<div class="learnings-summary-header">` +
+      `<div class="learnings-summary-header" id="learnings-summary-header">` +
+        `<span class="learnings-summary-chevron">▾</span>` +
+        `<span class="learnings-summary-icon">📝</span>` +
         `<span class="learnings-summary-title">Summary</span>` +
         `<span class="learnings-summary-meta">based on ${res.count || 0} entries</span>` +
-        `<button class="learnings-summary-close" title="Hide summary" onclick="document.getElementById('learnings-summary').classList.add('hidden')">✕</button>` +
+        `<button class="learnings-summary-close" title="Hide summary"` +
+        ` onclick="event.stopPropagation();document.getElementById('learnings-summary').classList.add('hidden')">✕</button>` +
       `</div>` +
-      `<div class="learnings-summary-body markdown-body">${renderMd(md)}</div>`;
+      `<div class="learnings-summary-body markdown-body" id="learnings-summary-body">${renderMd(md)}</div>`;
+    // Wire toggle on the header (click anywhere except the ✕ button).
+    const $hdr  = document.getElementById("learnings-summary-header");
+    const $body = document.getElementById("learnings-summary-body");
+    $hdr.addEventListener("click", () => {
+      const open = $body.style.display !== "none";
+      $body.style.display = open ? "none" : "block";
+      const $ch = $hdr.querySelector(".learnings-summary-chevron");
+      if ($ch) $ch.textContent = open ? "▸" : "▾";
+    });
   } catch (e) {
     $box.innerHTML = `<div class="hint" style="color:var(--error-color)">Summary failed: ${escHtml(e.message)}</div>`;
   } finally {
-    if ($btn) { $btn.disabled = false; $btn.textContent = "📝 Summarize"; }
+    if ($btn) { $btn.disabled = false; $btn.innerHTML = "📝 Summarize"; }
   }
 }
 
