@@ -649,6 +649,22 @@ details[open] .line-chevron { transform: rotate(90deg); }
 }
 #settings-btn:hover { background: var(--surface-2); color: var(--text); border-color: var(--border-2); }
 #settings-btn svg { width: 15px; height: 15px; }
+/* Pending indicator — a small red dot on the gear when a background
+   admin op (e.g. learnings summarize) is still running. The user can
+   close the modal and the dot tells them when to come back. */
+#settings-btn { position: relative; }
+#settings-btn.has-pending::after {
+  content: "";
+  position: absolute; top: 4px; right: 4px;
+  width: 7px; height: 7px; border-radius: 50%;
+  background: #ef4444;
+  box-shadow: 0 0 0 2px var(--bg);
+  animation: settings-pending-pulse 1.4s ease-in-out infinite;
+}
+@keyframes settings-pending-pulse {
+  0%, 100% { opacity: 1; }
+  50%      { opacity: 0.4; }
+}
 
 
 /* ── Settings modal ── */

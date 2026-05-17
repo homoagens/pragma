@@ -5,9 +5,25 @@
 async function quitApp() {
   if (!confirm("Shut down the Pragma server?")) return;
   try { await fetch("/api/quit", { method: "POST" }); } catch (_) {}
-  document.body.innerHTML =
-    '<div style="display:flex;align-items:center;justify-content:center;height:100vh;'
-    + 'font-family:system-ui;color:#888;font-size:.9rem;">Server stopped.</div>';
+  // Try to close the tab. Browsers only allow this on tabs that were
+  // opened via window.open() from JS — i.e. almost never for a tab the
+  // user typed in or that start.bat launched via `start http://...`.
+  // We attempt it anyway because it's free, and fall back to a static
+  // "Server stopped" page when the browser refuses.
+  try { window.close(); } catch (_) {}
+  // Some browsers silently ignore window.close() without throwing, so we
+  // also replace the page content as a guaranteed fallback. The user can
+  // close the tab manually if the browser refused.
+  setTimeout(() => {
+    document.body.innerHTML =
+      '<div style="display:flex;flex-direction:column;align-items:center;'
+      + 'justify-content:center;height:100vh;font-family:system-ui;color:#888;'
+      + 'font-size:.9rem;gap:8px;">'
+      + '<div>Server stopped.</div>'
+      + '<div style="font-size:.75rem;color:#aaa">'
+      + 'Your browser blocked auto-close — you can close this tab manually.'
+      + '</div></div>';
+  }, 100);
 }
 
 // ── Theme ──────────────────────────────────────────────────────────────────
@@ -1235,6 +1251,9 @@ async function summarizeLearnings() {
     $btn.disabled = true;
     $btn.innerHTML = `<span class="spin"></span> Summarizing…`;
   }
+  // Mark the gear icon in the header so the user knows there's something
+  // brewing in the background even if they close the modal.
+  document.getElementById("settings-btn")?.classList.add("has-pending");
   $box.classList.remove("hidden");
   $box.innerHTML =
     `<div class="hint" style="display:flex;align-items:center;gap:8px">` +
@@ -1269,6 +1288,7 @@ async function summarizeLearnings() {
     $box.innerHTML = `<div class="hint" style="color:var(--error-color)">Summary failed: ${escHtml(e.message)}</div>`;
   } finally {
     if ($btn) { $btn.disabled = false; $btn.innerHTML = "📝 Summarize"; }
+    document.getElementById("settings-btn")?.classList.remove("has-pending");
   }
 }
 

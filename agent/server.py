@@ -559,7 +559,13 @@ async def api_learnings_summarize():
 
         try:
             import llm_client as _llm
-            summary = _llm.call_llm(
+            # call_llm is a BLOCKING synchronous HTTP call. If we awaited
+            # nothing the asyncio event loop would freeze for the whole
+            # 10-60s of the LLM round-trip, blocking every other request
+            # (notably /api/settings when the user wants to reopen the
+            # modal). Push it to the default thread pool instead.
+            summary = await asyncio.to_thread(
+                _llm.call_llm,
                 messages=[
                     {"role": "system", "content": _SUMMARIZE_SYSTEM},
                     {"role": "user",   "content": payload},
