@@ -301,19 +301,56 @@ def run_agent(cfg: AgentConfig, user_task: str, log_path: Optional[Path] = None,
             step += 1
             continue
 
+        # ── Detect & strip truncation marker from llm_client ──
+        # When finish_reason=length but we got some content, llm_client
+        # returns the partial text prefixed with TRUNCATION_PARTIAL_MARKER
+        # instead of raising. Strip the marker here and remember it so the
+        # JSON parser / fallback can annotate the result appropriately.
+        _was_truncated = False
+        if text.startswith(llm_client.TRUNCATION_PARTIAL_MARKER):
+            _was_truncated = True
+            text = text[len(llm_client.TRUNCATION_PARTIAL_MARKER):]
+            if config.DEBUG:
+                console.print("[yellow]Response truncated — attempting to salvage partial text[/yellow]")
+
         # ── JSON parsing ─────────────────────────────────────────────
         try:
             response = extract_json(text)
+            if _was_truncated and "conclusion" in response:
+                # Tag the conclusion so the user sees it was incomplete.
+                response["conclusion"] = (
+                    "_[NOTE: model response was truncated — partial conclusion below]_\n\n"
+                    + str(response["conclusion"])
+                )
         except RuntimeError as e:
             # Fallback: if the model responded with plain prose (no JSON at all),
             # treat the full text as a direct conclusion rather than an error.
             # This handles conversational/brainstorming responses from models that
-            # ignore the JSON format instruction.
+            # ignore the JSON format instruction — AND the case where the
+            # response was truncated before the JSON could even start.
             stripped = text.strip()
             if stripped and "{" not in stripped:
                 if config.DEBUG:
                     console.print("[yellow]Plain text response — wrapping as conclusion[/yellow]")
-                response = {"conclusion": stripped}
+                if _was_truncated:
+                    response = {"conclusion": (
+                        "_[NOTE: model went off-protocol and was then truncated. "
+                        "Below is the partial prose response, salvaged.]_\n\n"
+                        + stripped
+                    )}
+                else:
+                    response = {"conclusion": stripped}
+            elif _was_truncated and stripped:
+                # We have SOME text with `{` but parsing failed even after
+                # json-repair. Salvage by treating the trailing prose as
+                # a conclusion so the user gets something.
+                if config.DEBUG:
+                    console.print("[yellow]Truncated unparseable JSON — wrapping as conclusion[/yellow]")
+                response = {"conclusion": (
+                    "_[NOTE: model emitted malformed JSON that was truncated. "
+                    "Below is the raw partial output.]_\n\n"
+                    + stripped
+                )}
             else:
                 if config.DEBUG:
                     console.print(f"[red]{e}[/red]")

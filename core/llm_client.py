@@ -37,6 +37,40 @@ class LLMLooped(Exception):
     pass
 
 
+# Marker prepended to text that came back as a truncated partial. The agent
+# loop strips it back off but uses its presence to know the response was
+# cut mid-stream — useful for synthesizing a 'this was truncated' note
+# inside the conclusion when no JSON could be parsed.
+TRUNCATION_PARTIAL_MARKER = "__PRAGMA_TRUNCATED_PARTIAL__"
+
+
+def _on_length_finish(text: str, finish: str):
+    """Centralized handling of finish_reason=length.
+
+    Old behavior: ALWAYS raise. The partial text was lost — including
+    cases where the model had emitted enough content to extract a
+    conclusion / answer.
+
+    New behavior:
+      - If we have a substantive partial (> 50 chars), tag it with a
+        marker and return it. extract_json / agent.py recovery can
+        salvage it (parse as JSON if balanced, json_repair if close,
+        wrap as plain-text conclusion if neither).
+      - If the partial is empty / trivial, raise as before — there is
+        nothing to salvage.
+
+    Returns the text to return from the streaming function, or raises
+    RuntimeError when truly nothing can be saved.
+    """
+    if finish != "length":
+        return text
+    if text and len(text) > 50:
+        return TRUNCATION_PARTIAL_MARKER + text
+    raise RuntimeError(
+        f"Response truncated (finish_reason=length). Partial: {text[:100]!r}"
+    )
+
+
 class _ReasoningLoopGuard:
     """Repetition detector for streaming reasoning text.
 
@@ -361,10 +395,9 @@ def _stream_openai_compatible(messages, model, temperature, max_tokens, timeout,
                 if fin:
                     finish = fin
 
-    if finish == "length":
-        raise RuntimeError(
-            f"Response truncated (finish_reason=length). Partial: {text[:100]!r}"
-        )
+    # Salvage partial text on length truncation if possible. See _on_length_finish.
+    text = _on_length_finish(text, finish)
+    finish = "" if text.startswith(TRUNCATION_PARTIAL_MARKER) else finish
     # Fallback: some reasoning models (e.g. Qwen3) emit the entire answer
     # inside the <think> block as reasoning_content and never produce content.
     # Use the reasoning buffer as the response text in that case.
@@ -455,10 +488,9 @@ def _stream_anthropic(messages, model, temperature, max_tokens, timeout,
                     if ev.get("delta", {}).get("stop_reason") == "max_tokens":
                         finish = "length"
 
-    if finish == "length":
-        raise RuntimeError(
-            f"Response truncated (finish_reason=length). Partial: {text[:100]!r}"
-        )
+    # Salvage partial text on length truncation if possible. See _on_length_finish.
+    text = _on_length_finish(text, finish)
+    finish = "" if text.startswith(TRUNCATION_PARTIAL_MARKER) else finish
     if not text and reasoning_buf:
         text = reasoning_buf
     if not text:
@@ -528,10 +560,9 @@ def _stream_backend(messages, model, temperature, max_tokens, timeout,
                 if fin:
                     finish = fin
 
-    if finish == "length":
-        raise RuntimeError(
-            f"Response truncated (finish_reason=length). Partial: {text[:100]!r}"
-        )
+    # Salvage partial text on length truncation if possible. See _on_length_finish.
+    text = _on_length_finish(text, finish)
+    finish = "" if text.startswith(TRUNCATION_PARTIAL_MARKER) else finish
     # Fallback: some reasoning models (e.g. Qwen3) emit the entire answer
     # inside the <think> block as reasoning_content and never produce content.
     # Use the reasoning buffer as the response text in that case.
@@ -579,11 +610,9 @@ def call_llm(messages, model=None, temperature=None, max_tokens=None, timeout=No
             f"Use 'backend', 'openai' or 'anthropic'."
         )
 
-    if finish == "length":
-        raise RuntimeError(
-            f"Response truncated (finish_reason=length). Increase max_tokens. "
-            f"Partial text: {text[:100]!r}"
-        )
+    # Salvage partial text on length truncation if possible.
+    text = _on_length_finish(text, finish)
+    finish = "" if text.startswith(TRUNCATION_PARTIAL_MARKER) else finish
     if not text:
         raise RuntimeError("The model returned an empty response.")
 
@@ -626,10 +655,9 @@ def stream_llm(messages, model=None, temperature=None, max_tokens=None, timeout=
         text, finish = _call_backend(
             messages, model, temperature, max_tokens, timeout, url, key, stop_event
         )
-        if finish == "length":
-            raise RuntimeError(
-                f"Response truncated (finish_reason=length). Partial: {text[:100]!r}"
-            )
+        # Salvage partial text on length truncation if possible.
+        text = _on_length_finish(text, finish)
+        finish = "" if text.startswith(TRUNCATION_PARTIAL_MARKER) else finish
         if not text:
             raise RuntimeError("The model returned an empty response.")
         if on_token:
