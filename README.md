@@ -73,14 +73,15 @@ chmod +x install.sh start.sh && ./install.sh    # Linux / macOS
 
 ### 2. Serve a model
 
-Pragma talks to any OpenAI-compatible endpoint. The path of least resistance is `llama.cpp`:
+Pragma talks to any OpenAI-compatible endpoint. The path of least resistance is `llama.cpp`. Grab a prebuilt binary from [github.com/ggml-org/llama.cpp/releases](https://github.com/ggml-org/llama.cpp/releases) (CUDA for NVIDIA, Vulkan for AMD/Intel, AVX2 for CPU-only), then pick a ready-made `llama-server` recipe for your hardware:
 
-1. Grab a prebuilt binary from [github.com/ggml-org/llama.cpp/releases](https://github.com/ggml-org/llama.cpp/releases) (CUDA for NVIDIA, Vulkan for AMD/Intel, AVX2 for CPU-only).
-2. Copy a ready-made setup from **[CONFIGS.md](./CONFIGS.md)**:
-   - 🐦 **Starter** — 4 GB VRAM, Qwen 3.5 9B with partial GPU offload. Recommended for first-time users.
-   - 🐉 **Reference** — 12 GB VRAM, Qwen 3.6 35B A3B MoE with 128k context. Daily-driver setup.
-   - ⚡ **Ultra-light** — 4 GB VRAM, Qwen 3 4B all-on-GPU. Maximum speed, expect rough edges.
-3. Run it. Leave the terminal open.
+> [!TIP]
+> ## 👉 [**Open CONFIGS.md** to copy the `llama-server` command](./CONFIGS.md)
+>
+> Three tiers, copy-paste ready:
+> - 🐦 **Starter** — 4 GB VRAM, Qwen 3.5 9B with partial GPU offload. Recommended for first-time users.
+> - 🐉 **Reference** — 12 GB VRAM, Qwen 3.6 35B A3B MoE with 128k context. Daily-driver setup.
+> - ⚡ **Ultra-light** — 4 GB VRAM, Qwen 3 4B all-on-GPU. Maximum speed, expect rough edges.
 
 Different hardware? See [Don't know llama.cpp?](#-dont-know-llamacpp) below — there's a prompt you can paste into any LLM and it generates a tuned command for your exact box.
 
@@ -90,7 +91,10 @@ Different hardware? See [Don't know llama.cpp?](#-dont-know-llamacpp) below — 
 cp .env.example .env
 ```
 
-Open the [matching `.env` block](./CONFIGS.md) for your hardware tier and paste the values. Then:
+> [!TIP]
+> ## 👉 [**Open CONFIGS.md** and copy the `.env` block for your tier](./CONFIGS.md)
+>
+> Same file as above. Each tier's `.env` block is right below its `llama-server` command — `CONTEXT_WINDOW`, `MAX_TOKENS`, model name, the lot. Paste into your local `.env`, save, you're done.
 
 ```bat
 start.bat       :: Windows
