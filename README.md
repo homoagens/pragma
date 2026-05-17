@@ -73,15 +73,16 @@ chmod +x install.sh start.sh && ./install.sh    # Linux / macOS
 
 ### 2. Serve a model
 
-Pragma talks to any OpenAI-compatible endpoint. The path of least resistance is `llama.cpp`. Grab a prebuilt binary from [github.com/ggml-org/llama.cpp/releases](https://github.com/ggml-org/llama.cpp/releases) (CUDA for NVIDIA, Vulkan for AMD/Intel, AVX2 for CPU-only), then pick a ready-made `llama-server` recipe for your hardware:
+Pragma talks to any OpenAI-compatible endpoint. The path of least resistance is `llama.cpp`. Grab a prebuilt binary from [github.com/ggml-org/llama.cpp/releases](https://github.com/ggml-org/llama.cpp/releases) (CUDA for NVIDIA, Vulkan for AMD/Intel, AVX2 for CPU-only), then pick a ready-made `llama-server` recipe for your hardware in **[CONFIGS.md](./CONFIGS.md)**:
+
+| Tier | Hardware | Model | Speed |
+| --- | --- | --- | --- |
+| 🐦 **Starter** | 4 GB VRAM | Qwen 3.5 9B, partial CPU offload | ~10 tok/s |
+| 🐉 **Reference** | 12 GB VRAM | Qwen 3.6 35B A3B MoE, 128k context | (daily driver) |
+| ⚡ **Ultra-light** | 4 GB VRAM | Qwen 3 4B, all-on-GPU | ~30 tok/s (expect rough edges) |
 
 > [!TIP]
-> ## 👉 [**Open CONFIGS.md** to copy the `llama-server` command](./CONFIGS.md)
->
-> Three tiers, copy-paste ready:
-> - 🐦 **Starter** — 4 GB VRAM, Qwen 3.5 9B with partial GPU offload. Recommended for first-time users.
-> - 🐉 **Reference** — 12 GB VRAM, Qwen 3.6 35B A3B MoE with 128k context. Daily-driver setup.
-> - ⚡ **Ultra-light** — 4 GB VRAM, Qwen 3 4B all-on-GPU. Maximum speed, expect rough edges.
+> **→ [Copy the matching `llama-server` command from CONFIGS.md](./CONFIGS.md)** and run it. Leave the terminal open.
 
 Different hardware? See [Don't know llama.cpp?](#-dont-know-llamacpp) below — there's a prompt you can paste into any LLM and it generates a tuned command for your exact box.
 
@@ -92,9 +93,7 @@ cp .env.example .env
 ```
 
 > [!TIP]
-> ## 👉 [**Open CONFIGS.md** and copy the `.env` block for your tier](./CONFIGS.md)
->
-> Same file as above. Each tier's `.env` block is right below its `llama-server` command — `CONTEXT_WINDOW`, `MAX_TOKENS`, model name, the lot. Paste into your local `.env`, save, you're done.
+> **→ [Copy the matching `.env` block from CONFIGS.md](./CONFIGS.md)** for the same tier — model name, `CONTEXT_WINDOW`, `MAX_TOKENS`. Paste it into your local `.env`, save.
 
 ```bat
 start.bat       :: Windows
