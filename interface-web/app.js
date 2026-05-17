@@ -1205,6 +1205,30 @@ async function loadLearnings() {
   });
 }
 
+async function summarizeLearnings() {
+  const $btn = document.getElementById("learnings-summarize-btn");
+  const $box = document.getElementById("learnings-summary");
+  if ($btn && $btn.disabled) return;
+  if ($btn) { $btn.disabled = true; $btn.textContent = "Summarizing…"; }
+  $box.classList.remove("hidden");
+  $box.innerHTML = `<div class="hint">Running a single LLM call over the store… this can take a few seconds.</div>`;
+  try {
+    const res = await api("POST", "/api/learnings/summarize");
+    const md  = res.summary || "_(empty)_";
+    $box.innerHTML =
+      `<div class="learnings-summary-header">` +
+        `<span class="learnings-summary-title">Summary</span>` +
+        `<span class="learnings-summary-meta">based on ${res.count || 0} entries</span>` +
+        `<button class="learnings-summary-close" title="Hide summary" onclick="document.getElementById('learnings-summary').classList.add('hidden')">✕</button>` +
+      `</div>` +
+      `<div class="learnings-summary-body markdown-body">${renderMd(md)}</div>`;
+  } catch (e) {
+    $box.innerHTML = `<div class="hint" style="color:var(--error-color)">Summary failed: ${escHtml(e.message)}</div>`;
+  } finally {
+    if ($btn) { $btn.disabled = false; $btn.textContent = "📝 Summarize"; }
+  }
+}
+
 async function clearAllLearnings() {
   const $btn = document.getElementById("learnings-clear-btn");
   if ($btn && $btn.disabled) return;
@@ -1217,6 +1241,8 @@ async function clearAllLearnings() {
   if ($btn) { $btn.disabled = true; $btn.textContent = "Clearing…"; }
   try {
     const res = await api("POST", "/api/learnings/clear");
+    // Hide any stale summary panel — its content is no longer valid.
+    document.getElementById("learnings-summary")?.classList.add("hidden");
     loadLearnings();
     if ($btn) {
       $btn.textContent = `Cleared ${res.removed} (marked ${res.threads_marked} threads)`;

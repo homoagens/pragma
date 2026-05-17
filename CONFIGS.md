@@ -198,6 +198,7 @@ Patterns that apply to every tier:
 1. **`CONTEXT_WINDOW` must match `-c` on the server.** If they disagree, Pragma's memory compression triggers at the wrong time.
 2. **`MAX_TOKENS` ≈ 25 % of `CONTEXT_WINDOW`** is a safe default. Higher = more room for `write_file` content; lower = more room for conversation history.
 3. **`-np 2` is mandatory** for the asynchronous consolidation worker to run in parallel with foreground tasks. Without it the UI stays blocked.
+    Heavy users of Settings → Knowledge → 📝 *Summarize* on a busy thread can bump to `-np 3` to avoid the summary waiting behind an in-flight reflection. Costs a bit more VRAM, not required.
 4. **`Q5_K_M`** is the size/quality sweet spot. Try `Q4_K_M` for ~20 % less VRAM at a small quality loss. Avoid Q4 quantization on models < 7B — accuracy drops sharply.
 5. **`-ctk q8_0 -ctv q8_0`** (KV cache 8-bit) is preferable when VRAM allows; drop to `q4_0` only on the 12 GB / 128k context tier where it's strictly required.
 6. **Two-model split** is optional. Point `CODING_*` to a second `llama-server` instance running a coding specialist (e.g. `qwen2.5-coder-7b`, `deepseek-coder-v2`) to route the `code` skill there. Leave the values identical to use one model for everything.

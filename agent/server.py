@@ -500,6 +500,83 @@ async def api_learnings_delete(body: DeleteLearningBody):
         raise HTTPException(500, f"Could not update learnings store: {e}")
 
 
+_SUMMARIZE_SYSTEM = """You are summarizing what an AI coding agent has \
+learned across past tasks. You receive a list of entries grouped into:
+  - lessons    (facts the agent learned)
+  - patterns   (preferred ways of doing things)
+  - user_prefs (preferences expressed or inferred from the user)
+  - mistakes   (things that went wrong and why)
+
+Produce a concise human-readable summary in Markdown. Rules:
+- One short section per category that has entries (skip empty ones).
+- Use bullet points, ONE line per insight, MERGE near-duplicates.
+- 3-6 bullets per category MAX. Be ruthless: skip trivia, skip anything
+  already obvious to any developer.
+- Italian or English, follow the entries' dominant language.
+- Open with a one-sentence overall takeaway, then the sections.
+- Output ONLY the Markdown — no preamble, no closing remarks."""
+
+
+@app.post("/api/learnings/summarize")
+async def api_learnings_summarize():
+    """
+    Run a single LLM call over the whole learnings store and return a
+    short Markdown summary grouped by kind. Used by the "Summarize"
+    button in the Knowledge tab. The detailed entries returned by
+    /api/learnings remain the source of truth for what gets injected
+    into prompts — this endpoint is purely for human consumption.
+    """
+    try:
+        from pathlib import Path as _P
+        import json as _json
+        p = _P(baseline_config.LEARNINGS_PATH)
+        if not p.exists():
+            return {"summary": "_(no learnings yet)_", "count": 0}
+        data = _json.loads(p.read_text(encoding="utf-8"))
+        entries = data.get("entries", [])
+        if not entries:
+            return {"summary": "_(no learnings yet)_", "count": 0}
+
+        # Build a compact, kind-grouped text payload.
+        groups: dict[str, list[str]] = {
+            "lessons": [], "patterns": [], "user_prefs": [], "mistakes": [],
+        }
+        for e in entries:
+            kind = e.get("kind", "")
+            text = (e.get("text", "") or "").strip()
+            if kind in groups and text:
+                groups[kind].append(text)
+
+        lines = []
+        for kind in ("lessons", "patterns", "user_prefs", "mistakes"):
+            if not groups[kind]:
+                continue
+            lines.append(f"## {kind}")
+            for t in groups[kind]:
+                lines.append(f"- {t}")
+            lines.append("")
+        payload = "\n".join(lines).strip()
+
+        try:
+            import llm_client as _llm
+            summary = _llm.call_llm(
+                messages=[
+                    {"role": "system", "content": _SUMMARIZE_SYSTEM},
+                    {"role": "user",   "content": payload},
+                ],
+                temperature=0.2,
+                max_tokens=baseline_config.SKILL_MAX_TOKENS,
+            )
+        except Exception as e:
+            raise HTTPException(500, f"Summarization LLM call failed: {e}")
+
+        return {"summary": summary, "count": len(entries)}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(500, f"Could not summarize learnings: {e}")
+
+
 @app.post("/api/learnings/clear")
 async def api_learnings_clear():
     """

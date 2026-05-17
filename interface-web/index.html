@@ -157,10 +157,14 @@
           <span class="hint">— cross-thread store, populated by session_reflect</span>
         </div>
         <div class="learnings-toolbar">
+          <button id="learnings-summarize-btn" class="btn-secondary" onclick="summarizeLearnings()" title="Ask the LLM to produce a short human-readable summary of everything Pragma has learned, grouped by category.">
+            📝 Summarize
+          </button>
           <button id="learnings-clear-btn" class="btn-danger" onclick="clearAllLearnings()" title="Wipe every learning. A marker is dropped into every conversation so you see when this happened.">
             🧹 Clear all knowledge
           </button>
         </div>
+        <div id="learnings-summary" class="hidden"></div>
         <div id="learnings-container">
           <div class="hint">Loading…</div>
         </div>

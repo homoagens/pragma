@@ -707,8 +707,50 @@ details[open] .line-chevron { transform: rotate(90deg); }
 
 /* ── Knowledge tab (cross-thread learnings store) ── */
 .learnings-toolbar {
-  display: flex; justify-content: flex-end; margin: -4px 0 8px;
+  display: flex; justify-content: flex-end; gap: 8px;
+  margin: -4px 0 8px;
 }
+
+/* ── LLM-generated summary panel ──
+   Sits between the toolbar and the detailed entries. Hidden by default;
+   shown after the user clicks "Summarize" (or stale after a Clear). */
+#learnings-summary {
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--accent);
+  border-radius: var(--radius-sm);
+  padding: 10px 14px;
+  margin-bottom: 10px;
+}
+#learnings-summary.hidden { display: none; }
+.learnings-summary-header {
+  display: flex; align-items: baseline; gap: 8px;
+  margin-bottom: 6px;
+}
+.learnings-summary-title {
+  font-weight: 600; font-size: 12.5px; color: var(--text);
+}
+.learnings-summary-meta {
+  flex: 1; font-size: 11px; color: var(--text-subtle);
+}
+.learnings-summary-close {
+  background: transparent; border: none; cursor: pointer;
+  color: var(--text-subtle); font-size: 12px;
+  width: 20px; height: 20px; border-radius: 3px;
+}
+.learnings-summary-close:hover {
+  background: var(--surface); color: var(--text);
+}
+.learnings-summary-body {
+  font-size: 12.5px; line-height: 1.55;
+}
+.learnings-summary-body h2 {
+  font-size: 11.5px !important; font-weight: 600;
+  text-transform: uppercase; letter-spacing: 0.04em;
+  color: var(--text-muted); margin: 8px 0 4px !important;
+}
+.learnings-summary-body ul { padding-left: 1.2em; margin: 0 0 6px; }
+.learnings-summary-body li { margin: 1px 0; }
 .btn-danger {
   background: transparent;
   color: var(--danger);
