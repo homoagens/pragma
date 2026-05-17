@@ -195,6 +195,14 @@ Never emit free prose outside the JSON. Never emit two JSON objects in one respo
   `write_file` on existing files — use `replace_in_file` / `insert_after` / `insert_before`
   / `append_file` instead, (3) if the task is large, call `todo_create` once and execute
   one small step per turn.
+- **JSON-escape trap (literal `\n`, `\t` etc. inside files).** If a file contains a
+  LITERAL escape sequence — for example the two characters `\` and `n` instead of a real
+  newline (you can see them in a `read_file` as `\\n` in the displayed bytes, or as a JS
+  SyntaxError when the file is loaded in a browser) — DO NOT try to fix it with
+  `replace_in_file` / `edit_file`. The JSON-arg layer makes the escape level ambiguous and
+  the model (you) routinely picks the wrong number of backslashes, fails, retries, fails
+  again. Use `replace_in_file_b64` instead: base64-encode both `old` and `new` payloads
+  so the bytes cross the wire unambiguously. Same skill, no escape ambiguity.
 
 ## Task completion
 

@@ -763,7 +763,8 @@ def _build_thread_skills(thread_cwd: str,
 
     for _name in ("read_file", "write_file", "edit_file",
                   "insert_after", "insert_before", "append_file",
-                  "replace_in_file", "file_outline"):
+                  "replace_in_file", "replace_in_file_b64",
+                  "file_outline"):
         _orig = GEMMA_SKILLS.get(_name)
         if _orig:
             def _make_wrapped(fn):
