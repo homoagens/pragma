@@ -358,8 +358,20 @@ def run_agent(cfg: AgentConfig, user_task: str, log_path: Optional[Path] = None,
                 step += 1
                 continue
 
+        # Normalize: the rest of the loop assumes `response` is a dict
+        # (action+args / conclusion / etc.). If extract_json returned a
+        # list (model emitted `[{...}]` at top level) take the first dict
+        # element. If it's neither dict nor list-of-dict, wrap as a
+        # conclusion so the user gets the content instead of a crash.
+        if isinstance(response, list):
+            first = next((x for x in response if isinstance(x, dict)), None)
+            response = first if first is not None else {"conclusion": str(response)}
+        elif not isinstance(response, dict):
+            response = {"conclusion": str(response)}
+
         # Pull out the json-repair sentinels (if any) and drop them from the
-        # response so they don't leak into downstream consumers.
+        # response so they don't leak into downstream consumers. Guarded by
+        # the normalization above — response is guaranteed dict here.
         _was_repaired = response.pop("__pragma_json_repaired__", False)
         _lost_keys    = response.pop("__pragma_json_lost_keys__", []) or []
 
