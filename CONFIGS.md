@@ -90,11 +90,11 @@ llama-server \
     --mmproj /path/to/qwen36-35b-a3b-mmproj-f16.gguf \
     --port 11434 \
     -ngl 999 \
-    -ncmoe 27 \
+    -ncmoe 30 \
     -c 131072 \
     -np 2 \
-    -ctk q4_0 \
-    -ctv q4_0 \
+    -ctk f16 \
+    -ctv f16 \
     --flash-attn on \
     -t 16 \
     --no-mmap \
@@ -104,8 +104,8 @@ llama-server \
 
 Tuning knobs:
 - `-c 131072` — full 128k context window.
-- `-ncmoe 27` — keeps 27 MoE expert layers on CPU/RAM so the rest fits in 12 GB VRAM. Drop entirely if you have ≥ 24 GB VRAM.
-- `-ctk q4_0 -ctv q4_0` — 4-bit KV cache. Required at 128k context on 12 GB.
+- `-ncmoe 30` — keeps 30 MoE expert layers on CPU/RAM. Trades GPU speed for VRAM headroom: more layers offloaded means we can afford an f16 KV cache. Drop entirely if you have ≥ 24 GB VRAM.
+- `-ctk f16 -ctv f16` — full-precision KV cache. Slightly better quality than q4_0 on long-context multi-turn reasoning. Affordable because the heavier MoE offload (`-ncmoe 30`) frees the VRAM the f16 cache needs. If you hit OOM at fill, fall back to `q4_0` for both.
 - `-np 2` — see banner above.
 - `--jinja` — required for Qwen3's chat template.
 
@@ -134,8 +134,8 @@ CODING_MAX_TOKENS=32768
 | System RAM | 128 GB                                               |
 | CPU        | Intel Xeon Silver 4314 (32 cores, `-t 16` threads)   |
 
-- 128 GB RAM is what makes `-ncmoe 27` viable.
-- With more VRAM, drop `-ncmoe` for a substantial speedup.
+- 128 GB RAM is what makes `-ncmoe 30` viable: 30 MoE expert layers stream from system RAM, leaving GPU VRAM for the active experts and the f16 KV cache.
+- With more VRAM, drop `-ncmoe` (and consider keeping the KV cache at `f16`) for a substantial speedup.
 
 ---
 
@@ -200,7 +200,7 @@ Patterns that apply to every tier:
 3. **`-np 2` is mandatory** for the asynchronous consolidation worker to run in parallel with foreground tasks. Without it the UI stays blocked.
     Heavy users of Settings → Knowledge → 📝 *Summarize* on a busy thread can bump to `-np 3` to avoid the summary waiting behind an in-flight reflection. Costs a bit more VRAM, not required.
 4. **`Q5_K_M`** is the size/quality sweet spot. Try `Q4_K_M` for ~20 % less VRAM at a small quality loss. Avoid Q4 quantization on models < 7B — accuracy drops sharply.
-5. **`-ctk q8_0 -ctv q8_0`** (KV cache 8-bit) is preferable when VRAM allows; drop to `q4_0` only on the 12 GB / 128k context tier where it's strictly required.
+5. **KV cache precision** is a quality/VRAM trade-off. `f16` is full precision (best quality), `q8_0` is the usual sweet spot, `q4_0` is the most aggressive. The Reference tier above runs `f16` thanks to heavy MoE offload (`-ncmoe 30`); if you OOM at context fill, drop both `-ctk` and `-ctv` one step down (`q8_0` first, then `q4_0`).
 6. **Two-model split** is optional. Point `CODING_*` to a second `llama-server` instance running a coding specialist (e.g. `qwen2.5-coder-7b`, `deepseek-coder-v2`) to route the `code` skill there. Leave the values identical to use one model for everything.
 
 ---
