@@ -81,9 +81,20 @@ WRITE_FILE_SOFT_LIMIT = int(os.environ.get("WRITE_FILE_SOFT_LIMIT", "8000"))
 
 # write_file REFUSES content larger than this in a single call. Above this
 # size, the JSON-encoded args of the LLM response are likely to exceed
-# MAX_TOKENS and truncate, breaking the call. The agent is then guided to
-# build the file incrementally: write_file scaffolding + append_file sections.
-WRITE_FILE_HARD_LIMIT = int(os.environ.get("WRITE_FILE_HARD_LIMIT", "6000"))
+# MAX_TOKENS and truncate, breaking the call.
+#
+# Auto-scales with MAX_TOKENS by default: bigger output budget → bigger
+# files can travel through the JSON layer safely. Formula:
+#     default = min(MAX_TOKENS * 2 bytes, 20_000)
+# Rationale: HTML/code content escapes to ~1.5x JSON bytes; at ~3.5 bytes
+# per token we get ~50% of MAX_TOKENS as safe content bytes. Hard ceiling
+# at 20 KB so we never let a single write try to ship a hundred-KB blob
+# (which would risk truncation regardless of formal budget). Override
+# with WRITE_FILE_HARD_LIMIT in .env if you really want a different value.
+_default_write_hard = min(int(MAX_TOKENS * 2), 20_000)
+WRITE_FILE_HARD_LIMIT = int(os.environ.get(
+    "WRITE_FILE_HARD_LIMIT", str(_default_write_hard),
+))
 
 # Observations longer than this get summarized in the conversation history
 # (the actual return value is unaffected — only the message stored for
