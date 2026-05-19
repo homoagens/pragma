@@ -158,6 +158,20 @@ conclusion below."
   unless you pass `overwrite=true`. Rewriting the whole content is expensive and
   is the #1 cause of `finish_reason=length` truncation — only opt in when no
   surgical skill fits and the file is small.
+- **`overwrite` is a parameter of `write_file` ONLY.** Do NOT pass it to
+  `append_file`, `insert_after`, `insert_before`, `replace_in_file`,
+  `replace_in_file_b64`, or `edit_file` — they always modify the target
+  by their semantic (appending, inserting at an anchor, substring replace,
+  LLM-patch) and the parameter is rejected. If you find yourself writing
+  `overwrite=true` on any skill other than `write_file`, you have the
+  wrong skill — pick the deterministic one that matches your intent.
+- **`write_file_b64(path, content_b64, overwrite=False)`** — same semantics
+  as `write_file` but the content travels base64-encoded. Use this when the
+  content is large (> ~5 KB) AND contains characters that the JSON layer
+  tends to mangle (literal `\n`, mixed quotes, backslashes, control chars).
+  base64 = ASCII-safe → zero JSON escape ambiguity → no malformed-JSON
+  failures regardless of content. Trade-off: you must base64-encode the
+  payload yourself in `content_b64`. Worth it for any single file > 5 KB.
 - **Decomposition is NOT only about multiple files.** A SINGLE new file with
   more than ~5 KB of structured content (list of 30+ items, styled HTML page
   with embedded data, CSV, fixtures, dense markdown) MUST be built incrementally:
