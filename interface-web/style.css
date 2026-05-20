@@ -266,6 +266,20 @@ header {
   box-shadow: 0 1px 2px rgba(0,0,0,.1);
   margin: 6px 0;
 }
+/* The user bubble renders markdown too — keep code / links / quotes legible
+ * against the dark bubble instead of using the light content-area surfaces. */
+.msg-user.markdown-body { font-size: 13.5px; }
+.msg-user.markdown-body code,
+.msg-user.markdown-body pre {
+  background: rgba(255,255,255,.12);
+  border-color: rgba(255,255,255,.22);
+}
+.msg-user.markdown-body pre code { background: none; border: none; }
+.msg-user.markdown-body a { color: inherit; text-decoration: underline; }
+.msg-user.markdown-body blockquote {
+  border-left-color: rgba(255,255,255,.3); color: inherit; opacity: .85;
+}
+.msg-user.markdown-body hr { border-top-color: rgba(255,255,255,.25); }
 
 /* ── Streaming tokens ──
  * The live preview borrows the color of the collapsed line it will become:

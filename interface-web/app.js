@@ -699,8 +699,10 @@ function extractStreamingPreview(raw) {
 function appendUserMessage(text) {
   hideWelcome();
   const div = document.createElement("div");
-  div.className = "msg-user";
-  div.textContent = text;
+  div.className = "msg-user markdown-body";
+  // Render the user's own message as markdown too — pasted prompts with
+  // lists / paragraphs read far better than one collapsed text blob.
+  div.innerHTML = renderMd(text);
   $messages.appendChild(div);
   scrollBottom();
 }
