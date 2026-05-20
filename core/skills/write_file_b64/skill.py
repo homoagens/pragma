@@ -50,6 +50,12 @@ def write_file_b64(path: str,
     if not content_b64:
         return "ERROR: `content_b64` must be a non-empty base64 string"
 
+    # ── Self-integrity guard: never write into Pragma's own source ──
+    import config as _cfg_guard
+    _guard = _cfg_guard.self_modify_guard(path)
+    if _guard:
+        return _guard
+
     # Decode base64 → raw bytes → text (in the requested encoding).
     try:
         raw_bytes = base64.b64decode(content_b64, validate=False)

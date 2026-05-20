@@ -179,6 +179,60 @@ LEARNINGS_RECALL_TOP_K = int(os.environ.get("LEARNINGS_RECALL_TOP_K", "5"))
 AUTO_REFLECT = os.environ.get("AUTO_REFLECT", "true").lower() in ("1", "true", "yes")
 
 # ─────────────────────────────────────────────
+# SELF-INTEGRITY GUARD
+# ─────────────────────────────────────────────
+# Pragma must never modify its own source code during a session. The
+# file-mutating skills (write_file, edit_file, append_file, insert_*,
+# replace_in_file*, ...) call self_modify_guard() before touching a path
+# and refuse any write inside Pragma's own "brain" (the core/ and agent/
+# directories of this repository).
+#
+# This is the deterministic safety net behind the soft "## Self-integrity"
+# rule in the system prompt. Set PRAGMA_ALLOW_SELF_MODIFY=true ONLY if you
+# are intentionally developing Pragma itself through a Pragma session.
+ALLOW_SELF_MODIFY = os.environ.get(
+    "PRAGMA_ALLOW_SELF_MODIFY", ""
+).lower() in ("1", "true", "yes")
+
+# Subtrees that constitute Pragma's executable self. Relative to the repo
+# root (the parent of this file's directory).
+_PRAGMA_ROOT = Path(__file__).resolve().parent.parent
+_PROTECTED_SUBDIRS = ("core", "agent")
+
+
+def self_modify_guard(path: str) -> str | None:
+    """Return an ERROR string if `path` points inside Pragma's own source
+    tree (core/ or agent/), else None.
+
+    Deterministic safety net: stops Pragma from editing, patching or
+    deleting its own code. Honored by every file-mutating skill. Bypassed
+    only when ALLOW_SELF_MODIFY is true (developer mode).
+    """
+    if ALLOW_SELF_MODIFY:
+        return None
+    try:
+        target = Path(path).resolve()
+    except Exception:
+        return None  # unresolvable path — let the skill report its own error
+    for sub in _PROTECTED_SUBDIRS:
+        protected = _PRAGMA_ROOT / sub
+        try:
+            if target == protected or protected in target.parents:
+                return (
+                    f"ERROR: refused — '{path}' is inside Pragma's own source "
+                    f"tree ({protected}). Pragma never modifies its own code; "
+                    f"this is a hard safety guard, not a recoverable error — "
+                    f"do not retry or look for a workaround. If a developer "
+                    f"genuinely needs to edit Pragma's source, they must do it "
+                    f"with a normal editor outside a Pragma session (or set "
+                    f"PRAGMA_ALLOW_SELF_MODIFY=true in .env)."
+                )
+        except Exception:
+            continue
+    return None
+
+
+# ─────────────────────────────────────────────
 # INTERNAL (not needed for standard providers)
 # ─────────────────────────────────────────────
 BACKEND_URL = os.environ.get("BACKEND_URL", "")

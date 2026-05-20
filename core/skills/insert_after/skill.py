@@ -15,6 +15,13 @@ def insert_after(path: str, anchor: str, content: str,
     Returns : "OK: inserted N bytes after anchor in <path>" or "ERROR: ..."
     """
     p = Path(path)
+
+    # ── Self-integrity guard: never write into Pragma's own source ──
+    import config as _cfg_guard
+    _guard = _cfg_guard.self_modify_guard(path)
+    if _guard:
+        return _guard
+
     if not p.exists():
         return f"ERROR: file not found: {path}"
     if not p.is_file():

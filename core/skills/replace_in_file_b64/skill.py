@@ -47,6 +47,13 @@ def replace_in_file_b64(path: str,
     invalid base64, substring not found, write failure).
     """
     p = Path(path)
+
+    # ── Self-integrity guard: never write into Pragma's own source ──
+    import config as _cfg_guard
+    _guard = _cfg_guard.self_modify_guard(path)
+    if _guard:
+        return _guard
+
     if not p.exists():
         return f"ERROR: file not found: {path}"
     if not p.is_file():

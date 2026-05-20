@@ -55,6 +55,11 @@ def edit_file(path: str, instruction: str) -> str:
     from skills.read_file.skill import read_file
     from skills.write_file.skill import write_file
 
+    # ── Self-integrity guard: never patch Pragma's own source ──
+    _guard = config.self_modify_guard(path)
+    if _guard:
+        return _guard
+
     # 1. Read the file [D]
     content = read_file(path)
     if content.startswith("ERROR"):

@@ -34,6 +34,12 @@ def write_file(path: str, content: str, encoding: str = "utf-8",
     """
     p = Path(path)
 
+    # ── Self-integrity guard: never write into Pragma's own source ──
+    import config as _cfg_guard
+    _guard = _cfg_guard.self_modify_guard(path)
+    if _guard:
+        return _guard
+
     # ── Refuse to clobber an existing file unless explicitly authorized ──
     if p.exists() and not overwrite:
         try:
