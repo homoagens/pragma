@@ -1,10 +1,46 @@
 # skills/__init__.py
 from __future__ import annotations
 import importlib.util
+import inspect
 import sys
 from pathlib import Path
 
 SKILLS_DIR = Path(__file__).parent
+
+
+def _format_signature(name: str, fn) -> str:
+    """Render an exact `name(param, opt=default, ...)` call signature from the
+    skill function itself.
+
+    This goes into the system prompt next to every skill. It is the cheapest
+    fix for the most common skill-call failure: the model inventing or
+    over-generalizing parameters (e.g. passing `overwrite` to append_file, or
+    `output_mode` to grep_search). Showing the precise parameter list — and,
+    by omission, which parameters do NOT exist — kills that whole error class.
+    Derived from the live function, so it can never go stale.
+    """
+    try:
+        sig = inspect.signature(fn)
+    except (ValueError, TypeError):
+        return f"{name}(...)"
+    parts = []
+    for p in sig.parameters.values():
+        if p.name in ("self", "cls"):
+            continue
+        if p.kind is inspect.Parameter.VAR_POSITIONAL:
+            parts.append(f"*{p.name}")
+            continue
+        if p.kind is inspect.Parameter.VAR_KEYWORD:
+            parts.append(f"**{p.name}")
+            continue
+        if p.default is inspect.Parameter.empty:
+            parts.append(p.name)
+        else:
+            d = repr(p.default)
+            if len(d) > 24:  # keep long string defaults from bloating the prompt
+                d = d[:21] + "..."
+            parts.append(f"{p.name}={d}")
+    return f"{name}({', '.join(parts)})"
 
 
 def _load_skills():
@@ -37,7 +73,11 @@ def _load_skills():
             # Extract just the description line (after the # title)
             lines = [ln for ln in summary_part.splitlines() if ln.strip() and not ln.startswith("#")]
             summary = lines[0] if lines else summary_part
-            summaries.append(f"**{skill_name}**: {summary}")
+            # Append the exact call signature on its own line so the model
+            # sees the precise parameters every turn, not only after a
+            # get_skill_details call.
+            sig = _format_signature(skill_name, fn)
+            summaries.append(f"**{skill_name}**: {summary}\n  Call: {sig}")
     return registry, "\n".join(summaries)
 
 

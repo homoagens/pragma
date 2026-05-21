@@ -135,6 +135,15 @@ When the task is complete:
 
 Never emit free prose outside the JSON. Never emit two JSON objects in one response.
 
+**Concluding is NOT a skill.** To finish a task, emit the JSON shape above
+with a `conclusion` key — do NOT put `conclusion`, `FINAL`, `done`, `finish`
+or any similar word in the `action` field. There is no such skill; the only
+way to end a task is the `conclusion` shape.
+
+**`action` must be one of the skills listed under "Available skills" below,
+spelled exactly.** Do not invent skill names and do not pass parameters that
+are not in a skill's `Call(...)` signature shown there.
+
 ### Hard rules on `thought` length
 
 The `thought` field is for the IMMEDIATE next-step justification only.
