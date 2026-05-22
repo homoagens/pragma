@@ -1420,6 +1420,7 @@ async function reloadEnv() {
     const res = await api("POST", "/api/settings/reload");
     document.getElementById("s-env-lines").textContent =
       res.env_lines && res.env_lines.length ? res.env_lines.join("\n") : "(no .env found)";
+    await refreshModelBadge();
     $btn.innerHTML = '✓ Loaded';
     $btn.classList.add("btn-loaded");
     setTimeout(() => {
@@ -1454,6 +1455,7 @@ async function uploadEnvFile(input) {
     document.getElementById("settings-envpath").textContent = res.env_path || ".env";
     document.getElementById("s-env-lines").textContent =
       res.env_lines && res.env_lines.length ? res.env_lines.join("\n") : "(no .env found)";
+    await refreshModelBadge();
     alert("Loaded and applied: " + file.name);
   } catch (e) {
     alert("Upload failed: " + e.message);
@@ -1502,6 +1504,18 @@ function renderModelBadge() {
     $c.title = `Code skill: ${cod}`;
     $badge.appendChild($c);
   }
+}
+
+// Re-fetch /api/config and redraw the model badge. Call this after the .env
+// changes at runtime (upload / reload) so the default+code model labels
+// reflect the new config instead of staying on the boot-time values.
+async function refreshModelBadge() {
+  try {
+    const cfg = await api("GET", "/api/config");
+    llmConfig      = cfg.llm || llmConfig;
+    maxStepsConfig = cfg.max_steps ?? maxStepsConfig;
+    renderModelBadge();
+  } catch (_) {}
 }
 
 function activateBadge(which) {
