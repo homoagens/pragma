@@ -58,6 +58,28 @@ Three things, two terminals, you're online.
 
 ### 1. Install Pragma
 
+Pick one of two ways.
+
+#### Option A — prebuilt executable (no Python, no setup)
+
+Download the single-file build for your OS from the
+[**Releases page**](https://github.com/homoagens/pragma/releases):
+
+| OS | File | Run it |
+| --- | --- | --- |
+| Windows | `pragma.exe` | double-click, or run `pragma.exe` in a terminal |
+| Linux / macOS | `pragma` | `chmod +x pragma && ./pragma` |
+
+One file, nothing to install. It still needs a model (step 2) — point it at
+one by loading a `.env` from **Settings → Load .env file…** in the UI.
+
+> [!NOTE]
+> On an **older Linux** (or an **ARM** machine) a prebuilt binary may refuse
+> to start due to a system-library mismatch. Use Option B there — run from
+> source, or build the executable on that machine with `build.sh`.
+
+#### Option B — from source
+
 ```bash
 git clone https://github.com/homoagens/pragma
 cd pragma
@@ -99,6 +121,11 @@ cp .env.example .env
 start.bat       :: Windows
 ./start.sh      # Linux / macOS
 ```
+
+> [!TIP]
+> **Using the prebuilt executable (Option A)?** Skip the file copy and the
+> start scripts — just run the executable. It opens the UI automatically;
+> load your `.env` from **Settings → Load .env file…**.
 
 Opens at **http://localhost:8006**. The settings panel in the UI shows the active `.env` entries and the global learnings store; you can reload config without restarting.
 
