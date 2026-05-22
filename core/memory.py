@@ -30,7 +30,7 @@ def compress(messages, threshold=None, context="conversation", model=None):
     """
     If the message list exceeds the threshold, compress old messages into a summary.
     With threshold=0 forces compression regardless of count
-    (useful for character-based threshold — see agent.py).
+    (useful for character-based threshold — see react.py).
 
     Always preserves:
       - the system prompt at position 0 (if present)

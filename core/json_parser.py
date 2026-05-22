@@ -25,7 +25,7 @@ except Exception:  # pragma: no cover — optional dependency
 import re as _re
 
 # Keys we tag onto recovered dicts to signal that JSON repair fired and may
-# have dropped fields. agent.py reads these and surfaces a hint to the model.
+# have dropped fields. react.py reads these and surfaces a hint to the model.
 REPAIR_FLAG_KEY    = "__pragma_json_repaired__"
 REPAIR_LOST_KEY    = "__pragma_json_lost_keys__"
 

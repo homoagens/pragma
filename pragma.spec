@@ -4,7 +4,7 @@
 # Output: dist/pragma.exe  — a single self-contained executable.
 #
 # ─────────────────────────────────────────────────────────────────────────
-# WHY THIS SPEC IS NOT TRIVIAL — three Pragma-specific traps:
+# WHY THIS SPEC IS NOT TRIVIAL — two Pragma-specific traps:
 #
 # 1. Dynamic skill loading. core/skills/__init__.py scans the skills folder
 #    with importlib at runtime. PyInstaller's static analysis cannot see
@@ -14,10 +14,6 @@
 # 2. String entrypoint. run.py calls uvicorn.run("agent.server:app") — an
 #    import-by-string PyInstaller does NOT follow. So agent.server and its
 #    whole dependency chain are declared explicitly in `hiddenimports`.
-#
-# 3. importlib-loaded core/agent.py. server.py loads core/agent.py via
-#    spec_from_file_location — again needs the real file on disk (covered
-#    by the core/ data tree).
 #
 # ─────────────────────────────────────────────────────────────────────────
 # MAINTENANCE: if the built exe crashes at startup with
@@ -49,7 +45,7 @@ def _tree(src_dir: str):
     return out
 
 
-datas  = _tree("core")            # config, skills, agent.py, llm_client, ...
+datas  = _tree("core")            # config, skills, react.py, llm_client, ...
 datas += _tree("interface-web")   # the web UI (HTML/JS/CSS)
 datas += collect_data_files("certifi")  # CA bundle needed by the HTTPS stack
 

@@ -12,7 +12,6 @@ from __future__ import annotations
 
 import asyncio
 import importlib
-import importlib.util as _ilu
 import json
 import os
 import re
@@ -37,12 +36,8 @@ for _p in [str(_CORE), str(_ROOT)]:
     if _p not in sys.path:
         sys.path.insert(0, _p)
 
-# Load core's agent.py (same name as the package → importlib)
-_spec = _ilu.spec_from_file_location("_baseline_agent", str(_CORE / "agent.py"))
-_mod  = _ilu.module_from_spec(_spec)
-_spec.loader.exec_module(_mod)
-AgentConfig = _mod.AgentConfig
-run_agent   = _mod.run_agent
+# core/react.py — the generic ReAct loop (core/ is on sys.path above).
+from react import AgentConfig, run_agent
 
 import config as baseline_config
 import memory as baseline_memory

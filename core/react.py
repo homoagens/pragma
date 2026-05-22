@@ -1,4 +1,4 @@
-# agent.py — generic ReAct loop (Reasoning + Acting).
+# react.py — generic ReAct loop (Reasoning + Acting).
 #
 # An Agent is configured with:
 #   - system_prompt : base instructions + description of JSON response formats

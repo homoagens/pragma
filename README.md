@@ -234,7 +234,7 @@ pragma/
 | File            | Role                                                   |
 | --------------- | ------------------------------------------------------ |
 | `llm_client.py` | Dispatches to OpenAI-compatible or Anthropic endpoints |
-| `agent.py`      | Generic ReAct loop with streaming `on_step` callback   |
+| `react.py`      | Generic ReAct loop with streaming `on_step` callback   |
 | `memory.py`     | Transparent context compression as conversations grow  |
 | `skills/`       | One folder per skill — filesystem, shell, web, LLM, code… |
 

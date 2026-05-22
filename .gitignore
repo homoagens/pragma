@@ -19,10 +19,12 @@ env/
 # Skills in testing (wip_ prefix — rename folder to publish)
 core/skills/wip_*/
 
-# Pragma data (threads, logs)
-/data/
+# Pragma runtime / local files
 *.log
-agent.log
+todo.json
+
+# Local-only docs (not for publication)
+MANUAL.md
 
 # IDE
 .vscode/

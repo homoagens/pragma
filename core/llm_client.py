@@ -53,7 +53,7 @@ def _on_length_finish(text: str, finish: str):
 
     New behavior:
       - If we have a substantive partial (> 50 chars), tag it with a
-        marker and return it. extract_json / agent.py recovery can
+        marker and return it. extract_json / react.py recovery can
         salvage it (parse as JSON if balanced, json_repair if close,
         wrap as plain-text conclusion if neither).
       - If the partial is empty / trivial, raise as before — there is
