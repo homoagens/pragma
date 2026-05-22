@@ -53,14 +53,11 @@ GEMMA_SKILLS: dict = dict(ALL_SKILLS)
 
 
 # ── Storage ───────────────────────────────────────────────────────────────────
+# All persistent paths come from config — one cross-platform location
+# (~/.pragma by default, override with PRAGMA_DATA_DIR).
 
-def _default_data_dir() -> Path:
-    if sys.platform == "win32":
-        return Path(r"C:\tmp\pragma")
-    return Path.home() / ".pragma"
-
-DATA_DIR    = Path(os.environ.get("PRAGMA_DATA_DIR", str(_default_data_dir())))
-THREADS_DIR = DATA_DIR / "threads"
+DATA_DIR    = baseline_config.DATA_DIR
+THREADS_DIR = baseline_config.THREADS_DIR
 THREADS_DIR.mkdir(parents=True, exist_ok=True)
 
 # Lock for cwd operations (chdir-based skills) — serializes across agent threads
@@ -434,6 +431,7 @@ async def get_settings():
         "env_path":   str(_ENV_PATH),
         "env_exists": _ENV_PATH.exists(),
         "env_lines":  _env_lines(),
+        "data_dir":   str(DATA_DIR),
         # kept for /api/config consumers
         "max_steps":  baseline_config.MAX_STEPS,
     }

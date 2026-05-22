@@ -1227,6 +1227,7 @@ async function openSettings() {
     alert("Failed to load settings: " + e.message);
     return;
   }
+  document.getElementById("settings-datadir").textContent = cfg.data_dir || "~/.pragma";
   document.getElementById("settings-envpath").textContent = cfg.env_path || ".env";
   document.getElementById("s-env-lines").textContent =
     cfg.env_lines && cfg.env_lines.length ? cfg.env_lines.join("\n") : "(no .env found)";

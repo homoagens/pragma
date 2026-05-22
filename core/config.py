@@ -168,11 +168,25 @@ HISTORY_MAX_CHARS = int(CONTEXT_WINDOW * 4 * 0.15)
 # blows the summarizer's own token budget. 2000 is a balanced default.
 MESSAGE_COMPRESS_TRUNC = int(os.environ.get("MESSAGE_COMPRESS_TRUNC", "2000"))
 
-# Global learnings store (cross-thread semantic memory). Override to relocate.
-LEARNINGS_PATH = os.environ.get(
-    "LEARNINGS_PATH",
-    str(Path.home() / ".pragma" / "learnings.json"),
-)
+# ─────────────────────────────────────────────
+# STORAGE — single cross-platform home for everything Pragma persists
+# ─────────────────────────────────────────────
+# One folder holds it all: conversation threads, the learnings store, the
+# log, and (in a frozen build) the uploaded .env. The default is a ".pragma"
+# directory inside the user's home folder — writable WITHOUT admin rights on
+# Windows, macOS and Linux, and the SAME path on every OS. Override the whole
+# location with PRAGMA_DATA_DIR.
+DATA_DIR = Path(os.environ.get("PRAGMA_DATA_DIR", str(Path.home() / ".pragma")))
+
+# Conversation threads (one JSON file per conversation).
+THREADS_DIR = DATA_DIR / "threads"
+
+# Application log (JSON Lines, written by the log_event skill).
+LOG_PATH = DATA_DIR / "pragma.log"
+
+# Global learnings store (cross-thread semantic memory). Lives inside
+# DATA_DIR; LEARNINGS_PATH can still be overridden on its own if needed.
+LEARNINGS_PATH = os.environ.get("LEARNINGS_PATH", str(DATA_DIR / "learnings.json"))
 # Number of recent learnings to recall and inject at the start of each task.
 LEARNINGS_RECALL_TOP_K = int(os.environ.get("LEARNINGS_RECALL_TOP_K", "5"))
 # If True, run session_reflect automatically after each successful task.
