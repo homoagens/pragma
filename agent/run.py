@@ -10,6 +10,8 @@ from __future__ import annotations
 import argparse
 import os
 import sys
+import threading
+import webbrowser
 from pathlib import Path
 
 import uvicorn
@@ -27,6 +29,8 @@ def main():
                         help="working directory (default: current directory)")
     parser.add_argument("--reload",  action="store_true",
                         help="auto-reload on file changes (dev mode)")
+    parser.add_argument("--no-browser", action="store_true",
+                        help="do not open the web UI in a browser on startup")
     args = parser.parse_args()
 
     if args.workdir:
@@ -37,11 +41,18 @@ def main():
         os.chdir(target)
 
     cwd = os.getcwd()
+    url = f"http://{args.host}:{args.port}/"
     print("Pragma")
     print(f"  workdir : {cwd}")
     print(f"  server  : http://{args.host}:{args.port}")
-    print(f"  UI      : http://{args.host}:{args.port}/")
+    print(f"  UI      : {url}")
     print()
+
+    # Open the web UI in the default browser shortly after startup.
+    # A short delay lets uvicorn bind the port first. Skipped in --reload
+    # (dev mode) and when --no-browser is passed.
+    if not args.no_browser and not args.reload:
+        threading.Timer(1.5, lambda: webbrowser.open(url)).start()
 
     uvicorn.run(
         "agent.server:app",
