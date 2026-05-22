@@ -1434,6 +1434,33 @@ async function reloadEnv() {
   }
 }
 
+// Pick a .env file via the browser's native file dialog, send its content
+// to the backend (the browser cannot expose the real path, only the bytes),
+// which persists it and reloads the config immediately.
+async function uploadEnvFile(input) {
+  const file = input.files && input.files[0];
+  if (!file) return;
+  let content;
+  try {
+    content = await file.text();
+  } catch (e) {
+    alert("Could not read the file: " + e.message);
+    input.value = "";
+    return;
+  }
+  try {
+    const res = await api("POST", "/api/settings/env", { content });
+    if (!res.ok) throw new Error(res.error || "unknown error");
+    document.getElementById("settings-envpath").textContent = res.env_path || ".env";
+    document.getElementById("s-env-lines").textContent =
+      res.env_lines && res.env_lines.length ? res.env_lines.join("\n") : "(no .env found)";
+    alert("Loaded and applied: " + file.name);
+  } catch (e) {
+    alert("Upload failed: " + e.message);
+  }
+  input.value = "";  // reset so the same file can be re-selected
+}
+
 $settingsBackdrop.addEventListener("click", (e) => {
   if (e.target === $settingsBackdrop) closeSettings();
 });

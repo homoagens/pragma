@@ -346,7 +346,14 @@ async def get_config():
 
 # ── Settings — manage .env from the UI ───────────────────────────────────────
 
-_ENV_PATH = _ROOT / ".env"
+# Active .env path. In a source checkout it is the repo .env (dev behavior
+# unchanged). In a frozen build (PyInstaller exe) _ROOT points into the temp
+# extraction dir, which is wiped each run — so the persistent DATA_DIR is used
+# instead, letting an uploaded .env survive across launches.
+if getattr(sys, "frozen", False):
+    _ENV_PATH = DATA_DIR / ".env"
+else:
+    _ENV_PATH = _ROOT / ".env"
 
 def _upsert_env(env_path: Path, updates: dict) -> None:
     """Update or insert env vars in .env, preserving comments and order.
@@ -379,6 +386,13 @@ def _reload_config() -> None:
     except ImportError:
         pass
     importlib.reload(baseline_config)
+
+
+# On a frozen build the bundled config.py cannot see a .env (it would look in
+# the temp extraction dir). If the user has previously uploaded one to the
+# persistent location, load it now so the exe starts already configured.
+if getattr(sys, "frozen", False) and _ENV_PATH.exists():
+    _reload_config()
 
 
 def _mask(value: str) -> str:
@@ -445,6 +459,28 @@ async def reload_settings():
     return {
         "ok":       True,
         "env_path": str(_ENV_PATH),
+        "env_lines": _env_lines(),
+    }
+
+
+class EnvUploadBody(BaseModel):
+    content: str
+
+
+@app.post("/api/settings/env")
+async def upload_env(body: EnvUploadBody):
+    """Receive the text content of a .env file the user picked via the
+    browser's native file dialog, persist it to the active env path, and
+    reload the config so it applies immediately."""
+    try:
+        _ENV_PATH.parent.mkdir(parents=True, exist_ok=True)
+        _ENV_PATH.write_text(body.content, encoding="utf-8")
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+    _reload_config()
+    return {
+        "ok":        True,
+        "env_path":  str(_ENV_PATH),
         "env_lines": _env_lines(),
     }
 

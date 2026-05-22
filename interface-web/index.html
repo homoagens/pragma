@@ -147,9 +147,19 @@
       <div class="settings-body" id="settings-tab-config">
         <div class="env-path-row">
           <code id="settings-envpath">.env</code>
-          <span class="hint">— loaded at startup, restart to apply changes</span>
+          <span class="hint">— active environment file</span>
         </div>
         <pre id="s-env-lines" class="env-lines">(no .env found)</pre>
+        <div class="env-upload-row">
+          <input type="file" id="env-file-input" accept=".env,.txt,text/plain"
+                 style="display:none" onchange="uploadEnvFile(this)">
+          <button class="btn-secondary"
+                  onclick="document.getElementById('env-file-input').click()"
+                  title="Pick a .env file from disk — it is saved and applied immediately">
+            Load .env file…
+          </button>
+          <span class="hint">— pick a .env from disk; saved and applied now</span>
+        </div>
       </div>
 
       <div class="settings-body hidden" id="settings-tab-knowledge">
