@@ -27,7 +27,7 @@
 # ─────────────────────────────────────────────────────────────────────────
 
 from pathlib import Path
-from PyInstaller.utils.hooks import collect_submodules, collect_data_files
+from PyInstaller.utils.hooks import collect_submodules, collect_data_files, collect_all
 
 ROOT = Path(SPECPATH)  # SPECPATH = directory of this .spec file (injected by PyInstaller)
 
@@ -69,10 +69,28 @@ hiddenimports += collect_submodules("anthropic")
 hiddenimports += collect_submodules("fastapi")
 
 
+# ── Packages imported lazily INSIDE dynamically-loaded skills ───────────────
+# A skill that does `from X import ...` inside its function body is invisible
+# to static analysis (the skill files travel as data, not as frozen modules).
+# collect_all pulls in each package's modules + data files + compiled binaries.
+#   ddgs   -> the web_search skill (`from ddgs import DDGS`)
+#   lxml   -> ddgs dependency (HTML parsing, compiled extension)
+#   primp  -> ddgs dependency (Rust-based HTTP client, compiled extension)
+#   click  -> ddgs dependency
+# If another skill fails in the exe with ModuleNotFoundError, add its
+# top-level package to this list.
+binaries = []
+for _pkg in ("ddgs", "lxml", "primp", "click"):
+    _d, _b, _h = collect_all(_pkg)
+    datas        += _d
+    binaries     += _b
+    hiddenimports += _h
+
+
 a = Analysis(
     ["agent/run.py"],
     pathex=[str(ROOT), str(ROOT / "core")],  # so `import config`, `from skills ...` resolve
-    binaries=[],
+    binaries=binaries,
     datas=datas,
     hiddenimports=hiddenimports,
     hookspath=[],
