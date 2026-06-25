@@ -31,7 +31,7 @@ without buying a workstation GPU.
 ```bat
 @echo off
 set PATH=C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v13.2\bin\x64;%PATH%
-cd C:\Users\io\llama.cpp
+cd C:\path\to\llama.cpp
 llama-server.exe ^
   -hf bartowski/Qwen_Qwen3.5-9B-GGUF ^
   -hff Qwen_Qwen3.5-9B-Q4_K_M.gguf ^
@@ -155,7 +155,7 @@ need to be steered back on track.
 ```bat
 @echo off
 set PATH=C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v13.2\bin\x64;%PATH%
-cd C:\Users\io\llama.cpp
+cd C:\path\to\llama.cpp
 llama-server.exe ^
   -hf bartowski/Qwen_Qwen3-4B-GGUF ^
   -hff Qwen_Qwen3-4B-Q5_K_M.gguf ^
