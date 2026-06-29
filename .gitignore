@@ -1,5 +1,7 @@
 # Environment — never commit credentials
 .env
+.env.bak
+*.bak
 
 # Python
 __pycache__/

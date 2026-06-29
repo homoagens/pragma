@@ -28,7 +28,9 @@ jobs:
           - os: ubuntu-latest
             artifact: pragma
             asset: pragma-linux
-          - os: macos-latest
+          # Pinned (not macos-latest) so the build isn't auto-migrated to a
+          # beta macOS image, and for a more compatible binary on older macs.
+          - os: macos-15
             artifact: pragma
             asset: pragma-macos
     runs-on: ${{ matrix.os }}
