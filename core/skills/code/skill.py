@@ -2,9 +2,8 @@
 #
 # Configuration (config.py / env):
 #   CODING_MODEL       — model name (empty = use DEFAULT_MODEL)
-#   CODING_PROVIDER    — "backend" | "openai" | "anthropic" (empty = use LLM_PROVIDER)
-#   CODING_BASE_URL    — base URL (empty = use LLM_BASE_URL / BACKEND_URL)
-#   CODING_API_KEY     — API key (empty = use LLM_API_KEY / BACKEND_KEY)
+#   CODING_BASE_URL    — OpenAI-compatible base URL (empty = use LLM_BASE_URL)
+#   CODING_API_KEY     — API key (empty = use LLM_API_KEY)
 #   CODING_TEMPERATURE — default 0.1
 #   CODING_MAX_TOKENS  — default 4096
 
@@ -47,17 +46,10 @@ def code(task: str,
     import config
     import llm_client
 
-    # Resolve model + provider: coding-specific → default
+    # Resolve model + endpoint: coding-specific → default.
     model    = config.CODING_MODEL    or config.DEFAULT_MODEL
-    provider = config.CODING_PROVIDER or config.LLM_PROVIDER
+    base_url = config.CODING_BASE_URL or config.LLM_BASE_URL
     api_key  = config.CODING_API_KEY  or config.LLM_API_KEY
-
-    # base_url depends on the resolved provider so backend stays isolated
-    if provider == "backend":
-        base_url = config.CODING_BASE_URL or config.BACKEND_URL
-        api_key  = config.CODING_API_KEY  or config.BACKEND_KEY
-    else:
-        base_url = config.CODING_BASE_URL or config.LLM_BASE_URL
 
     # Build the user message
     parts = []
@@ -84,7 +76,6 @@ def code(task: str,
             model       = model,
             temperature = config.CODING_TEMPERATURE,
             max_tokens  = coding_tokens,
-            provider    = provider or None,
             base_url    = base_url or None,
             api_key     = api_key  or None,
         )

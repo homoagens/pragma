@@ -57,11 +57,10 @@ hiddenimports = [
     # core modules added to sys.path at runtime by server.py
     "config", "memory", "llm_client", "json_parser",
     # third-party deps used inside dynamically-loaded skills / core
-    "paramiko", "requests", "anthropic", "dotenv", "rich",
+    "paramiko", "requests", "dotenv", "rich",
     "json_repair", "websockets", "pydantic",
 ]
 hiddenimports += collect_submodules("uvicorn")    # uvicorn loads workers/loops dynamically
-hiddenimports += collect_submodules("anthropic")
 hiddenimports += collect_submodules("fastapi")
 
 

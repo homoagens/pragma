@@ -1,17 +1,16 @@
 # llm_client.py — calls the LLM backend and returns text.
-# Completely domain-agnostic: knows only HTTP and three providers.
+# Completely domain-agnostic: knows only HTTP and the OpenAI-compatible API.
 #
-# Supported providers:
-#   "backend"   — custom proxy at /llm with schema {raw:{choices:[{message:{content}}]}}
-#   "openai"    — any OpenAI-compatible endpoint at /chat/completions
-#                 (OpenAI, Groq, OpenRouter, Together, DeepSeek, Mistral,
-#                  Ollama `/v1`, vLLM, LM Studio, llama.cpp server, LiteLLM...)
-#   "anthropic" — native Anthropic API at /v1/messages
-#                 (header x-api-key, response schema {content:[{type:"text",text:"..."}]})
+# Single transport: any OpenAI-compatible endpoint at
+#   POST {BASE_URL}/chat/completions
+# where BASE_URL ends in /v1 (llama.cpp server, LM Studio, Ollama `/v1`,
+# vLLM, OpenAI, Groq, OpenRouter, DeepSeek, LiteLLM...). The code only ever
+# appends /chat/completions (blocking) or relies on stream=True (SSE), and
+# GET {BASE_URL}/models for the health check. No vendor-specific routes.
 #
-# All calls can override provider / base_url / api_key by passing the
-# corresponding kwargs. Without override, values from config are used,
-# which in turn respect environment variables.
+# Calls may override base_url / api_key per-call (used by the `code` skill to
+# target a different model server). Without override, values come from config,
+# which respect environment variables.
 
 import threading
 import time
@@ -133,28 +132,40 @@ def _make_loop_guard():
     )
 
 
-ANTHROPIC_BASE_URL = "https://api.anthropic.com"
-ANTHROPIC_VERSION  = "2023-06-01"
+# Default base URL when none is configured: llama.cpp server's default port,
+# with the /v1 suffix the OpenAI-compatible API requires.
+DEFAULT_BASE_URL = "http://127.0.0.1:8080/v1"
 
 
 # ── Endpoint resolution ────────────────────────────────────────────────────────
 
-def _resolved_endpoint(provider, base_url, api_key):
-    """Resolve (provider, base_url, api_key) applying fallback from config."""
-    p = provider or config.LLM_PROVIDER or "openai"
+def _resolved_endpoint(base_url, api_key):
+    """Resolve (base_url, api_key) applying fallback from config.
 
-    if p == "anthropic":
-        url = (base_url or config.LLM_BASE_URL or ANTHROPIC_BASE_URL).rstrip("/")
-        key = api_key  or config.LLM_API_KEY
-    elif p == "backend":
-        # Internal provider — uses BACKEND_URL/BACKEND_KEY, NOT the openai-oriented vars
-        url = (base_url or config.BACKEND_URL).rstrip("/")
-        key = api_key  or config.BACKEND_KEY
-    else:  # "openai" or any compatible endpoint
-        url = (base_url or config.LLM_BASE_URL or "http://localhost:11434/v1").rstrip("/")
-        key = api_key  or config.LLM_API_KEY
+    base_url is the OpenAI-compatible base that ends in /v1; the caller code
+    appends /chat/completions or /models. api_key is optional (local servers
+    usually need none)."""
+    url = (base_url or config.LLM_BASE_URL or DEFAULT_BASE_URL).rstrip("/")
+    key = api_key or config.LLM_API_KEY
+    return url, key
 
-    return p, url, key
+
+def ping_models(base_url=None, api_key=None, timeout=5):
+    """Health check: GET {BASE_URL}/models on the OpenAI-compatible endpoint.
+
+    Returns (ok: bool, detail: str). Never raises — used at startup and by the
+    configure step to verify the backend is reachable before launching."""
+    url, key = _resolved_endpoint(base_url, api_key)
+    headers = {}
+    if key:
+        headers["Authorization"] = f"Bearer {key}"
+    try:
+        resp = requests.get(f"{url}/models", headers=headers, timeout=timeout)
+    except Exception as e:
+        return False, f"cannot reach {url}/models — {e}"
+    if resp.status_code != 200:
+        return False, f"{url}/models returned HTTP {resp.status_code}"
+    return True, f"{url} reachable"
 
 
 # ── HTTP helpers ───────────────────────────────────────────────────────────────
@@ -237,26 +248,6 @@ def _post_with_retry(url, headers, payload, timeout, label, stop_event=None):
 
 # ── Provider backends ──────────────────────────────────────────────────────────
 
-def _call_backend(messages, model, temperature, max_tokens, timeout, base_url, api_key, stop_event=None):
-    """Custom proxy with schema {raw:{choices:[{message:{content}}]}}."""
-    payload = {
-        "messages":    messages,
-        "model":       model,
-        "temperature": temperature,
-        "max_tokens":  max_tokens,
-    }
-    headers = {
-        "Content-Type":  "application/json",
-        "Authorization": f"Bearer {api_key}",
-    }
-    resp   = _post_with_retry(f"{base_url}/llm", headers, payload, timeout, model, stop_event)
-    data   = resp.json()
-    msg    = data["raw"]["choices"][0]["message"]
-    finish = data["raw"]["choices"][0].get("finish_reason", "")
-    text   = (msg.get("content") or msg.get("reasoning_content") or "").strip()
-    return text, finish
-
-
 def _call_openai_compatible(messages, model, temperature, max_tokens, timeout, base_url, api_key, stop_event=None):
     """Standard OpenAI /chat/completions — works with Groq, Ollama, vLLM, etc."""
     payload = {
@@ -274,62 +265,6 @@ def _call_openai_compatible(messages, model, temperature, max_tokens, timeout, b
     msg    = choice.get("message", {})
     finish = choice.get("finish_reason", "")
     text   = (msg.get("content") or msg.get("reasoning_content") or "").strip()
-    return text, finish
-
-
-def _call_anthropic(messages, model, temperature, max_tokens, timeout, base_url, api_key, stop_event=None):
-    """Native Anthropic API at /v1/messages.
-
-    The Anthropic schema separates the system prompt from the rest:
-      { model, system, messages:[{role,content}], max_tokens, temperature }
-    The system prompt is the first message with role=="system" (if present).
-    """
-    # Separate system prompt (Anthropic wants a dedicated field, not inline)
-    system_content = ""
-    user_messages  = []
-    for m in messages:
-        if m.get("role") == "system" and not user_messages:
-            system_content = m.get("content", "")
-        else:
-            # Anthropic only accepts role "user" | "assistant"
-            role = m.get("role", "user")
-            if role not in ("user", "assistant"):
-                role = "user"
-            user_messages.append({"role": role, "content": m.get("content", "")})
-
-    # Anthropic requires the first message to be "user"
-    if not user_messages:
-        user_messages = [{"role": "user", "content": ""}]
-
-    payload: dict = {
-        "model":       model,
-        "messages":    user_messages,
-        "max_tokens":  max_tokens,
-        "temperature": temperature,
-    }
-    if system_content:
-        payload["system"] = system_content
-
-    headers = {
-        "Content-Type":    "application/json",
-        "x-api-key":       api_key,
-        "anthropic-version": ANTHROPIC_VERSION,
-    }
-
-    resp = _post_with_retry(f"{base_url}/v1/messages", headers, payload, timeout, model, stop_event)
-    data = resp.json()
-
-    # Response: {content:[{type:"text", text:"..."}], stop_reason, ...}
-    content_blocks = data.get("content", [])
-    text = "".join(
-        b.get("text", "") for b in content_blocks if b.get("type") == "text"
-    ).strip()
-
-    # Anthropic uses "stop_reason" (e.g. "end_turn", "max_tokens")
-    finish = data.get("stop_reason", "")
-    if finish == "max_tokens":
-        finish = "length"
-
     return text, finish
 
 
@@ -408,207 +343,32 @@ def _stream_openai_compatible(messages, model, temperature, max_tokens, timeout,
     return text
 
 
-def _stream_anthropic(messages, model, temperature, max_tokens, timeout,
-                       base_url, api_key, stop_event, on_token,
-                       on_reasoning=None):
-    """Stream from the native Anthropic API (SSE)."""
-    import json as _json
-
-    system_content = ""
-    user_messages = []
-    for m in messages:
-        if m.get("role") == "system" and not user_messages:
-            system_content = m.get("content", "")
-        else:
-            role = m.get("role", "user")
-            if role not in ("user", "assistant"):
-                role = "user"
-            user_messages.append({"role": role, "content": m.get("content", "")})
-    if not user_messages:
-        user_messages = [{"role": "user", "content": ""}]
-
-    payload = {
-        "model":       model,
-        "messages":    user_messages,
-        "max_tokens":  max_tokens,
-        "temperature": temperature,
-        "stream":      True,
-    }
-    if system_content:
-        payload["system"] = system_content
-
-    headers = {
-        "Content-Type":      "application/json",
-        "x-api-key":         api_key,
-        "anthropic-version": ANTHROPIC_VERSION,
-    }
-
-    text = ""
-    reasoning_buf = ""
-    finish = ""
-    guard = _make_loop_guard()
-    with requests.Session() as session:
-        with session.post(
-            f"{base_url}/v1/messages",
-            headers=headers, json=payload,
-            stream=True, timeout=timeout,
-        ) as resp:
-            resp.raise_for_status()
-            for line in resp.iter_lines():
-                if stop_event and stop_event.is_set():
-                    raise LLMInterrupted("LLM call aborted by stop signal")
-                if not line:
-                    continue
-                if isinstance(line, bytes):
-                    line = line.decode("utf-8")
-                if not line.startswith("data: "):
-                    continue
-                data = line[6:].strip()
-                try:
-                    ev = _json.loads(data)
-                except Exception:
-                    continue
-                ev_type = ev.get("type", "")
-                if ev_type == "content_block_delta":
-                    delta = ev.get("delta", {})
-                    if delta.get("type") == "thinking_delta":
-                        reasoning = delta.get("thinking", "")
-                        if reasoning:
-                            reasoning_buf += reasoning
-                            if on_reasoning:
-                                on_reasoning(reasoning)
-                            guard.observe(reasoning, reasoning_buf)
-                    elif delta.get("type") == "text_delta":
-                        content = delta.get("text", "")
-                        if content:
-                            text += content
-                            if on_token:
-                                on_token(content)
-                elif ev_type == "message_delta":
-                    if ev.get("delta", {}).get("stop_reason") == "max_tokens":
-                        finish = "length"
-
-    # Salvage partial text on length truncation if possible. See _on_length_finish.
-    text = _on_length_finish(text, finish)
-    finish = "" if text.startswith(TRUNCATION_PARTIAL_MARKER) else finish
-    if not text and reasoning_buf:
-        text = reasoning_buf
-    if not text:
-        raise RuntimeError("The model returned an empty response.")
-    return text
-
-
-def _stream_backend(messages, model, temperature, max_tokens, timeout,
-                    base_url, api_key, stop_event, on_token, on_reasoning=None):
-    """Stream from the backend's /llm/stream SSE endpoint.
-
-    The backend proxies llama.cpp's SSE verbatim, so the format is identical
-    to a standard OpenAI /chat/completions stream.
-    """
-    import json as _json
-    payload = {
-        "messages":    messages,
-        "model":       model,
-        "temperature": temperature,
-        "max_tokens":  max_tokens,
-    }
-    headers = {
-        "Content-Type":  "application/json",
-        "Authorization": f"Bearer {api_key}",
-    }
-    text          = ""
-    reasoning_buf = ""
-    finish        = ""
-    guard         = _make_loop_guard()
-    with requests.Session() as session:
-        with session.post(
-            f"{base_url}/llm/stream",
-            headers=headers, json=payload,
-            stream=True, timeout=timeout,
-        ) as resp:
-            resp.raise_for_status()
-            for line in resp.iter_lines():
-                if stop_event and stop_event.is_set():
-                    raise LLMInterrupted("LLM call aborted by stop signal")
-                if not line:
-                    continue
-                if isinstance(line, bytes):
-                    line = line.decode("utf-8")
-                if not line.startswith("data: "):
-                    continue
-                data = line[6:].strip()
-                if data == "[DONE]":
-                    break
-                try:
-                    chunk = _json.loads(data)
-                except Exception:
-                    continue
-                choice    = chunk.get("choices", [{}])[0]
-                delta     = choice.get("delta") or {}
-                reasoning = delta.get("reasoning_content") or ""
-                content   = delta.get("content") or ""
-                if reasoning:
-                    reasoning_buf += reasoning
-                    if on_reasoning:
-                        on_reasoning(reasoning)
-                    guard.observe(reasoning, reasoning_buf)
-                if content:
-                    text += content
-                    if on_token:
-                        on_token(content)
-                fin = choice.get("finish_reason")
-                if fin:
-                    finish = fin
-
-    # Salvage partial text on length truncation if possible. See _on_length_finish.
-    text = _on_length_finish(text, finish)
-    finish = "" if text.startswith(TRUNCATION_PARTIAL_MARKER) else finish
-    # Fallback: some reasoning models (e.g. Qwen3) emit the entire answer
-    # inside the <think> block as reasoning_content and never produce content.
-    # Use the reasoning buffer as the response text in that case.
-    if not text and reasoning_buf:
-        text = reasoning_buf
-    if not text:
-        raise RuntimeError("The model returned an empty response.")
-    return text
-
-
 # ── Public API ─────────────────────────────────────────────────────────────────
 
 def call_llm(messages, model=None, temperature=None, max_tokens=None, timeout=None,
-             provider=None, base_url=None, api_key=None, stop_event=None):
+             base_url=None, api_key=None, stop_event=None):
     """
-    Send messages to the model and return the response as a string.
+    Send messages to the OpenAI-compatible endpoint and return the response text.
 
     messages    : list [{role, content}, ...] in OpenAI style
     model       : model name (default config.DEFAULT_MODEL)
     temperature : default config.DEFAULT_TEMPERATURE
     max_tokens  : default config.MAX_TOKENS
     timeout     : default config.TIMEOUT
-    provider    : "backend" | "openai" | "anthropic"  (default config.LLM_PROVIDER)
-    base_url    : service base URL                     (default from config)
-    api_key     : API key                              (default from config)
+    base_url    : OpenAI-compatible base ending in /v1 (default from config)
+    api_key     : API key, optional for local servers   (default from config)
 
-    Automatic retry on 502: backoff 30/60/90/120s, then raises.
+    Hits POST {base_url}/chat/completions. Automatic retry on 502.
     """
     if model       is None: model       = config.DEFAULT_MODEL
     if temperature is None: temperature = config.DEFAULT_TEMPERATURE
     if max_tokens  is None: max_tokens  = config.MAX_TOKENS
     if timeout     is None: timeout     = config.TIMEOUT
 
-    prov, url, key = _resolved_endpoint(provider, base_url, api_key)
-
-    if prov == "backend":
-        text, finish = _call_backend(messages, model, temperature, max_tokens, timeout, url, key, stop_event)
-    elif prov == "openai":
-        text, finish = _call_openai_compatible(messages, model, temperature, max_tokens, timeout, url, key, stop_event)
-    elif prov == "anthropic":
-        text, finish = _call_anthropic(messages, model, temperature, max_tokens, timeout, url, key, stop_event)
-    else:
-        raise ValueError(
-            f"Unknown LLM provider: {prov!r}. "
-            f"Use 'backend', 'openai' or 'anthropic'."
-        )
+    url, key = _resolved_endpoint(base_url, api_key)
+    text, finish = _call_openai_compatible(
+        messages, model, temperature, max_tokens, timeout, url, key, stop_event
+    )
 
     # Salvage partial text on length truncation if possible.
     text = _on_length_finish(text, finish)
@@ -620,66 +380,22 @@ def call_llm(messages, model=None, temperature=None, max_tokens=None, timeout=No
 
 
 def stream_llm(messages, model=None, temperature=None, max_tokens=None, timeout=None,
-               provider=None, base_url=None, api_key=None, stop_event=None,
+               base_url=None, api_key=None, stop_event=None,
                on_token=None, on_reasoning=None):
     """
-    Like call_llm but calls on_token(chunk: str) for each text fragment as it arrives.
-    Returns the complete response text when done.
-
-    The 'backend' provider does not support SSE streaming — it falls back to a
-    regular call_llm and invokes on_token once with the full response.
+    Like call_llm but calls on_token(chunk: str) for each text fragment as it
+    arrives over SSE. Returns the complete response text when done.
     """
     if model       is None: model       = config.DEFAULT_MODEL
     if temperature is None: temperature = config.DEFAULT_TEMPERATURE
     if max_tokens  is None: max_tokens  = config.MAX_TOKENS
     if timeout     is None: timeout     = config.TIMEOUT
 
-    prov, url, key = _resolved_endpoint(provider, base_url, api_key)
-
-    if prov == "backend":
-        # Try the SSE streaming endpoint /llm/stream first.
-        # Fall back to the blocking /llm call if the endpoint is not available
-        # (404) so older deployments continue to work unchanged.
-        try:
-            return _stream_backend(
-                messages, model, temperature, max_tokens, timeout,
-                url, key, stop_event, on_token, on_reasoning,
-            )
-        except requests.HTTPError as _e:
-            if _e.response is not None and _e.response.status_code == 404:
-                if config.DEBUG:
-                    _console.print("[yellow]/llm/stream not found — falling back to /llm[/yellow]")
-            else:
-                raise
-        # Fallback: blocking call + single on_token with thought preview
-        text, finish = _call_backend(
-            messages, model, temperature, max_tokens, timeout, url, key, stop_event
-        )
-        # Salvage partial text on length truncation if possible.
-        text = _on_length_finish(text, finish)
-        finish = "" if text.startswith(TRUNCATION_PARTIAL_MARKER) else finish
-        if not text:
-            raise RuntimeError("The model returned an empty response.")
-        if on_token:
-            import json as _json
-            try:
-                _preview = _json.loads(text).get("thought") or text
-            except Exception:
-                _preview = text
-            on_token(_preview)
-        return text
-    elif prov == "openai":
-        return _stream_openai_compatible(
-            messages, model, temperature, max_tokens, timeout,
-            url, key, stop_event, on_token, on_reasoning,
-        )
-    elif prov == "anthropic":
-        return _stream_anthropic(
-            messages, model, temperature, max_tokens, timeout,
-            url, key, stop_event, on_token, on_reasoning,
-        )
-    else:
-        raise ValueError(f"Unknown LLM provider: {prov!r}.")
+    url, key = _resolved_endpoint(base_url, api_key)
+    return _stream_openai_compatible(
+        messages, model, temperature, max_tokens, timeout,
+        url, key, stop_event, on_token, on_reasoning,
+    )
 
 
 if __name__ == "__main__":

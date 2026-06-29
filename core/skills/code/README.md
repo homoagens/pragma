@@ -17,8 +17,8 @@ The generated/modified code as a plain string (no markdown fences). On failure: 
 
 ## Notes
 
-- Uses `CODING_MODEL` / `CODING_PROVIDER` / `CODING_BASE_URL` / `CODING_API_KEY` if set, otherwise inherits from the default model config.
-- When `CODING_PROVIDER=backend`, routing uses `BACKEND_URL` / `BACKEND_KEY` — not `LLM_BASE_URL`.
+- Uses `CODING_MODEL` / `CODING_BASE_URL` / `CODING_API_KEY` if set, otherwise inherits from the default model config (`DEFAULT_MODEL` / `LLM_BASE_URL` / `LLM_API_KEY`).
+- All requests go to the same OpenAI-compatible endpoint (`POST {base}/chat/completions`); set `CODING_BASE_URL` only if the coding model lives on a different server.
 - Always strips markdown fences if the model adds them anyway.
 
 ## Examples

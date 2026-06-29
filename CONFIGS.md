@@ -58,12 +58,10 @@ Tuning knobs:
 ### Matching `.env`
 
 ```env
-LLM_PROVIDER=openai
 LLM_BASE_URL=http://127.0.0.1:11434/v1
 LLM_API_KEY=
 DEFAULT_MODEL=Qwen_Qwen3.5-9B-Q4_K_M
 
-CODING_PROVIDER=openai
 CODING_BASE_URL=http://127.0.0.1:11434/v1
 CODING_MODEL=Qwen_Qwen3.5-9B-Q4_K_M
 
@@ -112,12 +110,10 @@ Tuning knobs:
 ### Matching `.env`
 
 ```env
-LLM_PROVIDER=openai
 LLM_BASE_URL=http://127.0.0.1:11434/v1
 LLM_API_KEY=
 DEFAULT_MODEL=Qwen_Qwen3.6-35B-A3B-Q5_K_M
 
-CODING_PROVIDER=openai
 CODING_BASE_URL=http://127.0.0.1:11434/v1
 CODING_MODEL=Qwen_Qwen3.6-35B-A3B-Q5_K_M
 
@@ -175,12 +171,10 @@ llama-server.exe ^
 ### Matching `.env`
 
 ```env
-LLM_PROVIDER=openai
 LLM_BASE_URL=http://127.0.0.1:11434/v1
 LLM_API_KEY=
 DEFAULT_MODEL=Qwen_Qwen3-4B-Q5_K_M
 
-CODING_PROVIDER=openai
 CODING_BASE_URL=http://127.0.0.1:11434/v1
 CODING_MODEL=Qwen_Qwen3-4B-Q5_K_M
 

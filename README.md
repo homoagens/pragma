@@ -80,13 +80,22 @@ git clone https://github.com/homoagens/pragma
 cd pragma
 ```
 
+The from-source pipeline is **three twin scripts**, in order — `install` → `configure` → `start`:
+
 ```bat
-install.bat          :: Windows
+install.bat          :: Windows — create venv + install deps
+configure.bat        :: interactive: writes .env (backend URL, model, key)
+start.bat            :: launch Pragma (opens the UI)
 ```
 
 ```bash
-chmod +x install.sh start.sh && ./install.sh    # Linux / macOS
+chmod +x install.sh configure.sh start.sh
+./install.sh         # Linux / macOS — create venv + install deps
+./configure.sh       # interactive: writes .env (backend URL, model, key)
+./start.sh           # launch Pragma (opens the UI)
 ```
+
+`configure` asks for your **OpenAI-compatible backend URL** (must end in `/v1`), the model name, and an optional API key, then verifies the endpoint is reachable. Run it again any time to change them.
 
 ### 2. Serve a model
 
@@ -105,12 +114,12 @@ Different hardware? See [Don't know llama.cpp?](#-dont-know-llamacpp) below — 
 
 ### 3. Point Pragma at it
 
-```bash
-cp .env.example .env
-```
+`configure` already wrote the backend URL, model and key into `.env`. For the per-tier extras (`CONTEXT_WINDOW`, `MAX_TOKENS`):
 
 > [!TIP]
-> **→ [Copy the matching `.env` block from CONFIGS.md](./CONFIGS.md)** for the same tier — model name, `CONTEXT_WINDOW`, `MAX_TOKENS`. Paste it into your local `.env`, save.
+> **→ [Copy the matching `.env` block from CONFIGS.md](./CONFIGS.md)** for your tier and merge the extra lines into your `.env`.
+
+Then just `start`:
 
 ```bat
 start.bat       :: Windows
@@ -118,9 +127,9 @@ start.bat       :: Windows
 ```
 
 > [!TIP]
-> **Using the prebuilt executable (Option A)?** Skip the file copy and the
-> start scripts — just run the executable. It opens the UI automatically;
-> load your `.env` from **Settings → Load .env file…**.
+> **Using the prebuilt executable (Option A)?** No scripts needed — just run the
+> executable. It opens the UI automatically; load your `.env` from
+> **Settings → Load .env file…**.
 
 Opens at **http://localhost:8006**. The settings panel in the UI shows the active `.env` entries and the global learnings store; you can reload config without restarting.
 
@@ -165,7 +174,6 @@ Tell me, step by step:
 4. A curl command to verify the server is responding on /v1/models.
 
 5. The .env values I should put in Pragma:
-     LLM_PROVIDER=openai
      LLM_BASE_URL=http://127.0.0.1:11434/v1
      DEFAULT_MODEL=<the name llama-server reports for the loaded model>
      CONTEXT_WINDOW=<same value used with -c in the server>
@@ -188,28 +196,18 @@ Fill in the four hardware lines, run what comes back, you're done.
 
 ## 🔌 Cloud providers (optional)
 
-Prefer a hosted API to a local server? Pragma also speaks OpenAI-compatible and Anthropic.
+Prefer a hosted API to a local server? Any OpenAI-compatible endpoint works — just point `LLM_BASE_URL` at it.
 
 <details>
 <summary>OpenAI / OpenAI-compatible (Groq, OpenRouter, DeepSeek, …)</summary>
 
 ```env
-LLM_PROVIDER=openai
 LLM_BASE_URL=https://api.openai.com/v1
 LLM_API_KEY=sk-...
 DEFAULT_MODEL=gpt-4o-mini
 ```
 
-</details>
-
-<details>
-<summary>Anthropic</summary>
-
-```env
-LLM_PROVIDER=anthropic
-LLM_API_KEY=sk-ant-...
-DEFAULT_MODEL=claude-haiku-4-5
-```
+For Groq, OpenRouter, DeepSeek, etc. swap `LLM_BASE_URL` for their `/v1` endpoint and use their key.
 
 </details>
 
@@ -228,7 +226,7 @@ pragma/
 
 | File            | Role                                                   |
 | --------------- | ------------------------------------------------------ |
-| `llm_client.py` | Dispatches to OpenAI-compatible or Anthropic endpoints |
+| `llm_client.py` | Calls the OpenAI-compatible `/chat/completions` endpoint |
 | `react.py`      | Generic ReAct loop with streaming `on_step` callback   |
 | `memory.py`     | Transparent context compression as conversations grow  |
 | `skills/`       | One folder per skill — filesystem, shell, web, LLM, code… |

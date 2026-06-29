@@ -46,6 +46,23 @@ def main():
     print(f"  workdir : {cwd}")
     print(f"  server  : http://{args.host}:{args.port}")
     print(f"  UI      : {url}")
+
+    # Health check: verify the OpenAI-compatible LLM endpoint is reachable.
+    # Non-fatal — the UI still loads and the .env can be fixed from Settings.
+    try:
+        sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "core"))
+        import llm_client
+        import config as _cfg
+        ok, detail = llm_client.ping_models()
+        base = _cfg.LLM_BASE_URL or llm_client.DEFAULT_BASE_URL
+        if ok:
+            print(f"  LLM     : OK ({detail})")
+        else:
+            print(f"  LLM     : UNREACHABLE — {detail}")
+            print(f"            Configure the backend URL/model (run configure, "
+                  f"or Settings in the UI). Current LLM_BASE_URL={base or '(unset)'}")
+    except Exception as e:
+        print(f"  LLM     : health check skipped ({e})")
     print()
 
     # Open the web UI in the default browser shortly after startup.

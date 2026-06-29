@@ -316,20 +316,17 @@ async def browse_folder():
 @app.get("/api/config")
 async def get_config():
     coding_model    = baseline_config.CODING_MODEL    or baseline_config.DEFAULT_MODEL
-    coding_provider = baseline_config.CODING_PROVIDER or baseline_config.LLM_PROVIDER
-    coding_base_url = (baseline_config.CODING_BASE_URL
-                       or baseline_config.LLM_BASE_URL
-                       or baseline_config.BACKEND_URL)
+    coding_base_url = baseline_config.CODING_BASE_URL or baseline_config.LLM_BASE_URL
     return {
         "default_cwd": os.getcwd(),
         "data_dir":    str(DATA_DIR),
         "max_steps":   baseline_config.MAX_STEPS,
         "llm": {
-            "provider":        baseline_config.LLM_PROVIDER,
-            "base_url":        baseline_config.LLM_BASE_URL or baseline_config.BACKEND_URL,
+            "provider":        "openai",
+            "base_url":        baseline_config.LLM_BASE_URL,
             "default_model":   baseline_config.DEFAULT_MODEL,
             "coding_model":    coding_model,
-            "coding_provider": coding_provider,
+            "coding_provider": "openai",
             "coding_base_url": coding_base_url,
             "coding_distinct": bool(baseline_config.CODING_MODEL),
         },

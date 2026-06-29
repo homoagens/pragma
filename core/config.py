@@ -9,28 +9,38 @@
 import os
 from pathlib import Path
 
-# Load .env file if present (requires python-dotenv in requirements.txt)
+# Load the .env file that sits next to this repo. python-dotenv is a hard
+# dependency (it is in requirements.txt). If it is missing while a .env file
+# exists, configuration would be silently ignored — fail loudly instead so
+# the user knows their .env was not applied.
+_ENV_FILE = Path(__file__).resolve().parent.parent / ".env"
 try:
     from dotenv import load_dotenv
-    load_dotenv(Path(__file__).resolve().parent.parent / ".env")
-except ImportError:
-    pass  # dotenv is optional — env vars set by other means work fine
+    load_dotenv(_ENV_FILE)
+except ImportError as _e:
+    if _ENV_FILE.exists():
+        raise RuntimeError(
+            f"python-dotenv is not installed but a .env file exists at "
+            f"{_ENV_FILE}. Its settings would be silently ignored. "
+            f"Install dependencies first: pip install -r requirements.txt"
+        ) from _e
+    # No .env present → environment variables set by other means still work.
 
 DEBUG = os.environ.get("PRAGMA_DEBUG", "").lower() in ("1", "true", "yes")
 
 # ─────────────────────────────────────────────
-# LLM PROVIDER
+# LLM ENDPOINT (OpenAI-compatible)
 # ─────────────────────────────────────────────
-# Supported values for LLM_PROVIDER:
-#
-#   "openai"    — any OpenAI-compatible endpoint (OpenAI, Ollama, Groq,
-#                 Together, OpenRouter, DeepSeek, Mistral, vLLM, LiteLLM...)
-#   "anthropic" — native Anthropic API (api.anthropic.com)
-#
-# Set LLM_BASE_URL to override the default endpoint for the provider.
-# For Ollama (local): LLM_BASE_URL=http://localhost:11434/v1
+# Pragma talks to a single OpenAI-compatible endpoint:
+#     POST {LLM_BASE_URL}/chat/completions
+# LLM_BASE_URL MUST end in /v1. Works with llama.cpp server, LM Studio,
+# Ollama (/v1), vLLM, OpenAI, Groq, OpenRouter, DeepSeek, LiteLLM, ...
+# Examples:
+#   llama.cpp : http://127.0.0.1:8080/v1
+#   LM Studio : http://127.0.0.1:1234/v1
+#   Ollama    : http://127.0.0.1:11434/v1
+# LLM_API_KEY is optional (local servers usually need none).
 
-LLM_PROVIDER = os.environ.get("LLM_PROVIDER", "openai")
 LLM_BASE_URL = os.environ.get("LLM_BASE_URL", "")
 LLM_API_KEY  = os.environ.get("LLM_API_KEY",  "")
 
@@ -50,12 +60,10 @@ DEFAULT_TEMPERATURE = float(os.environ.get("DEFAULT_TEMPERATURE", "0.2"))
 # Useful to route code generation to a specialized model.
 #
 # Examples:
-#   CODING_MODEL=qwen2.5-coder:14b   CODING_PROVIDER=openai  CODING_BASE_URL=http://localhost:11434/v1
-#   CODING_MODEL=gpt-4o              CODING_PROVIDER=openai  CODING_BASE_URL=https://api.openai.com/v1  CODING_API_KEY=sk-...
-#   CODING_MODEL=claude-sonnet-4-6   CODING_PROVIDER=anthropic  CODING_API_KEY=sk-ant-...
+#   CODING_MODEL=qwen2.5-coder:14b   CODING_BASE_URL=http://localhost:11434/v1
+#   CODING_MODEL=gpt-4o              CODING_BASE_URL=https://api.openai.com/v1  CODING_API_KEY=sk-...
 
 CODING_MODEL       = os.environ.get("CODING_MODEL", "")       # empty = use DEFAULT_MODEL
-CODING_PROVIDER    = os.environ.get("CODING_PROVIDER", "")    # empty = use LLM_PROVIDER
 CODING_BASE_URL    = os.environ.get("CODING_BASE_URL", "")    # empty = use LLM_BASE_URL
 CODING_API_KEY     = os.environ.get("CODING_API_KEY", "")     # empty = use LLM_API_KEY
 CODING_TEMPERATURE = float(os.environ.get("CODING_TEMPERATURE", "0.1"))
@@ -248,10 +256,3 @@ def self_modify_guard(path: str) -> str | None:
     except Exception:
         pass
     return None
-
-
-# ─────────────────────────────────────────────
-# INTERNAL (not needed for standard providers)
-# ─────────────────────────────────────────────
-BACKEND_URL = os.environ.get("BACKEND_URL", "")
-BACKEND_KEY = os.environ.get("BACKEND_KEY", "")
