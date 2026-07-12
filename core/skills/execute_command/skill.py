@@ -5,8 +5,22 @@
 from __future__ import annotations
 
 import os
+import re
 import subprocess
 import sys
+
+# PRAGMA.md (the user-authored project contract) is read-only for the agent.
+# The file-mutating skills enforce that via config.self_modify_guard, but the
+# shell would happily `del` it — this pattern closes that hole for the common
+# destructive verbs and for output redirection onto the file. Known limit:
+# it matches the literal name, so wildcard commands (`del *.md`) can still
+# slip through — the system prompt rule remains the semantic safety net.
+_PRAGMA_MD_SHELL_DENY = re.compile(
+    r"\b(del|erase|rd|rmdir|rm|remove-item|ri|move|mv|ren|rename|"
+    r"copy|xcopy|robocopy|cp)\b[^&|;]*pragma\.md"
+    r"|>\s*\"?[^>|&;\"]*pragma\.md",
+    re.IGNORECASE,
+)
 
 
 def _kill_process_tree(proc: subprocess.Popen) -> None:
@@ -54,6 +68,17 @@ def execute_command(command: str, cwd: str = "", timeout: int = 60,
     Portable commands: echo, cd, python, pip, git.
     Not portable: ls (Linux) vs dir (Windows), cat vs type, etc.
     """
+    # ── PRAGMA.md shell guard (see pattern above) ──
+    if _PRAGMA_MD_SHELL_DENY.search(command or ""):
+        return (
+            "ERROR: refused — this shell command would delete, move, rename "
+            "or overwrite a PRAGMA.md project-instructions file. PRAGMA.md "
+            "is authored by the USER and is read-only for the agent (the "
+            "same rule the file-mutating skills enforce). If it should "
+            "change or be removed, tell the user to do it themselves. This "
+            "is a hard guard — do not retry or work around it."
+        )
+
     work_dir = cwd if cwd else None
 
     # Spawn in a new process group / job so we can kill the whole tree.

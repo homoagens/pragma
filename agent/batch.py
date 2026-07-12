@@ -623,12 +623,29 @@ confirmed mid-task. Therefore:
     # explicitly marked as possibly-outdated context, not instructions.
     prefix_parts: list[str] = []
 
+    # Encoding-tolerant read: PowerShell's `echo "..." > PRAGMA.md` writes
+    # UTF-16 LE with BOM — the most likely way a Windows user creates this
+    # file. A utf-8-only read would fail silently and skip the injection
+    # (including the read-only notice), which is exactly what must not
+    # happen to the project contract.
+    def _read_pragma_md(p: Path) -> str:
+        try:
+            raw = p.read_bytes()
+        except Exception:
+            return ""
+        if raw.startswith(b"\xff\xfe") or raw.startswith(b"\xfe\xff"):
+            try:
+                return raw.decode("utf-16")
+            except Exception:
+                return ""
+        try:
+            return raw.decode("utf-8-sig")
+        except Exception:
+            return raw.decode("cp1252", errors="replace")
+
     pragma_md = cwd / "PRAGMA.md"
     if pragma_md.is_file():
-        try:
-            instructions = pragma_md.read_text(encoding="utf-8").strip()
-        except Exception:
-            instructions = ""
+        instructions = _read_pragma_md(pragma_md).strip()
         if instructions:
             cap = getattr(baseline_config, "PRAGMA_MD_MAX_CHARS", 4000)
             if len(instructions) > cap:
