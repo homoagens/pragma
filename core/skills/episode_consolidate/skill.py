@@ -152,7 +152,8 @@ def _clean_list(items) -> list[str]:
     return out
 
 
-def _ask_episode(transcript: str, corrective: bool = False) -> dict:
+def _ask_episode(transcript: str, corrective: bool = False,
+                 json_only: bool = False) -> dict:
     """One LLM call for the consolidation step. Raises on failure."""
     user_msg = f"Session transcript:\n\n{transcript}"
     if corrective:
@@ -161,6 +162,16 @@ def _ask_episode(transcript: str, corrective: bool = False) -> dict:
             "placeholder values copied from the JSON shape. That is useless. "
             "Fill EVERY field with real content extracted from the "
             "transcript above.]"
+        )
+    if json_only:
+        # Thinking-capable models sometimes burn the whole token budget
+        # narrating a reasoning process and get truncated before any JSON
+        # appears. Demand the JSON first, no prose.
+        user_msg += (
+            "\n\n[IMPORTANT: your previous reply was cut off before any JSON "
+            "appeared — too much thinking out loud. Reply with ONLY the JSON "
+            "object: the character '{' must be the FIRST character of your "
+            "reply. No preamble, no reasoning narration.]"
         )
     raw = llm_client.call_llm(
         messages=[
@@ -205,11 +216,20 @@ def episode_consolidate_detailed(transcript: str = "", workspace: str = "",
     store = Path(store_dir) if store_dir else Path(config.EPISODES_DIR)
 
     # ── 1. Consolidation: transcript → episode ──────────────────────────
+    # First attempt; on failure (typically: the model narrated a thinking
+    # process and got truncated before the JSON) retry once demanding
+    # JSON-first output. If the LLM fails twice, do NOT lose the session:
+    # fall through with empty data and let the deterministic fallback
+    # below build a minimal factual episode instead.
+    llm_note = ""
     try:
         ep_data = _ask_episode(transcript)
-    except Exception as e:
-        return {"status": "error",
-                "summary": f"ERROR: consolidation LLM call failed — {e}", **empty}
+    except Exception:
+        try:
+            ep_data = _ask_episode(transcript, json_only=True)
+        except Exception as e2:
+            ep_data = {}
+            llm_note = f" [consolidation LLM failed twice: {str(e2)[:120]}]"
 
     # Some models echo the '...' placeholders from the JSON shape instead
     # of filling the fields. Retry once with a corrective note; if it
@@ -218,7 +238,9 @@ def episode_consolidate_detailed(transcript: str = "", workspace: str = "",
     goal      = _as_text(ep_data.get("goal")).strip()
     narrative = _as_text(ep_data.get("narrative")).strip()
     degraded  = False
-    if _is_placeholder(goal) or _is_placeholder(narrative):
+    # Placeholder retry only makes sense if the LLM is answering at all —
+    # after a double failure above, go straight to the fallback.
+    if (_is_placeholder(goal) or _is_placeholder(narrative)) and not llm_note:
         try:
             ep_data   = _ask_episode(transcript, corrective=True)
             goal      = _as_text(ep_data.get("goal")).strip()
@@ -273,8 +295,13 @@ def episode_consolidate_detailed(transcript: str = "", workspace: str = "",
               "surprises": len(surprises),
               "new_assertions": [], "confirmed": [], "contradicted": [],
               "retired": []}
-    _degraded_note = (" [degraded: model echoed placeholders twice, "
-                      "deterministic fallback used]" if degraded else "")
+    if degraded and llm_note:
+        _degraded_note = llm_note + " — deterministic fallback episode saved"
+    elif degraded:
+        _degraded_note = (" [degraded: model echoed placeholders twice, "
+                          "deterministic fallback used]")
+    else:
+        _degraded_note = ""
 
     # ── 2. Abstraction: episodes that recur → semantic assertions ───────
     # Runs only when at least one thematically similar past episode exists:
