@@ -398,8 +398,43 @@ def run_agent(cfg: AgentConfig, user_task: str, log_path: Optional[Path] = None,
 
         # ── ACTION ──────────────────────────────────────────────────
         if "action" not in response:
+            # A reply with neither an action nor a final key is almost
+            # always a malformed-JSON casualty: json_repair salvaged the
+            # `thought` but action/args were dropped (classic cause: single
+            # backslashes in Windows paths — invalid JSON escapes). The old
+            # behavior skipped WITHOUT appending anything to the messages:
+            # at low temperature the model then saw an IDENTICAL context and
+            # reproduced the identical broken reply until the step budget
+            # ran out, invisible to every watchdog (no action ever executed).
+            # Feed the failure back instead, so the context changes and the
+            # model can correct itself on the next turn.
             if config.DEBUG:
-                console.print("[red]Response has neither action nor final key — skipping.[/red]")
+                console.print("[red]Response has neither action nor final key.[/red]")
+            _emit({"type": "error",
+                   "content": (f"Step {step}: reply contained neither an "
+                               f"`action` nor a final key"
+                               + (f" (malformed JSON repaired; dropped keys: "
+                                  f"{_lost_keys})" if _was_repaired else "")
+                               + ".")})
+            feedback = (
+                "[SYSTEM]: your previous reply was parsed but contained "
+                "neither an `action` nor a final key, so NOTHING was executed"
+            )
+            if _was_repaired:
+                feedback += (
+                    ". Your JSON was MALFORMED and had to be repaired; these "
+                    f"keys were dropped during recovery: {_lost_keys or '(unknown)'}. "
+                    "The most common cause is unescaped backslashes in "
+                    "Windows paths: inside JSON strings every backslash must "
+                    'be doubled, e.g. "C:\\\\Users\\\\name\\\\file.txt"'
+                )
+            feedback += (
+                ". Re-emit ONE complete JSON object with `thought` plus "
+                "either `action`+`args` or a final key. Do not repeat the "
+                "previous reply verbatim."
+            )
+            messages.append({"role": "assistant", "content": text})
+            messages.append({"role": "user", "content": feedback})
             step += 1
             continue
 
