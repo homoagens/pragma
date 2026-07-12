@@ -47,8 +47,28 @@ def insert_after(path: str, anchor: str, content: str,
         )
 
     cut = idx + len(anchor)
-    # If the anchor ends mid-line, add a newline before the new content
-    # to keep the file structurally readable.
+
+    # ── Refuse anchors that end in the MIDDLE of a line ──
+    # Inserting there would split the line: its tail would end up stranded
+    # AFTER the inserted block (field incident: an anchor ending at
+    # `if __name__` left ` == '__main__':` dangling below the new function,
+    # breaking the file with a SyntaxError). No guessing of intent — the
+    # model must re-anchor at a line boundary, which is deterministic.
+    if cut < len(text) and text[cut - 1] != "\n":
+        nl = text.find("\n", cut)
+        tail = text[cut:] if nl < 0 else text[cut:nl]
+        if tail:
+            return (
+                f"ERROR: anchor ends in the MIDDLE of a line — inserting "
+                f"here would split it, stranding the rest of the line "
+                f"({tail[:60]!r}) below the inserted content and likely "
+                f"breaking the file.\n"
+                f"Fix: end the anchor at a line boundary — include the "
+                f"whole final line, or end the anchor with a newline. For "
+                f"an INLINE insertion use replace_in_file instead."
+            )
+
+    # Anchor ends at a line boundary (with or without the newline itself).
     sep = "" if cut == len(text) or text[cut - 1] == "\n" else "\n"
     new_text = text[:cut] + sep + content + text[cut:]
 

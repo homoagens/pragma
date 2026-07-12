@@ -46,10 +46,26 @@ def insert_before(path: str, anchor: str, content: str,
             f"Hint: anchor must be copied verbatim from the file, including whitespace."
         )
 
-    # If the anchor starts mid-line, add a newline after the new content
-    # so the inserted block stays on its own lines.
-    sep = "" if idx == 0 or text[idx - 1] == "\n" else "\n"
-    new_text = text[:idx] + content + sep + text[idx:]
+    # ── Refuse anchors that start in the MIDDLE of a line ──
+    # Symmetric to insert_after's guard: inserting there would split the
+    # line, stranding its head ABOVE the inserted block. The model must
+    # re-anchor at a line boundary — deterministic, no intent guessing.
+    if idx > 0 and text[idx - 1] != "\n":
+        ls = text.rfind("\n", 0, idx) + 1  # start of the anchor's line
+        head = text[ls:idx]
+        if head:
+            return (
+                f"ERROR: anchor starts in the MIDDLE of a line — inserting "
+                f"here would split it, stranding the start of the line "
+                f"({head[:60]!r}) above the inserted content and likely "
+                f"breaking the file.\n"
+                f"Fix: start the anchor at a line boundary — begin with the "
+                f"whole line (indentation included). For an INLINE "
+                f"insertion use replace_in_file instead."
+            )
+
+    # Anchor starts at a line boundary.
+    new_text = text[:idx] + content + text[idx:]
 
     try:
         p.write_text(new_text, encoding=encoding)
