@@ -18,9 +18,10 @@ Retrieve the most relevant episodes from the episodic memory store — keyword o
 
 ## Notes
 
-- Deterministic: keyword overlap on goal + keywords + narrative + surprises; falls back to recency when nothing matches.
-- Recall reinforces: retrieved episodes get `last_recalled` refreshed and `salience` bumped (+0.1, cap 1.0) — remembering strengthens the memory.
-- Episodes are written by `episode_consolidate` at end of session; this skill only reads (plus the reinforcement bookkeeping).
+- Deterministic: keyword overlap on goal + keywords + narrative + surprises; falls back to recency when nothing matches. Ties break on effective salience (stored salience discounted by time since last recall — see `core/episodes.py`).
+- Recall reinforces: retrieved episodes get `last_recalled` refreshed and `salience` bumped (+0.1, cap 1.0) — remembering strengthens the memory and resets its decay.
+- Forgetting is reversible: when the active zone can't fill `top_k` with keyword matches, the dormant zone (`episodes/dormant/`) is searched too, and matching episodes are **revived** — moved back to active with their age reset, marked `[revived from dormant memory]` in the output.
+- Episodes are written by `episode_consolidate` at end of session; this skill only reads (plus the reinforcement/revival bookkeeping).
 
 ## Examples
 

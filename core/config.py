@@ -238,6 +238,29 @@ SEMANTIC_RETIRE_CONTRADICTIONS = int(os.environ.get("SEMANTIC_RETIRE_CONTRADICTI
 # verbatim into the task by runners that support it.
 PRAGMA_MD_MAX_CHARS = int(os.environ.get("PRAGMA_MD_MAX_CHARS", "4000"))
 
+# ── Forgetting (episodic store) ──
+# An episode's EFFECTIVE salience decays exponentially with the time since
+# it was last recalled (or created): eff = salience * 0.5^(age_days /
+# half_life). Recalling an episode resets its age and reinforces it — the
+# decay is reversible, exactly like human forgetting. A very salient
+# episode resists longer than a routine one by construction.
+# Set the half-life to 0 to disable decay entirely.
+EPISODE_DECAY_HALF_LIFE_DAYS = float(
+    os.environ.get("EPISODE_DECAY_HALF_LIFE_DAYS", "30"))
+
+# Below this effective salience an episode is moved to the dormant zone
+# (episodes/dormant/): out of active recall and out of the abstraction
+# pass, but still on disk and revivable if a future query needs it.
+EPISODE_DORMANT_THRESHOLD = float(
+    os.environ.get("EPISODE_DORMANT_THRESHOLD", "0.15"))
+
+# True deletion happens only after an episode has been dormant this many
+# days AND nothing references it (links from active episodes, sources of
+# semantic assertions). 0 = never hard-delete (default: forgetting means
+# inaccessibility, not destruction — opt in explicitly if disk matters).
+EPISODE_DELETE_AFTER_DAYS = int(
+    os.environ.get("EPISODE_DELETE_AFTER_DAYS", "0"))
+
 # ─────────────────────────────────────────────
 # SELF-INTEGRITY GUARD
 # ─────────────────────────────────────────────

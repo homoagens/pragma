@@ -23,6 +23,7 @@ Consolidate a finished session transcript into a structured episodic memory reco
 - The episode separates **facts** (`narrative`, written once, never rewritten) from **meaning** (`interpretation`, mutable). `surprises` — deviations from expectation — are the most important field and initialize the episode's salience.
 - A new semantic assertion requires at least `SEMANTIC_MIN_SOURCES` (default 2) distinct source episodes: a pattern seen once is an anecdote. Enforcement is deterministic — assertions citing unknown or too few episodes are dropped regardless of what the model proposes.
 - Confirmations raise an assertion's confidence (+0.1, cap 0.95); contradictions lower it (−0.2, floor 0.05) and, after `SEMANTIC_RETIRE_CONTRADICTIONS` (default 2), retire it from recall.
+- Consolidation is also the forgetting moment: right after the new episode is filed, a sweep moves episodes whose effective salience decayed below `EPISODE_DORMANT_THRESHOLD` to the dormant zone (out of recall and out of the abstraction pass, still revivable). Hard deletion only with `EPISODE_DELETE_AFTER_DAYS` > 0, and never for episodes referenced by assertions or by other episodes.
 - Normally invoked by the runtime at the end of a task (batch `--memory`), not by the agent itself. For structured output use `episode_consolidate_detailed()`.
 
 ## Examples

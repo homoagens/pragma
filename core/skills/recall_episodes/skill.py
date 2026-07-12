@@ -5,22 +5,26 @@
 # skills/recall_episodes/skill.py — retrieve relevant episodes from memory
 #
 # Deterministic counterpart of episode_consolidate: keyword-overlap scoring
-# (no LLM, no embeddings) over the episodic store, with a boost for episodes
-# born in the same workspace as the current task.
+# (no LLM, no embeddings) over the ACTIVE zone of the episodic store, with
+# a boost for episodes born in the same workspace as the current task.
+# Ties are broken by effective salience (see core/episodes.py): between two
+# equally relevant episodes, the more alive one wins.
 #
-# Recall has a deliberate side effect: retrieved episodes get their
-# `last_recalled` refreshed and their `salience` reinforced — remembering
-# strengthens the memory, which is what will keep it out of the dormant
-# zone when forgetting is implemented.
+# Recall has two deliberate side effects, both from the forgetting model:
+#   - retrieved episodes get `last_recalled` refreshed and `salience`
+#     reinforced — remembering strengthens the memory and resets its decay;
+#   - when the active zone can't fill the requested slots, the DORMANT zone
+#     is searched by keyword relevance, and any hit is REVIVED: moved back
+#     to the active zone with its age reset. A fading memory that becomes
+#     relevant again returns to availability — forgetting is reversible.
 
 from __future__ import annotations
 
-import json
 import re
-from datetime import datetime, timezone
 from pathlib import Path
 
 import config
+import episodes as estore
 
 
 _WORD = re.compile(r"\w+", flags=re.UNICODE)
@@ -28,10 +32,6 @@ _WORD = re.compile(r"\w+", flags=re.UNICODE)
 
 def _tokens(s: str) -> set[str]:
     return {w.lower() for w in _WORD.findall(s) if len(w) > 2}
-
-
-def _now() -> str:
-    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
 def _episode_text(ep: dict) -> str:
@@ -48,8 +48,10 @@ def recall_episodes(query: str = "", workspace: str = "", top_k: int = 0,
     """
     [D] Retrieve the most relevant episodes from the episodic memory store.
 
-    Pure keyword overlap plus a same-workspace boost; falls back to recency
-    when the query has no useful tokens or nothing matches.
+    Pure keyword overlap plus a same-workspace boost over the active zone;
+    falls back to recency when nothing matches. When fewer than top_k
+    keyword matches exist, the dormant zone is searched too and matching
+    episodes are revived (moved back to active, age reset).
 
     query      : free text describing the upcoming task. Empty = most recent.
     workspace  : current working directory; episodes from the same workspace
@@ -62,18 +64,8 @@ def recall_episodes(query: str = "", workspace: str = "", top_k: int = 0,
     k = top_k if top_k > 0 else getattr(config, "EPISODES_RECALL_TOP_K", 3)
     boost = getattr(config, "EPISODE_WORKSPACE_BOOST", 2)
     store = Path(store_dir) if store_dir else Path(config.EPISODES_DIR)
-    if not store.is_dir():
-        return "(no episodes)"
 
-    episodes: list[tuple[Path, dict]] = []
-    for p in sorted(store.glob("ep_*.json")):
-        try:
-            episodes.append((p, json.loads(p.read_text(encoding="utf-8"))))
-        except Exception:
-            continue
-    if not episodes:
-        return "(no episodes)"
-
+    active = estore.load(estore.active_dir(store))
     qtok = _tokens(query) if query else set()
 
     def _score(ep: dict) -> int:
@@ -82,31 +74,58 @@ def recall_episodes(query: str = "", workspace: str = "", top_k: int = 0,
             s += boost
         return s
 
-    if qtok or workspace:
-        scored = [(p, ep, _score(ep)) for p, ep in episodes]
-        matched = [(p, ep, s) for p, ep, s in scored if s > 0]
-        if matched:
-            matched.sort(key=lambda t: (t[2], t[1].get("ts", "")), reverse=True)
-            picked = matched[:k]
+    picked: list[tuple[Path, dict, int]] = []
+    if active:
+        if qtok or workspace:
+            scored = [(p, ep, _score(ep)) for p, ep in active]
+            matched = [t for t in scored if t[2] > 0]
+            if matched:
+                matched.sort(key=lambda t: (t[2],
+                                            estore.effective_salience(t[1]),
+                                            t[1].get("ts", "")),
+                             reverse=True)
+                picked = matched[:k]
+            else:
+                recent = sorted(active, key=lambda t: t[1].get("ts", ""),
+                                reverse=True)
+                picked = [(p, ep, 0) for p, ep in recent[:k]]
         else:
-            recent = sorted(episodes, key=lambda t: t[1].get("ts", ""), reverse=True)
+            recent = sorted(active, key=lambda t: t[1].get("ts", ""),
+                            reverse=True)
             picked = [(p, ep, 0) for p, ep in recent[:k]]
-    else:
-        recent = sorted(episodes, key=lambda t: t[1].get("ts", ""), reverse=True)
-        picked = [(p, ep, 0) for p, ep in recent[:k]]
+
+    # ── Dormant revival ──
+    # Only a real keyword match revives (relevance brings memories back;
+    # mere recency does not), and only to fill slots the active zone
+    # couldn't fill with matches of its own.
+    revived_ids: set = set()
+    if qtok:
+        need = k - sum(1 for t in picked if t[2] > 0)
+        if need > 0:
+            dorm = estore.load(estore.dormant_dir(store))
+            dscored = [(p, ep, len(_tokens(_episode_text(ep)) & qtok))
+                       for p, ep in dorm]
+            dmatch = [t for t in dscored if t[2] > 0]
+            dmatch.sort(key=lambda t: (t[2], t[1].get("ts", "")), reverse=True)
+            for p, ep, s in dmatch[:need]:
+                try:
+                    newp = estore.revive(p, ep, store)
+                except Exception:
+                    continue
+                picked.append((newp, ep, s))
+                revived_ids.add(ep.get("id"))
 
     if not picked:
         return "(no episodes)"
 
     lines = []
-    now = _now()
+    now = estore.now_iso()
     for p, ep, _s in picked:
         # Reinforce on recall — best effort, never let bookkeeping break recall.
         try:
             ep["last_recalled"] = now
             ep["salience"] = min(1.0, float(ep.get("salience", 0.5)) + 0.1)
-            p.write_text(json.dumps(ep, indent=2, ensure_ascii=False),
-                         encoding="utf-8")
+            estore.save(p, ep)
         except Exception:
             pass
 
@@ -119,6 +138,8 @@ def recall_episodes(query: str = "", workspace: str = "", top_k: int = 0,
         interp = (ep.get("interpretation") or "").strip()
         if interp:
             head += f" — {interp}"
+        if ep.get("id") in revived_ids:
+            head += "  [revived from dormant memory]"
         lines.append(head)
         surprises = ep.get("surprises") or []
         if surprises:

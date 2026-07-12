@@ -28,6 +28,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 import config
+import episodes as estore
 import llm_client
 from json_parser import extract_json
 
@@ -291,8 +292,20 @@ def episode_consolidate_detailed(transcript: str = "", workspace: str = "",
         return {"status": "error",
                 "summary": f"ERROR writing episode: {e}", **empty}
 
+    # ── Forgetting maintenance — the session's "sleep" moment ──
+    # Runs right after the new episode is filed and BEFORE the abstraction
+    # pass, so faded episodes neither surface as similarity candidates nor
+    # become assertion sources. The fresh episode is untouchable by
+    # construction (age 0 → effective salience = raw salience > threshold).
+    swept = estore.sweep(store)
+    _sweep_note = ""
+    if swept["dormant"] or swept["deleted"]:
+        _sweep_note = f"; sweep: {len(swept['dormant'])} episode(s) to dormant"
+        if swept["deleted"]:
+            _sweep_note += f", {len(swept['deleted'])} deleted"
+
     result = {"status": "ok", "summary": "", "episode_id": ep["id"],
-              "surprises": len(surprises),
+              "surprises": len(surprises), "sweep": swept,
               "new_assertions": [], "confirmed": [], "contradicted": [],
               "retired": []}
     if degraded and llm_note:
@@ -314,7 +327,8 @@ def episode_consolidate_detailed(transcript: str = "", workspace: str = "",
     if not similar:
         result["summary"] = (
             f"OK: episode {ep['id']} saved ({len(surprises)} surprises); "
-            f"semantic pass skipped (no similar episodes yet)" + _degraded_note)
+            f"semantic pass skipped (no similar episodes yet)"
+            + _sweep_note + _degraded_note)
         return result
 
     learnings_path = Path(config.LEARNINGS_PATH)
@@ -346,7 +360,7 @@ def episode_consolidate_detailed(transcript: str = "", workspace: str = "",
     except Exception as e:
         result["summary"] = (
             f"OK: episode {ep['id']} saved ({len(surprises)} surprises); "
-            f"semantic pass failed — {e}")
+            f"semantic pass failed — {e}" + _sweep_note + _degraded_note)
         return result
     if not isinstance(sem, dict):
         sem = {}
@@ -417,7 +431,7 @@ def episode_consolidate_detailed(transcript: str = "", workspace: str = "",
         f"{len(result['confirmed'])} confirmed, "
         f"{len(result['contradicted'])} contradicted"
         + (f", {len(result['retired'])} retired" if result["retired"] else "")
-        + _degraded_note)
+        + _sweep_note + _degraded_note)
     return result
 
 
