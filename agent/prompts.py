@@ -144,6 +144,13 @@ way to end a task is the `conclusion` shape.
 spelled exactly.** Do not invent skill names and do not pass parameters that
 are not in a skill's `Call(...)` signature shown there.
 
+**ALL skill parameters go INSIDE the `args` object — never at the top level
+of the JSON.** A response like `{{"action": "write_file", "path": "...",
+"content": "..."}}` is WRONG: top-level keys other than `thought`, `action`,
+`args` and `conclusion` are silently ignored, so the skill receives no
+arguments and fails with "missing required argument". Correct form:
+`{{"action": "write_file", "args": {{"path": "...", "content": "..."}}}}`.
+
 ### Hard rules on `thought` length
 
 The `thought` field is for the IMMEDIATE next-step justification only.
