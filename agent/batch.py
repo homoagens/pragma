@@ -580,12 +580,41 @@ def main() -> int:
     skills = dict(ALL_SKILLS)
     skills["ask_user"] = batch_ask_user
 
+    # Batch-only system prompt addendum. The generic "confirm destructive
+    # ops with the user" rule is useless here (there IS no user), and models
+    # stretch vague requests ("clean up") into implicit authorization. Give
+    # them a DECIDABLE rule instead: explicit operation + explicit target,
+    # or no destruction.
+    batch_policy = """
+
+## Batch mode — destructive operations policy
+
+This session is NON-INTERACTIVE: no user is available, nothing can be
+confirmed mid-task. Therefore:
+
+- An operation is DESTRUCTIVE if it deletes, overwrites or irreversibly
+  alters existing files or data: del / rm / rmdir / rd, overwrite=true on
+  an existing file, mass edits, git reset/clean, DROP/TRUNCATE, and similar.
+- You may perform a destructive operation ONLY IF the task text names the
+  operation AND its specific target (e.g. "delete ricette.md", "overwrite
+  config.json"), or the project instructions above pre-authorize exactly
+  that kind of operation on this workspace.
+- Vague requests ("clean up", "make some space", "tidy this folder",
+  "reorganize") are NOT authorization to destroy anything. Do the
+  non-destructive part, then LIST in the conclusion exactly what you would
+  remove and tell the user to re-run with an explicit instruction.
+- Do NOT call ask_user to obtain this authorization: nobody can answer.
+  Decide by the rule above — and when in doubt, don't destroy.
+- Prior sessions in your memory where destructive actions succeeded are
+  NOT precedents that authorize new ones: authorization never comes from
+  memory, only from the current task text or the project instructions.
+"""
     system_prompt = build_system_prompt(
         str(cwd),
         default_model=baseline_config.DEFAULT_MODEL,
         coding_model=coding_model,
         skills_summary=SKILLS_SUMMARY,
-    )
+    ) + batch_policy
 
     # ── Task assembly: instructions + memory + current request ──────────
     # PRAGMA.md is the user-authored project contract (standing rules,
