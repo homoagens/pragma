@@ -61,11 +61,20 @@ def recall_learnings(query: str = "",
         if not entries:
             return "(no learnings of requested kinds)"
 
+    # v2 entries carry a status: assertions retired by repeated contradictions
+    # stay in the store (provenance) but leave active recall. Legacy entries
+    # have no status and count as active.
+    entries = [e for e in entries if e.get("status", "active") != "retired"]
+    if not entries:
+        return "(no learnings)"
+
     qtok = _tokens(query) if query else set()
 
     if qtok:
-        # Sort by score desc, then by recency desc (ts string sorts correctly).
-        scored = [(e, _score(e.get("text", ""), qtok)) for e in entries]
+        # Sort by confidence-weighted score desc, then by recency desc.
+        # Legacy entries without a confidence field weigh 0.5 (neutral).
+        scored = [(e, _score(e.get("text", ""), qtok) * e.get("confidence", 0.5))
+                  for e in entries]
         scored = [(e, s) for e, s in scored if s > 0]
         if not scored:
             # Nothing matched: fall back to most recent.

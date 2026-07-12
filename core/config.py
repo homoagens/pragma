@@ -201,6 +201,35 @@ LEARNINGS_RECALL_TOP_K = int(os.environ.get("LEARNINGS_RECALL_TOP_K", "5"))
 AUTO_REFLECT = os.environ.get("AUTO_REFLECT", "true").lower() in ("1", "true", "yes")
 
 # ─────────────────────────────────────────────
+# MEMORY — episodic store + semantic assertions
+# ─────────────────────────────────────────────
+# Episodic memory: one JSON file per consolidated session episode
+# (written by the episode_consolidate skill, retrieved by recall_episodes).
+EPISODES_DIR = DATA_DIR / "episodes"
+
+# How many episodes recall_episodes returns by default.
+EPISODES_RECALL_TOP_K = int(os.environ.get("EPISODES_RECALL_TOP_K", "3"))
+
+# Score bonus for episodes born in the same workspace as the current task
+# (episodes from other projects can still surface, but local ones win ties).
+EPISODE_WORKSPACE_BOOST = int(os.environ.get("EPISODE_WORKSPACE_BOOST", "2"))
+
+# Semantic prudence. A new assertion requires at least this many distinct
+# source episodes ("one swallow does not make a summer"): a pattern seen
+# once is an anecdote, seen twice it starts to be knowledge.
+SEMANTIC_MIN_SOURCES = int(os.environ.get("SEMANTIC_MIN_SOURCES", "2"))
+# Confidence dynamics: +bonus on each confirmation (cap 0.95), -malus on
+# each contradiction (floor 0.05). A single contradiction must NOT retire
+# consolidated knowledge — only repeated, independent ones do.
+SEMANTIC_CONFIRM_BONUS        = float(os.environ.get("SEMANTIC_CONFIRM_BONUS", "0.1"))
+SEMANTIC_CONTRADICT_MALUS     = float(os.environ.get("SEMANTIC_CONTRADICT_MALUS", "0.2"))
+SEMANTIC_RETIRE_CONTRADICTIONS = int(os.environ.get("SEMANTIC_RETIRE_CONTRADICTIONS", "2"))
+
+# Max chars of a project PRAGMA.md (user-authored instructions) injected
+# verbatim into the task by runners that support it.
+PRAGMA_MD_MAX_CHARS = int(os.environ.get("PRAGMA_MD_MAX_CHARS", "4000"))
+
+# ─────────────────────────────────────────────
 # SELF-INTEGRITY GUARD
 # ─────────────────────────────────────────────
 # Pragma must never modify its own files during a session. The
@@ -236,6 +265,26 @@ def self_modify_guard(path: str) -> str | None:
     The repo root is derived from this module's path, so the check works
     identically wherever the repository lives on disk.
     """
+    # ── PRAGMA.md is the user's project contract — NEVER writable ──
+    # It carries user-authored instructions (including standing
+    # authorizations) that runners inject into the task. If the agent could
+    # create, edit or delete it, it could grant ITSELF permissions. This
+    # check is independent of ALLOW_SELF_MODIFY: not even developer mode
+    # unlocks it — the file is edited by the user, by hand, or not at all.
+    try:
+        if Path(path).name.upper() == "PRAGMA.MD":
+            return (
+                f"ERROR: refused — '{path}' is a PRAGMA.md project-"
+                f"instructions file. PRAGMA.md is authored by the USER and "
+                f"is read-only for the agent: it must never be created, "
+                f"modified or deleted in a session. If its content should "
+                f"change, tell the user what to change and let them edit "
+                f"it themselves. This is a hard guard — do not retry or "
+                f"work around it."
+            )
+    except Exception:
+        pass
+
     if ALLOW_SELF_MODIFY:
         return None
     try:
