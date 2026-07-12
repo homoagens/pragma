@@ -78,7 +78,12 @@ CODING_MAX_TOKENS  = int(os.environ.get("CODING_MAX_TOKENS",  "4096"))
 # ─────────────────────────────────────────────
 
 MAX_TOKENS     = int(os.environ.get("MAX_TOKENS", "4096"))
-TIMEOUT        = 300   # seconds — increase for slow or large-context models
+
+# Seconds before an LLM HTTP call is abandoned. With a large output budget
+# on a slow local model (a dense 27B+ partially offloaded can sit under
+# 10 tok/s), a single long generation can legitimately take several
+# minutes — raise via LLM_TIMEOUT instead of editing this file.
+TIMEOUT        = int(os.environ.get("LLM_TIMEOUT", "300"))
 
 # Quota of MAX_TOKENS available to LLM calls made INSIDE a skill
 # (edit_file, code, llm_invoke, ...). Skills should never hardcode their
