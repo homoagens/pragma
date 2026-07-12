@@ -213,11 +213,61 @@ For Groq, OpenRouter, DeepSeek, etc. swap `LLM_BASE_URL` for their `/v1` endpoin
 
 ---
 
+## 🖥 Batch mode — Pragma without the UI
+
+Need Pragma in a script, a scheduled job, or a CI step? `agent.batch` runs **one task start-to-finish** from the terminal — no browser, no interaction, every reasoning step streamed live to stdout.
+
+```bat
+venv\Scripts\python.exe -m agent.batch --task "fix the failing test" --cwd C:\my\project
+```
+
+```bash
+./venv/bin/python -m agent.batch --task "fix the failing test" --cwd /my/project
+```
+
+**The output adapts to where it lands:**
+
+| Where it goes | Mode | What you get |
+| --- | --- | --- |
+| a terminal | pretty | live rendering: step rules, dim thoughts, cyan actions, the conclusion as real Markdown in a panel |
+| a redirect (`> run.md`) | markdown | a clean Markdown document — view it rendered with `glow run.md` (or `python -m rich.markdown run.md`) |
+| `--plain` | plain | flat `[HH:MM:SS] STEP n ...` lines, stable for grepping from scripts |
+
+Useful flags:
+
+- `--task-file task.txt` — or pipe the task on stdin
+- `--log run.json` — full structured step log (every observation, untruncated)
+- `--max-steps 25` · `--temperature 0.2` (default `0.0`, for reproducible runs)
+- `--memory` — episodic memory, see below
+
+Exit codes: `0` clean conclusion · `2` step budget exhausted (forced verdict) · `1` failure.
+
+> [!NOTE]
+> **No user, no blocking.** In batch `ask_user` never waits: confirmation
+> requests for destructive actions fail safe to *no*, unless the operation is
+> explicitly authorized in the task text or in `PRAGMA.md` (below).
+
+### Memory (`--memory`)
+
+With `--memory` each batch run remembers and learns:
+
+- **at the start**, the most relevant *episodes* from past sessions (plus distilled learnings) are injected into the task;
+- **at the end**, the session is consolidated into a new episode — what was done, what surprised, what it means — stored in `~/.pragma/episodes/`;
+- when a pattern **recurs across episodes**, it is distilled into a general assertion with sources and confidence — the same knowledge store you see in **Settings → Knowledge** in the UI.
+
+No `--memory`, no traces: batch runs are stateless by default.
+
+### PRAGMA.md — the project contract
+
+Drop a `PRAGMA.md` in the workspace root and every batch run injects it as user-authored project instructions: conventions, constraints, standing authorizations (*"deletions in this folder are pre-authorized"*). The file is **read-only for the agent** — it can follow it, never rewrite it.
+
+---
+
 ## 🗂 Architecture
 
 ```
 pragma/
-  agent/          FastAPI server · ReAct orchestration · skill wrappers
+  agent/          FastAPI server · batch runner · ReAct orchestration · skill wrappers
   core/           LLM client · memory compression · skill palette
   interface-web/  Vanilla JS + WebSocket UI — no build step
 ```
