@@ -2,6 +2,15 @@
 
 Thanks for your interest. Contributions are welcome — bug reports, new skills, fixes, and ideas.
 
+## Licensing of contributions
+
+By submitting a contribution (pull request, patch, or code snippet) you agree that:
+
+- your contribution is licensed to the project under the [MIT license](./LICENSE), and
+- you grant Homo Agens the perpetual right to re-license the project, including your contribution, under different terms in the future.
+
+This keeps the project free to evolve its licensing as it grows. If you are not comfortable with this, open an issue describing your idea instead of a PR.
+
 ---
 
 ## The fastest way to contribute: add a skill
