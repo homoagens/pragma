@@ -101,34 +101,40 @@ def recall_episodes(query: str = "", workspace: str = "", top_k: int = 0,
 
     # ── Dormant revival ──
     # Only a real keyword match revives (relevance brings memories back;
-    # mere recency does not). Crucially, the "did the active zone answer
-    # the query?" test counts TRUE keyword matches only: the workspace
-    # boost makes every local episode score > 0, and counting those would
-    # keep the dormant zone forever unreachable once the active zone holds
-    # k+ episodes (field-found bug). A relevant dormant episode then
-    # DISPLACES boost-only actives from the result — relevance outranks
-    # mere locality.
+    # mere recency does not). The dormant zone competes on TRUE keyword
+    # relevance in a merged ranking across both zones: a dormant episode
+    # that would make the top-k on relevance alone gets revived and
+    # displaces weaker actives. Two field-found traps shaped this:
+    #   - the workspace boost gives every local episode a positive score,
+    #     so "active matches filled the slots" must never gate the descent;
+    #   - one weak shared token (a filename every session mentions) is
+    #     enough to make many actives kw>0, so fill-the-empty-slots logic
+    #     also starves the dormant zone. Relevance is the only fair judge.
+    # Ties on keywords go to actives (higher total score): same relevance,
+    # prefer the memory that is already awake.
     revived_ids: set = set()
     if qtok:
-        need = k - sum(1 for t in picked if t[3] > 0)
-        if need > 0:
-            dorm = estore.load(estore.dormant_dir(store))
-            dscored = [(p, ep, len(_tokens(_episode_text(ep)) & qtok))
-                       for p, ep in dorm]
-            dmatch = [t for t in dscored if t[2] > 0]
-            dmatch.sort(key=lambda t: (t[2], t[1].get("ts", "")), reverse=True)
-            revived: list[tuple] = []
-            for p, ep, s in dmatch[:need]:
-                try:
-                    newp = estore.revive(p, ep, store)
-                except Exception:
-                    continue
-                revived.append((newp, ep, s, s))
-                revived_ids.add(ep.get("id"))
-            if revived:
-                keyword_hits = [t for t in picked if t[3] > 0]
-                boost_only   = [t for t in picked if t[3] == 0]
-                picked = (keyword_hits + revived + boost_only)[:k]
+        dorm = estore.load(estore.dormant_dir(store))
+        dmatch = [(p, ep, len(_tokens(_episode_text(ep)) & qtok))
+                  for p, ep in dorm]
+        dmatch = [t for t in dmatch if t[2] > 0]
+        if dmatch:
+            cand = ([("active", p, ep, sc, kw) for p, ep, sc, kw in picked]
+                    + [("dormant", p, ep, kw, kw) for p, ep, kw in dmatch])
+            cand.sort(key=lambda t: (t[4], t[3],
+                                     estore.effective_salience(t[2]),
+                                     t[2].get("ts", "")),
+                      reverse=True)
+            merged: list[tuple] = []
+            for zone, p, ep, sc, kw in cand[:k]:
+                if zone == "dormant":
+                    try:
+                        p = estore.revive(p, ep, store)
+                    except Exception:
+                        continue
+                    revived_ids.add(ep.get("id"))
+                merged.append((p, ep, sc, kw))
+            picked = merged
 
     if not picked:
         return "(no episodes)"
