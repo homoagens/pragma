@@ -68,16 +68,21 @@ def recall_episodes(query: str = "", workspace: str = "", top_k: int = 0,
     active = estore.load(estore.active_dir(store))
     qtok = _tokens(query) if query else set()
 
+    def _kw(ep: dict) -> int:
+        """TRUE keyword overlap — the workspace boost deliberately excluded."""
+        return len(_tokens(_episode_text(ep)) & qtok) if qtok else 0
+
     def _score(ep: dict) -> int:
-        s = len(_tokens(_episode_text(ep)) & qtok) if qtok else 0
+        s = _kw(ep)
         if workspace and ep.get("workspace") == workspace:
             s += boost
         return s
 
-    picked: list[tuple[Path, dict, int]] = []
+    # Tuples are (path, episode, total_score, keyword_score).
+    picked: list[tuple] = []
     if active:
         if qtok or workspace:
-            scored = [(p, ep, _score(ep)) for p, ep in active]
+            scored = [(p, ep, _score(ep), _kw(ep)) for p, ep in active]
             matched = [t for t in scored if t[2] > 0]
             if matched:
                 matched.sort(key=lambda t: (t[2],
@@ -88,39 +93,49 @@ def recall_episodes(query: str = "", workspace: str = "", top_k: int = 0,
             else:
                 recent = sorted(active, key=lambda t: t[1].get("ts", ""),
                                 reverse=True)
-                picked = [(p, ep, 0) for p, ep in recent[:k]]
+                picked = [(p, ep, 0, 0) for p, ep in recent[:k]]
         else:
             recent = sorted(active, key=lambda t: t[1].get("ts", ""),
                             reverse=True)
-            picked = [(p, ep, 0) for p, ep in recent[:k]]
+            picked = [(p, ep, 0, 0) for p, ep in recent[:k]]
 
     # ── Dormant revival ──
     # Only a real keyword match revives (relevance brings memories back;
-    # mere recency does not), and only to fill slots the active zone
-    # couldn't fill with matches of its own.
+    # mere recency does not). Crucially, the "did the active zone answer
+    # the query?" test counts TRUE keyword matches only: the workspace
+    # boost makes every local episode score > 0, and counting those would
+    # keep the dormant zone forever unreachable once the active zone holds
+    # k+ episodes (field-found bug). A relevant dormant episode then
+    # DISPLACES boost-only actives from the result — relevance outranks
+    # mere locality.
     revived_ids: set = set()
     if qtok:
-        need = k - sum(1 for t in picked if t[2] > 0)
+        need = k - sum(1 for t in picked if t[3] > 0)
         if need > 0:
             dorm = estore.load(estore.dormant_dir(store))
             dscored = [(p, ep, len(_tokens(_episode_text(ep)) & qtok))
                        for p, ep in dorm]
             dmatch = [t for t in dscored if t[2] > 0]
             dmatch.sort(key=lambda t: (t[2], t[1].get("ts", "")), reverse=True)
+            revived: list[tuple] = []
             for p, ep, s in dmatch[:need]:
                 try:
                     newp = estore.revive(p, ep, store)
                 except Exception:
                     continue
-                picked.append((newp, ep, s))
+                revived.append((newp, ep, s, s))
                 revived_ids.add(ep.get("id"))
+            if revived:
+                keyword_hits = [t for t in picked if t[3] > 0]
+                boost_only   = [t for t in picked if t[3] == 0]
+                picked = (keyword_hits + revived + boost_only)[:k]
 
     if not picked:
         return "(no episodes)"
 
     lines = []
     now = estore.now_iso()
-    for p, ep, _s in picked:
+    for p, ep, _s, _kw_s in picked:
         # Reinforce on recall — best effort, never let bookkeeping break recall.
         try:
             ep["last_recalled"] = now
