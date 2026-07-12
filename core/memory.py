@@ -1,3 +1,7 @@
+# Copyright (C) 2026 Homo Agens
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# This file is part of Pragma <https://github.com/homoagens/pragma>.
+
 # memory.py — context compression for agents with long conversations.
 # Transparent to the agent: takes the message list, returns an optionally
 # compressed version (same structure, fewer elements).

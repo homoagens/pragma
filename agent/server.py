@@ -1,4 +1,8 @@
-﻿# agent/server.py — FastAPI server for Pragma
+﻿# Copyright (C) 2026 Homo Agens
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# This file is part of Pragma <https://github.com/homoagens/pragma>.
+
+# agent/server.py — FastAPI server for Pragma
 #
 # Architecture:
 #   - Threads persisted on disk (configurable directory, default C:\tmp\Pragma)

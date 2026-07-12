@@ -1,4 +1,8 @@
-﻿# agent/prompts.py — system prompt for Pragma
+﻿# Copyright (C) 2026 Homo Agens
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# This file is part of Pragma <https://github.com/homoagens/pragma>.
+
+# agent/prompts.py — system prompt for Pragma
 #
 # The prompt is built dynamically at startup, including
 # the current working directory and detected OS of the server.

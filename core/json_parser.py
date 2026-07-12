@@ -1,3 +1,7 @@
+# Copyright (C) 2026 Homo Agens
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# This file is part of Pragma <https://github.com/homoagens/pragma>.
+
 # json_parser.py — robust extraction of the first JSON object from free text.
 #
 # Why this is needed: models in "thinking mode" often produce narrative text
