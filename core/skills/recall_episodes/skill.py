@@ -34,6 +34,11 @@ def _tokens(s: str) -> set[str]:
     return {w.lower() for w in _WORD.findall(s) if len(w) > 2}
 
 
+def _truncate(text: str, limit: int) -> str:
+    """Clip to `limit` chars, adding an ellipsis marker when cut."""
+    return text if len(text) <= limit else text[:limit].rstrip() + "..."
+
+
 def _episode_text(ep: dict) -> str:
     return " ".join([
         ep.get("goal", "") or "",
@@ -156,13 +161,25 @@ def recall_episodes(query: str = "", workspace: str = "", top_k: int = 0,
         else:
             where = Path(ep.get("workspace", "")).name or "elsewhere"
         head = f"- ({date}, {where}, {ep.get('outcome', '?')}) {ep.get('goal', '')}"
-        interp = (ep.get("interpretation") or "").strip()
-        if interp:
-            head += f" — {interp}"
         if ep.get("id") in revived_ids:
             head += "  [revived from dormant memory]"
         lines.append(head)
+
+        # The FACTS are the substance of an episodic recall — what actually
+        # happened, when, where. This is the narrative field, and it must be
+        # what surfaces: injecting only the interpretation (the after-the-fact
+        # meaning) hid concrete facts the episode had recorded (field-found —
+        # a tutor episode knew "student struggled with signs" in its narrative
+        # but recall only showed "note-taking workflow is stable"). Collapse
+        # whitespace to keep each episode a compact block; interpretation and
+        # surprises follow as secondary context.
+        narrative = " ".join((ep.get("narrative") or "").split())
+        if narrative:
+            lines.append(f"  what happened: {_truncate(narrative, 400)}")
         surprises = ep.get("surprises") or []
         if surprises:
             lines.append(f"  surprises: {'; '.join(surprises[:2])}")
+        interp = " ".join((ep.get("interpretation") or "").split())
+        if interp:
+            lines.append(f"  meaning: {_truncate(interp, 200)}")
     return "\n".join(lines)
