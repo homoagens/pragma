@@ -2,45 +2,44 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 # This file is part of Pragma <https://github.com/homoagens/pragma>.
 
-# skills/_template/skill.py — Template per nuove skill
+# skills/_template/skill.py — Template for new skills
 #
-# CATEGORIA:
-#   D (Deterministic) — nessuna chiamata LLM, output riproducibile
-#   H (Hybrid)        — esecuzione deterministica + LLM judgment
-#   G (Delegable)     — delega a entità esterna (LLM, agente, API)
+# CATEGORY:
+#   D (Deterministic) — no LLM call, reproducible output
+#   H (Hybrid)        — deterministic execution + LLM judgment
+#   G (Delegable)     — delegated to an external entity (LLM, agent, API)
 #
-# CONVENZIONI:
-#   - La funzione principale ha lo STESSO NOME della cartella
-#   - Ritorna sempre str (anche in caso di errore)
-#   - Errori: "ERROR: <messaggio leggibile>"
-#   - Successi: "OK: ..." oppure il contenuto richiesto
-#   - Helper interni: prefisso _ (es. _parse_input)
-#   - Late import per dipendenze cross-skill (vedi sotto)
+# CONVENTIONS:
+#   - The main function has the SAME NAME as the folder
+#   - Always returns str (even on error)
+#   - Errors:    "ERROR: <human-readable message>"
+#   - Successes: "OK: ..." or the requested content
+#   - Internal helpers: prefixed with _ (e.g. _parse_input)
+#   - Late imports for cross-skill dependencies (see below)
 
 from __future__ import annotations
 
-# Import standard — ok a top-level perché sempre disponibili
+# Standard imports — fine at top level, always available
 import json  # noqa: F401
 from pathlib import Path  # noqa: F401
 
-# Import dal core — ok a top-level (core/ è in sys.path)
-# import llm_client          # per skill H e G
-# import config              # per parametri configurabili
-# from json_parser import extract_json   # per parsare output LLM
+# Core imports — fine at top level (core/ is on sys.path)
+# import llm_client          # for H and G skills
+# import config              # for configurable parameters
+# from json_parser import extract_json   # to parse LLM output
 
-# Import cross-skill — SEMPRE late import (dentro la funzione)
-# per evitare dipendenze circolari durante il caricamento.
-# Esempio:
+# Cross-skill imports — ALWAYS late (inside the function) to avoid
+# circular dependencies during loading. Example:
 #   def my_skill(path: str) -> str:
-#       from skills.read_file.skill import read_file   # ← late import
+#       from skills.read_file.skill import read_file   # <- late import
 #       content = read_file(path)
 #       ...
 
-# Utility condivise
-from skills._utils import _now   # noqa: F401  # timestamp UTC
+# Shared utilities
+from skills._utils import _now   # noqa: F401  # UTC timestamp
 
 
-# ── Helper interni ────────────────────────────────────────────
+# ── Internal helpers ──────────────────────────────────────────
 
 def _validate_input(value: str) -> tuple[bool, str]:
     """Returns (is_valid, error_message)."""
@@ -49,7 +48,7 @@ def _validate_input(value: str) -> tuple[bool, str]:
     return True, ""
 
 
-# ── Skill principale ──────────────────────────────────────────
+# ── Main skill ────────────────────────────────────────────────
 
 def my_skill(text: str, mode: str = "upper", prefix: str = "") -> str:
     """
