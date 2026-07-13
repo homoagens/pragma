@@ -216,6 +216,18 @@ AUTO_REFLECT = os.environ.get("AUTO_REFLECT", "true").lower() in ("1", "true", "
 # (written by the episode_consolidate skill, retrieved by recall_episodes).
 EPISODES_DIR = DATA_DIR / "episodes"
 
+# Salience composition. An episode's initial salience is
+#   base + surprise_weight * n_surprises + importance_weight * importance
+# clamped to [.., cap]. The book's salience is "unexpected, IMPORTANT, or
+# recurrent": surprises capture the unexpected, `importance` (judged by the
+# consolidator, 0-1) captures the rest — so a persistent-but-unsurprising
+# fact (a student's weak spot "to review", a decision that will matter) can
+# outweigh a routine session that happened to hit a tool hiccup.
+SALIENCE_BASE             = float(os.environ.get("SALIENCE_BASE", "0.30"))
+SALIENCE_SURPRISE_WEIGHT  = float(os.environ.get("SALIENCE_SURPRISE_WEIGHT", "0.12"))
+SALIENCE_IMPORTANCE_WEIGHT = float(os.environ.get("SALIENCE_IMPORTANCE_WEIGHT", "0.40"))
+SALIENCE_CAP              = float(os.environ.get("SALIENCE_CAP", "0.95"))
+
 # How many episodes recall_episodes returns by default.
 EPISODES_RECALL_TOP_K = int(os.environ.get("EPISODES_RECALL_TOP_K", "3"))
 

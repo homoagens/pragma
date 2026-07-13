@@ -43,6 +43,7 @@ Respond with ONLY a JSON object of this exact shape:
   "goal":           "what the session was really about, in the user's terms, <= 15 words",
   "narrative":      "what happened and what was learned, 5-10 short lines, FACTS only",
   "surprises":      [ "anything that departed from expectation", ... ],
+  "importance":     0.0-1.0,
   "outcome":        "success" | "partial" | "failure",
   "interpretation": "1-3 sentences: what this session MEANS (fragilities, confirmations, open questions)",
   "keywords":       [ "5-10 lowercase topical keywords for retrieval" ]
@@ -55,11 +56,18 @@ Rules:
   a Friday deploy; lesson: never release on Friday" over "Appended an entry
   to diario.md". The file you edited is not the point; what it SAYS is.
 - Facts go in narrative, meaning goes in interpretation. Never mix them.
-- surprises are the heart of the episode: departures from expectation, in
-  the WORK (an unexpected outcome, a conflict, a belief challenged by facts,
-  a costly mistake) or in the TOOLS (something behaved unexpectedly).
-  Confirmed routine is forgettable; deviations are information. Empty array
-  only if the session was truly uneventful.
+- surprises are departures from expectation, in the WORK (an unexpected
+  outcome, a conflict, a belief challenged by facts, a costly mistake) or in
+  the TOOLS (something behaved unexpectedly). Empty array if nothing was
+  surprising — which is common and fine.
+- importance = how much this session matters for the FUTURE, on 0.0-1.0.
+  This is SEPARATE from surprise. A thing can be unsurprising yet very
+  important: a student's persistent weak spot flagged "to review next time",
+  a decision that will shape later work, a hard-won rule, a client's stated
+  preference. Score those HIGH (0.7-0.9) even with zero surprises. Score
+  truly routine, one-off busywork LOW (0.1-0.3). A painful mistake or crisis
+  is both surprising AND important (~0.9). When in doubt, ask: "will the
+  agent's future self be worse off if this is forgotten?"
 - Mention tool mechanics (which skill, how you formatted a file) ONLY when
   they carried a real, reusable lesson. Never frame a routine "I wrote or
   edited a file" as the point of the episode.
@@ -92,18 +100,27 @@ WHAT to distill — general truths about the domain and the user's work:
   confidence is valuable: it can later be confirmed or CONTRADICTED, which is
   how the agent changes its mind.
 
-WHAT NOT to distill:
-- rules about how to use your own editing tools, how to format files, or the
-  mechanics of keeping notes/logs. These are not durable knowledge about the
-  world — skip them entirely.
+WHAT NOT to distill (skip these entirely — they are noise, not knowledge):
+- rules about how to use your own editing tools, or how to format files;
+- rules about the ACTIVITY of keeping the record itself. "The user maintains
+  a journal", "the user logs lessons in markdown", "the user documents cases
+  chronologically" — these describe the note-taking, not the user's WORLD.
+  They feel true because they recur every session, but they teach the agent
+  NOTHING about the domain. Never distill them, however often they recur.
 
 Rules:
 - A new assertion REQUIRES at least two distinct episodes as sources — cite
   their ids from the payload. One episode alone is an anecdote: propose
   NOTHING for it; it gets its chance when it recurs.
-- When the facts in the new episode OVERTURN an existing assertion, put that
-  assertion's exact text in "contradicts" — do NOT silently add an opposite
-  rule and leave the old one standing.
+- CONTRADICTION IS NOT OPTIONAL. When the new episode's facts run against an
+  existing assertion, you MUST put that assertion's exact text in
+  "contradicts". Do NOT dodge it by adding a fresh opposite rule and leaving
+  the old one standing — that leaves the memory believing two opposite things.
+  Example: the store holds "fixed-price contracts are safer" and the new
+  episode is a fixed-price project that lost money → put "fixed-price
+  contracts are safer" in contradicts (you may ALSO add the refined rule,
+  but the contradiction is mandatory). Changing your mind means retiring the
+  old belief, not hoarding both.
 - confirms/contradicts must copy the existing assertion text EXACTLY.
 - Quality over quantity: 0-2 new assertions is the norm. Empty arrays are fine."""
 
@@ -292,6 +309,27 @@ def episode_consolidate_detailed(transcript: str = "", workspace: str = "",
     surprises = [s[:300] for s in _clean_list(ep_data.get("surprises"))]
     keywords  = [k.lower() for k in _clean_list(ep_data.get("keywords"))][:12]
 
+    # Importance: the consolidator's judgment of how much this matters for the
+    # future, SEPARATE from surprise. Default to a moderate value when absent
+    # (old episodes / degraded fallback) so salience never collapses.
+    try:
+        importance = float(ep_data.get("importance", 0.4))
+    except Exception:
+        importance = 0.4
+    importance = max(0.0, min(1.0, importance))
+
+    # Salience = unexpected (surprises) + important (importance). This is the
+    # book's "salient = unexpected, important, or recurrent": before, only
+    # surprises counted, so a routine session weighed more than an unsurprising
+    # but crucial one (a student's persistent weak spot). Now importance lifts
+    # those too. See config.SALIENCE_*.
+    salience = min(
+        getattr(config, "SALIENCE_CAP", 0.95),
+        getattr(config, "SALIENCE_BASE", 0.30)
+        + getattr(config, "SALIENCE_SURPRISE_WEIGHT", 0.12) * len(surprises)
+        + getattr(config, "SALIENCE_IMPORTANCE_WEIGHT", 0.40) * importance,
+    )
+
     ep = {
         "id":  f"ep_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{uuid.uuid4().hex[:4]}",
         "ts":  _now(),
@@ -300,12 +338,11 @@ def episode_consolidate_detailed(transcript: str = "", workspace: str = "",
         "goal":      goal[:200],
         "narrative": narrative,          # facts — immutable
         "surprises": surprises,
+        "importance": round(importance, 3),
         "outcome":   outcome,
         "interpretation": interpretation,  # meaning — mutable
         "keywords":  keywords,
-        # Surprises ARE salience: a session that deviated from expectation
-        # deserves to resist forgetting longer than a routine one.
-        "salience":  min(0.9, 0.4 + 0.15 * len(surprises)),
+        "salience":  round(salience, 4),
         "last_recalled": None,
         "links": [],
     }
