@@ -28,6 +28,9 @@ todo.json
 # Local-only docs (not for publication)
 MANUAL.md
 
+# Local-only memory demos / walkthroughs (script + generated log)
+examples_memory/
+
 # IDE
 .vscode/
 .idea/
