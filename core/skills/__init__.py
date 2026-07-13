@@ -49,7 +49,10 @@ def _format_signature(name: str, fn) -> str:
 
 def _load_skills():
     registry = {}
-    summaries = []
+    # name -> "**name**: desc\n  Call: sig". Kept per-skill (not pre-joined)
+    # so a runner can rebuild the summary for a SUBSET of the palette — see
+    # skills_summary_for(). Insertion order follows the sorted folder scan.
+    summary_lines = {}
     for folder in sorted(SKILLS_DIR.iterdir()):
         if not folder.is_dir() or folder.name.startswith("_"):
             continue
@@ -81,11 +84,25 @@ def _load_skills():
             # sees the precise parameters every turn, not only after a
             # get_skill_details call.
             sig = _format_signature(skill_name, fn)
-            summaries.append(f"**{skill_name}**: {summary}\n  Call: {sig}")
-    return registry, "\n".join(summaries)
+            summary_lines[skill_name] = f"**{skill_name}**: {summary}\n  Call: {sig}"
+    return registry, summary_lines
 
 
-ALL_SKILLS, SKILLS_SUMMARY = _load_skills()
+ALL_SKILLS, _SUMMARY_LINES = _load_skills()
+SKILLS_SUMMARY = "\n".join(_SUMMARY_LINES.values())
+
+
+def skills_summary_for(names) -> str:
+    """Build the skills-summary block for a SUBSET of skills, in the canonical
+    order. Use this to keep the system prompt in sync with the ACTUAL palette
+    when a runner hides skills from the agent (e.g. batch removes the raw
+    recall_* skills): otherwise the prompt would advertise skills the agent
+    cannot call, and the model wastes turns calling them ('skill does not
+    exist'). Names without a summary line (e.g. get_skill_details) are
+    skipped, exactly as in SKILLS_SUMMARY."""
+    wanted = set(names)
+    return "\n".join(line for name, line in _SUMMARY_LINES.items()
+                     if name in wanted)
 
 
 def get_skill_details(name: str) -> str:
@@ -110,4 +127,5 @@ def get_skill_details(name: str) -> str:
 # Add get_skill_details to the registry so the agent can call it
 ALL_SKILLS["get_skill_details"] = get_skill_details
 
-__all__ = ["ALL_SKILLS", "SKILLS_SUMMARY", "get_skill_details"]
+__all__ = ["ALL_SKILLS", "SKILLS_SUMMARY", "skills_summary_for",
+           "get_skill_details"]

@@ -227,11 +227,13 @@ conclusion below."
   for the token budget and risk truncating the JSON.
 - **On large files (>200 lines): never call `write_file` to update them.**
   Run `file_outline` first, then use the deterministic insert/replace skills above for edits.
-- **Cross-thread learnings.** At the start of a task you may receive a block
-  titled `[Relevant prior learnings]`. Treat it as soft heuristics: useful
-  reminders from past tasks, NOT mandatory rules. Use `recall_learnings(query)`
-  to fetch more if useful. The store is updated automatically by `session_reflect`
-  at the end of each task — you normally don't need to call it manually.
+- **Prior memory (may be provided).** At the start of a task you may find a
+  block of relevant memory on the desk — condensed notes from past sessions
+  and heuristics learned over time. Treat it as soft context: useful
+  reminders, NOT mandatory rules, and possibly stale — verify against the
+  actual files before relying on it. It is selected and placed for you
+  automatically; you do not need to (and may not be able to) fetch more
+  yourself, so do not go looking for memory-retrieval tools.
 - **`execute_command`** for running tests, scripts, installs. Always pass `cwd="{cwd}"`
   (or a deeper path inside it) so the command runs where the user expects.
 - **`ask_user`** — call this skill whenever ANY of the following is true. Asking is

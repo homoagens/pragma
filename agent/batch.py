@@ -68,7 +68,7 @@ for _p in (str(_CORE), str(_ROOT)):
 import config as baseline_config
 import llm_client
 from react import AgentConfig, run_agent
-from skills import ALL_SKILLS, SKILLS_SUMMARY
+from skills import ALL_SKILLS, skills_summary_for
 from agent.prompts import build_system_prompt
 
 
@@ -630,11 +630,15 @@ confirmed mid-task. Therefore:
   NOT precedents that authorize new ones: authorization never comes from
   memory, only from the current task text or the project instructions.
 """
+    # Build the summary from the ACTUAL palette (after the pops), so the
+    # prompt never advertises a skill the agent can't call — otherwise the
+    # model reads e.g. recall_learnings in the prompt, calls it, and hits
+    # "skill does not exist" (field-found in the 5-year demo).
     system_prompt = build_system_prompt(
         str(cwd),
         default_model=baseline_config.DEFAULT_MODEL,
         coding_model=coding_model,
-        skills_summary=SKILLS_SUMMARY,
+        skills_summary=skills_summary_for(skills.keys()),
     ) + batch_policy
 
     # ── Task assembly: instructions + memory + current request ──────────
