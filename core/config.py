@@ -238,6 +238,20 @@ SEMANTIC_RETIRE_CONTRADICTIONS = int(os.environ.get("SEMANTIC_RETIRE_CONTRADICTI
 # verbatim into the task by runners that support it.
 PRAGMA_MD_MAX_CHARS = int(os.environ.get("PRAGMA_MD_MAX_CHARS", "4000"))
 
+# ── Context curator ──
+# The knowledge zone of the context is not filled mechanically: a dedicated
+# LLM invocation (the curator) selects, from a keyword-prefiltered candidate
+# pool, the memory fragments that are genuinely relevant to the task and
+# orders them by usefulness. Set CURATOR_ENABLED=false to fall back to the
+# plain deterministic top-k injection.
+CURATOR_ENABLED = os.environ.get(
+    "CURATOR_ENABLED", "true").lower() in ("1", "true", "yes")
+# How wide the deterministic prefilter casts its net before the LLM chooses.
+CURATOR_CANDIDATES_EPISODES  = int(os.environ.get("CURATOR_CANDIDATES_EPISODES", "10"))
+CURATOR_CANDIDATES_LEARNINGS = int(os.environ.get("CURATOR_CANDIDATES_LEARNINGS", "8"))
+# Cap on how many fragments the curator may place on the desk.
+CURATOR_MAX_FRAGMENTS = int(os.environ.get("CURATOR_MAX_FRAGMENTS", "6"))
+
 # ── Forgetting (episodic store) ──
 # An episode's EFFECTIVE salience decays exponentially with the time since
 # it was last recalled (or created): eff = salience * 0.5^(age_days /

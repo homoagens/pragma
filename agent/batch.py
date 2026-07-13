@@ -579,6 +579,10 @@ def main() -> int:
 
     skills = dict(ALL_SKILLS)
     skills["ask_user"] = batch_ask_user
+    # Memory reaches the desk only through the curator (upstream, automatic).
+    # The agent never pokes raw recall skills — one channel, always curated.
+    skills.pop("recall_episodes", None)
+    skills.pop("recall_learnings", None)
 
     # Batch-only system prompt addendum. The generic "confirm destructive
     # ops with the user" rule is useless here (there IS no user), and models
@@ -657,24 +661,15 @@ confirmed mid-task. Therefore:
                 + instructions)
 
     if args.memory:
+        # The knowledge zone is composed by the curator (an LLM invocation),
+        # not by mechanical keyword injection. It prefilters candidates from
+        # episodic + semantic memory, judges which are relevant to THIS task,
+        # orders them, and reinforces/revives only the ones it selects.
         try:
-            from skills.recall_episodes.skill import recall_episodes
-            block = recall_episodes(query=task, workspace=str(cwd))
-            if block and not block.startswith("(no episodes"):
-                prefix_parts.append(
-                    "[Episodic memory — condensed notes from previous "
-                    "sessions; may be outdated, verify against the actual "
-                    "files]\n" + block)
-        except Exception:
-            pass
-        try:
-            from skills.recall_learnings.skill import recall_learnings
-            block = recall_learnings(query=task)
-            if (block and not block.startswith("(no learnings")
-                    and not block.startswith("ERROR")):
-                prefix_parts.append(
-                    "[Relevant prior learnings — short heuristics from past "
-                    "tasks, use only if they fit the current request]\n" + block)
+            import curator
+            block = curator.curate_knowledge(task, workspace=str(cwd))
+            if block:
+                prefix_parts.append(block)
         except Exception:
             pass
 
