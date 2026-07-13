@@ -33,15 +33,15 @@ import llm_client
 from json_parser import extract_json
 
 
-_EPISODE_SYSTEM = """You are the memory-consolidation module of an AI coding agent.
+_EPISODE_SYSTEM = """You are the memory-consolidation module of an AI agent.
 You receive the transcript of a completed working session and write the
 EPISODE: a compact, structured record of that session for the agent's
 future selves.
 
 Respond with ONLY a JSON object of this exact shape:
 {
-  "goal":           "what the user wanted, <= 15 words",
-  "narrative":      "what was done, in order, 5-10 short lines, FACTS only",
+  "goal":           "what the session was really about, in the user's terms, <= 15 words",
+  "narrative":      "what happened and what was learned, 5-10 short lines, FACTS only",
   "surprises":      [ "anything that departed from expectation", ... ],
   "outcome":        "success" | "partial" | "failure",
   "interpretation": "1-3 sentences: what this session MEANS (fragilities, confirmations, open questions)",
@@ -49,20 +49,29 @@ Respond with ONLY a JSON object of this exact shape:
 }
 
 Rules:
+- Center the episode on the SUBSTANCE of the session — what the work was
+  about and what was learned about the user's world — NOT on the mechanics
+  of how you carried it out. Prefer "Recorded a production outage caused by
+  a Friday deploy; lesson: never release on Friday" over "Appended an entry
+  to diario.md". The file you edited is not the point; what it SAYS is.
 - Facts go in narrative, meaning goes in interpretation. Never mix them.
-- surprises is the MOST IMPORTANT field: confirmed routines are forgettable,
-  deviations from expectation are information. Errors, retries, unexpected
-  tool behavior, wrong assumptions — record them. Empty array only if the
-  session was truly uneventful.
-- Keep each surprise under 200 characters.
-- Mention concrete file paths and project names when they matter.
-- Write keywords in the dominant language of the session."""
+- surprises are the heart of the episode: departures from expectation, in
+  the WORK (an unexpected outcome, a conflict, a belief challenged by facts,
+  a costly mistake) or in the TOOLS (something behaved unexpectedly).
+  Confirmed routine is forgettable; deviations are information. Empty array
+  only if the session was truly uneventful.
+- Mention tool mechanics (which skill, how you formatted a file) ONLY when
+  they carried a real, reusable lesson. Never frame a routine "I wrote or
+  edited a file" as the point of the episode.
+- keywords: the SUBJECT of the work — people, decisions, problems, domains —
+  not your tools or file names. In the session's dominant language.
+- Keep each surprise under 200 characters."""
 
 
-_SEMANTIC_SYSTEM = """You are the abstraction module of an AI coding agent's memory.
+_SEMANTIC_SYSTEM = """You are the abstraction module of an AI agent's memory.
 You receive a NEW episode, a set of SIMILAR past episodes, and the EXISTING
-semantic assertions related to them. Your job is to distill durable, general
-knowledge — and only when the evidence supports it.
+semantic assertions related to them. Distill durable, general knowledge
+ABOUT THE USER'S WORLD — and only when the evidence supports it.
 
 Respond with ONLY a JSON object:
 {
@@ -73,12 +82,28 @@ Respond with ONLY a JSON object:
   "contradicts":    [ "exact text of an existing assertion this episode contradicts", ... ]
 }
 
+WHAT to distill — general truths about the domain and the user's work:
+- recurring situations and their outcomes ("clients with vague requirements
+  on a fixed price → cost overruns");
+- practices that reliably help or hurt ("deploying on Friday → weekend
+  incidents");
+- the user's preferences and beliefs, INCLUDING tentative ones ("the user
+  believes fixed-price contracts are safer"). Capturing a belief even at low
+  confidence is valuable: it can later be confirmed or CONTRADICTED, which is
+  how the agent changes its mind.
+
+WHAT NOT to distill:
+- rules about how to use your own editing tools, how to format files, or the
+  mechanics of keeping notes/logs. These are not durable knowledge about the
+  world — skip them entirely.
+
 Rules:
 - A new assertion REQUIRES at least two distinct episodes as sources — cite
-  their ids from the payload. One episode alone proves nothing: if a pattern
-  appears only in the new episode, propose NOTHING for it. It will get its
-  chance when it recurs.
-- Never restate one-off task content as general knowledge.
+  their ids from the payload. One episode alone is an anecdote: propose
+  NOTHING for it; it gets its chance when it recurs.
+- When the facts in the new episode OVERTURN an existing assertion, put that
+  assertion's exact text in "contradicts" — do NOT silently add an opposite
+  rule and leave the old one standing.
 - confirms/contradicts must copy the existing assertion text EXACTLY.
 - Quality over quantity: 0-2 new assertions is the norm. Empty arrays are fine."""
 
