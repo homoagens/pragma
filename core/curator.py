@@ -152,8 +152,8 @@ def _learning_card(ref: str, c: dict) -> str:
 
 
 def _ask_curator(task: str, eps: list[dict], lns: list[dict],
-                 model=None) -> list[str] | None:
-    """Return the ordered list of selected refs, or None on LLM failure."""
+                 model=None) -> tuple[list[str] | None, str]:
+    """Return (ordered selected refs, reason). refs is None on LLM failure."""
     cards = []
     for i, c in enumerate(eps, 1):
         cards.append(_episode_card(f"E{i}", c))
@@ -172,12 +172,13 @@ def _ask_curator(task: str, eps: list[dict], lns: list[dict],
         )
         data = extract_json(raw)
     except Exception:
-        return None
+        return None, ""
     if not isinstance(data, dict):
-        return None
+        return None, ""
+    reason = str(data.get("reason", "")).strip()
     sel = data.get("selected", [])
     if not isinstance(sel, list):
-        return []
+        return [], reason
     # Keep only well-formed, existing refs, in the model's order, deduped.
     valid = {f"E{i}" for i in range(1, len(eps) + 1)} | \
             {f"L{i}" for i in range(1, len(lns) + 1)}
@@ -190,6 +191,22 @@ def _ask_curator(task: str, eps: list[dict], lns: list[dict],
             seen.add(r)
         if len(out) >= cap:
             break
+    return out, reason
+
+
+def _human_labels(refs: list[str], eps: list[dict], lns: list[dict]) -> list[str]:
+    """Short readable labels for the selected refs (for observability)."""
+    out = []
+    for r in refs:
+        if r.startswith("E"):
+            i = int(r[1:]) - 1
+            if 0 <= i < len(eps):
+                dorm = " (dormant→revived)" if eps[i]["dormant"] else ""
+                out.append((eps[i]["ep"].get("goal", "") or "episode")[:58] + dorm)
+        elif r.startswith("L"):
+            i = int(r[1:]) - 1
+            if 0 <= i < len(lns):
+                out.append("rule: " + (lns[i]["entry"].get("text", "") or "")[:52])
     return out
 
 
@@ -269,24 +286,47 @@ def _fallback(eps: list[dict], lns: list[dict], workspace: str) -> str:
 
 # ── Public API ────────────────────────────────────────────────────────────────
 
-def curate_knowledge(task: str, workspace: str = "", model=None) -> str:
-    """Compose the knowledge zone for `task`: prefilter candidates, let the
-    curator select and order them, reinforce/revive the chosen episodes,
-    and return the assembled block (empty string if nothing is relevant).
+def curate_knowledge_detailed(task: str, workspace: str = "", model=None) -> dict:
+    """Compose the knowledge zone and report what the curator did.
 
-    Falls back to deterministic top-k if the curator LLM call fails.
+    Returns a dict:
+      { "block":    "<knowledge zone markdown, or ''>",
+        "n_ep":     candidate episodes considered,
+        "n_ln":     candidate rules considered,
+        "selected": [human labels of chosen fragments],
+        "reason":   "<curator's one-line justification>",
+        "fallback": bool,   # curator LLM failed → deterministic top-k
+        "empty":    bool }  # nothing relevant, or the curator chose an empty desk
     """
+    info = {"block": "", "n_ep": 0, "n_ln": 0, "selected": [],
+            "reason": "", "fallback": False, "empty": False}
     if not task or not task.strip():
-        return ""
+        info["empty"] = True
+        return info
     eps = _episode_candidates(task, workspace)
     lns = _learning_candidates(task)
+    info["n_ep"], info["n_ln"] = len(eps), len(lns)
     if not eps and not lns:
-        return ""
+        info["empty"] = True
+        return info
 
     if not getattr(config, "CURATOR_ENABLED", True):
-        return _fallback(eps, lns, workspace)
+        info["block"] = _fallback(eps, lns, workspace)
+        info["fallback"] = True
+        return info
 
-    refs = _ask_curator(task, eps, lns, model=model)
+    refs, reason = _ask_curator(task, eps, lns, model=model)
     if refs is None:                       # LLM failed → deterministic fallback
-        return _fallback(eps, lns, workspace)
-    return _assemble(refs, eps, lns, workspace)  # [] → "" (empty desk)
+        info["block"] = _fallback(eps, lns, workspace)
+        info["fallback"] = True
+        return info
+    info["reason"] = reason
+    info["selected"] = _human_labels(refs, eps, lns)
+    info["block"] = _assemble(refs, eps, lns, workspace)  # [] → "" (empty desk)
+    info["empty"] = not info["block"]
+    return info
+
+
+def curate_knowledge(task: str, workspace: str = "", model=None) -> str:
+    """Thin wrapper: return only the assembled knowledge-zone block."""
+    return curate_knowledge_detailed(task, workspace, model)["block"]

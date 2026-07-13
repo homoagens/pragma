@@ -306,6 +306,7 @@ def episode_consolidate_detailed(transcript: str = "", workspace: str = "",
 
     result = {"status": "ok", "summary": "", "episode_id": ep["id"],
               "surprises": len(surprises), "sweep": swept,
+              "semantic_ran": False,
               "new_assertions": [], "confirmed": [], "contradicted": [],
               "retired": []}
     if degraded and llm_note:
@@ -347,6 +348,7 @@ def episode_consolidate_detailed(transcript: str = "", workspace: str = "",
         "existing_assertions": [e.get("text", "") for e in related],
     }, ensure_ascii=False, indent=2)
 
+    result["semantic_ran"] = True   # the abstraction LLM call is about to run
     try:
         raw = llm_client.call_llm(
             messages=[

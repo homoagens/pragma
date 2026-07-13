@@ -192,12 +192,13 @@ class _PlainRenderer:
         _out(f"[{_ts()}] ===== CONCLUSION - {label} - {elapsed:.0f}s =====")
         _out(text)
 
-    def memory_running(self):
-        _out()
-        _out(f"[{_ts()}] MEMORY       consolidating episode...")
+    def faculty_running(self, tag, note):
+        _out(f"[{_ts()}] [{tag}] {note}")
 
-    def memory_done(self, summary):
-        _out(f"[{_ts()}] MEMORY       {summary}")
+    def faculty(self, tag, summary, details=None):
+        _out(f"[{_ts()}] [{tag}] {summary}")
+        for d in details or []:
+            _out(f"[{_ts()}]   · {d}")
 
 
 class _MarkdownRenderer:
@@ -288,12 +289,15 @@ class _MarkdownRenderer:
         _out()
         _out(text)
 
-    def memory_running(self):
-        _out()
-        _out("**memory**: consolidating episode...")
+    def faculty_running(self, tag, note):
+        self._flush()
+        _out(f"\n**[{tag}]** {note}")
 
-    def memory_done(self, summary):
-        _out(f"**memory**: {summary}")
+    def faculty(self, tag, summary, details=None):
+        self._flush()
+        _out(f"\n**[{tag}]** {summary}")
+        for d in details or []:
+            _out(f"- {d}")
 
 
 class _PrettyRenderer:
@@ -389,15 +393,28 @@ class _PrettyRenderer:
                                  title=f"Conclusion — {label}, {elapsed:.0f}s",
                                  title_align="left", border_style=border))
 
-    def memory_running(self):
-        from rich.text import Text
-        self.console.print(Text("  memory: consolidating episode...",
-                                style="bright_black"))
+    # Each faculty (hat the model wears) gets its own colour so the sequence
+    # curator → agent → consolidator → abstractor → forgetting reads at a glance.
+    _FACULTY_COLOR = {
+        "CURATOR": "magenta", "AGENT": "cyan", "CONSOLIDATOR": "green",
+        "ABSTRACTOR": "blue", "FORGETTING": "yellow",
+    }
 
-    def memory_done(self, summary):
+    def faculty_running(self, tag, note):
         from rich.text import Text
-        self.console.print(Text("  memory: " + summary,
-                                style="bright_black"))
+        color = self._FACULTY_COLOR.get(tag, "magenta")
+        t = Text(f"  [{tag}] ", style=f"bold {color}")
+        t.append(note, style="bright_black")
+        self.console.print(t)
+
+    def faculty(self, tag, summary, details=None):
+        from rich.text import Text
+        color = self._FACULTY_COLOR.get(tag, "magenta")
+        t = Text(f"  [{tag}] ", style=f"bold {color}")
+        t.append(summary)
+        self.console.print(t)
+        for d in details or []:
+            self.console.print(Text("    · " + d, style="bright_black"))
 
 
 _RENDERER = None  # set by main(); used by batch_ask_user
@@ -667,9 +684,22 @@ confirmed mid-task. Therefore:
         # orders them, and reinforces/revives only the ones it selects.
         try:
             import curator
-            block = curator.curate_knowledge(task, workspace=str(cwd))
-            if block:
-                prefix_parts.append(block)
+            info = curator.curate_knowledge_detailed(task, workspace=str(cwd))
+            if info["block"]:
+                prefix_parts.append(info["block"])
+            pool = f"{info['n_ep']} memories + {info['n_ln']} rules"
+            if info["fallback"]:
+                renderer.faculty("CURATOR",
+                                 f"{pool} → deterministic fallback "
+                                 f"(curator unavailable)")
+            elif info["empty"]:
+                renderer.faculty("CURATOR",
+                                 f"{pool} → empty desk (nothing relevant)")
+            else:
+                summ = f"{pool} → chose {len(info['selected'])}"
+                if info["reason"]:
+                    summ += f" — {info['reason']}"
+                renderer.faculty("CURATOR", summ, info["selected"])
         except Exception:
             pass
 
@@ -691,6 +721,7 @@ confirmed mid-task. Therefore:
 
     log_path = Path(args.log) if args.log else None
     start = time.time()
+    renderer.faculty_running("AGENT", "reasoning and acting on the task…")
     try:
         result = run_agent(cfg, full_task, log_path=log_path,
                            on_step=_make_on_step(renderer, args.obs_limit,
@@ -720,7 +751,7 @@ confirmed mid-task. Therefore:
     # because Y" is exactly the episode the next session needs most. Only a
     # None result (interruption, LLM death) leaves nothing reliable to record.
     if args.memory:
-        renderer.memory_running()
+        renderer.faculty_running("CONSOLIDATOR", "writing the session episode…")
         try:
             from skills.episode_consolidate.skill import (
                 episode_consolidate_detailed,
@@ -728,9 +759,39 @@ confirmed mid-task. Therefore:
             res = episode_consolidate_detailed(
                 transcript="\n".join(transcript),
                 workspace=str(cwd), source="batch")
-            renderer.memory_done(res.get("summary", ""))
+
+            # One tagged line per faculty that actually ran, so the user
+            # sees which hat the model wore, when.
+            eid = res.get("episode_id", "?")
+            renderer.faculty(
+                "CONSOLIDATOR",
+                f"episode {eid} saved ({res.get('surprises', 0)} surprises)")
+
+            if res.get("semantic_ran"):
+                parts = []
+                if res.get("new_assertions"):
+                    parts.append(f"+{len(res['new_assertions'])} new rule(s)")
+                if res.get("confirmed"):
+                    parts.append(f"{len(res['confirmed'])} confirmed")
+                if res.get("contradicted"):
+                    parts.append(f"{len(res['contradicted'])} contradicted")
+                if res.get("retired"):
+                    parts.append(f"{len(res['retired'])} retired")
+                renderer.faculty(
+                    "ABSTRACTOR",
+                    ", ".join(parts) if parts else "no new general knowledge")
+
+            sweep = res.get("sweep") or {}
+            if sweep.get("dormant") or sweep.get("deleted"):
+                s = f"{len(sweep.get('dormant', []))} memory(ies) to dormant"
+                if sweep.get("deleted"):
+                    s += f", {len(sweep['deleted'])} deleted"
+                renderer.faculty("FORGETTING", s)
+
+            if res.get("status") == "error":
+                renderer.faculty("CONSOLIDATOR", res.get("summary", "error"))
         except Exception as e:
-            renderer.memory_done(f"ERROR: {e}")
+            renderer.faculty("CONSOLIDATOR", f"ERROR: {e}")
 
     return 2 if forced else 0
 
