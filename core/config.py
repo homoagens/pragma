@@ -266,6 +266,13 @@ RECONSOLIDATE_MAX_EPISODES = int(os.environ.get("RECONSOLIDATE_MAX_EPISODES", "3
 # Defaults to SEMANTIC_RETIRE_CONTRADICTIONS.
 RECONSOLIDATE_REFORMULATE_AT = int(os.environ.get(
     "RECONSOLIDATE_REFORMULATE_AT", str(SEMANTIC_RETIRE_CONTRADICTIONS)))
+# Bridge A→B: episodic reconsolidation feeds semantic reformulation. When at
+# least this many of a belief's SOURCE episodes were reinterpreted in the same
+# session, the belief is a reformulation candidate — even if the abstractor
+# emitted no explicit contradiction. The robust episodic signal drives the
+# fragile semantic one; on this path a belief is never retired, only rewritten.
+RECONSOLIDATE_BRIDGE_MIN_SOURCES = int(os.environ.get(
+    "RECONSOLIDATE_BRIDGE_MIN_SOURCES", "2"))
 
 # Max chars of a project PRAGMA.md (user-authored instructions) injected
 # verbatim into the task by runners that support it.

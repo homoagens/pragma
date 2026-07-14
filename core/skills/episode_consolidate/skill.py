@@ -401,6 +401,7 @@ def episode_consolidate_detailed(transcript: str = "", workspace: str = "",
     # Rewrites are versioned in `interpretation_history`, and a bidirectional
     # thematic `link` is recorded (which also protects both episodes from
     # eventual hard-deletion — see episodes._protected_ids).
+    recon_interps: dict[str, str] = {}   # id → new interpretation (for the A→B bridge)
     if getattr(config, "RECONSOLIDATION_ENABLED", True):
         try:
             targets = similar[:getattr(config, "RECONSOLIDATE_MAX_EPISODES", 3)]
@@ -423,6 +424,7 @@ def episode_consolidate_detailed(transcript: str = "", workspace: str = "",
                 tgt["links"] = sorted(tl)
                 estore.save(tp, tgt)
                 linked.append(rw["id"])
+                recon_interps[rw["id"]] = rw["interpretation"]
                 result["reconsolidated"].append(
                     {"id": rw["id"], "reason": rw.get("reason", "")})
             if linked:
@@ -552,6 +554,42 @@ def episode_consolidate_detailed(transcript: str = "", workspace: str = "",
                         e["status"] = "retired"
                         result["retired"].append(text)
                 break
+
+    # ── Bridge A→B: episodic reconsolidation drives semantic reformulation ──
+    # The abstractor's explicit `contradicts` is fragile (model-dependent). But
+    # if the episodes a belief RESTS ON have just been reinterpreted, that is a
+    # robust signal the belief itself may be stale — even with zero
+    # contradictions. Reformulate it in the light of its sources' new meanings.
+    # This path never retires: it only rewrites when a better version exists.
+    bridge_min = getattr(config, "RECONSOLIDATE_BRIDGE_MIN_SOURCES", 2)
+    if recon_on and recon_interps and bridge_min > 0:
+        handled = ({r["from"] for r in result["reformulated"]}
+                   | set(result["retired"])
+                   | {a["text"] for a in result["new_assertions"]})
+        for e in entries:
+            if e.get("status", "active") == "retired":
+                continue
+            text = e.get("text", "")
+            if text in handled:
+                continue
+            shifted = [s for s in e.get("sources", []) if s in recon_interps]
+            if len(shifted) < bridge_min:
+                continue
+            evidence = [recon_interps[s] for s in shifted]
+            srcs = [ep_by_id[s].get("goal", "") for s in e.get("sources", [])
+                    if s in ep_by_id and ep_by_id[s].get("goal")]
+            reformed = reconsolidate.reformulate_belief(text, evidence, srcs)
+            if not reformed:
+                continue  # no defensible rewrite → leave the belief as-is
+            hist = e.get("text_history") or []
+            hist.append({"ts": ts, "text": text,
+                         "reason": reformed.get("reason", ""), "via": "bridge"})
+            e["text_history"] = hist
+            e["text"] = reformed["text"]
+            e["reformulations"] = e.get("reformulations", 0) + 1
+            result["reformulated"].append(
+                {"from": text, "to": e["text"],
+                 "reason": reformed.get("reason", ""), "via": "bridge"})
 
     try:
         learnings_path.parent.mkdir(parents=True, exist_ok=True)
