@@ -394,10 +394,12 @@ class _PrettyRenderer:
                                  title_align="left", border_style=border))
 
     # Each faculty (hat the model wears) gets its own colour so the sequence
-    # curator → agent → consolidator → abstractor → forgetting reads at a glance.
+    # curator → agent → consolidator → abstractor → reconsolidator → forgetting
+    # reads at a glance.
     _FACULTY_COLOR = {
         "CURATOR": "magenta", "AGENT": "cyan", "CONSOLIDATOR": "green",
-        "ABSTRACTOR": "blue", "FORGETTING": "yellow",
+        "ABSTRACTOR": "blue", "RECONSOLIDATOR": "bright_magenta",
+        "FORGETTING": "yellow",
     }
 
     def faculty_running(self, tag, note):
@@ -784,6 +786,18 @@ confirmed mid-task. Therefore:
                 renderer.faculty(
                     "ABSTRACTOR",
                     ", ".join(parts) if parts else "no new general knowledge")
+
+            # Reconsolidation: past episodes re-read in the light of the new
+            # one (meaning rewritten, facts frozen) and/or beliefs reformulated.
+            recon = res.get("reconsolidated") or []
+            reform = res.get("reformulated") or []
+            if recon or reform:
+                rparts = []
+                if recon:
+                    rparts.append(f"{len(recon)} episode(s) reinterpreted")
+                if reform:
+                    rparts.append(f"{len(reform)} belief(s) reformulated")
+                renderer.faculty("RECONSOLIDATOR", ", ".join(rparts))
 
             sweep = res.get("sweep") or {}
             if sweep.get("dormant") or sweep.get("deleted"):

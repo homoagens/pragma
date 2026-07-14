@@ -30,6 +30,7 @@ from pathlib import Path
 import config
 import episodes as estore
 import llm_client
+import reconsolidate
 from json_parser import extract_json
 
 
@@ -370,7 +371,7 @@ def episode_consolidate_detailed(transcript: str = "", workspace: str = "",
               "surprises": len(surprises), "sweep": swept,
               "semantic_ran": False,
               "new_assertions": [], "confirmed": [], "contradicted": [],
-              "retired": []}
+              "retired": [], "reconsolidated": [], "reformulated": []}
     if degraded and llm_note:
         _degraded_note = llm_note + " — deterministic fallback episode saved"
     elif degraded:
@@ -393,6 +394,42 @@ def episode_consolidate_detailed(transcript: str = "", workspace: str = "",
             f"semantic pass skipped (no similar episodes yet)"
             + _sweep_note + _degraded_note)
         return result
+
+    # ── 2b. Reconsolidation (episodic) — recall rewrites MEANING, not facts ──
+    # Re-read the thematically closest past episodes in the light of the new
+    # one. Their `interpretation` may change; `narrative` (facts) is frozen.
+    # Rewrites are versioned in `interpretation_history`, and a bidirectional
+    # thematic `link` is recorded (which also protects both episodes from
+    # eventual hard-deletion — see episodes._protected_ids).
+    if getattr(config, "RECONSOLIDATION_ENABLED", True):
+        try:
+            targets = similar[:getattr(config, "RECONSOLIDATE_MAX_EPISODES", 3)]
+            rewrites = reconsolidate.reconsolidate_episodes(ep, targets)
+            linked: list[str] = []
+            for rw in rewrites:
+                tp = store / f"{rw['id']}.json"
+                try:
+                    tgt = json.loads(tp.read_text(encoding="utf-8"))
+                except Exception:
+                    continue
+                hist = tgt.get("interpretation_history") or []
+                hist.append({"ts": _now(),
+                             "text": tgt.get("interpretation", ""),
+                             "trigger": ep["id"],
+                             "reason": rw.get("reason", "")})
+                tgt["interpretation_history"] = hist
+                tgt["interpretation"] = rw["interpretation"]  # facts untouched
+                tl = set(tgt.get("links") or []); tl.add(ep["id"])
+                tgt["links"] = sorted(tl)
+                estore.save(tp, tgt)
+                linked.append(rw["id"])
+                result["reconsolidated"].append(
+                    {"id": rw["id"], "reason": rw.get("reason", "")})
+            if linked:
+                ep["links"] = sorted(set(ep.get("links") or []) | set(linked))
+                estore.save(store / f"{ep['id']}.json", ep)
+        except Exception:
+            pass  # reconsolidation must never break consolidation
 
     learnings_path = Path(config.LEARNINGS_PATH)
     learnings = _load_learnings(learnings_path)
@@ -459,6 +496,12 @@ def episode_consolidate_detailed(transcript: str = "", workspace: str = "",
     bonus  = getattr(config, "SEMANTIC_CONFIRM_BONUS", 0.1)
     malus  = getattr(config, "SEMANTIC_CONTRADICT_MALUS", 0.2)
     retire = getattr(config, "SEMANTIC_RETIRE_CONTRADICTIONS", 2)
+    reformulate_at = getattr(config, "RECONSOLIDATE_REFORMULATE_AT", retire)
+    recon_on = getattr(config, "RECONSOLIDATION_ENABLED", True)
+    # id → episode, so a contradicted belief's sources can be summarized for
+    # the reformulation call (the "facts" that must keep supporting it).
+    ep_by_id = {e.get("id", ""): e for e in past}
+    ep_by_id[ep["id"]] = ep
 
     for text in sem.get("confirms") or []:
         for e in entries:
@@ -475,9 +518,39 @@ def episode_consolidate_detailed(transcript: str = "", workspace: str = "",
                 e["confidence"] = max(0.05, e.get("confidence", 0.5) - malus)
                 e["contradictions"] = e.get("contradictions", 0) + 1
                 result["contradicted"].append(text)
-                if e["contradictions"] >= retire:
-                    e["status"] = "retired"
-                    result["retired"].append(text)
+                if e["contradictions"] >= reformulate_at:
+                    # Stage 3 (semantic reconsolidation): before retiring a
+                    # sufficiently-contradicted belief, try to REFORMULATE it so
+                    # it fits the evidence (e.g. add the condition under which it
+                    # held). Retirement is the fallback when no honest qualified
+                    # version survives.
+                    reformed = None
+                    if recon_on:
+                        evidence = [ep.get("goal", "")] + list(ep.get("surprises") or [])
+                        srcs = [ep_by_id[s].get("goal", "")
+                                for s in e.get("sources", [])
+                                if s in ep_by_id and ep_by_id[s].get("goal")]
+                        reformed = reconsolidate.reformulate_belief(
+                            e.get("text", ""), evidence, srcs)
+                    if reformed:
+                        hist = e.get("text_history") or []
+                        hist.append({"ts": ts, "text": e.get("text", ""),
+                                     "reason": reformed.get("reason", "")})
+                        e["text_history"] = hist
+                        old_text = e["text"]
+                        e["text"] = reformed["text"]
+                        e["contradictions"] = 0   # incorporated into the new text
+                        e["reformulations"] = e.get("reformulations", 0) + 1
+                        # a freshly reconciled belief rebounds off the malus floor
+                        e["confidence"] = max(e.get("confidence", 0.5), 0.5)
+                        if ep["id"] not in e.get("sources", []):
+                            e.setdefault("sources", []).append(ep["id"])
+                        result["reformulated"].append(
+                            {"from": old_text, "to": e["text"],
+                             "reason": reformed.get("reason", "")})
+                    else:
+                        e["status"] = "retired"
+                        result["retired"].append(text)
                 break
 
     try:
@@ -489,13 +562,18 @@ def episode_consolidate_detailed(transcript: str = "", workspace: str = "",
             f"OK: episode {ep['id']} saved; ERROR writing learnings — {e}")
         return result
 
+    _recon_note = ""
+    if result["reconsolidated"]:
+        _recon_note += f"; reconsolidated {len(result['reconsolidated'])} episode(s)"
+    if result["reformulated"]:
+        _recon_note += f", reformulated {len(result['reformulated'])} belief(s)"
     result["summary"] = (
         f"OK: episode {ep['id']} saved ({len(surprises)} surprises); "
         f"semantics: +{len(result['new_assertions'])} assertions, "
         f"{len(result['confirmed'])} confirmed, "
         f"{len(result['contradicted'])} contradicted"
         + (f", {len(result['retired'])} retired" if result["retired"] else "")
-        + _sweep_note + _degraded_note)
+        + _recon_note + _sweep_note + _degraded_note)
     return result
 
 

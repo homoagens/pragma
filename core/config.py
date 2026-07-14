@@ -246,6 +246,27 @@ SEMANTIC_CONFIRM_BONUS        = float(os.environ.get("SEMANTIC_CONFIRM_BONUS", "
 SEMANTIC_CONTRADICT_MALUS     = float(os.environ.get("SEMANTIC_CONTRADICT_MALUS", "0.2"))
 SEMANTIC_RETIRE_CONTRADICTIONS = int(os.environ.get("SEMANTIC_RETIRE_CONTRADICTIONS", "2"))
 
+# ── Reconsolidation (Stage 3) ──
+# Recall is read-modify-write of MEANING, never of facts. When a new session
+# is consolidated, the thematically closest past episodes are re-read and
+# their `interpretation` may be rewritten in the light of the novelty — the
+# `narrative` (the facts) is frozen. At the semantic layer, a belief that has
+# accumulated enough independent contradictions is REFORMULATED (its text
+# rewritten to fit the evidence) rather than merely retired. Both rewrites are
+# admitted only when still supported by the frozen facts / cited sources
+# (the anti-confabulation guard), and touch only the evolving side of memory,
+# never the constitutive core. Set RECONSOLIDATION_ENABLED=false to disable.
+RECONSOLIDATION_ENABLED = os.environ.get(
+    "RECONSOLIDATION_ENABLED", "true").lower() in ("1", "true", "yes")
+# How many thematically-close episodes to re-read per consolidation.
+RECONSOLIDATE_MAX_EPISODES = int(os.environ.get("RECONSOLIDATE_MAX_EPISODES", "3"))
+# A belief is reformulated once it reaches this many independent contradictions
+# (the same threshold that used to retire it: reformulation is now the primary
+# response, retirement the fallback when no reformulation is defensible).
+# Defaults to SEMANTIC_RETIRE_CONTRADICTIONS.
+RECONSOLIDATE_REFORMULATE_AT = int(os.environ.get(
+    "RECONSOLIDATE_REFORMULATE_AT", str(SEMANTIC_RETIRE_CONTRADICTIONS)))
+
 # Max chars of a project PRAGMA.md (user-authored instructions) injected
 # verbatim into the task by runners that support it.
 PRAGMA_MD_MAX_CHARS = int(os.environ.get("PRAGMA_MD_MAX_CHARS", "4000"))
