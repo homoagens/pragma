@@ -336,6 +336,9 @@ def episode_consolidate_detailed(transcript: str = "", workspace: str = "",
         "ts":  _now(),
         "workspace": workspace or "",
         "source":    source or "",
+        # Provenance: the model that actually produced this session — resolved
+        # from the endpoint when available, else the configured label.
+        "model": getattr(config, "SERVED_MODEL", "") or config.DEFAULT_MODEL,
         "goal":      goal[:200],
         "narrative": narrative,          # facts — immutable
         "surprises": surprises,

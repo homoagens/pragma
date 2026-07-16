@@ -33,6 +33,33 @@ except ImportError as _e:
 DEBUG = os.environ.get("PRAGMA_DEBUG", "").lower() in ("1", "true", "yes")
 
 # ─────────────────────────────────────────────
+# MODEL PROFILE (optional) — one switch routes everything
+# ─────────────────────────────────────────────
+# PRAGMA_PROFILE=<name> selects a profile from models.json (next to .env,
+# gitignored — it holds local ports; fallback: examples_memory/models.json):
+#   { "27b": {"base_url": "http://127.0.0.1:8100/v1", "model": "Qwen3.6-27b"} }
+# The profile overrides LLM_BASE_URL / DEFAULT_MODEL for THIS process, and sets
+# PRAGMA_ARCHIVE_TAG=<name> so demo runs of an alternate model archive into
+# their own subfolder. Resolved here (config is imported by everything), so it
+# works identically for batch, the demos and the UI. No profile → no change.
+PROFILE = os.environ.get("PRAGMA_PROFILE", "").strip()
+if PROFILE:
+    import json as _json
+    os.environ.setdefault("PRAGMA_ARCHIVE_TAG", PROFILE)
+    _ROOT = Path(__file__).resolve().parent.parent
+    for _mj in (_ROOT / "models.json", _ROOT / "examples_memory" / "models.json"):
+        try:
+            _p = _json.loads(_mj.read_text(encoding="utf-8")).get(PROFILE)
+        except Exception:
+            _p = None
+        if isinstance(_p, dict):
+            if _p.get("base_url"):
+                os.environ["LLM_BASE_URL"] = str(_p["base_url"])
+            if _p.get("model"):
+                os.environ["DEFAULT_MODEL"] = str(_p["model"])
+            break
+
+# ─────────────────────────────────────────────
 # LLM ENDPOINT (OpenAI-compatible)
 # ─────────────────────────────────────────────
 # Pragma talks to a single OpenAI-compatible endpoint:
@@ -56,6 +83,12 @@ LLM_API_KEY  = os.environ.get("LLM_API_KEY",  "")
 
 DEFAULT_MODEL       = os.environ.get("DEFAULT_MODEL", "llama3.2")
 DEFAULT_TEMPERATURE = float(os.environ.get("DEFAULT_TEMPERATURE", "0.2"))
+
+# The model the endpoint is ACTUALLY serving, resolved at runtime by
+# llm_client.ping_models() via GET /models (llama.cpp reports the loaded
+# model). Display and provenance (banner, episodes, demo meta) prefer this
+# truth over the DEFAULT_MODEL label — labels can lie, the endpoint cannot.
+SERVED_MODEL = ""
 
 # ─────────────────────────────────────────────
 # CODING MODEL (optional)

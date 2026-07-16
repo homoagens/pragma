@@ -200,6 +200,9 @@ class _PlainRenderer:
         for d in details or []:
             _out(f"[{_ts()}]   · {d}")
 
+    def stats(self, line):
+        _out(f"[{_ts()}]          STATS        {line}")
+
 
 class _MarkdownRenderer:
     """Raw Markdown document — the default when stdout is redirected.
@@ -209,6 +212,7 @@ class _MarkdownRenderer:
 
     def __init__(self):
         self._pending: tuple | None = None   # (step, thought_text, ts)
+        self._stats: str | None = None       # per-step LLM stats, if known
 
     def _flush(self, action_name: str = "", args_line: str = ""):
         if self._pending is None and not action_name:
@@ -223,10 +227,23 @@ class _MarkdownRenderer:
         if text:
             _out(f"> {text}")
             _out()
+        if self._stats:
+            _out(f"*{self._stats}*")
+            _out()
+            self._stats = None
         if args_line:
             _out(f"**args**: `{args_line}`")
             _out()
         self._pending = None
+
+    def stats(self, line):
+        # Arrives between the buffered thought and its action: hold it so it
+        # renders under the step heading. With nothing pending, emit inline.
+        if self._pending is not None:
+            self._stats = line
+        else:
+            _out(f"*{line}*")
+            _out()
 
     def banner(self, cwd, model_line, endpoint, max_steps, task):
         head = task.splitlines()[0]
@@ -418,6 +435,10 @@ class _PrettyRenderer:
         for d in details or []:
             self.console.print(Text("    · " + d, style="bright_black"))
 
+    def stats(self, line):
+        from rich.text import Text
+        self.console.print(Text("  " + line, style="bright_black"))
+
 
 _RENDERER = None  # set by main(); used by batch_ask_user
 
@@ -465,6 +486,23 @@ def _make_on_step(renderer, obs_limit: int, transcript: list[str]):
     the server feeds to the consolidation worker, used here only with
     --memory)."""
 
+    def _emit_stats() -> None:
+        """Per-call LLM stats (tokens · time · speed · context use). The
+        thought/final event fires right after the reasoning call, so
+        llm_client.LAST_STATS at this moment IS that call. Consumed after
+        rendering so a step without a fresh call never repeats stale numbers."""
+        s = dict(getattr(llm_client, "LAST_STATS", {}) or {})
+        if not s.get("total"):
+            return
+        secs = s.get("seconds") or 0.0
+        tps = (s.get("completion", 0) / secs) if secs > 0 else 0.0
+        line = f"{s['total']:,} tok · {secs:.0f}s · {tps:.1f} t/s"
+        ctxw = getattr(baseline_config, "CONTEXT_WINDOW", 0)
+        if ctxw:
+            line += f" · ctx {s['total'] * 100 // ctxw}%"
+        renderer.stats(line)
+        llm_client.LAST_STATS = {}
+
     def on_step(ev: dict) -> None:
         t = ev.get("type", "")
         step = ev.get("step")
@@ -472,6 +510,7 @@ def _make_on_step(renderer, obs_limit: int, transcript: list[str]):
         if t == "thought":
             text = " ".join(str(ev.get("content", "")).split())
             renderer.thought(step, text)
+            _emit_stats()
             transcript.append(f"THOUGHT: {text[:300]}")
         elif t == "action":
             name = ev.get("name", "")
@@ -484,6 +523,7 @@ def _make_on_step(renderer, obs_limit: int, transcript: list[str]):
             transcript.append(f"OBS: {content[:300]}")
         elif t == "final":
             renderer.final(step, str(ev.get("content", "")))
+            _emit_stats()
             transcript.append(f"FINAL: {str(ev.get('content', ''))[:300]}")
         elif t == "error":
             content = str(ev.get("content", ""))
@@ -523,7 +563,9 @@ def main() -> int:
     src.add_argument("--task", help="task text")
     src.add_argument("--task-file", help="read the task from this file")
     parser.add_argument("--cwd", default=None,
-                        help="working directory for the task (default: current)")
+                        help="working directory for the task (default: the "
+                             "PRAGMA_WORKSPACE env var, else the current dir; "
+                             "Pragma's own source tree is always refused)")
     parser.add_argument("--max-steps", type=int, default=None,
                         help="step budget (default: MAX_STEPS from .env, "
                              f"currently {baseline_config.MAX_STEPS})")
@@ -574,9 +616,25 @@ def main() -> int:
     # concurrency across threads like in server.py). Relative paths in the
     # filesystem skills then resolve against the project, and the system
     # prompt instructs the model to build absolute paths from this cwd.
-    cwd = Path(args.cwd or os.getcwd()).resolve()
+    # Resolution order: --cwd flag > PRAGMA_WORKSPACE env > current dir.
+    cwd = Path(args.cwd or os.environ.get("PRAGMA_WORKSPACE")
+               or os.getcwd()).resolve()
     if not cwd.is_dir():
         _err(f"ERROR: not a directory: {cwd}")
+        return 1
+
+    # Hard guard: the agent must NEVER work inside Pragma's own source tree
+    # (episodes about the repo, stray files, accidental edits). This bites
+    # exactly when someone runs `python -m agent.batch` from the repo folder
+    # without --cwd. PRAGMA_ALLOW_SELF_MODIFY is the only escape hatch — the
+    # same flag that already unlocks self-modification elsewhere.
+    _repo = Path(__file__).resolve().parent.parent
+    if (cwd == _repo or _repo in cwd.parents) \
+            and not getattr(baseline_config, "ALLOW_SELF_MODIFY", False):
+        _err(f"ERROR: refusing to work inside Pragma's own source tree: {cwd}")
+        _err("Pass --cwd <workspace> or set PRAGMA_WORKSPACE to a dedicated "
+             "folder. (Deliberate self-development requires "
+             "PRAGMA_ALLOW_SELF_MODIFY=true.)")
         return 1
     os.chdir(cwd)
 
@@ -588,8 +646,14 @@ def main() -> int:
         _err("Run configure (or edit .env) and retry.")
         return 1
 
+    # Banner shows the model the endpoint is ACTUALLY serving (resolved by
+    # ping_models above); the .env label is only the fallback. When you swap
+    # models on the same port, the truth comes from the server, not the label.
+    served = getattr(baseline_config, "SERVED_MODEL", "")
     coding_model = baseline_config.CODING_MODEL or baseline_config.DEFAULT_MODEL
-    model_line = baseline_config.DEFAULT_MODEL
+    model_line = served or baseline_config.DEFAULT_MODEL
+    if served and served != baseline_config.DEFAULT_MODEL:
+        model_line += f"  (label: {baseline_config.DEFAULT_MODEL})"
     if coding_model != baseline_config.DEFAULT_MODEL:
         model_line += f"  (code skill -> {coding_model})"
     max_steps = args.max_steps or baseline_config.MAX_STEPS

@@ -158,7 +158,13 @@ def ping_models(base_url=None, api_key=None, timeout=5):
     """Health check: GET {BASE_URL}/models on the OpenAI-compatible endpoint.
 
     Returns (ok: bool, detail: str). Never raises — used at startup and by the
-    configure step to verify the backend is reachable before launching."""
+    configure step to verify the backend is reachable before launching.
+
+    Side effect: on success it resolves the model the endpoint is ACTUALLY
+    serving (llama.cpp reports the loaded model in /models) into
+    config.SERVED_MODEL, so banners and provenance can show the truth instead
+    of trusting the DEFAULT_MODEL label — which lies as soon as you swap
+    models on the same port."""
     url, key = _resolved_endpoint(base_url, api_key)
     headers = {}
     if key:
@@ -169,7 +175,20 @@ def ping_models(base_url=None, api_key=None, timeout=5):
         return False, f"cannot reach {url}/models — {e}"
     if resp.status_code != 200:
         return False, f"{url}/models returned HTTP {resp.status_code}"
-    return True, f"{url} reachable"
+    served = ""
+    try:
+        data = (resp.json() or {}).get("data") or []
+        if data:
+            raw = str(data[0].get("id", ""))
+            served = raw.replace("\\", "/").split("/")[-1]
+            for ext in (".gguf", ".bin"):
+                if served.lower().endswith(ext):
+                    served = served[: -len(ext)]
+            if served:
+                config.SERVED_MODEL = served
+    except Exception:
+        pass
+    return True, f"{url} reachable" + (f" · serving {served}" if served else "")
 
 
 # ── HTTP helpers ───────────────────────────────────────────────────────────────
@@ -222,16 +241,38 @@ def _post_with_retry(url, headers, payload, timeout, label, stop_event=None):
 
     If stop_event is provided and gets set, the call is aborted via
     LLMInterrupted at the next check (mid-request or between retries).
-    """
+
+    The waiting spinner shows the model the endpoint actually serves (when
+    known) and a live elapsed counter, so a long call is visibly alive."""
+    disp = getattr(config, "SERVED_MODEL", "") or label
     last = None
     for attempt in range(5):
         if stop_event is not None and stop_event.is_set():
             raise LLMInterrupted("LLM call aborted by stop signal")
+        start = time.time()
+        holder: dict = {"resp": None, "exc": None}
+
+        def _worker():
+            try:
+                holder["resp"] = _interruptible_post(
+                    url, headers, payload, timeout, stop_event)
+            except Exception as e:
+                holder["exc"] = e
+
         with _console.status(
-            f"[bold cyan]{label} is thinking...[/bold cyan]",
+            f"[bold cyan]{disp} is thinking...[/bold cyan]",
             spinner="dots",
-        ):
-            last = _interruptible_post(url, headers, payload, timeout, stop_event)
+        ) as status:
+            t = threading.Thread(target=_worker, daemon=True)
+            t.start()
+            while t.is_alive():
+                t.join(timeout=0.5)
+                status.update(
+                    f"[bold cyan]{disp} is thinking... "
+                    f"{int(time.time() - start)}s[/bold cyan]")
+        if holder["exc"] is not None:
+            raise holder["exc"]
+        last = holder["resp"]
         if last.status_code != 502:
             break
         wait = 30 * (attempt + 1)
@@ -252,8 +293,15 @@ def _post_with_retry(url, headers, payload, timeout, label, stop_event=None):
 
 # ── Provider backends ──────────────────────────────────────────────────────────
 
+# Stats of the most recent blocking call: {"prompt","completion","total",
+# "seconds","model"}. Read by renderers (batch) to show per-step token counts,
+# speed and context usage. Best-effort — empty when the backend sends no usage.
+LAST_STATS: dict = {}
+
+
 def _call_openai_compatible(messages, model, temperature, max_tokens, timeout, base_url, api_key, stop_event=None):
     """Standard OpenAI /chat/completions — works with Groq, Ollama, vLLM, etc."""
+    global LAST_STATS
     payload = {
         "model":       model,
         "messages":    messages,
@@ -263,8 +311,18 @@ def _call_openai_compatible(messages, model, temperature, max_tokens, timeout, b
     headers = {"Content-Type": "application/json"}
     if api_key:
         headers["Authorization"] = f"Bearer {api_key}"
+    t0     = time.time()
     resp   = _post_with_retry(f"{base_url}/chat/completions", headers, payload, timeout, model, stop_event)
+    dt     = time.time() - t0
     data   = resp.json()
+    usage  = data.get("usage") or {}
+    LAST_STATS = {
+        "prompt":     usage.get("prompt_tokens", 0) or 0,
+        "completion": usage.get("completion_tokens", 0) or 0,
+        "total":      usage.get("total_tokens", 0) or 0,
+        "seconds":    dt,
+        "model":      getattr(config, "SERVED_MODEL", "") or model,
+    }
     choice = data["choices"][0]
     msg    = choice.get("message", {})
     finish = choice.get("finish_reason", "")

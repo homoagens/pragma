@@ -3,6 +3,9 @@
 .env.bak
 *.bak
 
+# Local model profiles (PRAGMA_PROFILE) — holds local ports, like .env
+models.json
+
 # Python
 __pycache__/
 *.pyc
