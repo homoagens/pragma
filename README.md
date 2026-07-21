@@ -250,7 +250,7 @@ Drop a `PRAGMA.md` in the workspace root and every batch run injects it as user-
 ```
 pragma/
   agent/          FastAPI server · batch runner · ReAct orchestration · skill wrappers
-  core/           LLM client · memory compression · skill palette
+  core/           LLM client · ReAct loop · persistent memory · skill palette
   interface-web/  Vanilla JS + WebSocket UI — no build step
 ```
 
@@ -260,8 +260,16 @@ pragma/
 | --------------- | ------------------------------------------------------ |
 | `llm_client.py` | Calls the OpenAI-compatible `/chat/completions` endpoint |
 | `react.py`      | Generic ReAct loop with streaming `on_step` callback   |
-| `memory.py`     | Transparent context compression as conversations grow  |
+| `memory.py`     | Context compression *within* one conversation          |
+| `episodes.py`   | Persistent episodic store: salience, decay, dormant zone, revival |
+| `curator.py`    | Picks which past episodes and beliefs enter the next context |
+| `reconsolidate.py` | Rewrites what a past episode or belief *means* — recorded facts stay frozen |
 | `skills/`       | One folder per skill — filesystem, shell, web, LLM, code… |
+
+Two different things are called memory here: `memory.py` compresses a single growing
+conversation, while `episodes.py` · `curator.py` · `reconsolidate.py` are the store that
+persists *between* sessions. Writing an episode and distilling knowledge from recurrence
+happen in the `episode_consolidate` skill, at the end of a session.
 
 **`agent/`** — Pragma-specific behavior on top of core:
 
