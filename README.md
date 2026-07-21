@@ -39,8 +39,16 @@ llama.cpp, your models, your files. No data leaves your machine. No account, no 
 **🔍 The reasoning loop is visible.**
 Every thought, action, and observation streams live in the UI. Watch the agent plan, execute, and react — step by step, in real time.
 
-**🧠 Two models, two jobs.**
-Pragma routes code generation to a dedicated coding model while a lighter model handles reasoning and orchestration. Better output without forcing one model to do everything.
+**🧠 One model, different jobs.**
+The same local model wears a different hat for each job — planning, choosing what to
+remember, consolidating a session, distilling knowledge — each with its own system
+prompt. Nothing is hardcoded to a vendor. (You *can* route the `code` skill to a
+dedicated model with `CODING_MODEL`; by default it uses the same one.)
+
+**⏳ A memory with a sense of time.**
+Sessions become episodes, what recurs becomes knowledge, and what stops being recalled
+fades — then resurfaces when it becomes relevant again. Later experience can change what
+an old episode *means*, without rewriting what happened.
 
 **📐 Plain, readable stack.**
 FastAPI · Vanilla JS · WebSocket. No framework magic. Every file is understandable in isolation.
@@ -49,38 +57,16 @@ FastAPI · Vanilla JS · WebSocket. No framework magic. Every file is understand
 
 ## ⚡ Quickstart
 
-Three things, two terminals, you're online.
+Two terminals: one serves the model, one runs Pragma.
 
-### 1. Install Pragma
-
-Pick one of two ways.
-
-#### Option A — prebuilt executable (no Python, no setup)
-
-Download the single-file build for your OS from the
-[**Releases page**](https://github.com/homoagens/pragma/releases):
-
-| OS | File | Run it |
-| --- | --- | --- |
-| Windows | `pragma.exe` | double-click, or run `pragma.exe` in a terminal |
-| Linux / macOS | `pragma` | `chmod +x pragma && ./pragma` |
-
-One file, nothing to install. It still needs a model (step 2) — point it at
-one by loading a `.env` from **Settings → Load .env file…** in the UI.
-
-> [!NOTE]
-> On an **older Linux** (or an **ARM** machine) a prebuilt binary may refuse
-> to start due to a system-library mismatch. Use Option B there — run from
-> source, or build the executable on that machine with `build.sh`.
-
-#### Option B — from source
+### 1. Install
 
 ```bash
 git clone https://github.com/homoagens/pragma
 cd pragma
 ```
 
-The from-source pipeline is **three twin scripts**, in order — `install` → `configure` → `start`:
+Three twin scripts, in order — `install` → `configure` → `start`:
 
 ```bat
 install.bat          :: Windows — create venv + install deps
@@ -95,43 +81,40 @@ chmod +x install.sh configure.sh start.sh
 ./start.sh           # launch Pragma (opens the UI)
 ```
 
-`configure` asks for your **OpenAI-compatible backend URL** (must end in `/v1`), the model name, and an optional API key, then verifies the endpoint is reachable. Run it again any time to change them.
+`configure` asks for your **OpenAI-compatible backend URL** (must end in `/v1`), the
+model name, and an optional API key, then checks the endpoint answers. Re-run it any time
+to change them — there is no config file to hand-edit.
 
 ### 2. Serve a model
 
-Pragma talks to any OpenAI-compatible endpoint. The path of least resistance is `llama.cpp`. Grab a prebuilt binary from [github.com/ggml-org/llama.cpp/releases](https://github.com/ggml-org/llama.cpp/releases) (CUDA for NVIDIA, Vulkan for AMD/Intel, AVX2 for CPU-only), then pick a ready-made `llama-server` recipe for your hardware in **[CONFIGS.md](./CONFIGS.md)**:
+Pragma talks to any OpenAI-compatible endpoint; you bring your own. The path of least
+resistance is `llama.cpp` — grab a prebuilt binary from
+[github.com/ggml-org/llama.cpp/releases](https://github.com/ggml-org/llama.cpp/releases)
+(CUDA for NVIDIA, Vulkan for AMD/Intel, AVX2 for CPU-only) and serve a GGUF with
+`llama-server`.
 
-| Tier | Hardware | Model | Speed |
-| --- | --- | --- | --- |
-| 🐦 **Starter** | 4 GB VRAM | Qwen 3.5 9B, partial CPU offload | ~10 tok/s |
-| 🐉 **Reference** | 12 GB VRAM | Qwen 3.6 35B A3B MoE, 128k context | (daily driver) |
-| ⚡ **Ultra-light** | 4 GB VRAM | Qwen 3 4B, all-on-GPU | ~30 tok/s (expect rough edges) |
+| | Model | Notes |
+| --- | --- | --- |
+| 🐉 **Reference** | **Qwen3.6 27B · Q5** | **The daily driver.** Everything here is developed and tested against it — if you want Pragma to behave as described, run this. 24 GB VRAM class. |
+| 🐦 Starter | Qwen3.6 35B-A3B · Q5 | Mixture-of-experts, ~3B active parameters: fast even with experts offloaded to CPU, so it tolerates less VRAM than its size suggests. |
+| ⚡ Ultra-light | Qwen3.6 9B · Q6 | For modest GPUs. It works; expect rougher reasoning on long tasks. |
 
-> [!TIP]
-> **→ [Copy the matching `llama-server` command from CONFIGS.md](./CONFIGS.md)** and run it. Leave the terminal open.
+Two flags matter regardless of model: **`-np 2`** (so a background consolidation can run
+without blocking the foreground task) and **`--jinja`** (chat templates on Qwen-family
+models). Leave the server terminal open.
 
-Different hardware? See [Don't know llama.cpp?](#-dont-know-llamacpp) below — there's a prompt you can paste into any LLM and it generates a tuned command for your exact box.
+Not sure how to launch it on your hardware? The next section has a prompt that writes the
+command for you.
 
-### 3. Point Pragma at it
-
-`configure` already wrote the backend URL, model and key into `.env`. For the per-tier extras (`CONTEXT_WINDOW`, `MAX_TOKENS`):
-
-> [!TIP]
-> **→ [Copy the matching `.env` block from CONFIGS.md](./CONFIGS.md)** for your tier and merge the extra lines into your `.env`.
-
-Then just `start`:
+### 3. Start
 
 ```bat
 start.bat       :: Windows
 ./start.sh      # Linux / macOS
 ```
 
-> [!TIP]
-> **Using the prebuilt executable (Option A)?** No scripts needed — just run the
-> executable. It opens the UI automatically; load your `.env` from
-> **Settings → Load .env file…**.
-
-Opens at **http://localhost:8006**. The settings panel in the UI shows the active `.env` entries and the global learnings store; you can reload config without restarting.
+Opens at **http://localhost:8006**. The settings panel shows the active `.env` entries and
+the knowledge store, and reloads config without a restart.
 
 ---
 
@@ -194,28 +177,11 @@ Fill in the four hardware lines, run what comes back, you're done.
 
 ---
 
-## 🔌 Cloud providers (optional)
-
-Prefer a hosted API to a local server? Any OpenAI-compatible endpoint works — just point `LLM_BASE_URL` at it.
-
-<details>
-<summary>OpenAI / OpenAI-compatible (Groq, OpenRouter, DeepSeek, …)</summary>
-
-```env
-LLM_BASE_URL=https://api.openai.com/v1
-LLM_API_KEY=sk-...
-DEFAULT_MODEL=gpt-4o-mini
-```
-
-For Groq, OpenRouter, DeepSeek, etc. swap `LLM_BASE_URL` for their `/v1` endpoint and use their key.
-
-</details>
-
----
-
 ## 🖥 Batch mode — Pragma without the UI
 
-Need Pragma in a script, a scheduled job, or a CI step? `agent.batch` runs **one task start-to-finish** from the terminal — no browser, no interaction, every reasoning step streamed live to stdout.
+`agent.batch` runs **one task start to finish** from the terminal: no browser, no
+interaction, every reasoning step streamed to stdout. It is what you reach for in a
+script, a scheduled job or a CI step — and it is where Pragma's memory work happens.
 
 ```bat
 venv\Scripts\python.exe -m agent.batch --task "fix the failing test" --cwd C:\my\project
@@ -251,7 +217,13 @@ Exit codes: `0` clean conclusion · `2` step budget exhausted (forced verdict) �
 > requests for destructive actions fail safe to *no*, unless the operation is
 > explicitly authorized in the task text or in `PRAGMA.md` (below).
 
-### Memory (`--memory`)
+### Memory (`--memory`) — experimental
+
+> [!WARNING]
+> **This is the newest and least settled part of Pragma.** It is under active
+> development: the faculties, the parameters and the on-disk format can change between
+> commits. Everything else in Pragma is stable; this is the moving edge. Point it at a
+> throwaway store (`PRAGMA_DATA_DIR`) before you rely on it.
 
 With `--memory` a run is no longer an isolated episode. Between sessions the memory has a
 life cycle of its own:
