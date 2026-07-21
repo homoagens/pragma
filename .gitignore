@@ -41,3 +41,9 @@ examples_memory/
 # OS
 .DS_Store
 Thumbs.db
+
+# Zenodo deposit staging: the exact bundle uploaded as the paper artefacts.
+# Local mirror of what is published; never part of the code repository.
+zenodo-artifacts/
+pragma-memory-artifacts-*.zip
+README-zenodo-record.md

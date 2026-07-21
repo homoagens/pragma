@@ -289,6 +289,24 @@ pragma/
 
 ---
 
+## 📄 Research artifacts
+
+Pragma's memory subsystem is the subject of a paper in preparation, *"Giving Stateless
+Agents a Sense of Time: A Reconsolidating Episodic–Semantic Memory Architecture."*
+
+The evaluation corpus, the experimental stimuli, and the derived datasets are deposited
+separately from this repository, under a persistent identifier:
+
+**DOI:** [10.5281/zenodo.21474334](https://doi.org/10.5281/zenodo.21474334)
+*(the deposit is being finalized; the link resolves once it is published)*
+
+The deposit holds the raw execution traces of every archived run — session transcripts,
+episodic and semantic stores with their revision histories, and metadata pinning the
+served model, code revision, and memory parameters — so that the reported results can be
+inspected independently of this codebase.
+
+---
+
 ## 🌱 Part of Homo Agens
 
 Pragma is the first public project under **[Homo Agens](https://github.com/homoagens)** — an open-source effort exploring autonomous agents, local inference, and a simple thesis:
