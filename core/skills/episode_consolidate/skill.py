@@ -423,7 +423,8 @@ def episode_consolidate_detailed(transcript: str = "", workspace: str = "",
                              "reason": rw.get("reason", "")})
                 tgt["interpretation_history"] = hist
                 tgt["interpretation"] = rw["interpretation"]  # facts untouched
-                tl = set(tgt.get("links") or []); tl.add(ep["id"])
+                tl = set(tgt.get("links") or [])
+                tl.add(ep["id"])
                 tgt["links"] = sorted(tl)
                 estore.save(tp, tgt)
                 linked.append(rw["id"])
