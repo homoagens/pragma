@@ -238,7 +238,11 @@ Useful flags:
 - `--task-file task.txt` — or pipe the task on stdin
 - `--log run.json` — full structured step log (every observation, untruncated)
 - `--max-steps 25` · `--temperature 0.2` (default `0.0`, for reproducible runs)
-- `--memory` — episodic memory, see below
+- `--memory` — persistent memory, see below
+
+**Where it works.** The workspace is `--cwd`, else `PRAGMA_WORKSPACE`, else the current
+directory — and Pragma's own source tree is **always refused**, so a stray run can't
+edit the agent that is running it. Point it at a dedicated folder.
 
 Exit codes: `0` clean conclusion · `2` step budget exhausted (forced verdict) · `1` failure.
 
@@ -249,11 +253,17 @@ Exit codes: `0` clean conclusion · `2` step budget exhausted (forced verdict) �
 
 ### Memory (`--memory`)
 
-With `--memory` each batch run remembers and learns:
+With `--memory` a run is no longer an isolated episode. Between sessions the memory has a
+life cycle of its own:
 
-- **at the start**, the most relevant *episodes* from past sessions (plus distilled learnings) are injected into the task;
-- **at the end**, the session is consolidated into a new episode — what was done, what surprised, what it means — stored in `~/.pragma/episodes/`;
-- when a pattern **recurs across episodes**, it is distilled into a general assertion with sources and confidence — the same knowledge store you see in **Settings → Knowledge** in the UI.
+- **at the start**, a curator picks only the *relevant* past episodes and learnings and puts them in context — not the whole history;
+- **at the end**, the session is consolidated into an episode — what was done, what surprised, how important it was — under `~/.pragma/episodes/` (override with `PRAGMA_DATA_DIR`);
+- what **recurs across episodes** is distilled into an assertion with sources and confidence — the store you see in **Settings → Knowledge** in the UI;
+- what stops being recalled **fades**: episodes decay with time into a dormant zone, and come back when a later session makes them relevant again;
+- new experience can **reinterpret** older episodes and reformulate a belief, keeping every previous version — the recorded facts are never rewritten.
+
+Each faculty tags its own line in the output (`[CURATOR]`, `[CONSOLIDATOR]`,
+`[ABSTRACTOR]`, `[FORGETTING]`, `[RECONSOLIDATOR]`), so you can watch what memory did.
 
 No `--memory`, no traces: batch runs are stateless by default.
 
