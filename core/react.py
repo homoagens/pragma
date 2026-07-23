@@ -78,6 +78,15 @@ _B64_ALTERNATIVE = {
 }
 _CONTENT_ARGS = ("content", "new", "old", "instruction")
 
+# Skills that modify a file on disk. Their target is snapshotted before the
+# call, so `revert` can undo it. apply_patch is absent on purpose: it can
+# touch several files named only inside the diff, and it snapshots its own
+# targets before applying.
+_MUTATING_SKILLS = {
+    "write_file", "write_file_b64", "append_file", "edit_file",
+    "replace_in_file", "replace_in_file_b64", "insert_after", "insert_before",
+}
+
 
 def _malformed_args_hint(action: str, kwargs: dict) -> str:
     """Advice for an args-binding failure, aimed at the likely cause.
@@ -168,6 +177,14 @@ def _call_skill(cfg: AgentConfig, action: str, args: dict) -> str:
             return "\n".join(lines)
         except Exception:
             return f"ERROR executing {action}: {e}"
+
+    # ── Snapshot before mutating, so the edit can be undone ──
+    if action in _MUTATING_SKILLS and kwargs.get("path"):
+        try:
+            import checkpoint
+            checkpoint.snapshot(str(kwargs["path"]))
+        except Exception:
+            pass          # never let the safety net break the operation
 
     try:
         return str(fn(**kwargs))

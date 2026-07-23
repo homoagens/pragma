@@ -638,6 +638,15 @@ def main() -> int:
         return 1
     os.chdir(cwd)
 
+    # Open the undo session now that the workspace is settled: from here on,
+    # the first edit to any file preserves its original, so `revert` has
+    # something to go back to.
+    try:
+        import checkpoint
+        checkpoint.begin_session(str(cwd))
+    except Exception:
+        pass
+
     # Fail fast if the LLM endpoint is down — in batch there is no Settings
     # panel to fix it from, and run_agent would just error on every step.
     ok, detail = llm_client.ping_models()

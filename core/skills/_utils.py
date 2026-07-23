@@ -19,4 +19,7 @@ SKIP_DIRS = frozenset({
     "__pycache__", ".mypy_cache", ".pytest_cache", ".ruff_cache", ".tox",
     "dist", "build", ".next", ".nuxt", "target", ".idea", ".vscode",
     ".gradle", "vendor", "site-packages", ".terraform",
+    # Pragma's own undo snapshots: searching them would return stale copies of
+    # the very files the agent is editing.
+    ".pragma_checkpoints",
 })

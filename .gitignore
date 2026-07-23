@@ -47,3 +47,6 @@ Thumbs.db
 zenodo-artifacts/
 pragma-memory-artifacts-*.zip
 README-zenodo-record.md
+
+# Undo snapshots written by the agent into a workspace (core/checkpoint.py)
+.pragma_checkpoints/
