@@ -8,6 +8,7 @@ import os
 import re
 import subprocess
 import sys
+from pathlib import Path
 
 # PRAGMA.md (the user-authored project contract) is read-only for the agent.
 # The file-mutating skills enforce that via config.self_modify_guard, but the
@@ -49,15 +50,69 @@ def _kill_process_tree(proc: subprocess.Popen) -> None:
         except Exception: pass
 
 
+def _run_detached(command: str, work_dir: str | None) -> str:
+    """Start a command that outlives this call.
+
+    Output goes to a log file instead of a pipe: nobody is left reading the
+    pipe once we return, and a full pipe buffer would silently block the child.
+    The PID is the handle for stopping it.
+    """
+    import tempfile
+    from datetime import datetime
+
+    stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    log = Path(tempfile.gettempdir()) / f"pragma_bg_{stamp}_{os.getpid()}.log"
+
+    popen_kwargs: dict = dict(shell=True, cwd=work_dir,
+                              stdin=subprocess.DEVNULL)
+    if sys.platform == "win32":
+        # CREATE_NEW_PROCESS_GROUP only. Adding DETACHED_PROCESS also detaches
+        # the child from the console, and the redirected handles then never
+        # reach the log file — verified: the log stays empty even after the
+        # process has exited. The new group is what taskkill /T needs anyway.
+        popen_kwargs["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP
+    else:
+        popen_kwargs["start_new_session"] = True
+
+    try:
+        fh = open(log, "w", encoding="utf-8", errors="replace")
+        proc = subprocess.Popen(command, stdout=fh, stderr=subprocess.STDOUT,
+                                **popen_kwargs)
+    except Exception as e:
+        return f"ERROR starting background command: {e}"
+
+    stop = (f"taskkill /PID {proc.pid} /T /F" if sys.platform == "win32"
+            else f"kill -TERM -{proc.pid}")
+    return (
+        f"STARTED in background\n"
+        f"pid    : {proc.pid}\n"
+        f"log    : {log}\n"
+        f"stop   : {stop}\n"
+        f"Read the log with read_file to see how it is going. Note that most "
+        f"programs buffer output when it goes to a file, so the log is often "
+        f"empty until the process exits — an empty log does NOT mean the "
+        f"command failed. Force live output where the tool allows it "
+        f"(e.g. `python -u`, `PYTHONUNBUFFERED=1`, `--nobuffer`)."
+    )
+
+
 def execute_command(command: str, cwd: str = "", timeout: int = 60,
                     capture_stderr: bool = True,
                     max_output_chars: int = 10_000,
+                    background: bool = False,
                     stop_event=None) -> str:
     """
     Execute a shell command. Captures stdout, stderr, returncode.
     Returns a formatted string with all three values.
     cwd             : working directory (default: current cwd)
     max_output_chars: truncates stdout and stderr if too long (default 10k chars)
+    background      : start it and return immediately (see below)
+
+    Use background=True for anything meant to keep running — a dev server, a
+    watcher, a long build. The call returns at once with a PID and a log file
+    path; read that file later with read_file to see how it is going, and stop
+    it with a kill command. Without it, such a command can only ever end by
+    hitting the timeout.
 
     Timeout is enforced by killing the ENTIRE process tree (not just the shell)
     so a hanging child — e.g. a pygame loop, an `input()` call, a server — cannot
@@ -80,6 +135,9 @@ def execute_command(command: str, cwd: str = "", timeout: int = 60,
         )
 
     work_dir = cwd if cwd else None
+
+    if background:
+        return _run_detached(command, work_dir)
 
     # Spawn in a new process group / job so we can kill the whole tree.
     popen_kwargs: dict = dict(
