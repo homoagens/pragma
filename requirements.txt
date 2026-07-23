@@ -5,3 +5,6 @@ rich
 ddgs
 python-dotenv
 json-repair
+# ripgrep binary for grep_search. Optional in practice: the skill falls back to
+# a pure-Python walk if the wheel has no build for the platform.
+ripgrep
