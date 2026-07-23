@@ -10,6 +10,29 @@
 from __future__ import annotations
 
 import platform
+from datetime import datetime, timezone
+
+
+def _now_block() -> str:
+    """Anchor the agent to the present, in both frames it has to reconcile.
+
+    Memory shows the agent *when* past episodes happened, but without today's
+    date those timestamps carry no scale: it cannot tell last week from five
+    years ago, and cannot judge whether a memory is still current. Both frames
+    are given because they answer different questions — "today" for the user is
+    local, while stored episode timestamps are UTC, and near midnight the two
+    disagree by a day.
+    """
+    local = datetime.now().astimezone()
+    utc = local.astimezone(timezone.utc)
+    return (
+        f"- Current date and time: {local:%Y-%m-%d %H:%M} local "
+        f"({local:%A}, UTC{local:%z}) = {utc:%Y-%m-%dT%H:%M:%SZ}\n"
+        "- Memory timestamps are UTC in that same format: compare them against "
+        "the UTC value above to reason about how long ago something happened.\n"
+        "- Use the LOCAL date when the user says \"today\", \"this morning\" or "
+        "asks you to date an entry."
+    )
 
 
 def _os_environment(cwd: str) -> str:
@@ -52,6 +75,7 @@ def build_system_prompt(cwd: str, default_model: str = "", coding_model: str = "
         coding_info = f", `code` skill → {coding_model}" if coding_model and coding_model != default_model else ""
         model_line = f"\nActive models: default → {default_model}{coding_info}"
     os_env = _os_environment(cwd)
+    now_block = _now_block()
     return f"""You are **Pragma**, an autonomous coding assistant that operates on the local filesystem.
 You reason step by step and use tools (skills) to read, write, search, execute and modify files.
 Be precise, concise, and deliberate.
@@ -91,6 +115,7 @@ All paths you use MUST be absolute. Build them by joining the working directory 
 
 ## Environment
 
+{now_block}
 {os_env}
 
 ## Critical rules for file paths
