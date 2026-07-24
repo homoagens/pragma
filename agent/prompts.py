@@ -13,6 +13,89 @@ import platform
 from datetime import datetime, timezone
 
 
+# How the agent is told to express an action. The rest of the prompt — identity,
+# file rules, safety, memory, error recovery — is protocol-independent and is
+# shared verbatim, so the two channels differ only in how the action travels.
+_RESPONSE_FORMAT_TEXT = """## Response format
+
+Always respond with a SINGLE JSON object. Two possible shapes:
+
+To use a tool:
+{
+  "thought": "<= 200 characters, one sentence, no preamble",
+  "action":  "skill_name",
+  "args":    { "param1": "value1", "param2": "value2" }
+}
+
+When the task is complete:
+{
+  "thought":    "<= 200 characters",
+  "conclusion": "clear summary of what was done and the result (markdown OK)"
+}
+
+Never emit free prose outside the JSON. Never emit two JSON objects in one response.
+
+**Concluding is NOT a skill.** To finish a task, emit the JSON shape above
+with a `conclusion` key — do NOT put `conclusion`, `FINAL`, `done`, `finish`
+or any similar word in the `action` field. There is no such skill; the only
+way to end a task is the `conclusion` shape.
+
+**`action` must be one of the skills listed under "Available skills" below,
+spelled exactly.** Do not invent skill names and do not pass parameters that
+are not in a skill's `Call(...)` signature shown there.
+
+**ALL skill parameters go INSIDE the `args` object — never at the top level
+of the JSON.** A response like `{"action": "write_file", "path": "...",
+"content": "..."}` is WRONG: top-level keys other than `thought`, `action`,
+`args` and `conclusion` are silently ignored, so the skill receives no
+arguments and fails with "missing required argument". Correct form:
+`{"action": "write_file", "args": {"path": "...", "content": "..."}}`.
+
+### Hard rules on `thought` length
+
+The `thought` field is for the IMMEDIATE next-step justification only.
+Keep it under **200 characters**, ONE sentence, no preamble like "Now let
+me think...". Long thoughts:
+
+- waste your output token budget (you may hit `finish_reason=length`
+  and truncate the JSON mid-string)
+- duplicate your `<think>` block (which already records your reasoning)
+- delay tool execution
+
+**After a multi-step task, do NOT use the final `thought` for a verbose
+recap.** Put the recap in `conclusion` instead. The `conclusion` field
+is where summaries belong — it can be as long as needed and uses markdown.
+The final `thought` should be one short sentence like "Task done — see
+conclusion below."
+"""
+
+# The native channel needs one thing above all: that the model actually starts
+# a tool call. The server's grammar is trigger-based — it constrains nothing
+# until the model emits the tool-call marker, so a model that drifts into prose
+# is never brought back and will generate until the token budget is gone.
+# Measured on this exact setup: the same request without an instruction to act
+# through tools consumed 2500 tokens and returned no call; with it, one clean
+# call in 411.
+_RESPONSE_FORMAT_NATIVE = """## Response format
+
+You act by CALLING THE PROVIDED TOOLS. The tools are supplied with this
+request; use their exact names and parameters.
+
+- **To do anything, emit a tool call.** Do not describe the action in prose
+  and do not write the call out as text or JSON — actually call the tool.
+- **One tool call per turn.** Only the first is executed.
+- **Say why, briefly.** The short message accompanying the call is your
+  `thought`: ONE sentence, under 200 characters, no preamble. Your reasoning
+  already lives in your `<think>` block; do not repeat it here.
+- **To finish, reply WITHOUT a tool call.** A plain message with no call is
+  the conclusion: a clear summary of what was done and the result, markdown
+  welcome, as long as it needs to be. There is no "conclusion" tool.
+
+Never answer in prose while work remains: if the task is not finished, the
+turn must contain a tool call.
+"""
+
+
 def _now_block() -> str:
     """Anchor the agent to the present, in both frames it has to reconcile.
 
@@ -69,13 +152,21 @@ def _os_environment(cwd: str) -> str:
 
 
 def build_system_prompt(cwd: str, default_model: str = "", coding_model: str = "",
-                        skills_summary: str = "") -> str:
+                        skills_summary: str = "", protocol: str = "") -> str:
     model_line = ""
     if default_model:
         coding_info = f", `code` skill → {coding_model}" if coding_model and coding_model != default_model else ""
         model_line = f"\nActive models: default → {default_model}{coding_info}"
     os_env = _os_environment(cwd)
     now_block = _now_block()
+    if not protocol:
+        try:
+            import config as _cfg
+            protocol = getattr(_cfg, "LLM_TOOL_PROTOCOL", "text")
+        except Exception:
+            protocol = "text"
+    response_format = (_RESPONSE_FORMAT_NATIVE if protocol == "native"
+                       else _RESPONSE_FORMAT_TEXT)
     return f"""You are **Pragma**, an autonomous coding assistant that operates on the local filesystem.
 You reason step by step and use tools (skills) to read, write, search, execute and modify files.
 Be precise, concise, and deliberate.
@@ -145,57 +236,7 @@ embedded inside a JSON string. Follow these rules to avoid syntax errors:
 - If the code is long or complex, split it into multiple `write_file` calls — one function per
   call — instead of one huge block. Smaller writes are more reliable.
 
-## Response format
-
-Always respond with a SINGLE JSON object. Two possible shapes:
-
-To use a tool:
-{{
-  "thought": "<= 200 characters, one sentence, no preamble",
-  "action":  "skill_name",
-  "args":    {{ "param1": "value1", "param2": "value2" }}
-}}
-
-When the task is complete:
-{{
-  "thought":    "<= 200 characters",
-  "conclusion": "clear summary of what was done and the result (markdown OK)"
-}}
-
-Never emit free prose outside the JSON. Never emit two JSON objects in one response.
-
-**Concluding is NOT a skill.** To finish a task, emit the JSON shape above
-with a `conclusion` key — do NOT put `conclusion`, `FINAL`, `done`, `finish`
-or any similar word in the `action` field. There is no such skill; the only
-way to end a task is the `conclusion` shape.
-
-**`action` must be one of the skills listed under "Available skills" below,
-spelled exactly.** Do not invent skill names and do not pass parameters that
-are not in a skill's `Call(...)` signature shown there.
-
-**ALL skill parameters go INSIDE the `args` object — never at the top level
-of the JSON.** A response like `{{"action": "write_file", "path": "...",
-"content": "..."}}` is WRONG: top-level keys other than `thought`, `action`,
-`args` and `conclusion` are silently ignored, so the skill receives no
-arguments and fails with "missing required argument". Correct form:
-`{{"action": "write_file", "args": {{"path": "...", "content": "..."}}}}`.
-
-### Hard rules on `thought` length
-
-The `thought` field is for the IMMEDIATE next-step justification only.
-Keep it under **200 characters**, ONE sentence, no preamble like "Now let
-me think...". Long thoughts:
-
-- waste your output token budget (you may hit `finish_reason=length`
-  and truncate the JSON mid-string)
-- duplicate your `<think>` block (which already records your reasoning)
-- delay tool execution
-
-**After a multi-step task, do NOT use the final `thought` for a verbose
-recap.** Put the recap in `conclusion` instead. The `conclusion` field
-is where summaries belong — it can be as long as needed and uses markdown.
-The final `thought` should be one short sentence like "Task done — see
-conclusion below."
+{response_format}
 
 ## Rules of engagement
 
