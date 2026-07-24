@@ -130,6 +130,17 @@ def _malformed_args_hint(action: str, kwargs: dict) -> str:
 # the run degrades to the text protocol instead of retrying on every step.
 _TOOLS_UNSUPPORTED = [False]
 
+# Consecutive turns in which the model called no tool. Under the native
+# protocol a reply with no call is how a task ends — but it is also what a
+# model produces when it narrates its next step instead of taking it, and
+# ending there abandons the task silently. Observed on the benchmark: runs
+# closing after four steps with a "conclusion" that read "Let me write a
+# solver script for this problem". So the first no-call turn asks the model
+# to act, and only a second one in a row is accepted as the answer: a model
+# that is genuinely finished says so again when asked.
+_NO_TOOL_STREAK = [0]
+_NO_TOOL_LIMIT = 2
+
 
 def _native_action_text(cfg: AgentConfig, messages, model, temperature):
     """Obtain the next action through native tool calling, as protocol text.
@@ -180,10 +191,17 @@ def _native_action_text(cfg: AgentConfig, messages, model, temperature):
     thought = r.get("content") or r.get("reasoning") or ""
 
     if not calls:
-        # No tool chosen: under this protocol that IS the conclusion, rather
-        # than a separate {"conclusion": ...} the model has to remember to emit.
-        return _json.dumps({"conclusion": thought or "(no answer produced)"})
+        _NO_TOOL_STREAK[0] += 1
+        if _NO_TOOL_STREAK[0] >= _NO_TOOL_LIMIT:
+            # Asked to act and still no call: take it as the answer.
+            return _json.dumps({"conclusion": thought or "(no answer produced)"})
+        # First time: return a reply with neither an action nor a final key.
+        # The loop already feeds that back to the model and takes another
+        # turn, which is exactly the nudge this needs.
+        return _json.dumps({"thought": thought or "(no tool called)",
+                            "__no_tool_call__": True})
 
+    _NO_TOOL_STREAK[0] = 0
     first = calls[0]
     if len(calls) > 1:
         # One action per step is the loop's contract. Say so in the thought
@@ -320,6 +338,7 @@ def run_agent(cfg: AgentConfig, user_task: str, log_path: Optional[Path] = None,
     # hint to force the model to change strategy (typically: read_file first
     # to see the real state instead of guessing). See config.ACTION_LOOP_*.
     _recent_actions: list[tuple[str, str, bool]] = []
+    _NO_TOOL_STREAK[0] = 0     # per-run: a previous run must not end this one
 
     def _hash_args(a) -> str:
         try:
@@ -560,6 +579,21 @@ def run_agent(cfg: AgentConfig, user_task: str, log_path: Optional[Path] = None,
                                + (f" (malformed JSON repaired; dropped keys: "
                                   f"{_lost_keys})" if _was_repaired else "")
                                + ".")})
+            if response.pop("__no_tool_call__", False):
+                # Native protocol: the reply carried no tool call. Ask for the
+                # action rather than for JSON — the model is not writing JSON
+                # on this channel, so the generic advice below would confuse it.
+                messages.append({"role": "assistant", "content": thought})
+                messages.append({"role": "user", "content": (
+                    "[SYSTEM]: your previous reply called no tool, so NOTHING "
+                    "was executed. If the task is NOT finished, call the tool "
+                    "that performs the next step now — do not describe it. If "
+                    "it IS finished, reply again with your summary and no tool "
+                    "call, and it will be taken as the final answer."
+                )})
+                step += 1
+                continue
+
             feedback = (
                 "[SYSTEM]: your previous reply was parsed but contained "
                 "neither an `action` nor a final key, so NOTHING was executed"
