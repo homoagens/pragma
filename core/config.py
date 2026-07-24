@@ -167,16 +167,23 @@ TIMEOUT        = int(os.environ.get("LLM_TIMEOUT", "900"))
 # by the memory faculties (consolidator, curator, reconsolidator). Skills
 # should never hardcode their own budget — they read it from config.
 #
-# Deliberately an absolute number, not a fraction of MAX_TOKENS. These calls
-# emit a small JSON verdict, not file content, so they gained nothing from
-# the action channel's larger budget; tying them to it would have silently
-# quadrupled the faculties' output budget and moved the memory subsystem
-# under the evaluation. SKILL_MAX_TOKENS_RATIO is still honoured when set,
-# for anyone who does want them to scale together.
+# Same budget as the action channel, and for a different reason. What these
+# calls have to emit is short — a JSON verdict, a reformulated belief — but
+# on a thinking model the reply is reasoning FIRST and JSON last, so a tight
+# budget truncates exactly the part that matters and the faculty returns
+# nothing usable. Their prompts are small (one episode plus a few beliefs),
+# so there is context to spare: give them the room.
+#
+# This is not free. A larger budget does not only prevent truncation, it
+# also lets a faculty write MORE — longer narratives, wordier beliefs. That
+# is a change in what the memory contains, not just in how often it fails.
+# To reproduce the frozen evaluation corpus, set SKILL_MAX_TOKENS=2048.
+#
+# SKILL_MAX_TOKENS_RATIO ties it to MAX_TOKENS instead, when set.
 # 0.0 = unset, use the absolute default below.
 SKILL_MAX_TOKENS_RATIO = float(os.environ.get("SKILL_MAX_TOKENS_RATIO", "0") or 0)
 _skill_default = (int(MAX_TOKENS * SKILL_MAX_TOKENS_RATIO)
-                  if SKILL_MAX_TOKENS_RATIO > 0 else 2048)
+                  if SKILL_MAX_TOKENS_RATIO > 0 else MAX_TOKENS)
 SKILL_MAX_TOKENS       = int(os.environ.get("SKILL_MAX_TOKENS", str(_skill_default)))
 
 # write_file emits a soft warning in the observation when content exceeds
