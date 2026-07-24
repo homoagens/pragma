@@ -55,7 +55,7 @@ Respond with ONLY a JSON object:
 {
   "rewrites": [
     {"id": "ep_...",
-     "interpretation": "the past episode's meaning, re-read in light of the new one, 1-3 sentences",
+     "interpretation": "the past episode's meaning, re-read in light of the new one, <= INT_CHARS chars",
      "reason": "what the new episode reveals about the old one, <= 20 words"},
     ...
   ]
@@ -70,7 +70,11 @@ IRON RULES — this is reinterpretation, not invention:
 - Only include an episode in "rewrites" if its meaning GENUINELY shifts. If the
   new episode merely repeats or is unrelated, omit it. An empty "rewrites" list
   is the normal, correct answer most of the time.
-- Keep each interpretation concrete and about the WORK, not the note-taking."""
+- Keep each interpretation concrete and about the WORK, not the note-taking.
+- INT_CHARS chars is the real limit: on recall only the first INT_CHARS are
+  shown. You are replacing a note to self, not writing a commentary. Say the
+  shift in one sentence.""" \
+    .replace("INT_CHARS", str(config.MEMORY_INTERPRETATION_CHARS))
 
 
 def _ep_for_prompt(ep: dict) -> dict:

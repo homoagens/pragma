@@ -133,13 +133,14 @@ def _episode_card(ref: str, c: dict) -> str:
     ep = c["ep"]
     tag = " [dormant]" if c["dormant"] else ""
     lines = [f"{ref}{tag} goal: {ep.get('goal', '')}"]
-    nar = _truncate(ep.get("narrative", ""), 300)
+    nar = _truncate(ep.get("narrative", ""), config.MEMORY_NARRATIVE_CHARS)
     if nar:
         lines.append(f"   what happened: {nar}")
     surprises = ep.get("surprises") or []
     if surprises:
         lines.append(f"   surprises: {'; '.join(surprises[:2])}")
-    interp = _truncate(ep.get("interpretation", ""), 160)
+    interp = _truncate(ep.get("interpretation", ""),
+                       config.MEMORY_INTERPRETATION_CHARS)
     if interp:
         lines.append(f"   meaning: {interp}")
     return "\n".join(lines)
@@ -221,13 +222,14 @@ def _format_episode(c: dict, workspace: str, revived: bool) -> list[str]:
     if revived:
         head += "  [revived from dormant memory]"
     lines = [head]
-    nar = _truncate(ep.get("narrative", ""), 400)
+    nar = _truncate(ep.get("narrative", ""), config.MEMORY_NARRATIVE_CHARS)
     if nar:
         lines.append(f"  what happened: {nar}")
     surprises = ep.get("surprises") or []
     if surprises:
         lines.append(f"  surprises: {'; '.join(surprises[:2])}")
-    interp = _truncate(ep.get("interpretation", ""), 200)
+    interp = _truncate(ep.get("interpretation", ""),
+                       config.MEMORY_INTERPRETATION_CHARS)
     if interp:
         lines.append(f"  meaning: {interp}")
     return lines

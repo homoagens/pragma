@@ -388,6 +388,22 @@ CURATOR_CANDIDATES_LEARNINGS = int(os.environ.get("CURATOR_CANDIDATES_LEARNINGS"
 # Cap on how many fragments the curator may place on the desk.
 CURATOR_MAX_FRAGMENTS = int(os.environ.get("CURATOR_MAX_FRAGMENTS", "6"))
 
+# How much of a recalled episode is actually shown, per field. These two are
+# ALSO quoted to the consolidator and the reconsolidator when they write, so
+# the writer and the reader agree on a length: before, the consolidator
+# averaged 248 chars of interpretation against a 200-char reader, so half of
+# every meaning was generated only to be cut mid-sentence and never read.
+#
+# One number each, here, for both sides — a cap that lives in two files
+# drifts apart the first time someone edits one of them.
+#
+# They are small on purpose. A memory is a pill, not a treatise: what is
+# recalled has to fit beside the actual task without crowding it out, and at
+# CURATOR_MAX_FRAGMENTS fragments these bound the whole recall at ~3 KB
+# however large the store grows.
+MEMORY_NARRATIVE_CHARS      = int(os.environ.get("MEMORY_NARRATIVE_CHARS", "400"))
+MEMORY_INTERPRETATION_CHARS = int(os.environ.get("MEMORY_INTERPRETATION_CHARS", "200"))
+
 # ── Forgetting (episodic store) ──
 # An episode's EFFECTIVE salience decays exponentially with the time since
 # it was last recalled (or created): eff = salience * 0.5^(age_days /

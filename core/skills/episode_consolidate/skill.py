@@ -42,11 +42,11 @@ future selves.
 Respond with ONLY a JSON object of this exact shape:
 {
   "goal":           "what the session was really about, in the user's terms, <= 15 words",
-  "narrative":      "what happened and what was learned, 5-10 short lines, FACTS only",
+  "narrative":      "what happened and what was learned, FACTS only, <= NAR_CHARS chars",
   "surprises":      [ "anything that departed from expectation", ... ],
   "importance":     0.0-1.0,
   "outcome":        "success" | "partial" | "failure",
-  "interpretation": "1-3 sentences: what this session MEANS (fragilities, confirmations, open questions)",
+  "interpretation": "what this session MEANS (fragilities, confirmations, open questions), <= INT_CHARS chars",
   "keywords":       [ "5-10 lowercase topical keywords for retrieval" ]
 }
 
@@ -57,6 +57,13 @@ Rules:
   a Friday deploy; lesson: never release on Friday" over "Appended an entry
   to diario.md". The file you edited is not the point; what it SAYS is.
 - Facts go in narrative, meaning goes in interpretation. Never mix them.
+- The length limits are real, not decoration. When this episode is recalled,
+  only the first NAR_CHARS chars of narrative and the first INT_CHARS of
+  interpretation are shown — past that it is cut mid-sentence and your future
+  self never reads it. Do not write to fill the space: write the pill. Put the
+  part that matters FIRST, drop the throat-clearing, and prefer one exact
+  sentence to three approximate ones. A memory is a note to yourself, not a
+  report to a supervisor.
 - surprises are departures from expectation, in the WORK (an unexpected
   outcome, a conflict, a belief challenged by facts, a costly mistake) or in
   the TOOLS (something behaved unexpectedly). Empty array if nothing was
@@ -74,7 +81,9 @@ Rules:
   edited a file" as the point of the episode.
 - keywords: the SUBJECT of the work — people, decisions, problems, domains —
   not your tools or file names. In the session's dominant language.
-- Keep each surprise under 200 characters."""
+- Keep each surprise under 200 characters.""" \
+    .replace("NAR_CHARS", str(config.MEMORY_NARRATIVE_CHARS)) \
+    .replace("INT_CHARS", str(config.MEMORY_INTERPRETATION_CHARS))
 
 
 _SEMANTIC_SYSTEM = """You are the abstraction module of an AI agent's memory.
