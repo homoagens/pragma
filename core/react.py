@@ -126,6 +126,80 @@ def _malformed_args_hint(action: str, kwargs: dict) -> str:
     )
 
 
+# Set once per process when an endpoint turns out not to implement tools, so
+# the run degrades to the text protocol instead of retrying on every step.
+_TOOLS_UNSUPPORTED = [False]
+
+
+def _native_action_text(cfg: AgentConfig, messages, model, temperature):
+    """Obtain the next action through native tool calling, as protocol text.
+
+    Returns the JSON the text protocol would have produced, or None to let the
+    caller take the normal text path (protocol disabled, or the endpoint has
+    no tools).
+
+    WHY RETURN TEXT. What native tool calling buys is a constrained
+    generation: the server compiles the schemas into a grammar, so arguments
+    cannot come back truncated or malformed. That benefit is already banked
+    once the reply arrives. Rendering it as the familiar JSON lets the whole
+    downstream — parsing, rendering, dispatch, history, the watchdogs — stay
+    byte-identical between the two protocols, which is what makes the two
+    measurable against each other. The cost is that the conversation history
+    keeps the text shape rather than assistant/tool messages; if the model
+    turns out to imitate the history instead of using the tools, that is the
+    first thing to revisit.
+    """
+    if getattr(config, "LLM_TOOL_PROTOCOL", "text") != "native":
+        return None
+    if _TOOLS_UNSUPPORTED[0]:
+        return None
+
+    import json as _json
+    try:
+        import tool_schema
+        tools = tool_schema.build_tools(cfg.skills)
+    except Exception:
+        return None
+    if not tools:
+        return None
+
+    try:
+        r = llm_client.call_llm_tools(
+            messages=messages, tools=tools, model=model,
+            temperature=temperature, max_tokens=config.MAX_TOKENS,
+            stop_event=cfg.stop_event,
+        )
+    except llm_client.ToolsUnsupported as e:
+        _TOOLS_UNSUPPORTED[0] = True
+        if config.DEBUG:
+            console.print(f"[yellow]Endpoint has no tool support ({e}); "
+                          f"using the text protocol for the rest of the run.[/yellow]")
+        return None
+
+    calls = r.get("tool_calls") or []
+    thought = r.get("content") or r.get("reasoning") or ""
+
+    if not calls:
+        # No tool chosen: under this protocol that IS the conclusion, rather
+        # than a separate {"conclusion": ...} the model has to remember to emit.
+        return _json.dumps({"conclusion": thought or "(no answer produced)"})
+
+    first = calls[0]
+    if len(calls) > 1:
+        # One action per step is the loop's contract. Say so in the thought
+        # rather than dropping the extras silently, so the transcript — and
+        # the episode built from it — records that a choice was made.
+        names = ", ".join(c.get("name", "?") for c in calls[1:])
+        thought = (thought + " " if thought else "") + \
+                  f"[{len(calls)} tools requested; running the first, ignoring: {names}]"
+
+    return _json.dumps({
+        "thought": thought or f"Calling {first.get('name', '')}.",
+        "action":  first.get("name", ""),
+        "args":    first.get("arguments") or {},
+    }, ensure_ascii=False)
+
+
 def _call_skill(cfg: AgentConfig, action: str, args: dict) -> str:
     """Execute a skill with error handling. Always returns a string.
 
@@ -298,7 +372,10 @@ def run_agent(cfg: AgentConfig, user_task: str, log_path: Optional[Path] = None,
 
         # ── LLM call ─────────────────────────────────────────────────
         try:
-            if cfg.on_token is not None:
+            native_text = _native_action_text(cfg, messages, model, temperature)
+            if native_text is not None:
+                text = native_text
+            elif cfg.on_token is not None:
                 text = llm_client.stream_llm(
                     messages=messages, model=model,
                     temperature=temperature, max_tokens=config.MAX_TOKENS,

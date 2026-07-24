@@ -112,6 +112,24 @@ CODING_MAX_TOKENS  = int(os.environ.get("CODING_MAX_TOKENS",  "4096"))
 
 MAX_TOKENS     = int(os.environ.get("MAX_TOKENS", "4096"))
 
+# How the agent's ACTION is carried, for the ReAct loop only.
+#
+#   text   : the model writes {"thought","action","args"} inside its reply and
+#            Pragma parses it afterwards. Nothing constrains the generation.
+#   native : the skills are sent as OpenAI `tools`. A server that compiles them
+#            into a grammar constrains the sampler, so malformed or truncated
+#            arguments cannot be produced rather than merely being detected.
+#
+# Measured on the structural benchmark, 27 write_file calls under `text`:
+# 11 failed, none by exhausting the token budget. `native` costs roughly 3k
+# more prompt tokens per request (the schemas replace a compact summary) and
+# needs a server that implements tools — Pragma falls back to `text`
+# automatically when it does not.
+#
+# This governs the ACTION channel only. The memory faculties keep their own
+# text protocol either way, so the evaluation corpus stays comparable.
+LLM_TOOL_PROTOCOL = os.environ.get("LLM_TOOL_PROTOCOL", "text").strip().lower()
+
 # Seconds before an LLM HTTP call is abandoned. With a large output budget
 # on a slow local model (a dense 27B+ partially offloaded can sit under
 # 10 tok/s), a single long generation can legitimately take several

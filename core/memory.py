@@ -70,6 +70,14 @@ def compress(messages, threshold=None, context="conversation", model=None):
     parts = []
     for m in to_compress:
         body = m.get("content", "") or ""
+        # Under the native tool protocol the action lives in `tool_calls` and
+        # `content` is empty. Rendering it keeps the actions visible to the
+        # summarizer: otherwise a compressed history would remember the
+        # observations while forgetting what produced them.
+        for tc in (m.get("tool_calls") or []):
+            fn = tc.get("function") or {}
+            call = f"{fn.get('name', '?')}({fn.get('arguments', '')})"
+            body = (body + "\n" if body else "") + f"[ACTION] {call}"
         if len(body) > trunc:
             body = body[:trunc] + f" [+ {len(body) - trunc} more chars]"
         parts.append(f"{m['role'].upper()}: {body}")
