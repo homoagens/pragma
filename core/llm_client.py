@@ -407,6 +407,111 @@ def _stream_openai_compatible(messages, model, temperature, max_tokens, timeout,
 
 # ── Public API ─────────────────────────────────────────────────────────────────
 
+class ToolsUnsupported(Exception):
+    """The endpoint would not accept a tools request.
+
+    Raised so a caller can fall back to the text protocol instead of failing:
+    tool calling is a recent llama.cpp/OpenAI-compatible feature and Pragma
+    must keep working against servers that lack it.
+    """
+
+
+def call_llm_tools(messages, tools, model=None, temperature=None,
+                   max_tokens=None, timeout=None, base_url=None, api_key=None,
+                   stop_event=None, tool_choice="auto"):
+    """Ask the model to choose a tool, and read the choice as structured data.
+
+    The counterpart of call_llm() for the ReAct action channel. The difference
+    is not the transport but the guarantee: when a server compiles `tools`
+    into a grammar, the arguments are constrained during sampling, so
+    malformed or truncated arguments cannot be produced at all. call_llm()
+    keeps its text contract and its callers — the memory faculties among them
+    — untouched.
+
+    Returns {"content": str, "tool_calls": [{"id", "name", "arguments"}],
+             "finish_reason": str}, with `arguments` already decoded to a dict.
+
+    Raises ToolsUnsupported if the endpoint rejects the request in a way that
+    indicates it does not implement tools.
+    """
+    import json as _json
+
+    model       = model or config.DEFAULT_MODEL
+    temperature = config.DEFAULT_TEMPERATURE if temperature is None else temperature
+    max_tokens  = max_tokens or config.MAX_TOKENS
+    timeout     = timeout or config.TIMEOUT
+    base_url, api_key = _resolved_endpoint(base_url, api_key)
+
+    payload = {
+        "model":       model,
+        "messages":    messages,
+        "temperature": temperature,
+        "max_tokens":  max_tokens,
+        "tools":       tools,
+        "tool_choice": tool_choice,
+    }
+    headers = {"Content-Type": "application/json"}
+    if api_key:
+        headers["Authorization"] = f"Bearer {api_key}"
+
+    global LAST_STATS
+    t0 = time.time()
+    try:
+        resp = _post_with_retry(f"{base_url}/chat/completions", headers,
+                                payload, timeout, model, stop_event)
+    except LLMInterrupted:
+        raise
+    except Exception as e:
+        # A 400/422 on a payload that only differs by `tools` is the endpoint
+        # telling us it does not support them.
+        msg = str(e).lower()
+        if any(s in msg for s in ("400", "422", "tools", "tool_choice",
+                                  "unknown field", "unsupported")):
+            raise ToolsUnsupported(str(e)[:300]) from e
+        raise
+    dt = time.time() - t0
+
+    data  = resp.json()
+    usage = data.get("usage") or {}
+    LAST_STATS = {
+        "prompt":     usage.get("prompt_tokens", 0) or 0,
+        "completion": usage.get("completion_tokens", 0) or 0,
+        "total":      usage.get("total_tokens", 0) or 0,
+        "seconds":    dt,
+        "model":      getattr(config, "SERVED_MODEL", "") or model,
+    }
+
+    choice = (data.get("choices") or [{}])[0]
+    msg    = choice.get("message") or {}
+    calls  = []
+    for tc in (msg.get("tool_calls") or []):
+        fn   = tc.get("function") or {}
+        raw  = fn.get("arguments")
+        # Servers send arguments as a JSON string; some send an object.
+        if isinstance(raw, str):
+            try:
+                args = _json.loads(raw)
+            except Exception:
+                # Grammar-constrained output should make this impossible;
+                # if it happens, hand back the raw text so the caller can
+                # report it rather than silently dropping the call.
+                args = {"__unparsed_arguments__": raw}
+        elif isinstance(raw, dict):
+            args = raw
+        else:
+            args = {}
+        calls.append({"id": tc.get("id") or "",
+                      "name": fn.get("name") or "",
+                      "arguments": args})
+
+    return {
+        "content":       (msg.get("content") or "").strip(),
+        "reasoning":     (msg.get("reasoning_content") or "").strip(),
+        "tool_calls":    calls,
+        "finish_reason": choice.get("finish_reason", ""),
+    }
+
+
 def call_llm(messages, model=None, temperature=None, max_tokens=None, timeout=None,
              base_url=None, api_key=None, stop_event=None):
     """
