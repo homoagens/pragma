@@ -89,6 +89,24 @@ def _err(line: str) -> None:
     print(line, file=sys.stderr, flush=True)
 
 
+def _channel_line() -> str:
+    """How the actions travelled, for the record.
+
+    Two protocols are in circulation and they fail differently — one returns
+    invented argument names, the other a truncated raw string — so a log that
+    does not name the channel cannot be compared with another log, and the
+    only way to tell them apart afterwards is the shape of an error message.
+    Same for the output budget: a truncated write_file is a budget symptom,
+    not a parser one, and the number has to be next to the evidence.
+
+    This is the CONFIGURED protocol. `native` degrades to `text` mid-run if
+    the endpoint turns out to have no tool support; that event is reported
+    separately, when it happens.
+    """
+    p = getattr(baseline_config, "LLM_TOOL_PROTOCOL", "") or "text"
+    return f"{p} (max_tokens {baseline_config.MAX_TOKENS})"
+
+
 def _fmt_args_json(args) -> str:
     """Raw-JSON args rendering used by plain mode (grep-stable)."""
     try:
@@ -152,6 +170,7 @@ class _PlainRenderer:
         _out(f"[{_ts()}] cwd        : {cwd}")
         _out(f"[{_ts()}] model      : {model_line}")
         _out(f"[{_ts()}] endpoint   : OK ({endpoint})")
+        _out(f"[{_ts()}] channel    : {_channel_line()}")
         _out(f"[{_ts()}] max steps  : {max_steps}")
         _out(f"[{_ts()}] task       : {head}")
         _out()
@@ -254,6 +273,7 @@ class _MarkdownRenderer:
         _out(f"- **cwd**: {cwd}")
         _out(f"- **model**: {model_line}")
         _out(f"- **endpoint**: OK ({endpoint})")
+        _out(f"- **action channel**: {_channel_line()}")
         _out(f"- **max steps**: {max_steps}")
         _out()
 
@@ -348,7 +368,8 @@ class _PrettyRenderer:
         if len(head) > 100:
             head = head[:100] + "..."
         t = Text(" Pragma", style="bold")
-        t.append(f" · {model_line} · {cwd} · max {max_steps} steps",
+        t.append(f" · {model_line} · {cwd} · max {max_steps} steps"
+                 f" · {_channel_line()}",
                  style="bright_black")
         self.console.print(t)
         self.console.print(Text(f" task: {head}", style="bright_black"))

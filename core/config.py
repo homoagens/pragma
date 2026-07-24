@@ -104,27 +104,50 @@ CODING_MODEL       = os.environ.get("CODING_MODEL", "")       # empty = use DEFA
 CODING_BASE_URL    = os.environ.get("CODING_BASE_URL", "")    # empty = use LLM_BASE_URL
 CODING_API_KEY     = os.environ.get("CODING_API_KEY", "")     # empty = use LLM_API_KEY
 CODING_TEMPERATURE = float(os.environ.get("CODING_TEMPERATURE", "0.1"))
-CODING_MAX_TOKENS  = int(os.environ.get("CODING_MAX_TOKENS",  "4096"))
+CODING_MAX_TOKENS  = int(os.environ.get("CODING_MAX_TOKENS",  "16384"))  # see MAX_TOKENS
 
 # ─────────────────────────────────────────────
 # GENERAL PARAMETERS
 # ─────────────────────────────────────────────
 
-MAX_TOKENS     = int(os.environ.get("MAX_TOKENS", "4096"))
+# Output budget for one LLM reply. This is the ACTION channel's budget: the
+# reply has to carry the whole content of a write_file, so it is the file
+# size that sets the floor, not the prose.
+#
+# Why 16384 and not the old 4096. On the structural benchmark under the
+# native protocol, the only two failing write_file calls out of 25 were
+# generations cut off mid-string at exactly the old budget — 3.3 KB and
+# 10.5 KB of arguments, both ending inside a token, neither malformed. A
+# grammar cannot prevent that: it constrains what may be emitted, not how
+# long the emission may run. llama-server itself sets no cap (n_predict=-1),
+# so the ceiling was entirely ours, and the harnesses we compare against
+# (opencode, pi) do not impose one either.
+#
+# It still has to fit: history compression caps the prompt at MAX_CHARS
+# (~36k tokens of a 64k window), leaving room for a full 16k generation.
+# On a smaller context, lower this together with CONTEXT_WINDOW.
+#
+# To reproduce the frozen evaluation corpus, set MAX_TOKENS=4096: that
+# campaign ran on the old budget.
+MAX_TOKENS     = int(os.environ.get("MAX_TOKENS", "16384"))
 
 # How the agent's ACTION is carried, for the ReAct loop only.
 #
 #   text   : the model writes {"thought","action","args"} inside its reply and
 #            Pragma parses it afterwards. Nothing constrains the generation.
 #   native : the skills are sent as OpenAI `tools`. A server that compiles them
-#            into a grammar constrains the sampler, so malformed or truncated
-#            arguments cannot be produced rather than merely being detected.
+#            into a grammar constrains the sampler, so malformed arguments
+#            cannot be produced rather than merely being detected.
 #
-# Measured on the structural benchmark, 27 write_file calls under `text`:
-# 11 failed, none by exhausting the token budget. `native` costs roughly 3k
-# more prompt tokens per request (the schemas replace a compact summary) and
-# needs a server that implements tools — Pragma falls back to `text`
-# automatically when it does not.
+# Measured on the structural benchmark, same two cases, same model:
+#   text   : 93 write_file calls, 17 with unusable arguments (18%);
+#            15 of 30 runs produced the requested figures.
+#   native : 25 write_file calls, 2 with unusable arguments (8%), both of
+#            them budget truncations rather than corruption; 6 of 6 runs
+#            produced the figures.
+# `native` costs roughly 3k more prompt tokens per request (the schemas
+# replace a compact summary) and needs a server that implements tools —
+# Pragma falls back to `text` automatically when it does not.
 #
 # This governs the ACTION channel only. The memory faculties keep their own
 # text protocol either way, so the evaluation corpus stays comparable.
@@ -134,14 +157,27 @@ LLM_TOOL_PROTOCOL = os.environ.get("LLM_TOOL_PROTOCOL", "text").strip().lower()
 # on a slow local model (a dense 27B+ partially offloaded can sit under
 # 10 tok/s), a single long generation can legitimately take several
 # minutes — raise via LLM_TIMEOUT instead of editing this file.
-TIMEOUT        = int(os.environ.get("LLM_TIMEOUT", "300"))
+#
+# Sized against MAX_TOKENS: 16k tokens at the ~40 tok/s a 27B dense reaches
+# on one consumer GPU is already 400s, and a timeout that fires mid-write
+# costs more than one that waits.
+TIMEOUT        = int(os.environ.get("LLM_TIMEOUT", "900"))
 
-# Quota of MAX_TOKENS available to LLM calls made INSIDE a skill
-# (edit_file, code, llm_invoke, ...). Skills should never hardcode their
-# own token budget — they read it from config so it scales with .env.
-SKILL_MAX_TOKENS_RATIO = float(os.environ.get("SKILL_MAX_TOKENS_RATIO", "0.5"))
-SKILL_MAX_TOKENS       = int(os.environ.get("SKILL_MAX_TOKENS",
-                                            str(int(MAX_TOKENS * SKILL_MAX_TOKENS_RATIO))))
+# Budget for LLM calls made INSIDE a skill (edit_file, code, llm_invoke) and
+# by the memory faculties (consolidator, curator, reconsolidator). Skills
+# should never hardcode their own budget — they read it from config.
+#
+# Deliberately an absolute number, not a fraction of MAX_TOKENS. These calls
+# emit a small JSON verdict, not file content, so they gained nothing from
+# the action channel's larger budget; tying them to it would have silently
+# quadrupled the faculties' output budget and moved the memory subsystem
+# under the evaluation. SKILL_MAX_TOKENS_RATIO is still honoured when set,
+# for anyone who does want them to scale together.
+# 0.0 = unset, use the absolute default below.
+SKILL_MAX_TOKENS_RATIO = float(os.environ.get("SKILL_MAX_TOKENS_RATIO", "0") or 0)
+_skill_default = (int(MAX_TOKENS * SKILL_MAX_TOKENS_RATIO)
+                  if SKILL_MAX_TOKENS_RATIO > 0 else 2048)
+SKILL_MAX_TOKENS       = int(os.environ.get("SKILL_MAX_TOKENS", str(_skill_default)))
 
 # write_file emits a soft warning in the observation when content exceeds
 # this many bytes — the agent learns to prefer incremental edits.
@@ -157,8 +193,10 @@ WRITE_FILE_SOFT_LIMIT = int(os.environ.get("WRITE_FILE_SOFT_LIMIT", "8000"))
 # Rationale: HTML/code content escapes to ~1.5x JSON bytes; at ~3.5 bytes
 # per token we get ~50% of MAX_TOKENS as safe content bytes. Hard ceiling
 # at 20 KB so we never let a single write try to ship a hundred-KB blob
-# (which would risk truncation regardless of formal budget). Override
-# with WRITE_FILE_HARD_LIMIT in .env if you really want a different value.
+# (which would risk truncation regardless of formal budget). At the default
+# MAX_TOKENS the ceiling is what binds, and that is on purpose: past 20 KB
+# the right move is several writes, not a bigger budget. Override with
+# WRITE_FILE_HARD_LIMIT in .env if you really want a different value.
 _default_write_hard = min(int(MAX_TOKENS * 2), 20_000)
 WRITE_FILE_HARD_LIMIT = int(os.environ.get(
     "WRITE_FILE_HARD_LIMIT", str(_default_write_hard),

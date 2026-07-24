@@ -182,9 +182,11 @@ def _native_action_text(cfg: AgentConfig, messages, model, temperature):
         )
     except llm_client.ToolsUnsupported as e:
         _TOOLS_UNSUPPORTED[0] = True
-        if config.DEBUG:
-            console.print(f"[yellow]Endpoint has no tool support ({e}); "
-                          f"using the text protocol for the rest of the run.[/yellow]")
+        # Not DEBUG-gated: the banner announced `native`, and from here on the
+        # run is a text run. A log that keeps that quiet is a log that lies
+        # about what it measured.
+        console.print(f"[yellow]Endpoint has no tool support ({e}); "
+                      f"using the text protocol for the rest of the run.[/yellow]")
         return None
 
     calls = r.get("tool_calls") or []
