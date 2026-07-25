@@ -563,28 +563,20 @@ def run_agent(cfg: AgentConfig, user_task: str, log_path: Optional[Path] = None,
 
         # ── ACTION ──────────────────────────────────────────────────
         if "action" not in response:
-            # A reply with neither an action nor a final key is almost
-            # always a malformed-JSON casualty: json_repair salvaged the
-            # `thought` but action/args were dropped (classic cause: single
-            # backslashes in Windows paths — invalid JSON escapes). The old
-            # behavior skipped WITHOUT appending anything to the messages:
-            # at low temperature the model then saw an IDENTICAL context and
-            # reproduced the identical broken reply until the step budget
-            # ran out, invisible to every watchdog (no action ever executed).
-            # Feed the failure back instead, so the context changes and the
-            # model can correct itself on the next turn.
-            if config.DEBUG:
-                console.print("[red]Response has neither action nor final key.[/red]")
-            _emit({"type": "error",
-                   "content": (f"Step {step}: reply contained neither an "
-                               f"`action` nor a final key"
-                               + (f" (malformed JSON repaired; dropped keys: "
-                                  f"{_lost_keys})" if _was_repaired else "")
-                               + ".")})
+            # Native protocol, and the reply carried NO tool call. On this
+            # channel that is not a failure — it is how the model signals
+            # "done". The streak guard in _native_action_text has already
+            # judged this the FIRST such reply and wants one confirmation
+            # before accepting it as the answer (so a mere "let me write the
+            # script…" announcement cannot close the task). So this is an
+            # expected, benign event: show it as a NOTICE, ask once, move on.
+            # The red ERROR path below is for a genuinely broken reply.
             if response.pop("__no_tool_call__", False):
-                # Native protocol: the reply carried no tool call. Ask for the
-                # action rather than for JSON — the model is not writing JSON
-                # on this channel, so the generic advice below would confuse it.
+                _emit({"type": "notice",
+                       "content": (f"Step {step}: the model called no tool. "
+                                   f"On the native channel that reads as "
+                                   f"\"finished\" — asking it to confirm or "
+                                   f"take the next action.")})
                 messages.append({"role": "assistant", "content": thought})
                 messages.append({"role": "user", "content": (
                     "[SYSTEM]: your previous reply called no tool, so NOTHING "
@@ -596,6 +588,24 @@ def run_agent(cfg: AgentConfig, user_task: str, log_path: Optional[Path] = None,
                 step += 1
                 continue
 
+            # No tool call, and NOT the native channel: a reply with neither
+            # an action nor a final key is almost always a malformed-JSON
+            # casualty — json_repair salvaged the `thought` but action/args
+            # were dropped (classic cause: single backslashes in Windows
+            # paths — invalid JSON escapes). The old behavior skipped WITHOUT
+            # appending anything: at low temperature the model then saw an
+            # IDENTICAL context and reproduced the identical broken reply
+            # until the step budget ran out, invisible to every watchdog.
+            # Feed the failure back instead, so the context changes and the
+            # model can correct itself on the next turn.
+            if config.DEBUG:
+                console.print("[red]Response has neither action nor final key.[/red]")
+            _emit({"type": "error",
+                   "content": (f"Step {step}: reply contained neither an "
+                               f"`action` nor a final key"
+                               + (f" (malformed JSON repaired; dropped keys: "
+                                  f"{_lost_keys})" if _was_repaired else "")
+                               + ".")})
             feedback = (
                 "[SYSTEM]: your previous reply was parsed but contained "
                 "neither an `action` nor a final key, so NOTHING was executed"

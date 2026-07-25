@@ -205,6 +205,9 @@ class _PlainRenderer:
     def error(self, step, content):
         _out(f"[{_ts()}] {self._tag(step)}  ERROR        {content}")
 
+    def notice(self, step, content):
+        _out(f"[{_ts()}] {self._tag(step)}  NOTE         {content}")
+
     def conclusion(self, forced, elapsed, text):
         label = "FORCED (step budget exhausted)" if forced else "CLEAN"
         _out()
@@ -317,6 +320,11 @@ class _MarkdownRenderer:
         _out(f"**ERROR**: {content}")
         _out()
 
+    def notice(self, step, content):
+        self._flush()
+        _out(f"_note: {content}_")
+        _out()
+
     def conclusion(self, forced, elapsed, text):
         self._flush()
         label = "forced (step budget exhausted)" if forced else "clean"
@@ -419,6 +427,13 @@ class _PrettyRenderer:
         self._rule(step)
         t = Text("  ERROR — ", style="bold red")
         t.append(content, style="red")
+        self.console.print(t)
+
+    def notice(self, step, content):
+        from rich.text import Text
+        self._rule(step)
+        t = Text("  note — ", style="bold yellow")
+        t.append(content, style="bright_black")
         self.console.print(t)
 
     def conclusion(self, forced, elapsed, text):
@@ -550,6 +565,11 @@ def _make_on_step(renderer, obs_limit: int, transcript: list[str]):
             content = str(ev.get("content", ""))
             renderer.error(step, content)
             transcript.append(f"ERROR: {content[:300]}")
+        elif t == "notice":
+            # Shown to the user, deliberately NOT added to the transcript:
+            # it is control flow, not something that happened in the work,
+            # and the episode built from the transcript should not carry it.
+            renderer.notice(step, str(ev.get("content", "")))
         # "start" and unknown types: noise, skip.
 
     return on_step
