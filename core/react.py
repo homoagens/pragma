@@ -87,6 +87,22 @@ _MUTATING_SKILLS = {
     "replace_in_file", "replace_in_file_b64", "insert_after", "insert_before",
 }
 
+# Skills that only LOOK at the workspace: no file is written, no command runs,
+# no network is touched, no memory is reinforced. When the model asks for
+# several of these in one reply, they can all be executed before going back to
+# the model — the answer to one cannot change the answer to another.
+#
+# This is an explicit allow-list, NOT the complement of _MUTATING_SKILLS: most
+# non-writing skills are still unsafe to batch. execute_command runs code;
+# web_fetch and web_search reach outside; call_agent, code and llm_invoke spend
+# model calls; todo_* and log_event write; and recall_* reinforce salience,
+# which is a memory write even though it reads. Anything not listed here keeps
+# the one-action-per-step contract.
+_READ_ONLY_SKILLS = frozenset({
+    "read_file", "list_dir", "file_outline", "grep_search", "glob_match",
+    "git_status", "git_diff", "understand_cwd", "get_skill_details",
+})
+
 
 def _malformed_args_hint(action: str, kwargs: dict) -> str:
     """Advice for an args-binding failure, aimed at the likely cause.
@@ -142,7 +158,8 @@ _NO_TOOL_STREAK = [0]
 _NO_TOOL_LIMIT = 2
 
 
-def _native_action_text(cfg: AgentConfig, messages, model, temperature):
+def _native_action_text(cfg: AgentConfig, messages, model, temperature,
+                        queue=None):
     """Obtain the next action through native tool calling, as protocol text.
 
     Returns the JSON the text protocol would have produced, or None to let the
@@ -206,12 +223,32 @@ def _native_action_text(cfg: AgentConfig, messages, model, temperature):
     _NO_TOOL_STREAK[0] = 0
     first = calls[0]
     if len(calls) > 1:
-        # One action per step is the loop's contract. Say so in the thought
-        # rather than dropping the extras silently, so the transcript — and
-        # the episode built from it — records that a choice was made.
-        names = ", ".join(c.get("name", "?") for c in calls[1:])
-        thought = (thought + " " if thought else "") + \
-                  f"[{len(calls)} tools requested; running the first, ignoring: {names}]"
+        names = [c.get("name", "?") for c in calls]
+        if queue is not None and all(n in _READ_ONLY_SKILLS for n in names):
+            # Every call only reads. Reading A cannot change what B returns, so
+            # the whole batch can be served from this one reply: the extras are
+            # queued and dispatched as their own steps, with no further model
+            # call between them. The transcript still shows one action per step
+            # — what is saved is the round-trip, which is the expensive part.
+            for c in calls[1:]:
+                queue.append(_json.dumps({
+                    "thought": f"(batched with step above) {c.get('name', '')}",
+                    "action":  c.get("name", ""),
+                    "args":    c.get("arguments") or {},
+                }, ensure_ascii=False))
+            thought = (thought + " " if thought else "") + \
+                      f"[{len(calls)} read-only tools requested; " \
+                      f"running all of them: {', '.join(names)}]"
+        else:
+            # Anything that writes, runs, or reaches outside keeps the
+            # one-action-per-step contract: order and outcomes matter, and the
+            # model must see each observation before choosing the next move.
+            # Say so in the thought rather than dropping the extras silently,
+            # so the transcript — and the episode built from it — records that
+            # a choice was made.
+            thought = (thought + " " if thought else "") + \
+                      f"[{len(calls)} tools requested; running the first, " \
+                      f"ignoring: {', '.join(names[1:])}]"
 
     return _json.dumps({
         "thought": thought or f"Calling {first.get('name', '')}.",
@@ -341,6 +378,10 @@ def run_agent(cfg: AgentConfig, user_task: str, log_path: Optional[Path] = None,
     # to see the real state instead of guessing). See config.ACTION_LOOP_*.
     _recent_actions: list[tuple[str, str, bool]] = []
     _NO_TOOL_STREAK[0] = 0     # per-run: a previous run must not end this one
+    # Read-only calls the model asked for alongside the one being executed.
+    # Local to the run: a batch left over from a previous run must never leak
+    # into this one.
+    _pending: list[str] = []
 
     def _hash_args(a) -> str:
         try:
@@ -380,35 +421,45 @@ def run_agent(cfg: AgentConfig, user_task: str, log_path: Optional[Path] = None,
         if config.DEBUG:
             console.print(f"\n[dim]━━━ Step {step}/{max_steps} ━━━[/dim]")
 
-        # ── Memory compression ──────────────────────────────────────
-        messages = memory.compress(messages, config.MAX_MESSAGES,
-                                   f"loop {cfg.name}", model=model)
-        total_chars = sum(len(m.get("content", "")) for m in messages)
-        if total_chars > config.MAX_CHARS:
-            if config.DEBUG:
-                console.print(
-                    f"[yellow]Payload {total_chars} chars — compressing...[/yellow]"
-                )
-            messages = memory.compress(messages, 0, f"loop {cfg.name}", model=model)
+        # A read-only call batched with the previous reply is served straight
+        # from the queue: no new prompt goes out, so no compression pass is
+        # needed either — the message list has not grown since it was built.
+        queued = _pending.pop(0) if _pending else None
 
-        # ── LLM call ─────────────────────────────────────────────────
+        if queued is None:
+            # ── Memory compression ──────────────────────────────────────
+            messages = memory.compress(messages, config.MAX_MESSAGES,
+                                       f"loop {cfg.name}", model=model)
+            total_chars = sum(len(m.get("content", "")) for m in messages)
+            if total_chars > config.MAX_CHARS:
+                if config.DEBUG:
+                    console.print(
+                        f"[yellow]Payload {total_chars} chars — compressing...[/yellow]"
+                    )
+                messages = memory.compress(messages, 0, f"loop {cfg.name}", model=model)
+
+        # ── LLM call (skipped entirely when serving a queued read) ───
         try:
-            native_text = _native_action_text(cfg, messages, model, temperature)
-            if native_text is not None:
-                text = native_text
-            elif cfg.on_token is not None:
-                text = llm_client.stream_llm(
-                    messages=messages, model=model,
-                    temperature=temperature, max_tokens=config.MAX_TOKENS,
-                    stop_event=cfg.stop_event, on_token=cfg.on_token,
-                    on_reasoning=cfg.on_reasoning,
-                )
+            if queued is not None:
+                text = queued
             else:
-                text = llm_client.call_llm(
-                    messages=messages, model=model,
-                    temperature=temperature, max_tokens=config.MAX_TOKENS,
-                    stop_event=cfg.stop_event,
-                )
+                native_text = _native_action_text(cfg, messages, model,
+                                                  temperature, queue=_pending)
+                if native_text is not None:
+                    text = native_text
+                elif cfg.on_token is not None:
+                    text = llm_client.stream_llm(
+                        messages=messages, model=model,
+                        temperature=temperature, max_tokens=config.MAX_TOKENS,
+                        stop_event=cfg.stop_event, on_token=cfg.on_token,
+                        on_reasoning=cfg.on_reasoning,
+                    )
+                else:
+                    text = llm_client.call_llm(
+                        messages=messages, model=model,
+                        temperature=temperature, max_tokens=config.MAX_TOKENS,
+                        stop_event=cfg.stop_event,
+                    )
         except llm_client.LLMInterrupted:
             _emit({"type": "stopped", "content": "Task interrupted by user."})
             return None
