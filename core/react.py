@@ -114,6 +114,13 @@ def _malformed_args_hint(action: str, kwargs: dict) -> str:
     """
     carries_content = any(k in kwargs for k in _CONTENT_ARGS)
     alt = _B64_ALTERNATIVE.get(action)
+    # On the native channel the server does the escaping, so a broken payload
+    # is not an escaping problem and base64 does not fix it. Worse, the model
+    # has to produce the encoding itself, token by token, and it gets it wrong:
+    # observed twice in one session, decoding to a corrupted path. Recommending
+    # it there sends the model down a road that damages the content silently.
+    if getattr(config, "LLM_TOOL_PROTOCOL", "text") == "native":
+        alt = None
 
     if carries_content and alt:
         return (
@@ -156,6 +163,32 @@ _TOOLS_UNSUPPORTED = [False]
 # that is genuinely finished says so again when asked.
 _NO_TOOL_STREAK = [0]
 _NO_TOOL_LIMIT = 2
+
+
+def _action_from_text(text: str):
+    """A text-protocol action hidden in prose, or None.
+
+    Only a reply that names a real action with a dict of args counts: a model
+    merely *talking* about write_file must not be executed. The action carries
+    no tool-call id, so the loop stores it as text - which is honest, because
+    that is how it arrived.
+    """
+    if not text or "action" not in text:
+        return None
+    try:
+        import json as _j
+        from json_parser import extract_json
+        data = extract_json(text)
+        if (isinstance(data, dict) and isinstance(data.get("action"), str)
+                and data["action"] and isinstance(data.get("args", {}), dict)):
+            return _j.dumps({"thought": data.get("thought", "") or
+                             "(action recovered from the reply text)",
+                             "action": data["action"],
+                             "args": data.get("args") or {}},
+                            ensure_ascii=False)
+    except Exception:
+        pass
+    return None
 
 
 def _native_action_text(cfg: AgentConfig, messages, model, temperature,
@@ -210,6 +243,17 @@ def _native_action_text(cfg: AgentConfig, messages, model, temperature,
     thought = r.get("content") or r.get("reasoning") or ""
 
     if not calls:
+        # Safety net. The model sometimes answers in the OTHER dialect: no tool
+        # call, and the action written as protocol JSON in the prose. Feeding
+        # the history back in native shape (below) is the actual cure, but if
+        # one slips through, accepting it as the final answer would end the run
+        # with a tool call that was never executed - which is what happened
+        # twice before that fix. If the prose IS an action, run it.
+        salvaged = _action_from_text(thought)
+        if salvaged is not None:
+            _NO_TOOL_STREAK[0] = 0
+            return salvaged
+
         _NO_TOOL_STREAK[0] += 1
         if _NO_TOOL_STREAK[0] >= _NO_TOOL_LIMIT:
             # Asked to act and still no call: take it as the answer.
@@ -235,6 +279,7 @@ def _native_action_text(cfg: AgentConfig, messages, model, temperature,
                     "thought": f"(batched with step above) {c.get('name', '')}",
                     "action":  c.get("name", ""),
                     "args":    c.get("arguments") or {},
+                    "__tool_call_id__": c.get("id") or "",
                 }, ensure_ascii=False))
             thought = (thought + " " if thought else "") + \
                       f"[{len(calls)} read-only tools requested; " \
@@ -250,11 +295,24 @@ def _native_action_text(cfg: AgentConfig, messages, model, temperature,
                       f"[{len(calls)} tools requested; running the first, " \
                       f"ignoring: {', '.join(names[1:])}]"
 
+    # The call id travels with the action so the loop can write the exchange
+    # back into the history in native shape (assistant tool_calls + a tool
+    # message), instead of as text the model would then imitate.
     return _json.dumps({
         "thought": thought or f"Calling {first.get('name', '')}.",
         "action":  first.get("name", ""),
         "args":    first.get("arguments") or {},
+        "__tool_call_id__": first.get("id") or "",
     }, ensure_ascii=False)
+
+
+def _msg_chars(m: dict) -> int:
+    """Size of one message as the model will see it, tool arguments included."""
+    n = len(m.get("content") or "")
+    for tc in (m.get("tool_calls") or []):
+        fn = tc.get("function") or {}
+        n += len(str(fn.get("name") or "")) + len(str(fn.get("arguments") or ""))
+    return n
 
 
 def _call_skill(cfg: AgentConfig, action: str, args: dict) -> str:
@@ -430,7 +488,11 @@ def run_agent(cfg: AgentConfig, user_task: str, log_path: Optional[Path] = None,
             # ── Memory compression ──────────────────────────────────────
             messages = memory.compress(messages, config.MAX_MESSAGES,
                                        f"loop {cfg.name}", model=model)
-            total_chars = sum(len(m.get("content", "")) for m in messages)
+            # A native assistant turn carries its payload in tool_calls, not in
+            # content: counting content alone would make a write_file holding a
+            # whole file look like an empty message, and compression would fire
+            # far too late.
+            total_chars = sum(_msg_chars(m) for m in messages)
             if total_chars > config.MAX_CHARS:
                 if config.DEBUG:
                     console.print(
@@ -590,6 +652,9 @@ def run_agent(cfg: AgentConfig, user_task: str, log_path: Optional[Path] = None,
         # the normalization above — response is guaranteed dict here.
         _was_repaired = response.pop("__pragma_json_repaired__", False)
         _lost_keys    = response.pop("__pragma_json_lost_keys__", []) or []
+        # Present only when the action arrived through native tool calling.
+        # Popped here so it never leaks into a final payload or a skill's args.
+        _tool_call_id = response.pop("__tool_call_id__", "") or ""
 
         thought = response.get("thought", "")
         if config.DEBUG:
@@ -748,11 +813,35 @@ def run_agent(cfg: AgentConfig, user_task: str, log_path: Optional[Path] = None,
         else:
             stored_obs = observation
 
-        messages.append({"role": "assistant", "content": text})
-        messages.append({
-            "role":    "user",
-            "content": f"[OBSERVATION]: {stored_obs}",
-        })
+        # Write the exchange back in the shape the model produced it.
+        #
+        # WHY THIS MATTERS. Rendering a native tool call as protocol text and
+        # storing THAT in the history taught the model to answer in text:
+        # it read its own past turns as JSON-in-content and imitated them, so
+        # later steps arrived with an empty tool_calls list and an action
+        # buried in the prose. Two runs ended by accepting such a reply as the
+        # final answer, concluding with a tool call that was never executed.
+        # The model should never see a turn it is not supposed to reproduce.
+        if _tool_call_id:
+            messages.append({
+                "role": "assistant",
+                "content": thought or "",
+                "tool_calls": [{
+                    "id": _tool_call_id,
+                    "type": "function",
+                    "function": {"name": action,
+                                 "arguments": json.dumps(args, ensure_ascii=False,
+                                                         default=str)},
+                }],
+            })
+            messages.append({"role": "tool", "tool_call_id": _tool_call_id,
+                             "content": stored_obs})
+        else:
+            messages.append({"role": "assistant", "content": text})
+            messages.append({
+                "role":    "user",
+                "content": f"[OBSERVATION]: {stored_obs}",
+            })
 
         # ── Action-loop watchdog ──
         # Record this (action, args, was_error) triple and check if the

@@ -127,5 +127,34 @@ def get_skill_details(name: str) -> str:
 # Add get_skill_details to the registry so the agent can call it
 ALL_SKILLS["get_skill_details"] = get_skill_details
 
+
+# Skills that exist only to work around the text protocol: they take their
+# payload base64-encoded because raw source code — newlines, quotes,
+# backslashes — used to break the JSON the model had to write by hand.
+_TEXT_PROTOCOL_ONLY = ("write_file_b64", "replace_in_file_b64")
+
+
+def palette(base: dict | None = None) -> dict:
+    """The skills to offer on the protocol this process is running.
+
+    On the native channel the server escapes the arguments, so the base64
+    variants solve a problem that no longer exists — and they introduce a worse
+    one: the model has to produce the encoding itself, token by token, and gets
+    it wrong. Observed twice in a single session, decoding to a corrupted path
+    and a truncated filename, with no error raised because base64 that decodes
+    to garbage is still valid base64. Silent content damage is a poor trade for
+    an escaping problem the server already solved, so they are withheld.
+
+    They stay available on the text protocol, where they still earn their keep
+    and where the frozen evaluation corpus was produced.
+    """
+    import config
+    out = dict(ALL_SKILLS if base is None else base)
+    if getattr(config, "LLM_TOOL_PROTOCOL", "text") == "native":
+        for name in _TEXT_PROTOCOL_ONLY:
+            out.pop(name, None)
+    return out
+
+
 __all__ = ["ALL_SKILLS", "SKILLS_SUMMARY", "skills_summary_for",
-           "get_skill_details"]
+           "get_skill_details", "palette"]

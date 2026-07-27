@@ -68,7 +68,8 @@ for _p in (str(_CORE), str(_ROOT)):
 import config as baseline_config
 import llm_client
 from react import AgentConfig, run_agent
-from skills import ALL_SKILLS, skills_summary_for
+from skills import palette as skills_palette
+from skills import skills_summary_for
 from agent.prompts import build_system_prompt
 
 
@@ -710,7 +711,9 @@ def main() -> int:
 
     renderer.banner(str(cwd), model_line, detail, max_steps, task)
 
-    skills = dict(ALL_SKILLS)
+    # palette() withholds the base64 skills on the native channel, where the
+    # server escapes arguments and the model's own encoding is the risk.
+    skills = skills_palette()
     skills["ask_user"] = batch_ask_user
     # Memory reaches the desk only through the curator (upstream, automatic).
     # The agent never pokes raw recall skills — one channel, always curated.

@@ -45,10 +45,12 @@ from react import AgentConfig, run_agent
 
 import config as baseline_config
 import memory as baseline_memory
-from skills import ALL_SKILLS, SKILLS_SUMMARY
+from skills import ALL_SKILLS, SKILLS_SUMMARY  # noqa: F401  (ALL_SKILLS: public re-export)
+from skills import palette as skills_palette
 from agent.prompts import build_system_prompt
 
-GEMMA_SKILLS: dict = dict(ALL_SKILLS)
+# Same palette rule as batch: no base64 variants on the native channel.
+GEMMA_SKILLS: dict = skills_palette()
 
 
 # ── Storage ───────────────────────────────────────────────────────────────────
