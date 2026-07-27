@@ -801,10 +801,24 @@ confirmed mid-task. Therefore:
             cap = getattr(baseline_config, "PRAGMA_MD_MAX_CHARS", 4000)
             if len(instructions) > cap:
                 instructions = instructions[:cap] + "\n[... truncated]"
-            prefix_parts.append(
-                "[Project instructions — authored by the user for this "
-                "workspace, follow them. The PRAGMA.md file they come from "
-                "is READ-ONLY for you: never create, modify or delete it]\n"
+            # Appended to the SYSTEM prompt, not to the task.
+            #
+            # It used to ride in the first user message, and that is where it
+            # failed: standing rules framed as part of one request lose force
+            # as the exchange grows. Observed with a venv rule in place — the
+            # model wrote "verifying the syntax using the venv" and then ran
+            # bare `python`. It had read the rule and still did not apply it.
+            # The system prompt is re-sent every turn and is where authority
+            # belongs. Recalled memories stay in the user message on purpose:
+            # those are context that may be outdated, not instructions.
+            system_prompt += (
+                "\n\n## Project instructions (PRAGMA.md)\n"
+                "Standing rules for this workspace, authored by the user. They "
+                "apply to EVERY action you take, including quick checks, "
+                "one-off commands and anything you consider a detail. Where a "
+                "rule conflicts with your habits or with a shorter route, the "
+                "rule wins. The PRAGMA.md file itself is READ-ONLY for you: "
+                "never create, modify or delete it.\n\n"
                 + instructions)
 
     if args.memory:
