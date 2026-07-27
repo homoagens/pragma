@@ -298,8 +298,13 @@ def _post_with_retry(url, headers, payload, timeout, label, stop_event=None):
 # speed and context usage. Best-effort — empty when the backend sends no usage.
 LAST_STATS: dict = {}
 
+# Set once if the endpoint rejects a json_schema response_format, so a server
+# without structured output costs one failed request per process instead of
+# one per faculty call. Mirrors _TOOLS_UNSUPPORTED on the action channel.
+_SCHEMA_UNSUPPORTED = [False]
 
-def _call_openai_compatible(messages, model, temperature, max_tokens, timeout, base_url, api_key, stop_event=None):
+
+def _call_openai_compatible(messages, model, temperature, max_tokens, timeout, base_url, api_key, stop_event=None, response_schema=None):
     """Standard OpenAI /chat/completions — works with Groq, Ollama, vLLM, etc."""
     global LAST_STATS
     payload = {
@@ -308,6 +313,14 @@ def _call_openai_compatible(messages, model, temperature, max_tokens, timeout, b
         "temperature": temperature,
         "max_tokens":  max_tokens,
     }
+    if response_schema:
+        payload["response_format"] = {
+            "type": "json_schema",
+            "json_schema": {"name": response_schema.get("__name__", "reply"),
+                            "schema": {k: v for k, v in response_schema.items()
+                                       if k != "__name__"},
+                            "strict": True},
+        }
     headers = {"Content-Type": "application/json"}
     if api_key:
         headers["Authorization"] = f"Bearer {api_key}"
@@ -513,7 +526,7 @@ def call_llm_tools(messages, tools, model=None, temperature=None,
 
 
 def call_llm(messages, model=None, temperature=None, max_tokens=None, timeout=None,
-             base_url=None, api_key=None, stop_event=None):
+             base_url=None, api_key=None, stop_event=None, response_schema=None):
     """
     Send messages to the OpenAI-compatible endpoint and return the response text.
 
@@ -524,6 +537,13 @@ def call_llm(messages, model=None, temperature=None, max_tokens=None, timeout=No
     timeout     : default config.TIMEOUT
     base_url    : OpenAI-compatible base ending in /v1 (default from config)
     api_key     : API key, optional for local servers   (default from config)
+    response_schema : JSON Schema the reply must satisfy. HONOURED ONLY on the
+                  native protocol, where a server that compiles it into a
+                  grammar makes a malformed reply impossible to generate
+                  rather than merely detectable. On the text protocol it is
+                  ignored, so the frozen corpus stays reproducible. An
+                  optional "__name__" key names the schema and is stripped
+                  before sending.
 
     Hits POST {base_url}/chat/completions. Automatic retry on 502.
     """
@@ -532,10 +552,39 @@ def call_llm(messages, model=None, temperature=None, max_tokens=None, timeout=No
     if max_tokens  is None: max_tokens  = config.MAX_TOKENS
     if timeout     is None: timeout     = config.TIMEOUT
 
+    # The schema rides the same switch as the action channel: one flag decides
+    # whether this run is constrained end to end or reproduces the old one.
+    if (getattr(config, "LLM_TOOL_PROTOCOL", "text") != "native"
+            or _SCHEMA_UNSUPPORTED[0]):
+        response_schema = None
+
     url, key = _resolved_endpoint(base_url, api_key)
-    text, finish = _call_openai_compatible(
-        messages, model, temperature, max_tokens, timeout, url, key, stop_event
-    )
+    try:
+        text, finish = _call_openai_compatible(
+            messages, model, temperature, max_tokens, timeout, url, key,
+            stop_event, response_schema,
+        )
+    except LLMInterrupted:
+        raise
+    except Exception as e:
+        # An endpoint that does not implement json_schema rejects the payload
+        # outright. Degrade for the rest of the process rather than failing a
+        # faculty: the reply is still parsed leniently downstream, exactly as
+        # it was before schemas existed.
+        msg = str(e).lower()
+        if response_schema and any(s in msg for s in (
+                "400", "422", "response_format", "json_schema", "schema",
+                "unknown field", "unsupported")):
+            _SCHEMA_UNSUPPORTED[0] = True
+            if config.DEBUG:
+                print(f"[llm] endpoint rejected response_format ({str(e)[:120]}); "
+                      f"continuing without schemas.")
+            text, finish = _call_openai_compatible(
+                messages, model, temperature, max_tokens, timeout, url, key,
+                stop_event, None,
+            )
+        else:
+            raise
 
     # Salvage partial text on length truncation if possible.
     text = _on_length_finish(text, finish)

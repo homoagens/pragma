@@ -56,6 +56,21 @@ Respond with ONLY a JSON object:
 If nothing is truly relevant, return an empty "selected" list."""
 
 
+# Enforced on the native protocol. A curator reply that fails to parse costs
+# the whole curation: the caller falls back to deterministic top-k and the
+# model's judgment is discarded for that session.
+_CURATOR_SCHEMA = {
+    "__name__": "curation",
+    "type": "object",
+    "properties": {
+        "selected": {"type": "array", "items": {"type": "string"}},
+        "reason":   {"type": "string"},
+    },
+    "required": ["selected", "reason"],
+    "additionalProperties": False,
+}
+
+
 _WORD = re.compile(r"\w+", flags=re.UNICODE)
 
 
@@ -170,6 +185,7 @@ def _ask_curator(task: str, eps: list[dict], lns: list[dict],
             model=model,
             temperature=0.0,
             max_tokens=getattr(config, "SKILL_MAX_TOKENS", 2048),
+            response_schema=_CURATOR_SCHEMA,
         )
         data = extract_json(raw)
     except Exception:

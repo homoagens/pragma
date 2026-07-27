@@ -77,6 +77,33 @@ IRON RULES — this is reinterpretation, not invention:
     .replace("INT_CHARS", str(config.MEMORY_INTERPRETATION_CHARS))
 
 
+# Enforced on the native protocol. An unparsable reply here is silently
+# equivalent to "nothing was reinterpreted" (the caller returns []), so a
+# malformed reply does not fail loudly — it quietly removes a mechanism the
+# paper measures. Worth making impossible rather than merely rare.
+_EPISODIC_SCHEMA = {
+    "__name__": "reconsolidation",
+    "type": "object",
+    "properties": {
+        "rewrites": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "id":             {"type": "string"},
+                    "interpretation": {"type": "string"},
+                    "reason":         {"type": "string"},
+                },
+                "required": ["id", "interpretation", "reason"],
+                "additionalProperties": False,
+            },
+        },
+    },
+    "required": ["rewrites"],
+    "additionalProperties": False,
+}
+
+
 def _ep_for_prompt(ep: dict) -> dict:
     return {
         "id":             ep.get("id", ""),
@@ -117,6 +144,7 @@ def reconsolidate_episodes(new_ep: dict, targets: list[dict],
             model=model,
             temperature=0.0,
             max_tokens=config.SKILL_MAX_TOKENS,
+            response_schema=_EPISODIC_SCHEMA,
         )
         data = extract_json(raw)
     except Exception:
@@ -175,6 +203,23 @@ RULES:
   writing an unrelated new one."""
 
 
+# Enforced on the native protocol. `reformulate` is the decisive field: a
+# reply that fails to parse is read as "no defensible reformulation", which
+# RETIRES the belief. A parse failure must not be able to masquerade as a
+# deliberate judgment to discard one.
+_REFORMULATION_SCHEMA = {
+    "__name__": "reformulation",
+    "type": "object",
+    "properties": {
+        "reformulate": {"type": "boolean"},
+        "text":        {"type": "string"},
+        "reason":      {"type": "string"},
+    },
+    "required": ["reformulate", "text", "reason"],
+    "additionalProperties": False,
+}
+
+
 def reformulate_belief(text: str, contradicting_evidence: list[str],
                        sources_summary: list[str], model=None) -> dict | None:
     """Ask the model to reformulate a contradicted belief so it fits the
@@ -197,6 +242,7 @@ def reformulate_belief(text: str, contradicting_evidence: list[str],
             model=model,
             temperature=0.0,
             max_tokens=config.SKILL_MAX_TOKENS,
+            response_schema=_REFORMULATION_SCHEMA,
         )
         data = extract_json(raw)
     except Exception:

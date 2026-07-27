@@ -86,6 +86,31 @@ Rules:
     .replace("INT_CHARS", str(config.MEMORY_INTERPRETATION_CHARS))
 
 
+# The same contract as _EPISODE_SYSTEM, in a form the server can enforce.
+# On the native protocol this is compiled into a grammar, so a truncated or
+# malformed episode cannot be produced — the failure mode the `json_only`
+# retry below exists to recover from. On the text protocol it is ignored.
+# Deliberately no length bounds: the prompt asks for pills, and a grammar
+# that cut a field at N characters would sever a sentence mid-word.
+_EPISODE_SCHEMA = {
+    "__name__": "episode",
+    "type": "object",
+    "properties": {
+        "goal":           {"type": "string"},
+        "narrative":      {"type": "string"},
+        "surprises":      {"type": "array", "items": {"type": "string"}},
+        "importance":     {"type": "number"},
+        "outcome":        {"type": "string",
+                           "enum": ["success", "partial", "failure"]},
+        "interpretation": {"type": "string"},
+        "keywords":       {"type": "array", "items": {"type": "string"}},
+    },
+    "required": ["goal", "narrative", "surprises", "importance", "outcome",
+                 "interpretation", "keywords"],
+    "additionalProperties": False,
+}
+
+
 _SEMANTIC_SYSTEM = """You are the abstraction module of an AI agent's memory.
 You receive a NEW episode, a set of SIMILAR past episodes, and the EXISTING
 semantic assertions related to them. Distill durable, general knowledge
@@ -133,6 +158,36 @@ Rules:
   old belief, not hoarding both.
 - confirms/contradicts must copy the existing assertion text EXACTLY.
 - Quality over quantity: 0-2 new assertions is the norm. Empty arrays are fine."""
+
+
+# The `kind` enum is the part worth enforcing: the admission code below drops
+# any assertion whose kind is not one of these four, so an invalid label used
+# to cost a whole belief. Under a grammar it cannot be emitted at all.
+_SEMANTIC_SCHEMA = {
+    "__name__": "semantic",
+    "type": "object",
+    "properties": {
+        "new_assertions": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "kind":    {"type": "string",
+                                "enum": ["lessons", "patterns",
+                                         "user_prefs", "mistakes"]},
+                    "text":    {"type": "string"},
+                    "sources": {"type": "array", "items": {"type": "string"}},
+                },
+                "required": ["kind", "text", "sources"],
+                "additionalProperties": False,
+            },
+        },
+        "confirms":    {"type": "array", "items": {"type": "string"}},
+        "contradicts": {"type": "array", "items": {"type": "string"}},
+    },
+    "required": ["new_assertions", "confirms", "contradicts"],
+    "additionalProperties": False,
+}
 
 
 _WORD = re.compile(r"\w+", flags=re.UNICODE)
@@ -233,6 +288,7 @@ def _ask_episode(transcript: str, corrective: bool = False,
         ],
         temperature=0.0,
         max_tokens=config.SKILL_MAX_TOKENS,
+        response_schema=_EPISODE_SCHEMA,
     )
     data = extract_json(raw)
     if not isinstance(data, dict):
@@ -471,6 +527,7 @@ def episode_consolidate_detailed(transcript: str = "", workspace: str = "",
             ],
             temperature=0.0,
             max_tokens=config.SKILL_MAX_TOKENS,
+            response_schema=_SEMANTIC_SCHEMA,
         )
         sem = extract_json(raw)
     except Exception as e:
