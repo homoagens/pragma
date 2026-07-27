@@ -78,7 +78,22 @@ Remove-Item Env:EPISODE_DECAY_HALF_LIFE_DAYS -ErrorAction SilentlyContinue
 
 New-Item -ItemType Directory -Force $env:PRAGMA_WORKSPACE | Out-Null
 New-Item -ItemType Directory -Force $env:PRAGMA_DATA_DIR  | Out-Null
-$script:Journal = Join-Path $env:PRAGMA_WORKSPACE "journal.md"
+$script:Journal  = Join-Path $env:PRAGMA_WORKSPACE "journal.md"
+$script:Contract = Join-Path $env:PRAGMA_WORKSPACE "PRAGMA.md"
+
+# Standing instructions are injected before every task, so it matters whether
+# any are actually in force. HTML comments do not count - the shipped template
+# is entirely commented out, and reporting it as active would be a lie.
+function script:Get-ContractLine {
+    if (-not (Test-Path $script:Contract)) { return "none (no PRAGMA.md)" }
+    try {
+        $raw = Get-Content $script:Contract -Raw -ErrorAction Stop
+    } catch { return "unreadable" }
+    $body = [regex]::Replace("$raw", '(?s)<!--.*?-->', '').Trim()
+    if (-not $body) { return "empty - edit PRAGMA.md to add standing rules" }
+    $n = @($body -split "`n" | Where-Object { $_.Trim() }).Count
+    "$n line(s) in force"
+}
 
 # --- helpers ------------------------------------------------------------------
 
@@ -193,6 +208,7 @@ function script:Show-PragmaInfo {
     Write-Host "  max steps : $script:SSteps per session"
     Write-Host "  protocol  : $(if ($env:LLM_TOOL_PROTOCOL) { $env:LLM_TOOL_PROTOCOL } else { 'text (repo default)' })"
     Write-Host "  budgets   : $(Get-BudgetLine)"
+    Write-Host "  rules     : $(Get-ContractLine)"
     Write-Host "  half-life : 30 days (real time)"
 }
 
@@ -305,6 +321,7 @@ Write-Host "  memory    : $env:PRAGMA_DATA_DIR"
 Write-Host "  workspace : $env:PRAGMA_WORKSPACE"
 Write-Host "  protocol  : $(if ($env:LLM_TOOL_PROTOCOL) { $env:LLM_TOOL_PROTOCOL } else { 'text (repo default)' })"
 Write-Host "  budgets   : $(Get-BudgetLine)"
+Write-Host "  rules     : $(Get-ContractLine)"
 
 Push-Location $script:SRepo
 $served = & $script:PragmaPy -c @"

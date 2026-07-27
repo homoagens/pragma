@@ -789,7 +789,14 @@ confirmed mid-task. Therefore:
 
     pragma_md = cwd / "PRAGMA.md"
     if pragma_md.is_file():
-        instructions = _read_pragma_md(pragma_md).strip()
+        # HTML comments are notes to the human, not instructions to the agent:
+        # dropped before both the emptiness test and the injection. That makes
+        # a commented-out template inert — a new session can ship one that
+        # explains itself without those explanations becoming standing rules —
+        # and lets an author keep reminders beside their own text.
+        import re as _re
+        instructions = _re.sub(r"<!--.*?-->", "",
+                               _read_pragma_md(pragma_md), flags=_re.S).strip()
         if instructions:
             cap = getattr(baseline_config, "PRAGMA_MD_MAX_CHARS", 4000)
             if len(instructions) > cap:

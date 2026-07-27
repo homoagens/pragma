@@ -157,10 +157,50 @@ $lines = @(
 # first line would carry invisible bytes.
 Set-Content -Path $sessionFile -Value $lines -Encoding ASCII
 
+# PRAGMA.md - standing instructions, injected before EVERY task in this
+# workspace. Shipped as comments only, so it stays inert until someone writes
+# a real rule: the agent ignores HTML comments, and a file with nothing else
+# in it is treated as absent.
+$contractFile = Join-Path $Path "workspace\PRAGMA.md"
+if (-not (Test-Path $contractFile)) {
+    $contract = @(
+        "<!--",
+        "PRAGMA.md - standing instructions for this workspace.",
+        "",
+        "Anything you write OUTSIDE these comment markers is given to the agent",
+        "before every task, on top of whatever it remembers. Use it for rules",
+        "that always apply, not for one-off requests.",
+        "",
+        "The agent may read this file and can never write to it.",
+        "",
+        "Comments like this one are ignored, so this guidance costs you nothing.",
+        "Write your rules below the closing marker, for example:",
+        "",
+        "    ## Environment",
+        "    - Install every dependency in .\venv, never in system Python.",
+        "    - Run Python through .\venv\Scripts\python.exe.",
+        "",
+        "    ## Conventions",
+        "    - Tests live in tests\ and run with pytest.",
+        "    - Never edit anything under generated\.",
+        "",
+        "    ## Standing authorizations",
+        "    - Deleting files under tmp\ is pre-authorized.",
+        "",
+        "Memory is what the agent LEARNS; this file is what you DECIDE. A rule",
+        "here is never weighed against other memories - it always applies.",
+        "-->"
+    )
+    Set-Content -Path $contractFile -Value $contract -Encoding ASCII
+}
+
 Write-Host ""
 Write-Host "Created $sessionFile" -ForegroundColor Green
 Write-Host "  memory    : $(Join-Path $Path '.memoria')"
 Write-Host "  workspace : $(Join-Path $Path 'workspace')"
+Write-Host "  rules     : $contractFile" -ForegroundColor Cyan
+Write-Host "              standing instructions, read before EVERY task."
+Write-Host "              Empty for now - open it and write what must always hold."
 
 # --- is the backend up? a warning here saves a confusing first task ------------
 Push-Location $Repo

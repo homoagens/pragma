@@ -279,6 +279,12 @@ pragma "read my notes and tell me what I left unfinished"
 Sessions are independent: one for your notes and one for a project remember
 different things and never mix. Create as many as you like.
 
+A `workspace\PRAGMA.md` is created with the session, commented out and therefore
+inert. Write a rule below the comment block and it is injected before **every**
+task — see [PRAGMA.md](#pragmamd--the-project-contract) below. Memory is what
+the agent *learns*; this file is what you *decide*, and unlike a memory it is
+never weighed against anything else.
+
 `pragma.ps1` holds only configuration — model profile, step budget, action
 channel, output budgets — and is meant to be edited. The commands themselves
 live in `tools/pragma-session.ps1`, so every session picks up improvements the
@@ -296,6 +302,21 @@ directly with `PRAGMA_DATA_DIR` set to your store.
 ### PRAGMA.md — the project contract
 
 Drop a `PRAGMA.md` in the workspace root and every batch run injects it as user-authored project instructions: conventions, constraints, standing authorizations (*"deletions in this folder are pre-authorized"*). The file is **read-only for the agent** — it can follow it, never rewrite it.
+
+It goes in the workspace root — the folder the agent works in (`--cwd`, or `workspace\` inside a session). It is injected on every run, with no flag, and it does **not** compete with recalled memories for space: a rule here always applies.
+
+```markdown
+## Environment
+- Install every dependency in .\venv, never in system Python.
+
+## Standing authorizations
+- Deleting files under tmp\ is pre-authorized.
+```
+
+HTML comments (`<!-- … -->`) are stripped before injection, so you can keep notes to yourself in the file without them becoming instructions. A file containing nothing but comments counts as absent.
+
+> [!TIP]
+> Use it for what must **always** hold. Memory learns from what happened and the curator decides each time whether a past episode is relevant; a constraint you care about — *"never touch system Python"* — should not depend on that judgement.
 
 ---
 
