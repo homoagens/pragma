@@ -239,6 +239,60 @@ Each faculty tags its own line in the output (`[CURATOR]`, `[CONSOLIDATOR]`,
 
 No `--memory`, no traces: batch runs are stateless by default.
 
+### Sessions — `new-session.ps1` (Windows)
+
+Running the above by hand means repeating `--memory --max-steps … --cwd …` and
+remembering which `PRAGMA_DATA_DIR` belongs to which project. A **session** wraps
+that up: one folder, one memory, one short command.
+
+```powershell
+.\new-session.ps1
+```
+
+It asks where the session should live and what to call it, then creates:
+
+```
+D:\pragma-notes\
+    pragma.ps1     enter the session:  . D:\pragma-notes\pragma.ps1
+    workspace\     the files the agent reads and writes
+    .memoria\      episodes and beliefs
+    backups\       written by `pragma -Backup`
+```
+
+From then on, one line puts you in that session:
+
+```powershell
+. D:\pragma-notes\pragma.ps1
+pragma "read my notes and tell me what I left unfinished"
+```
+
+| Command | |
+| --- | --- |
+| `pragma "task"` | run a task, memory on (`-NoMem` for stateless) |
+| `pragma -Note "..."` | record an experience — journal entry plus episode |
+| `pragma -Ask "..."` | ask memory something, without touching files |
+| `pragma -Map` · `-Beliefs` · `-Diff` · `-Oblio` · `-Last` · `-Sizes` | inspect what memory holds, concluded, revised, forgot |
+| `pragma -Backup` | snapshot the store |
+| `pragma -Time <min> <months>` | age the memory — see below |
+| `pragma -Reset` · `-Off` · `-Info` | wipe (typed confirmation) · leave · list everything |
+
+Sessions are independent: one for your notes and one for a project remember
+different things and never mix. Create as many as you like.
+
+`pragma.ps1` holds only configuration — model profile, step budget, action
+channel, output budgets — and is meant to be edited. The commands themselves
+live in `tools/pragma-session.ps1`, so every session picks up improvements the
+next time you enter it.
+
+> [!TIP]
+> **`-Time` is the laboratory switch.** It ages every episode by *N* simulated
+> months so you can watch decay, dormancy and revival without waiting for them.
+> It rewrites when things happened, permanently — so it asks for confirmation
+> and reminds you to back up first.
+
+Windows only for now: it is PowerShell. On Linux and macOS, call `agent.batch`
+directly with `PRAGMA_DATA_DIR` set to your store.
+
 ### PRAGMA.md — the project contract
 
 Drop a `PRAGMA.md` in the workspace root and every batch run injects it as user-authored project instructions: conventions, constraints, standing authorizations (*"deletions in this folder are pre-authorized"*). The file is **read-only for the agent** — it can follow it, never rewrite it.
