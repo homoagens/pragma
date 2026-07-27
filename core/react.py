@@ -164,12 +164,21 @@ _TOOLS_UNSUPPORTED = [False]
 _NO_TOOL_STREAK = [0]
 _NO_TOOL_LIMIT = 2
 
-# What the model said on the FIRST no-call turn. That turn usually carries the
-# real answer, while the confirmation that follows is a remark about it
-# ("already answered above", "the task is complete"). Concluding with the
-# second reply buried the answer in a mid-step thought and showed the user a
-# panel that said nothing. Both are kept and the fuller one wins: if the model
-# genuinely elaborated when asked, the second is longer and is used.
+# What the model said on the FIRST no-call turn.
+#
+# The nudge above asks it to repeat its answer in full, because only the second
+# reply is shown. When it obeys, that reply is the answer and nothing here is
+# needed. When it does not — "already answered above", "the task is complete" —
+# the answer would be lost, buried in a mid-step thought while the user is
+# shown a panel that says nothing.
+#
+# So both are kept and the longer one is used. Length is a PROXY for substance,
+# not a judgement of correctness, and it is wrong in one case: a verbose
+# announcement ("now I will write the solver…") followed by a terse genuine
+# close would keep the announcement. That case is already a failed run — two
+# turns in a row took no action — so no choice of text rescues it, and picking
+# the fuller reply at least never discards a real answer in favour of a remark
+# about it.
 _NO_TOOL_FIRST = [""]
 
 
@@ -714,8 +723,11 @@ def run_agent(cfg: AgentConfig, user_task: str, log_path: Optional[Path] = None,
                     "[SYSTEM]: your previous reply called no tool, so NOTHING "
                     "was executed. If the task is NOT finished, call the tool "
                     "that performs the next step now — do not describe it. If "
-                    "it IS finished, reply again with your summary and no tool "
-                    "call, and it will be taken as the final answer."
+                    "it IS finished, write your COMPLETE answer again here, "
+                    "with no tool call: this reply is the one the user is "
+                    "shown, so pointing back at what you just said ('as "
+                    "above', 'already answered') leaves them with nothing. "
+                    "Repeat it in full."
                 )})
                 step += 1
                 continue
