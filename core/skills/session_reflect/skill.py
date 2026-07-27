@@ -74,7 +74,21 @@ def session_reflect_detailed(transcript: str = "",
     if not transcript or not transcript.strip():
         return {"status": "error", "summary": "ERROR: transcript is empty", "added": []}
 
-    target = Path(store_path) if store_path else Path(config.LEARNINGS_PATH)
+    default_target = Path(config.LEARNINGS_PATH)
+    target = Path(store_path) if store_path else default_target
+    # A caller that means "store it over here" passes a folder. Writing to a
+    # folder raises Permission denied on Windows, which names the wrong cause
+    # and sent one session hunting for a rights problem that did not exist.
+    if target.is_dir():
+        target = target / default_target.name
+    if target != default_target and target.parent != default_target.parent:
+        # Learnings written outside the configured store are never read back:
+        # the curator only ever looks at config.LEARNINGS_PATH. Better to
+        # refuse than to leave an orphan file that looks like a success.
+        return {"status": "error", "added": [], "summary": (
+            f"ERROR: refused — learnings would go to {target}, but memory "
+            f"reads {default_target}. Anything written elsewhere is never "
+            f"recalled. Call session_reflect without store_path.")}
 
     try:
         raw = llm_client.call_llm(
@@ -152,7 +166,10 @@ def session_reflect(transcript: str = "",
 
     transcript : the task narrative (thoughts + actions + observations).
                  If empty, the skill returns ERROR (the caller must provide it).
-    store_path : where to persist. Defaults to config.LEARNINGS_PATH.
+    store_path : LEAVE THIS EMPTY. The default is the one store memory reads;
+                 anything written elsewhere is never recalled, so a different
+                 path is refused rather than silently orphaned. It exists for
+                 the server's own reflection worker.
     label      : optional short tag, attached to every entry produced this round.
 
     Returns "OK: saved N learnings (lessons=a patterns=b user_prefs=c mistakes=d)"
