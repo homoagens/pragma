@@ -164,6 +164,14 @@ _TOOLS_UNSUPPORTED = [False]
 _NO_TOOL_STREAK = [0]
 _NO_TOOL_LIMIT = 2
 
+# What the model said on the FIRST no-call turn. That turn usually carries the
+# real answer, while the confirmation that follows is a remark about it
+# ("already answered above", "the task is complete"). Concluding with the
+# second reply buried the answer in a mid-step thought and showed the user a
+# panel that said nothing. Both are kept and the fuller one wins: if the model
+# genuinely elaborated when asked, the second is longer and is used.
+_NO_TOOL_FIRST = [""]
+
 
 def _action_from_text(text: str):
     """A text-protocol action hidden in prose, or None.
@@ -252,19 +260,26 @@ def _native_action_text(cfg: AgentConfig, messages, model, temperature,
         salvaged = _action_from_text(thought)
         if salvaged is not None:
             _NO_TOOL_STREAK[0] = 0
+            _NO_TOOL_FIRST[0] = ""
             return salvaged
 
         _NO_TOOL_STREAK[0] += 1
         if _NO_TOOL_STREAK[0] >= _NO_TOOL_LIMIT:
-            # Asked to act and still no call: take it as the answer.
-            return _json.dumps({"conclusion": thought or "(no answer produced)"})
+            # Asked to act and still no call: take it as the answer — the
+            # fuller of the two replies, so a confirmation like "already
+            # answered above" never replaces the answer it refers to.
+            answer = max((_NO_TOOL_FIRST[0] or ""), (thought or ""), key=len)
+            _NO_TOOL_FIRST[0] = ""
+            return _json.dumps({"conclusion": answer or "(no answer produced)"})
         # First time: return a reply with neither an action nor a final key.
         # The loop already feeds that back to the model and takes another
         # turn, which is exactly the nudge this needs.
+        _NO_TOOL_FIRST[0] = thought or ""
         return _json.dumps({"thought": thought or "(no tool called)",
                             "__no_tool_call__": True})
 
     _NO_TOOL_STREAK[0] = 0
+    _NO_TOOL_FIRST[0] = ""      # a tool call ends any pending no-call streak
     first = calls[0]
     if len(calls) > 1:
         names = [c.get("name", "?") for c in calls]
@@ -436,6 +451,7 @@ def run_agent(cfg: AgentConfig, user_task: str, log_path: Optional[Path] = None,
     # to see the real state instead of guessing). See config.ACTION_LOOP_*.
     _recent_actions: list[tuple[str, str, bool]] = []
     _NO_TOOL_STREAK[0] = 0     # per-run: a previous run must not end this one
+    _NO_TOOL_FIRST[0] = ""
     # Read-only calls the model asked for alongside the one being executed.
     # Local to the run: a batch left over from a previous run must never leak
     # into this one.
