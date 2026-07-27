@@ -554,7 +554,11 @@ def call_llm(messages, model=None, temperature=None, max_tokens=None, timeout=No
 
     # The schema rides the same switch as the action channel: one flag decides
     # whether this run is constrained end to end or reproduces the old one.
+    # MEMORY_SCHEMA=0 additionally ablates the schema while LEAVING the action
+    # channel native, which is the only way to attribute a difference in what
+    # memory holds to the constraint rather than to the channel.
     if (getattr(config, "LLM_TOOL_PROTOCOL", "text") != "native"
+            or not getattr(config, "MEMORY_SCHEMA", True)
             or _SCHEMA_UNSUPPORTED[0]):
         response_schema = None
 

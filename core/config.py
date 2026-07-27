@@ -404,6 +404,16 @@ CURATOR_MAX_FRAGMENTS = int(os.environ.get("CURATOR_MAX_FRAGMENTS", "6"))
 MEMORY_NARRATIVE_CHARS      = int(os.environ.get("MEMORY_NARRATIVE_CHARS", "400"))
 MEMORY_INTERPRETATION_CHARS = int(os.environ.get("MEMORY_INTERPRETATION_CHARS", "200"))
 
+# Whether the memory faculties constrain their JSON with a schema. Only has
+# an effect on the native protocol, which is what carries schemas at all.
+#
+# Exists so the schema can be ablated WITHOUT changing the action channel:
+# turning LLM_TOOL_PROTOCOL back to text would move both at once, and the
+# question "do constrained faculties change what memory holds?" needs the
+# action channel held constant. Set MEMORY_SCHEMA=0 for the unconstrained arm.
+MEMORY_SCHEMA = os.environ.get("MEMORY_SCHEMA", "1").strip().lower() not in (
+    "0", "false", "no", "off")
+
 # ── Forgetting (episodic store) ──
 # An episode's EFFECTIVE salience decays exponentially with the time since
 # it was last recalled (or created): eff = salience * 0.5^(age_days /
