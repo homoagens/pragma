@@ -31,8 +31,17 @@ Formatted string with `returncode`, `stdout`, and `stderr` sections, or timeout/
 { "action": "execute_command", "args": { "command": "python -m pytest tests\\", "cwd": "C:\\project" } }
 ```
 
+The interpreter above is the platform default. When project instructions name
+one — a virtual environment, a specific path — use that instead, in every call
+including a one-line syntax check:
+
+```json
+{ "action": "execute_command", "args": { "command": ".\\venv\\Scripts\\python.exe -m py_compile script.py", "cwd": "C:\\project" } }
+```
+
 ## Do not
 
+- Ignore a project-specified interpreter because the command felt too small to matter — a throwaway check run against the wrong Python is still the wrong Python
 - Omit `cwd` when running scripts — without it the command runs in the server's directory, not the user's project
 - Use Unix commands: no `ls`, `cat`, `rm`, `grep`, `find`, `touch` — use filesystem skills or Windows equivalents
 - Run scripts that call `input()` or wait for stdin — they hang forever; remove `input()` or pipe the value

@@ -813,12 +813,17 @@ confirmed mid-task. Therefore:
             # those are context that may be outdated, not instructions.
             system_prompt += (
                 "\n\n## Project instructions (PRAGMA.md)\n"
-                "Standing rules for this workspace, authored by the user. They "
-                "apply to EVERY action you take, including quick checks, "
-                "one-off commands and anything you consider a detail. Where a "
-                "rule conflicts with your habits or with a shorter route, the "
-                "rule wins. The PRAGMA.md file itself is READ-ONLY for you: "
-                "never create, modify or delete it.\n\n"
+                "Standing rules for this workspace, authored by the user.\n"
+                "THESE OVERRIDE EVERY DEFAULT STATED ABOVE, including the "
+                "platform conventions in the environment section — the Python "
+                "interpreter to call, the commands to prefer, the tools to "
+                "use. Where a rule here disagrees with anything earlier in "
+                "this prompt, or with your own habit, or with a shorter "
+                "route, THIS WINS.\n"
+                "They apply to EVERY action, including quick checks, one-off "
+                "commands and anything you consider too small to matter.\n"
+                "The PRAGMA.md file itself is READ-ONLY for you: never "
+                "create, modify or delete it.\n\n"
                 + instructions)
 
     if args.memory:

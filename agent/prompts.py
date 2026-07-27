@@ -134,6 +134,9 @@ def _os_environment(cwd: str) -> str:
 - Prefer the filesystem skills (`list_dir`, `read_file`, `glob_match`, `grep_search`) over shell commands
   for file operations — they are cross-platform and far more reliable than parsing `dir` / `type` output.
 - Run Python scripts: `python script.py`. Modules: `python -m module_name`.
+  This is the PLATFORM default. If project instructions name an interpreter
+  (a virtual environment, a specific path), that wins — for every call,
+  including throwaway ones like a syntax check.
 - Environment variables: use `%VAR%` syntax in cmd commands."""
 
     else:  # Linux / macOS
@@ -148,6 +151,9 @@ def _os_environment(cwd: str) -> str:
 - Prefer the filesystem skills (`list_dir`, `read_file`, `glob_match`, `grep_search`) over shell commands
   for file operations — they are cross-platform and far more reliable than parsing command output.
 - Run Python scripts: `{py} script.py`. Modules: `{py} -m module_name`.
+  This is the PLATFORM default. If project instructions name an interpreter
+  (a virtual environment, a specific path), that wins — for every call,
+  including throwaway ones like a syntax check.
 - Environment variables: use `$VAR` syntax in shell commands."""
 
 
