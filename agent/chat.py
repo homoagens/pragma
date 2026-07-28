@@ -91,7 +91,12 @@ def _append_raw_log(path: Path, turn: Turn) -> None:
 
 
 def _consolidate(turns: list[Turn], cwd: Path, renderer) -> None:
-    """One episode per user turn, at the end of the session."""
+    """Decide what was memorable, then write one episode per kept turn.
+
+    The order matters: the segmenter runs FIRST, so a discarded turn is never
+    written and can never be linked to. Consolidating everything and pruning
+    afterwards would leave later episodes pointing at deleted ones.
+    """
     if not turns:
         return
     try:
@@ -100,16 +105,25 @@ def _consolidate(turns: list[Turn], cwd: Path, renderer) -> None:
         renderer.error(None, f"consolidation unavailable: {e}")
         return
 
+    import segmenter
+    renderer.faculty_running("SEGMENTER", "deciding what was worth keeping…")
+    keep, reason = segmenter.select_memorable([t.text for t in turns])
+    renderer.faculty("SEGMENTER",
+                     f"{len(keep)} of {len(turns)} turn(s) kept"
+                     + (f" — {reason}" if reason else ""))
+    if not keep:
+        return
+
+    kept = [turns[i] for i in keep]
     renderer.faculty_running(
-        "CONSOLIDATOR",
-        f"writing {len(turns)} episode(s) from this session…")
-    for i, turn in enumerate(turns, 1):
+        "CONSOLIDATOR", f"writing {len(kept)} episode(s) from this session…")
+    for i, turn in enumerate(kept, 1):
         try:
             res = episode_consolidate_detailed(
                 transcript="\n".join(turn.transcript),
                 workspace=str(cwd), source="chat")
             renderer.faculty("CONSOLIDATOR",
-                             f"[{i}/{len(turns)}] {res.get('summary', '')}")
+                             f"[{i}/{len(kept)}] {res.get('summary', '')}")
         except Exception as e:
             renderer.error(None, f"episode {i} failed: {e}")
 

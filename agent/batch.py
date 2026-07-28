@@ -453,7 +453,7 @@ class _PrettyRenderer:
     _FACULTY_COLOR = {
         "CURATOR": "magenta", "AGENT": "cyan", "CONSOLIDATOR": "green",
         "ABSTRACTOR": "blue", "RECONSOLIDATOR": "bright_magenta",
-        "FORGETTING": "yellow",
+        "FORGETTING": "yellow", "SEGMENTER": "bright_cyan",
     }
 
     def faculty_running(self, tag, note):
