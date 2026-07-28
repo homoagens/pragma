@@ -81,9 +81,19 @@ DROP a segment when nothing would be lost:
   ("which folder are you in?", "what can you do?")
 - a request the agent could not act on, that led nowhere
 
-BE STINGY. Most of a conversation is not memorable, and a session where every
-segment is dropped is a perfectly good answer for an evening of small talk. A
-store where everything is a memory is one where nothing is salient.
+A SEGMENT IS WORTH WHAT ITS BEST PART IS WORTH, not what its tone is. Judge it
+by the most valuable thing in it, never by the register of the exchange around
+that thing. "Hi! I'm Mario, what's your name?" reads as a greeting and is one,
+but it also states who the user is — and a name is among the most reusable
+facts there are. Keep the segment. The same applies to anything durable
+mentioned in passing: a deadline, a tool they use, a constraint they work
+under, a preference. Pleasantries around a fact do not make the fact
+forgettable.
+
+BE STINGY OTHERWISE. Most of a conversation is not memorable, and a session
+where every segment is dropped is a perfectly good answer for an evening of
+small talk. A store where everything is a memory is one where nothing is
+salient.
 
 Judge each segment on its own worth, not on its position: the last is not
 automatically important, and the first is not automatically context."""
@@ -185,7 +195,10 @@ def segment(user_turns: list[str], model=None) -> tuple[list[tuple[list[int], bo
 def describe(segments, total: int) -> str:
     """One line for the session log."""
     kept = [s for s in segments if s[1]]
-    merged = sum(1 for s in kept if len(s[0]) > 1)
+    # Counted over ALL segments, not just the kept ones: a dropped segment
+    # that merged two turns is still a grouping decision, and hiding it made
+    # the line report one merge where the model had made two.
+    merged = sum(1 for s in segments if len(s[0]) > 1)
     parts = [f"{len(kept)} of {len(segments)} segment(s) kept "
              f"from {total} turn(s)"]
     if merged:
