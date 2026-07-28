@@ -378,3 +378,72 @@ embedded inside a JSON string. Follow these rules to avoid syntax errors:
 
 Call `get_skill_details(name)` before using a skill when you need the exact parameter names or want to check available options.
 """
+
+
+# ── The project contract ──────────────────────────────────────────────────────
+
+_CONTRACT_HEADER = (
+    "\n\n## Project instructions (PRAGMA.md)\n"
+    "Standing rules for this workspace, authored by the user.\n"
+    "THESE OVERRIDE EVERY DEFAULT STATED ABOVE, including the platform "
+    "conventions in the environment section — the Python interpreter to "
+    "call, the commands to prefer, the tools to use. Where a rule here "
+    "disagrees with anything earlier in this prompt, or with your own habit, "
+    "or with a shorter route, THIS WINS.\n"
+    "They apply to EVERY action, including quick checks, one-off commands and "
+    "anything you consider too small to matter.\n"
+    "The PRAGMA.md file itself is READ-ONLY for you: never create, modify or "
+    "delete it.\n\n"
+)
+
+
+def _read_contract(path) -> str:
+    """Encoding-tolerant read.
+
+    PowerShell's `echo "..." > PRAGMA.md` writes UTF-16 LE with a BOM, which is
+    the most likely way a Windows user creates this file. A utf-8-only read
+    would fail silently and skip the injection, which is exactly what must not
+    happen to the project contract.
+    """
+    try:
+        raw = path.read_bytes()
+    except Exception:
+        return ""
+    if raw.startswith(b"\xff\xfe") or raw.startswith(b"\xfe\xff"):
+        try:
+            return raw.decode("utf-16")
+        except Exception:
+            return ""
+    try:
+        return raw.decode("utf-8-sig")
+    except Exception:
+        return raw.decode("cp1252", errors="replace")
+
+
+def project_contract(cwd) -> str:
+    """The PRAGMA.md block to append to a system prompt, or "" if there is none.
+
+    Lives here so every entry point injects the contract identically: a rule
+    that applies in one mode and not another would be worse than no rule. It is
+    appended to the SYSTEM prompt rather than to the task, because standing
+    rules framed as part of one request lose force as the exchange grows.
+
+    HTML comments are notes to the human, not instructions to the agent: they
+    are dropped before both the emptiness test and the injection, so a
+    commented-out template stays inert until a real rule is written under it.
+    """
+    from pathlib import Path
+
+    import config
+
+    p = Path(cwd) / "PRAGMA.md"
+    if not p.is_file():
+        return ""
+    import re
+    text = re.sub(r"<!--.*?-->", "", _read_contract(p), flags=re.S).strip()
+    if not text:
+        return ""
+    cap = getattr(config, "PRAGMA_MD_MAX_CHARS", 4000)
+    if len(text) > cap:
+        text = text[:cap] + "\n[... truncated]"
+    return _CONTRACT_HEADER + text

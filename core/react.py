@@ -406,7 +406,8 @@ def _call_skill(cfg: AgentConfig, action: str, args: dict) -> str:
 
 
 def run_agent(cfg: AgentConfig, user_task: str, log_path: Optional[Path] = None,
-              on_step: Optional[Callable] = None) -> Optional[dict]:
+              on_step: Optional[Callable] = None,
+              history: Optional[list] = None) -> Optional[dict]:
     """
     Start the ReAct loop.
     cfg       : AgentConfig
@@ -438,10 +439,18 @@ def run_agent(cfg: AgentConfig, user_task: str, log_path: Optional[Path] = None,
         log_path = Path(log_path)
         log_path.write_text("[]", encoding="utf-8")
 
-    messages = [
-        {"role": "system", "content": system_prompt},
-        {"role": "user",   "content": user_task},
-    ]
+    # A live session passes the previous turns back in, so the agent answers
+    # with the conversation still in front of it instead of meeting the user
+    # again from scratch. The list is COPIED: compression rebinds `messages`
+    # midway, so a caller holding the original would silently keep the
+    # uncompressed one. The final list is returned under "messages" instead.
+    if history:
+        messages = list(history) + [{"role": "user", "content": user_task}]
+    else:
+        messages = [
+            {"role": "system", "content": system_prompt},
+            {"role": "user",   "content": user_task},
+        ]
 
     if config.DEBUG:
         console.print(Panel(
@@ -698,8 +707,9 @@ def run_agent(cfg: AgentConfig, user_task: str, log_path: Optional[Path] = None,
             _emit({"type": "final", "content": response.get(final_key, ""), "data": final_data})
             if log_path is not None:
                 _log_step(log_path, {"step": step, **response})
-            response["name"]   = cfg.name
-            response["forced"] = False
+            response["name"]     = cfg.name
+            response["forced"]   = False
+            response["messages"] = messages   # for a caller continuing the session
             return response
 
         # ── ACTION ──────────────────────────────────────────────────
@@ -1016,6 +1026,7 @@ def run_agent(cfg: AgentConfig, user_task: str, log_path: Optional[Path] = None,
         ))
     if log_path is not None:
         _log_step(log_path, {"step": max_steps + 1, **response, "forced": True})
-    response["name"]   = cfg.name
-    response["forced"] = True
+    response["name"]     = cfg.name
+    response["forced"]   = True
+    response["messages"] = messages
     return response

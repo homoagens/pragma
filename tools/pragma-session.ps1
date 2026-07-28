@@ -107,6 +107,14 @@ function script:Invoke-MemTool([string[]]$toolArgs) {
     Pop-Location
 }
 
+# A live session: many turns in one conversation, consolidated on exit.
+# Experimental - `pragma "task"` remains the settled one-shot path.
+function script:Invoke-Chat {
+    Push-Location $script:SRepo
+    & $script:PragmaPy -m agent.chat --memory --max-steps $script:SSteps
+    Pop-Location
+}
+
 function script:Invoke-Session([string]$task, [bool]$useMemory = $true) {
     Push-Location $script:SRepo
     if ($useMemory) {
@@ -188,6 +196,7 @@ function script:Show-PragmaInfo {
     Write-Host '  pragma "task" -NoMem    run a session with NO memory (stateless)'
     Write-Host '  pragma -Note "..."      record an experience (journal + episode)'
     Write-Host '  pragma -Ask "..."       ask memory something, no file changes'
+    Write-Host "  pragma -Chat            live session: many turns, one conversation" -ForegroundColor DarkGray
     Write-Host "  pragma -Map             what is in memory now"
     Write-Host "  pragma -Beliefs         what it has concluded"
     Write-Host "  pragma -Diff            meanings it has revised, before/after"
@@ -217,13 +226,14 @@ function pragma {
         [Parameter(Position = 0)]$A,
         [Parameter(Position = 1)]$B,
         [switch]$NoMem,
-        [switch]$Note, [switch]$Ask, [switch]$Time,
+        [switch]$Note, [switch]$Ask, [switch]$Time, [switch]$Chat,
         [switch]$Map, [switch]$Beliefs, [switch]$Diff, [switch]$Oblio,
         [switch]$Last, [switch]$Mem, [switch]$Sizes,
         [switch]$Backup, [switch]$Reset, [switch]$Off, [switch]$Info
     )
 
     if ($Info)    { Show-PragmaInfo;            return }
+    if ($Chat)    { Invoke-Chat;                return }
     if ($Map)     { Invoke-MemTool "";          return }
     if ($Beliefs) { Invoke-MemTool "--beliefs"; return }
     if ($Diff)    { Invoke-MemTool "--diff";    return }

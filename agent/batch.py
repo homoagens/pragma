@@ -70,7 +70,7 @@ import llm_client
 from react import AgentConfig, run_agent
 from skills import palette as skills_palette
 from skills import skills_summary_for
-from agent.prompts import build_system_prompt
+from agent.prompts import build_system_prompt, project_contract
 
 
 # ── output helpers ────────────────────────────────────────────────────────────
@@ -767,64 +767,10 @@ confirmed mid-task. Therefore:
     # explicitly marked as possibly-outdated context, not instructions.
     prefix_parts: list[str] = []
 
-    # Encoding-tolerant read: PowerShell's `echo "..." > PRAGMA.md` writes
-    # UTF-16 LE with BOM — the most likely way a Windows user creates this
-    # file. A utf-8-only read would fail silently and skip the injection
-    # (including the read-only notice), which is exactly what must not
-    # happen to the project contract.
-    def _read_pragma_md(p: Path) -> str:
-        try:
-            raw = p.read_bytes()
-        except Exception:
-            return ""
-        if raw.startswith(b"\xff\xfe") or raw.startswith(b"\xfe\xff"):
-            try:
-                return raw.decode("utf-16")
-            except Exception:
-                return ""
-        try:
-            return raw.decode("utf-8-sig")
-        except Exception:
-            return raw.decode("cp1252", errors="replace")
-
-    pragma_md = cwd / "PRAGMA.md"
-    if pragma_md.is_file():
-        # HTML comments are notes to the human, not instructions to the agent:
-        # dropped before both the emptiness test and the injection. That makes
-        # a commented-out template inert — a new session can ship one that
-        # explains itself without those explanations becoming standing rules —
-        # and lets an author keep reminders beside their own text.
-        import re as _re
-        instructions = _re.sub(r"<!--.*?-->", "",
-                               _read_pragma_md(pragma_md), flags=_re.S).strip()
-        if instructions:
-            cap = getattr(baseline_config, "PRAGMA_MD_MAX_CHARS", 4000)
-            if len(instructions) > cap:
-                instructions = instructions[:cap] + "\n[... truncated]"
-            # Appended to the SYSTEM prompt, not to the task.
-            #
-            # It used to ride in the first user message, and that is where it
-            # failed: standing rules framed as part of one request lose force
-            # as the exchange grows. Observed with a venv rule in place — the
-            # model wrote "verifying the syntax using the venv" and then ran
-            # bare `python`. It had read the rule and still did not apply it.
-            # The system prompt is re-sent every turn and is where authority
-            # belongs. Recalled memories stay in the user message on purpose:
-            # those are context that may be outdated, not instructions.
-            system_prompt += (
-                "\n\n## Project instructions (PRAGMA.md)\n"
-                "Standing rules for this workspace, authored by the user.\n"
-                "THESE OVERRIDE EVERY DEFAULT STATED ABOVE, including the "
-                "platform conventions in the environment section — the Python "
-                "interpreter to call, the commands to prefer, the tools to "
-                "use. Where a rule here disagrees with anything earlier in "
-                "this prompt, or with your own habit, or with a shorter "
-                "route, THIS WINS.\n"
-                "They apply to EVERY action, including quick checks, one-off "
-                "commands and anything you consider too small to matter.\n"
-                "The PRAGMA.md file itself is READ-ONLY for you: never "
-                "create, modify or delete it.\n\n"
-                + instructions)
+    # The contract is built by agent.prompts so every entry point injects
+    # it identically: a standing rule that applied in batch but not in a
+    # live session would be worse than no rule at all.
+    system_prompt += project_contract(cwd)
 
     if args.memory:
         # The knowledge zone is composed by the curator (an LLM invocation),
