@@ -699,6 +699,13 @@ def run_agent(cfg: AgentConfig, user_task: str, log_path: Optional[Path] = None,
                 _log_step(log_path, {"step": step, **response})
             response["name"]     = cfg.name
             response["forced"]   = False
+            # The answer joins the conversation before it is handed back.
+            # Without this the history keeps every user turn and none of the
+            # replies, so a live session shows the model a run of unanswered
+            # questions: observed as re-greeting the user on four consecutive
+            # turns and re-answering a question it had already answered.
+            messages.append({"role": "assistant",
+                             "content": response.get(final_key, "") or ""})
             response["messages"] = messages   # for a caller continuing the session
             return response
 
@@ -1018,5 +1025,9 @@ def run_agent(cfg: AgentConfig, user_task: str, log_path: Optional[Path] = None,
         _log_step(log_path, {"step": max_steps + 1, **response, "forced": True})
     response["name"]     = cfg.name
     response["forced"]   = True
+    # Same as the clean exit: a forced verdict is still what the agent said,
+    # and a session that continues after one must see it.
+    messages.append({"role": "assistant",
+                     "content": response.get(cfg.final_keys[0], "") or ""})
     response["messages"] = messages
     return response
