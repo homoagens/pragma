@@ -30,8 +30,9 @@
 # every turn, before anything else can fail: consolidation can then be re-run
 # from it. A memory may arrive late; it must not disappear.
 #
-# NOT IN THIS PHASE: recall during the session, consolidation on context
-# overflow, and the segmenter. See PAPER_STRUCTURE / the plan.
+# NOT IN THIS PHASE: CURATED recall during the session (the agent can call the
+# recall skills itself, but nothing puts the past on its desk unasked), and
+# consolidation on context overflow. See PAPER_STRUCTURE / the plan.
 
 from __future__ import annotations
 
@@ -172,8 +173,21 @@ def main() -> int:
 
     skills = skills_palette()
     skills["ask_user"] = batch_ask_user
-    skills.pop("recall_episodes", None)
-    skills.pop("recall_learnings", None)
+    # `agent.batch` withholds the raw recall skills on purpose: there the
+    # curator puts memory on the desk before the agent starts, so a second,
+    # uncurated channel would only let the model bypass it. That argument does
+    # not hold here — the curator does not run during a session yet — and
+    # copying the line across left the agent walled off in both directions at
+    # once: nothing handed to it, and no way to go and look. Asked "what do you
+    # know about me?" it answered that it had no memory of previous sessions,
+    # which was true of its palette and false of the store sitting next to it.
+    # So in a session the skills stay: recall is deliberate rather than
+    # automatic, which is worse than the curator and much better than blind.
+    # Without --memory the session does not take part in memory at all, and
+    # that has to cut both ways — it must not read a store it will not write.
+    if not args.memory:
+        skills.pop("recall_episodes", None)
+        skills.pop("recall_learnings", None)
 
     coding_model = baseline_config.CODING_MODEL or baseline_config.DEFAULT_MODEL
     system_prompt = build_system_prompt(
