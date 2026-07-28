@@ -35,18 +35,39 @@ import config
 import llm_client
 from json_parser import extract_json
 
-_SYSTEM = """You decide which turns of a conversation are worth remembering.
+_SYSTEM = """You decide where one experience ends and the next begins, and
+which of them are worth remembering.
 
-You receive the user's messages from one session, numbered. For each, decide
-whether it should become a stored memory.
+You receive the user's messages from one session, numbered in order. Divide
+them into consecutive segments, then decide for each segment whether it should
+become a stored memory.
 
 Respond with ONLY a JSON object:
 {
-  "keep":   [ 2, 3 ],
-  "reason": "<one short line: what you kept and what you dropped>"
+  "segments": [
+    {"turns": [1, 2], "keep": false, "why": "opening small talk"},
+    {"turns": [3, 4], "keep": true,  "why": "the topic and its correction"}
+  ],
+  "reason": "<one short line about the session as a whole>"
 }
 
-KEEP a turn when it carries something a future session would be worse off
+Every turn must appear in exactly one segment, and segments must be
+consecutive: [1,2] then [3,4], never [1,3].
+
+WHEN TO PUT TURNS TOGETHER. One segment is one experience. Turns belong
+together when they are the same piece of work carried forward — a request and
+its refinement, a question and the correction that reframes it, an attempt and
+its outcome. Kept together, the memory holds what happened AND how it turned
+out.
+
+WHEN TO SEPARATE. A new subject, a new task, a return to something unrelated.
+Be careful here: merging too much is as damaging as merging too little. A
+session folded into one segment produces a memory whose importance is the
+average of everything said in it, and an average is exactly what hides a
+consequential moment among routine ones. When two turns are only adjacent in
+time, separate them.
+
+KEEP a segment when it carries something a future session would be worse off
 without:
 - work done, decided, or attempted, and how it went
 - a fact about the user, their projects, their constraints or preferences
@@ -54,44 +75,90 @@ without:
   turn, which is exactly what later reinterpretation needs
 - a problem encountered, a lesson, anything surprising
 
-DROP a turn when nothing would be lost:
+DROP a segment when nothing would be lost:
 - greetings, thanks, acknowledgements, small talk
 - questions about the environment whose answer is already knowable
   ("which folder are you in?", "what can you do?")
 - a request the agent could not act on, that led nowhere
 
-BE STINGY. Most of a conversation is not memorable, and an empty "keep" list
-is a perfectly good answer for a session that was all small talk. A store
-where everything is a memory is one where nothing is salient.
+BE STINGY. Most of a conversation is not memorable, and a session where every
+segment is dropped is a perfectly good answer for an evening of small talk. A
+store where everything is a memory is one where nothing is salient.
 
-Judge each turn on its own worth, not on its position: the last turn is not
+Judge each segment on its own worth, not on its position: the last is not
 automatically important, and the first is not automatically context."""
 
 _SCHEMA = {
     "__name__": "segmentation",
     "type": "object",
     "properties": {
-        "keep":   {"type": "array", "items": {"type": "integer"}},
+        "segments": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "turns": {"type": "array", "items": {"type": "integer"}},
+                    "keep":  {"type": "boolean"},
+                    "why":   {"type": "string"},
+                },
+                "required": ["turns", "keep", "why"],
+                "additionalProperties": False,
+            },
+        },
         "reason": {"type": "string"},
     },
-    "required": ["keep", "reason"],
+    "required": ["segments", "reason"],
     "additionalProperties": False,
 }
 
 
-def select_memorable(user_turns: list[str], model=None) -> tuple[list[int], str]:
-    """Return (indices to keep, reason). Indices are 0-based.
+def _validate(segments, n: int) -> list[tuple[list[int], bool, str]]:
+    """Turn the model's segments into a partition, or raise.
 
-    Never raises. On any failure everything is kept: a faculty that cannot
-    decide must not be the reason a memory is lost — the cost of keeping a
+    A grammar can force the shape of the reply; it cannot force the shape to
+    be a partition. Overlapping segments would consolidate the same turn
+    twice, gaps would drop turns nobody decided to drop, and an out-of-order
+    list would join experiences that never touched. All three are silent, so
+    each is checked rather than trusted.
+    """
+    if not isinstance(segments, list) or not segments:
+        raise ValueError("no segments")
+    out, seen = [], []
+    for seg in segments:
+        if not isinstance(seg, dict):
+            raise ValueError("segment is not an object")
+        turns = [int(t) - 1 for t in (seg.get("turns") or [])
+                 if isinstance(t, (int, float))]
+        if not turns:
+            raise ValueError("empty segment")
+        if any(t < 0 or t >= n for t in turns):
+            raise ValueError("turn out of range")
+        if turns != list(range(turns[0], turns[-1] + 1)):
+            raise ValueError("segment is not consecutive")
+        out.append((turns, bool(seg.get("keep")), str(seg.get("why", ""))[:120]))
+        seen.extend(turns)
+    if sorted(seen) != list(range(n)):
+        raise ValueError("segments do not partition the turns")
+    return out
+
+
+def segment(user_turns: list[str], model=None) -> tuple[list[tuple[list[int], bool, str]], str]:
+    """Divide a session into experiences and say which are worth keeping.
+
+    Returns ([(turn indices, keep, why), ...], reason) with 0-based indices.
+
+    Never raises. On any failure each turn becomes its own kept segment, which
+    is what the session did before this faculty existed: a faculty that cannot
+    decide must not be the reason a memory is lost, and the cost of keeping a
     dull episode is far below the cost of dropping a real one.
     """
-    if not user_turns:
+    n = len(user_turns)
+    if n == 0:
         return [], ""
-    if len(user_turns) == 1:
+    if n == 1:
         # Nothing to weigh one turn against, and a session someone bothered to
         # start is worth more than the doubt.
-        return [0], "single turn kept"
+        return [([0], True, "single turn")], "single turn kept"
 
     numbered = "\n".join(f"{i + 1}. {t.strip()[:500]}"
                          for i, t in enumerate(user_turns))
@@ -107,21 +174,28 @@ def select_memorable(user_turns: list[str], model=None) -> tuple[list[int], str]
         data = extract_json(raw)
         if not isinstance(data, dict):
             raise ValueError("non-object reply")
-        keep = data.get("keep")
-        if not isinstance(keep, list):
-            raise ValueError("no keep list")
-        # 1-based in the prompt because models count from one; anything out of
-        # range is a hallucinated index and is dropped rather than trusted.
-        idx = sorted({int(n) - 1 for n in keep
-                      if isinstance(n, (int, float))
-                      and 0 < int(n) <= len(user_turns)})
-        return idx, str(data.get("reason", ""))[:200]
+        return _validate(data.get("segments"), n), str(data.get("reason", ""))[:200]
     except Exception as e:
         if getattr(config, "DEBUG", False):
-            print(f"[segmenter] failed ({e}); keeping every turn")
-        return list(range(len(user_turns))), "segmenter unavailable — kept all"
+            print(f"[segmenter] failed ({e}); one kept segment per turn")
+        return ([([i], True, "") for i in range(n)],
+                "segmenter unavailable — kept every turn separately")
 
 
-def as_json(indices: list[int], total: int) -> str:
-    """Compact record of the decision, for the session log."""
-    return json.dumps({"kept": [i + 1 for i in indices], "of": total})
+def describe(segments, total: int) -> str:
+    """One line for the session log."""
+    kept = [s for s in segments if s[1]]
+    merged = sum(1 for s in kept if len(s[0]) > 1)
+    parts = [f"{len(kept)} of {len(segments)} segment(s) kept "
+             f"from {total} turn(s)"]
+    if merged:
+        parts.append(f"{merged} merged")
+    return ", ".join(parts)
+
+
+def as_json(segments, total: int) -> str:
+    """Compact record of the decision."""
+    return json.dumps({"of": total,
+                       "segments": [{"turns": [i + 1 for i in t],
+                                     "keep": k, "why": w}
+                                    for t, k, w in segments]})

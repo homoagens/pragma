@@ -107,21 +107,25 @@ def _consolidate(turns: list[Turn], cwd: Path, renderer) -> None:
 
     import segmenter
     renderer.faculty_running("SEGMENTER", "deciding what was worth keeping…")
-    keep, reason = segmenter.select_memorable([t.text for t in turns])
+    segments, reason = segmenter.segment([t.text for t in turns])
     renderer.faculty("SEGMENTER",
-                     f"{len(keep)} of {len(turns)} turn(s) kept"
+                     segmenter.describe(segments, len(turns))
                      + (f" — {reason}" if reason else ""))
-    if not keep:
+
+    kept = [(idx, why) for idx, keep, why in segments if keep]
+    if not kept:
         return
 
-    kept = [turns[i] for i in keep]
     renderer.faculty_running(
         "CONSOLIDATOR", f"writing {len(kept)} episode(s) from this session…")
-    for i, turn in enumerate(kept, 1):
+    for i, (idx, _why) in enumerate(kept, 1):
+        # A merged segment is consolidated as ONE experience: the turns are
+        # joined in order, so the episode holds the request and how it turned
+        # out rather than splitting them across two thin memories.
+        transcript = "\n".join(line for j in idx for line in turns[j].transcript)
         try:
             res = episode_consolidate_detailed(
-                transcript="\n".join(turn.transcript),
-                workspace=str(cwd), source="chat")
+                transcript=transcript, workspace=str(cwd), source="chat")
             renderer.faculty("CONSOLIDATOR",
                              f"[{i}/{len(kept)}] {res.get('summary', '')}")
         except Exception as e:
