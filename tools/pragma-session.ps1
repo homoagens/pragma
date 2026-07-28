@@ -17,7 +17,10 @@
 # NOTE: keep this file pure ASCII - PowerShell 5.1 reads BOM-less files as
 # ANSI, and a fancy dash or quote silently corrupts the script.
 
-$script:PragmaSessionVersion = "v1"
+# Bump on every change to this file. The banner and -Info print it, so a
+# window that dot-sourced an older copy shows a stale number and the mismatch
+# is visible at a glance instead of surfacing as a missing command.
+$script:PragmaSessionVersion = "v2 (live session)"
 
 if (-not (Get-Variable -Name PragmaSession -Scope Global -ErrorAction SilentlyContinue) -and
     -not (Get-Variable -Name PragmaSession -Scope Script -ErrorAction SilentlyContinue) -and
