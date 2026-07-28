@@ -153,33 +153,32 @@ def _malformed_args_hint(action: str, kwargs: dict) -> str:
 # the run degrades to the text protocol instead of retrying on every step.
 _TOOLS_UNSUPPORTED = [False]
 
-# Consecutive turns in which the model called no tool. Under the native
-# protocol a reply with no call is how a task ends — but it is also what a
-# model produces when it narrates its next step instead of taking it, and
-# ending there abandons the task silently. Observed on the benchmark: runs
-# closing after four steps with a "conclusion" that read "Let me write a
-# solver script for this problem". So the first no-call turn asks the model
-# to act, and only a second one in a row is accepted as the answer: a model
-# that is genuinely finished says so again when asked.
+# On the native protocol a reply with no tool call is how a task ends, and it
+# is taken as the answer immediately.
+#
+# It was not always. A confirmation round used to stand here: the first no-call
+# turn was pushed back with "act, or say again that you are done", and only the
+# second was accepted. That guard was built for a real failure — runs closing
+# after four steps on a conclusion that read "Let me write a solver script for
+# this problem" — but that failure had a different cause, since fixed: the
+# history fed back to the model was rendered as protocol text, so it answered
+# in prose instead of calling tools. Once the history became native, the guard
+# stopped catching anything. Across every logged session since, the first
+# no-call reply was a genuine, complete close.
+#
+# It was not merely idle. It cost a turn each time, and it gave the model an
+# occasion to second-guess itself: asked to confirm "the animals — bees", one
+# session came back with "perhaps you meant software APIs and 'animali' was a
+# typo?", and that reply — being longer — replaced the better one. A round
+# that never saved a run and could degrade an answer is not worth its price.
+#
+# Removing it also removes the need to choose between two replies, and with it
+# a length heuristic that was only ever a proxy for substance.
+#
+# _action_from_text below remains the guard that matters: an action arriving as
+# prose is executed rather than mistaken for a conclusion.
 _NO_TOOL_STREAK = [0]
-_NO_TOOL_LIMIT = 2
-
-# What the model said on the FIRST no-call turn.
-#
-# The nudge above asks it to repeat its answer in full, because only the second
-# reply is shown. When it obeys, that reply is the answer and nothing here is
-# needed. When it does not — "already answered above", "the task is complete" —
-# the answer would be lost, buried in a mid-step thought while the user is
-# shown a panel that says nothing.
-#
-# So both are kept and the longer one is used. Length is a PROXY for substance,
-# not a judgement of correctness, and it is wrong in one case: a verbose
-# announcement ("now I will write the solver…") followed by a terse genuine
-# close would keep the announcement. That case is already a failed run — two
-# turns in a row took no action — so no choice of text rescues it, and picking
-# the fuller reply at least never discards a real answer in favour of a remark
-# about it.
-_NO_TOOL_FIRST = [""]
+_NO_TOOL_LIMIT = 1
 
 
 def _action_from_text(text: str):
@@ -269,26 +268,18 @@ def _native_action_text(cfg: AgentConfig, messages, model, temperature,
         salvaged = _action_from_text(thought)
         if salvaged is not None:
             _NO_TOOL_STREAK[0] = 0
-            _NO_TOOL_FIRST[0] = ""
             return salvaged
 
         _NO_TOOL_STREAK[0] += 1
         if _NO_TOOL_STREAK[0] >= _NO_TOOL_LIMIT:
-            # Asked to act and still no call: take it as the answer — the
-            # fuller of the two replies, so a confirmation like "already
-            # answered above" never replaces the answer it refers to.
-            answer = max((_NO_TOOL_FIRST[0] or ""), (thought or ""), key=len)
-            _NO_TOOL_FIRST[0] = ""
-            return _json.dumps({"conclusion": answer or "(no answer produced)"})
-        # First time: return a reply with neither an action nor a final key.
-        # The loop already feeds that back to the model and takes another
-        # turn, which is exactly the nudge this needs.
-        _NO_TOOL_FIRST[0] = thought or ""
+            # No call and no action hidden in the prose: this is the answer.
+            return _json.dumps({"conclusion": thought or "(no answer produced)"})
+        # Unreachable at the current limit; kept so raising _NO_TOOL_LIMIT
+        # restores the confirmation round without further surgery.
         return _json.dumps({"thought": thought or "(no tool called)",
                             "__no_tool_call__": True})
 
     _NO_TOOL_STREAK[0] = 0
-    _NO_TOOL_FIRST[0] = ""      # a tool call ends any pending no-call streak
     first = calls[0]
     if len(calls) > 1:
         names = [c.get("name", "?") for c in calls]
@@ -469,7 +460,6 @@ def run_agent(cfg: AgentConfig, user_task: str, log_path: Optional[Path] = None,
     # to see the real state instead of guessing). See config.ACTION_LOOP_*.
     _recent_actions: list[tuple[str, str, bool]] = []
     _NO_TOOL_STREAK[0] = 0     # per-run: a previous run must not end this one
-    _NO_TOOL_FIRST[0] = ""
     # Read-only calls the model asked for alongside the one being executed.
     # Local to the run: a batch left over from a previous run must never leak
     # into this one.
