@@ -56,6 +56,15 @@ Rules:
   of how you carried it out. Prefer "Recorded a production outage caused by
   a Friday deploy; lesson: never release on Friday" over "Appended an entry
   to diario.md". The file you edited is not the point; what it SAYS is.
+- AN EPISODE IS WORTH WHAT ITS BEST PART IS WORTH, and `goal` must name that
+  part. The most reusable thing in a session is not always the subject that
+  took the most words. When the user says who they are, what they work under,
+  or what they prefer — while the conversation is nominally about something
+  else — THAT is the episode's substance. "Mario, 57, asks what the agent can
+  remember" is a memory; "User onboarding: explores AI capabilities" buries
+  the one durable fact inside a narrative about the agent itself. A future
+  self looking for the user's name must find it in the goal, not only in a
+  sentence halfway through the narrative.
 - Facts go in narrative, meaning goes in interpretation. Never mix them.
 - The length limits are real, not decoration. When this episode is recalled,
   only the first NAR_CHARS chars of narrative and the first INT_CHARS of
@@ -76,11 +85,27 @@ Rules:
   truly routine, one-off busywork LOW (0.1-0.3). A painful mistake or crisis
   is both surprising AND important (~0.9). When in doubt, ask: "will the
   agent's future self be worse off if this is forgotten?"
+- Judge importance by what the session YIELDS, never by its register. Who the
+  user is — name, age, role, the constraints they work under, their stated
+  preferences — is among the most reusable knowledge a session can produce:
+  score it 0.6-0.8 even when it was said in passing, even in a conversation
+  where no work was done. Conversely score LOW (0.1-0.3) a subject that was
+  discussed and closed with nothing carried forward: trivia, a lookup whose
+  answer goes stale, chat with no fact in it. A pleasant tone does not make a
+  fact forgettable, and an earnest one does not make small talk matter.
+- Score what this session ADDS, not what it mentions. A fact the user states
+  HERE is a yield; the same fact merely referred to again later is not — the
+  episode that first recorded it already holds it, and scoring the echo as
+  highly as the original makes every later session look equally important. If
+  you would write the same `goal` for two sessions, one of them is wrong: the
+  second one's goal is whatever was new in it, however slight.
 - Mention tool mechanics (which skill, how you formatted a file) ONLY when
   they carried a real, reusable lesson. Never frame a routine "I wrote or
   edited a file" as the point of the episode.
 - keywords: the SUBJECT of the work — people, decisions, problems, domains —
-  not your tools or file names. In the session's dominant language.
+  not your tools or file names. In the session's dominant language. Include
+  the user's own name whenever they state it: it is how a later session finds
+  everything else about them.
 - Keep each surprise under 200 characters.""" \
     .replace("NAR_CHARS", str(config.MEMORY_NARRATIVE_CHARS)) \
     .replace("INT_CHARS", str(config.MEMORY_INTERPRETATION_CHARS))
