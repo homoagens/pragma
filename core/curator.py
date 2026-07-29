@@ -278,9 +278,17 @@ def _format_episode(c: dict, workspace: str, revived: bool) -> list[str]:
     return lines
 
 
-def _reinforce(c: dict, workspace: str) -> tuple[list[str], bool]:
+def _reinforce(c: dict, workspace: str,
+               no_reinforce: set[str] | None = None) -> tuple[list[str], bool]:
     """Revive if dormant, reinforce salience; return (formatted lines, revived).
-    Best effort — bookkeeping must never break curation."""
+    Best effort — bookkeeping must never break curation.
+
+    `no_reinforce` names episodes this conversation has already reinforced.
+    A live session can lose a memory from its context — compaction drops the
+    turn it was attached to — and then legitimately need it again. Fetching it
+    twice is right; counting it twice is not, or salience would record how
+    often a context overflowed rather than what mattered.
+    """
     ep = c["ep"]
     revived = False
     try:
@@ -288,8 +296,9 @@ def _reinforce(c: dict, workspace: str) -> tuple[list[str], bool]:
         if c["dormant"]:
             path = estore.revive(path, ep)
             revived = True
-        ep["last_recalled"] = estore.now_iso()
-        ep["salience"] = min(1.0, float(ep.get("salience", 0.5)) + 0.1)
+        if ep.get("id") not in (no_reinforce or set()):
+            ep["last_recalled"] = estore.now_iso()
+            ep["salience"] = min(1.0, float(ep.get("salience", 0.5)) + 0.1)
         estore.save(path, ep)
     except Exception:
         pass
@@ -297,7 +306,7 @@ def _reinforce(c: dict, workspace: str) -> tuple[list[str], bool]:
 
 
 def _assemble(refs: list[str], eps: list[dict], lns: list[dict],
-              workspace: str) -> str:
+              workspace: str, no_reinforce: set[str] | None = None) -> str:
     if not refs:
         return ""
     lines = [
@@ -309,7 +318,7 @@ def _assemble(refs: list[str], eps: list[dict], lns: list[dict],
         if r.startswith("E"):
             idx = int(r[1:]) - 1
             if 0 <= idx < len(eps):
-                block, _ = _reinforce(eps[idx], workspace)
+                block, _ = _reinforce(eps[idx], workspace, no_reinforce)
                 lines.extend(block)
         elif r.startswith("L"):
             idx = int(r[1:]) - 1
@@ -320,15 +329,15 @@ def _assemble(refs: list[str], eps: list[dict], lns: list[dict],
     return "\n".join(lines)
 
 
-def _fallback(eps: list[dict], lns: list[dict],
-              workspace: str) -> tuple[str, list[str]]:
+def _fallback(eps: list[dict], lns: list[dict], workspace: str,
+              no_reinforce: set[str] | None = None) -> tuple[str, list[str]]:
     """Deterministic top-k when the curator LLM call fails — never lose the
     context to a curator error. Returns (block, the refs it used)."""
     cap = getattr(config, "CURATOR_MAX_FRAGMENTS", 6)
     refs = [f"E{i}" for i in range(1, len(eps) + 1)]
     refs += [f"L{i}" for i in range(1, len(lns) + 1)]
     refs = refs[:cap]
-    return _assemble(refs, eps, lns, workspace), refs
+    return _assemble(refs, eps, lns, workspace, no_reinforce), refs
 
 
 def _placed(refs: list[str], eps: list[dict],
@@ -357,7 +366,8 @@ def _placed(refs: list[str], eps: list[dict],
 def curate_knowledge_detailed(task: str, workspace: str = "", model=None,
                               exclude_ids: set[str] | None = None,
                               exclude_rules: set[str] | None = None,
-                              require_match: bool = False) -> dict:
+                              require_match: bool = False,
+                              no_reinforce: set[str] | None = None) -> dict:
     """Compose the knowledge zone and report what the curator did.
 
     `exclude_ids` / `exclude_rules` name what the caller already has in front
@@ -392,21 +402,22 @@ def curate_knowledge_detailed(task: str, workspace: str = "", model=None,
         return info
 
     if not getattr(config, "CURATOR_ENABLED", True):
-        info["block"], refs = _fallback(eps, lns, workspace)
+        info["block"], refs = _fallback(eps, lns, workspace, no_reinforce)
         info["episode_ids"], info["rule_texts"] = _placed(refs, eps, lns)
         info["fallback"] = True
         return info
 
     refs, reason = _ask_curator(task, eps, lns, model=model)
     if refs is None:                       # LLM failed → deterministic fallback
-        info["block"], refs = _fallback(eps, lns, workspace)
+        info["block"], refs = _fallback(eps, lns, workspace, no_reinforce)
         info["episode_ids"], info["rule_texts"] = _placed(refs, eps, lns)
         info["fallback"] = True
         return info
     info["reason"] = reason
     info["selected"] = _human_labels(refs, eps, lns)
     info["episode_ids"], info["rule_texts"] = _placed(refs, eps, lns)
-    info["block"] = _assemble(refs, eps, lns, workspace)  # [] → "" (empty desk)
+    info["block"] = _assemble(refs, eps, lns, workspace,
+                              no_reinforce)          # [] → "" (empty desk)
     info["empty"] = not info["block"]
     return info
 

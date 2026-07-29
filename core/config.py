@@ -276,6 +276,23 @@ MESSAGES_RECENT  = int(os.environ.get("MESSAGES_RECENT", "6"))
 # 15% of context window — enough for 4-6 detailed exchanges.
 HISTORY_MAX_CHARS = int(CONTEXT_WINDOW * 4 * 0.15)
 
+# ── Live session: when a conversation outgrows the window ────────────────────
+# A batch run that overflows is summarised. A conversation is not: its older
+# turns are finished experiences, so they are CONSOLIDATED into episodes and
+# leave the context as memory rather than as a blurred paraphrase.
+#
+# CHAT_COMPACT_CHARS is the trigger, in characters (~4 per token), measured
+# over the whole message list between turns. At 50% of the window there is
+# room left for the turn that follows plus the model's reply — compacting at
+# the brink would mean compacting again immediately.
+#
+# CHAT_KEEP_TURNS are the most recent turns left verbatim. They are what makes
+# "that table we discussed" still work right after a compaction; everything
+# before them is reachable through the episodes just written.
+CHAT_COMPACT_CHARS = int(os.environ.get(
+    "CHAT_COMPACT_CHARS", str(int(CONTEXT_WINDOW * 4 * 0.50))))
+CHAT_KEEP_TURNS = int(os.environ.get("CHAT_KEEP_TURNS", "3"))
+
 # When compressing the message list, how many chars per message are kept
 # in the text fed to the summarizer. Too low loses information; too high
 # blows the summarizer's own token budget. 2000 is a balanced default.

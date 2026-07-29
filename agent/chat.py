@@ -54,7 +54,7 @@ for p in (str(_ROOT), str(_CORE)):
 
 import config as baseline_config          # noqa: E402
 import llm_client                          # noqa: E402
-from react import AgentConfig, run_agent   # noqa: E402
+from react import AgentConfig, run_agent, _msg_chars   # noqa: E402
 from skills import palette as skills_palette   # noqa: E402
 from skills import skills_summary_for      # noqa: E402
 
@@ -93,20 +93,24 @@ def _append_raw_log(path: Path, turn: Turn) -> None:
         pass          # a logging failure must never end the session
 
 
-def _consolidate(turns: list[Turn], cwd: Path, renderer) -> None:
-    """Decide what was memorable, then write one episode per kept turn.
+def _consolidate(turns: list[Turn], cwd: Path, renderer,
+                 note: str = "this session") -> list[dict]:
+    """Decide what was memorable, then write one episode per kept segment.
 
     The order matters: the segmenter runs FIRST, so a discarded turn is never
     written and can never be linked to. Consolidating everything and pruning
     afterwards would leave later episodes pointing at deleted ones.
+
+    Returns the episodes actually written, read back from the store — the
+    caller compacting a conversation needs their content, not just a count.
     """
     if not turns:
-        return
+        return []
     try:
         from skills.episode_consolidate.skill import episode_consolidate_detailed
     except Exception as e:
         renderer.error(None, f"consolidation unavailable: {e}")
-        return
+        return []
 
     import segmenter
     renderer.faculty_running("SEGMENTER", "deciding what was worth keeping…")
@@ -117,10 +121,11 @@ def _consolidate(turns: list[Turn], cwd: Path, renderer) -> None:
 
     kept = [(idx, why) for idx, keep, why in segments if keep]
     if not kept:
-        return
+        return []
 
     renderer.faculty_running(
-        "CONSOLIDATOR", f"writing {len(kept)} episode(s) from this session…")
+        "CONSOLIDATOR", f"writing {len(kept)} episode(s) from {note}…")
+    written: list[dict] = []
     for i, (idx, _why) in enumerate(kept, 1):
         # A merged segment is consolidated as ONE experience: the turns are
         # joined in order, so the episode holds the request and how it turned
@@ -131,12 +136,88 @@ def _consolidate(turns: list[Turn], cwd: Path, renderer) -> None:
                 transcript=transcript, workspace=str(cwd), source="chat")
             renderer.faculty("CONSOLIDATOR",
                              f"[{i}/{len(kept)}] {res.get('summary', '')}")
+            ep = _load_episode(res.get("episode_id", ""))
+            if ep:
+                written.append(ep)
         except Exception as e:
             renderer.error(None, f"episode {i} failed: {e}")
+    return written
+
+
+def _load_episode(episode_id: str) -> dict | None:
+    if not episode_id:
+        return None
+    try:
+        import episodes as estore
+        p = Path(baseline_config.EPISODES_DIR) / f"{episode_id}.json"
+        if not p.exists():                      # swept to dormant already
+            p = Path(estore.dormant_dir()) / f"{episode_id}.json"
+        return json.loads(p.read_text(encoding="utf-8"))
+    except Exception:
+        return None
+
+
+def _compact(history: list, turns: list[Turn], turn_msgs: list[int],
+             done_upto: int, cwd: Path, renderer) -> tuple[list, int]:
+    """Trade the older turns of a conversation for the memory of them.
+
+    THE POINT OF THE WHOLE PHASE. A batch run that outgrows its window is
+    summarised, and rightly: it is one task, and half a task is not an
+    experience. A conversation is the opposite — its older turns are finished
+    experiences, and it already owns the faculty that turns those into a
+    compact durable form. Summarising them instead would be the memory system
+    declining to apply itself to its own context.
+
+    So the turns before the last CHAT_KEEP_TURNS are consolidated into
+    episodes NOW, dropped from the message list, and replaced by what those
+    episodes say. What stays is: the system prompt, the memory of what came
+    before, and the recent turns verbatim.
+
+    Returns (new history, new watermark). On any failure the history is
+    returned untouched — a conversation must not lose its context because
+    remembering it failed; it will simply be compacted again next turn, or
+    fall back to the loop's own compression if it grows past the window.
+    """
+    keep_n = getattr(baseline_config, "CHAT_KEEP_TURNS", 3)
+    cut_at = len(turns) - keep_n
+    if cut_at <= done_upto:
+        return history, done_upto        # nothing old enough to trade away
+
+    renderer.faculty("COMPACTOR",
+                     f"conversation is full — remembering turns "
+                     f"{done_upto + 1}-{cut_at} and keeping the last {keep_n}")
+    episodes = _consolidate(turns[done_upto:cut_at], cwd, renderer,
+                            note=f"turns {done_upto + 1}-{cut_at}")
+    if not episodes:
+        # The segmenter judged none of it worth keeping. The turns still have
+        # to go — nothing was memorable, so nothing is lost by dropping them.
+        renderer.faculty("COMPACTOR", "nothing worth remembering in those turns")
+
+    # Counted, never indexed: earlier compactions have already shifted every
+    # absolute position in `history`, but they only ever touch its head, so
+    # the turns to keep are reliably its last N messages.
+    tail_n = sum(turn_msgs[cut_at:])
+    head = history[:1] if history and history[0].get("role") == "system" else []
+    tail = history[-tail_n:] if tail_n else []
+
+    lines = ["[Earlier in this conversation — consolidated into memory when "
+             "the context filled up. These are the episodes it produced; the "
+             "turns themselves are gone.]"]
+    for ep in episodes:
+        lines.append(f"- {ep.get('goal', '')}")
+        nar = (ep.get("narrative") or "").strip()
+        if nar:
+            lines.append(f"  {nar[:baseline_config.MEMORY_NARRATIVE_CHARS]}")
+    carried = [{"role": "user", "content": "\n".join(lines)}] if episodes else []
+
+    new_history = head + carried + tail
+    renderer.faculty("COMPACTOR",
+                     f"{len(history)} → {len(new_history)} messages")
+    return new_history, cut_at
 
 
 def _recall(text: str, cwd, desk_ids: set[str], desk_rules: set[str],
-            renderer, first_turn: bool) -> str:
+            reinforced: set[str], renderer, first_turn: bool) -> str:
     """The curator's contribution to one turn, or "".
 
     WHY ONCE PER TURN AND NOT ONCE PER SESSION. A conversation changes subject.
@@ -161,7 +242,7 @@ def _recall(text: str, cwd, desk_ids: set[str], desk_rules: set[str],
         info = curator.curate_knowledge_detailed(
             text, workspace=str(cwd),
             exclude_ids=desk_ids, exclude_rules=desk_rules,
-            require_match=not first_turn)
+            require_match=not first_turn, no_reinforce=reinforced)
     except Exception as e:
         renderer.faculty("CURATOR", f"recall unavailable — {e}")
         return ""
@@ -170,6 +251,7 @@ def _recall(text: str, cwd, desk_ids: set[str], desk_rules: set[str],
         return ""
     desk_ids.update(info["episode_ids"])
     desk_rules.update(info["rule_texts"])
+    reinforced.update(info["episode_ids"])
 
     pool = f"{info['n_ep']} memories + {info['n_ln']} rules"
     if info["fallback"]:
@@ -270,6 +352,17 @@ def main() -> int:
     # sets are what stops it being fetched a second time.
     desk_ids: set[str] = set()
     desk_rules: set[str] = set()
+    # Two sets, deliberately. `desk_ids` is what is IN FRONT of the agent and
+    # empties when compaction drops the turns those blocks were attached to.
+    # `reinforced` is what this conversation has already counted as recalled
+    # and never empties: a memory may legitimately be fetched twice, but
+    # reinforcing it twice would make salience record how often the context
+    # overflowed instead of what mattered in the conversation.
+    reinforced: set[str] = set()
+    # Messages each turn added to the history, so compaction can take the tail
+    # by count rather than by an index earlier compactions have invalidated.
+    turn_msgs: list[int] = []
+    consolidated_upto = 0
 
     try:
         while True:
@@ -290,15 +383,20 @@ def main() -> int:
             turn = Turn(text)
             prompt = text
             if args.memory:
-                block = _recall(text, cwd, desk_ids, desk_rules, renderer,
-                                first_turn=not turns)
+                block = _recall(text, cwd, desk_ids, desk_rules, reinforced,
+                                renderer, first_turn=not turns)
                 if block:
                     prompt = f"{block}\n\n{text}"
 
+            before = len(history or [])
             result = run_agent(
                 cfg, prompt,
                 on_step=_make_on_step(renderer, 0, turn.transcript),
                 history=history,
+                # Everything already in the history is a finished turn. The
+                # loop may compress its own step traffic; the conversation is
+                # not its to blur.
+                protect_prefix=before,
             )
             if result is None:          # interrupted mid-turn
                 _append_raw_log(log_path, turn)
@@ -316,13 +414,29 @@ def main() -> int:
             _append_raw_log(log_path, turn)
             turns.append(turn)
             history = result.get("messages") or history
+            turn_msgs.append(max(len(history or []) - before, 1))
 
             renderer.conclusion(result.get("forced", False), 0.0, conclusion)
+
+            # Compaction happens BETWEEN turns, never inside one: a turn that
+            # is still running has no finished experience to consolidate, and
+            # a ~40s pause mid-answer is the worst possible moment for it.
+            if args.memory and history:
+                size = sum(_msg_chars(m) for m in history)
+                if size > getattr(baseline_config, "CHAT_COMPACT_CHARS", 0):
+                    history, consolidated_upto = _compact(
+                        history, turns, turn_msgs, consolidated_upto,
+                        cwd, renderer)
+                    desk_ids.clear()      # those blocks are gone from context
+                    desk_rules.clear()
     except KeyboardInterrupt:
         print()
 
     if args.memory:
-        _consolidate(turns, cwd, renderer)
+        # Only what compaction has not already remembered. Without the
+        # watermark a long session would write every early turn twice: once
+        # when the context filled up, once again on the way out.
+        _consolidate(turns[consolidated_upto:], cwd, renderer)
     elif turns:
         print(f"\n  {len(turns)} turn(s) recorded in {log_path.name} "
               f"(no --memory: nothing was consolidated)")

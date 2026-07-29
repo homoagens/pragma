@@ -30,7 +30,8 @@ def summarize(text, context="conversation", model=None):
     )
 
 
-def compress(messages, threshold=None, context="conversation", model=None):
+def compress(messages, threshold=None, context="conversation", model=None,
+             protect=None):
     """
     If the message list exceeds the threshold, compress old messages into a summary.
     With threshold=0 forces compression regardless of count
@@ -39,6 +40,14 @@ def compress(messages, threshold=None, context="conversation", model=None):
     Always preserves:
       - the system prompt at position 0 (if present)
       - the last config.MESSAGES_RECENT messages
+
+    `protect` extends the preserved head beyond the system prompt: the first
+    `protect` messages are left exactly as they are. It exists for the live
+    session, where the head is not a prompt but the CONVERSATION — earlier
+    turns that a summary must never be allowed to blur. There, overflow is
+    handled by consolidating those turns into episodes (agent/chat.py), and
+    this function's job shrinks to the current turn's own tool traffic.
+    Default None keeps the historical behaviour exactly: system prompt only.
 
     Returns the compressed list, or unchanged if below threshold.
     """
@@ -50,14 +59,11 @@ def compress(messages, threshold=None, context="conversation", model=None):
     recent_n   = config.MESSAGES_RECENT
     has_system = bool(messages) and messages[0].get("role") == "system"
 
-    if has_system:
-        system_msg    = messages[0]
-        to_compress   = messages[1:-recent_n]
-        recent        = messages[-recent_n:]
-    else:
-        system_msg    = None
-        to_compress   = messages[:-recent_n]
-        recent        = messages[-recent_n:]
+    head_n = (1 if has_system else 0) if protect is None else max(protect, 0)
+    head_n = min(head_n, len(messages))
+    head        = messages[:head_n]
+    to_compress = messages[head_n:-recent_n] if recent_n else messages[head_n:]
+    recent      = messages[-recent_n:] if recent_n else []
 
     if not to_compress:
         return messages
@@ -92,6 +98,4 @@ def compress(messages, threshold=None, context="conversation", model=None):
         "content": f"[SUMMARY OF WHAT HAPPENED SO FAR]:\n{summary}",
     }
 
-    if has_system:
-        return [system_msg, summary_msg] + recent
-    return [summary_msg] + recent
+    return list(head) + [summary_msg] + recent

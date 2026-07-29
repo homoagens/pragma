@@ -398,7 +398,8 @@ def _call_skill(cfg: AgentConfig, action: str, args: dict) -> str:
 
 def run_agent(cfg: AgentConfig, user_task: str, log_path: Optional[Path] = None,
               on_step: Optional[Callable] = None,
-              history: Optional[list] = None) -> Optional[dict]:
+              history: Optional[list] = None,
+              protect_prefix: int = 0) -> Optional[dict]:
     """
     Start the ReAct loop.
     cfg       : AgentConfig
@@ -407,6 +408,17 @@ def run_agent(cfg: AgentConfig, user_task: str, log_path: Optional[Path] = None,
     on_step   : optional callback called at each loop event.
                 Signature: on_step(event: dict) where event always has "type" and "content".
                 Types: "thought" | "action" | "observation" | "final" | "error" | "start"
+    protect_prefix : messages at the head that compression may not touch.
+
+    `protect_prefix` draws the line between two jobs that look alike and are
+    not. Inside one turn, too many tool observations is a summarising problem
+    and this loop solves it. Across the turns of a conversation, the same
+    overflow is a MEMORY problem: those turns are finished experiences, and
+    blurring them into a summary throws away the very thing consolidation
+    exists to keep. A caller that owns the conversation (agent/chat.py) passes
+    the length of the history it handed in, so this loop compresses its own
+    step traffic and never the turns before it. Default 0 = compress
+    everything, which is what a batch run wants.
 
     Returns the final dict (containing one of the final_keys) or None.
     The dict is enriched with: name, forced (bool).
@@ -511,7 +523,8 @@ def run_agent(cfg: AgentConfig, user_task: str, log_path: Optional[Path] = None,
         if queued is None:
             # ── Memory compression ──────────────────────────────────────
             messages = memory.compress(messages, config.MAX_MESSAGES,
-                                       f"loop {cfg.name}", model=model)
+                                       f"loop {cfg.name}", model=model,
+                                       protect=protect_prefix or None)
             # A native assistant turn carries its payload in tool_calls, not in
             # content: counting content alone would make a write_file holding a
             # whole file look like an empty message, and compression would fire
@@ -522,7 +535,9 @@ def run_agent(cfg: AgentConfig, user_task: str, log_path: Optional[Path] = None,
                     console.print(
                         f"[yellow]Payload {total_chars} chars — compressing...[/yellow]"
                     )
-                messages = memory.compress(messages, 0, f"loop {cfg.name}", model=model)
+                messages = memory.compress(messages, 0, f"loop {cfg.name}",
+                                           model=model,
+                                           protect=protect_prefix or None)
 
         # ── LLM call (skipped entirely when serving a queued read) ───
         try:
