@@ -538,6 +538,23 @@ def run_agent(cfg: AgentConfig, user_task: str, log_path: Optional[Path] = None,
                 messages = memory.compress(messages, 0, f"loop {cfg.name}",
                                            model=model,
                                            protect=protect_prefix or None)
+                # ESCALATION. The fence is a preference, not a guarantee. A
+                # protected head plus MESSAGES_RECENT leaves the first turns of
+                # a step uncompressible, and one step at full output can clear
+                # the whole remaining budget on its own — after which the
+                # request is refused by the server and this loop simply retries
+                # the same oversized prompt until its steps run out. A blurred
+                # conversation is bad; a turn that spins and produces nothing
+                # is worse. So when protecting it was not enough, stop
+                # protecting it. The session's own compaction will rebuild the
+                # history from memory at the end of the turn anyway.
+                if (protect_prefix
+                        and sum(_msg_chars(m) for m in messages) > config.MAX_CHARS):
+                    if config.DEBUG:
+                        console.print("[yellow]Still over budget — dropping the "
+                                      "conversation fence[/yellow]")
+                    messages = memory.compress(messages, 0, f"loop {cfg.name}",
+                                               model=model, protect=None)
 
         # ── LLM call (skipped entirely when serving a queued read) ───
         try:
