@@ -90,7 +90,15 @@ $Path = [System.IO.Path]::GetFullPath($Path)
 # A session inside the repository would put the agent's workspace in Pragma's
 # own source tree, which agent.batch refuses outright - catch it here, with an
 # explanation, instead of at the first task.
-if ($Path.ToLower().StartsWith($Repo.ToLower())) {
+#
+# Compared as paths, not as text. A bare StartsWith made "pragma-notes" look
+# like a child of "pragma" - they are siblings that happen to share a prefix -
+# and the script rejected its own suggested default, so it could not be used
+# at all. The separator is what turns a prefix into containment.
+$sep     = [System.IO.Path]::DirectorySeparatorChar
+$pathKey = $Path.TrimEnd($sep).ToLower()
+$repoKey = $Repo.TrimEnd($sep).ToLower()
+if ($pathKey -eq $repoKey -or $pathKey.StartsWith($repoKey + $sep)) {
     Write-Host ""
     Write-Host "That path is inside the Pragma repository." -ForegroundColor Red
     Write-Host "A session must live elsewhere: Pragma refuses to work inside its own"
