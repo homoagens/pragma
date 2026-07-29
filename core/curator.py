@@ -94,14 +94,26 @@ def _episode_text(ep: dict) -> str:
 
 # ── Stage 1: prefilter (read-only) ────────────────────────────────────────────
 
-def _episode_candidates(task: str, workspace: str) -> list[dict]:
+def _episode_candidates(task: str, workspace: str,
+                        exclude_ids: set[str] | None = None,
+                        require_match: bool = False) -> list[dict]:
+    """Candidate episodes for one request, best first.
+
+    `exclude_ids` drops episodes before scoring, not after: a live session
+    curates once per turn, and an episode already on the desk must not keep
+    occupying one of the n slots for the rest of the conversation. Filtering
+    afterwards would let the same memory crowd out every newcomer.
+    """
     n = getattr(config, "CURATOR_CANDIDATES_EPISODES", 10)
     boost = getattr(config, "EPISODE_WORKSPACE_BOOST", 2)
+    skip = exclude_ids or set()
     qtok = _tokens(task)
     scored = []
     for zone, d in (("active", estore.active_dir()),
                     ("dormant", estore.dormant_dir())):
         for p, ep in estore.load(d):
+            if ep.get("id") in skip:
+                continue
             kw = len(_tokens(_episode_text(ep)) & qtok)
             score = kw + (boost if workspace and ep.get("workspace") == workspace
                           else 0)
@@ -114,13 +126,26 @@ def _episode_candidates(task: str, workspace: str) -> list[dict]:
                                     c["ep"].get("ts", "")), reverse=True)
         return matched[:n]
     # Nothing keyword-relevant — offer the most recent as candidates and let
-    # the curator decide (it will usually return an empty desk).
+    # the curator decide (it will usually return an empty desk). One task is
+    # worth that call: the opening question of a session often shares no words
+    # with anything stored ("what do you know about me?" matches nothing) and
+    # is exactly when the past is wanted most.
+    #
+    # `require_match` refuses that fallback. A live session curates once per
+    # turn, and paying an LLM call on every turn to be told the desk is empty
+    # is the whole latency budget of a conversation. There the fallback is
+    # allowed on the first turn and refused afterwards, so the curator wakes
+    # for a genuine change of subject rather than for the passage of time.
+    if require_match:
+        return []
     scored.sort(key=lambda c: c["ep"].get("ts", ""), reverse=True)
     return scored[:n]
 
 
-def _learning_candidates(task: str) -> list[dict]:
+def _learning_candidates(task: str,
+                         exclude_texts: set[str] | None = None) -> list[dict]:
     m = getattr(config, "CURATOR_CANDIDATES_LEARNINGS", 8)
+    skip = exclude_texts or set()
     path = Path(config.LEARNINGS_PATH)
     if not path.exists():
         return []
@@ -134,6 +159,8 @@ def _learning_candidates(task: str) -> list[dict]:
         if e.get("status", "active") == "retired":
             continue
         text = e.get("text", "")
+        if text in skip:
+            continue
         kw = len(_tokens(text) & qtok)
         if kw <= 0:
             continue
@@ -293,53 +320,92 @@ def _assemble(refs: list[str], eps: list[dict], lns: list[dict],
     return "\n".join(lines)
 
 
-def _fallback(eps: list[dict], lns: list[dict], workspace: str) -> str:
+def _fallback(eps: list[dict], lns: list[dict],
+              workspace: str) -> tuple[str, list[str]]:
     """Deterministic top-k when the curator LLM call fails — never lose the
-    context to a curator error."""
+    context to a curator error. Returns (block, the refs it used)."""
     cap = getattr(config, "CURATOR_MAX_FRAGMENTS", 6)
     refs = [f"E{i}" for i in range(1, len(eps) + 1)]
     refs += [f"L{i}" for i in range(1, len(lns) + 1)]
-    return _assemble(refs[:cap], eps, lns, workspace)
+    refs = refs[:cap]
+    return _assemble(refs, eps, lns, workspace), refs
+
+
+def _placed(refs: list[str], eps: list[dict],
+            lns: list[dict]) -> tuple[list[str], list[str]]:
+    """The episode ids and rule texts a set of refs actually resolves to.
+
+    A caller that curates repeatedly needs to know what reached the desk, not
+    what was offered: the refs are positions in this call's candidate list and
+    mean nothing once the list is rebuilt on the next turn.
+    """
+    ids, texts = [], []
+    for r in refs or []:
+        try:
+            idx = int(r[1:]) - 1
+        except ValueError:
+            continue
+        if r.startswith("E") and 0 <= idx < len(eps):
+            ids.append(eps[idx]["ep"].get("id", ""))
+        elif r.startswith("L") and 0 <= idx < len(lns):
+            texts.append(lns[idx]["entry"].get("text", ""))
+    return [i for i in ids if i], [t for t in texts if t]
 
 
 # ── Public API ────────────────────────────────────────────────────────────────
 
-def curate_knowledge_detailed(task: str, workspace: str = "", model=None) -> dict:
+def curate_knowledge_detailed(task: str, workspace: str = "", model=None,
+                              exclude_ids: set[str] | None = None,
+                              exclude_rules: set[str] | None = None,
+                              require_match: bool = False) -> dict:
     """Compose the knowledge zone and report what the curator did.
+
+    `exclude_ids` / `exclude_rules` name what the caller already has in front
+    of the agent. A batch run passes neither: it curates once, for one task.
+    A live session passes what earlier turns put on the desk, so the curator
+    is asked only about what is NEW — which keeps the same memory from being
+    pasted into the conversation twenty times, and keeps recall from
+    reinforcing one episode once per turn instead of once per session.
 
     Returns a dict:
       { "block":    "<knowledge zone markdown, or ''>",
         "n_ep":     candidate episodes considered,
         "n_ln":     candidate rules considered,
         "selected": [human labels of chosen fragments],
+        "episode_ids": [ids actually placed on the desk],
+        "rule_texts":  [rule texts actually placed on the desk],
         "reason":   "<curator's one-line justification>",
         "fallback": bool,   # curator LLM failed → deterministic top-k
         "empty":    bool }  # nothing relevant, or the curator chose an empty desk
     """
     info = {"block": "", "n_ep": 0, "n_ln": 0, "selected": [],
+            "episode_ids": [], "rule_texts": [],
             "reason": "", "fallback": False, "empty": False}
     if not task or not task.strip():
         info["empty"] = True
         return info
-    eps = _episode_candidates(task, workspace)
-    lns = _learning_candidates(task)
+    eps = _episode_candidates(task, workspace, exclude_ids, require_match)
+    lns = _learning_candidates(task, exclude_rules)
     info["n_ep"], info["n_ln"] = len(eps), len(lns)
     if not eps and not lns:
         info["empty"] = True
         return info
 
     if not getattr(config, "CURATOR_ENABLED", True):
-        info["block"] = _fallback(eps, lns, workspace)
+        info["block"], refs = _fallback(eps, lns, workspace)
+        info["episode_ids"], info["rule_texts"] = _placed(refs, eps, lns)
         info["fallback"] = True
         return info
 
     refs, reason = _ask_curator(task, eps, lns, model=model)
     if refs is None:                       # LLM failed → deterministic fallback
-        info["block"] = _fallback(eps, lns, workspace)
+        info["block"], refs = _fallback(eps, lns, workspace)
+        info["episode_ids"], info["rule_texts"] = _placed(refs, eps, lns)
         info["fallback"] = True
         return info
     info["reason"] = reason
     info["selected"] = _human_labels(refs, eps, lns)
+    info["episode_ids"], info["rule_texts"] = _placed(refs, eps, lns)
     info["block"] = _assemble(refs, eps, lns, workspace)  # [] → "" (empty desk)
     info["empty"] = not info["block"]
     return info

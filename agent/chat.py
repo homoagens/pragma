@@ -30,9 +30,11 @@
 # every turn, before anything else can fail: consolidation can then be re-run
 # from it. A memory may arrive late; it must not disappear.
 #
-# NOT IN THIS PHASE: CURATED recall during the session (the agent can call the
-# recall skills itself, but nothing puts the past on its desk unasked), and
-# consolidation on context overflow. See PAPER_STRUCTURE / the plan.
+# RECALL. The curator runs once per turn, on the user's words, and prepends
+# what it chose to that turn. The desk only grows: a fragment already placed is
+# excluded from later turns, so it is neither pasted nor reinforced twice.
+#
+# NOT IN THIS PHASE: consolidation on context overflow. See the plan.
 
 from __future__ import annotations
 
@@ -133,6 +135,54 @@ def _consolidate(turns: list[Turn], cwd: Path, renderer) -> None:
             renderer.error(None, f"episode {i} failed: {e}")
 
 
+def _recall(text: str, cwd, desk_ids: set[str], desk_rules: set[str],
+            renderer, first_turn: bool) -> str:
+    """The curator's contribution to one turn, or "".
+
+    WHY ONCE PER TURN AND NOT ONCE PER SESSION. A conversation changes subject.
+    Curating only at the start would hand the agent whatever matched the
+    opening pleasantry and nothing for the four topics that follow.
+
+    WHY THE DESK ONLY GROWS. Every block stays in the history it was prepended
+    to, so a memory fetched at turn three is still in front of the agent at
+    turn eleven. Fetching it again would paste it twice and, worse, reinforce
+    it twice: salience would then measure how long a conversation ran rather
+    than what mattered in it. `desk_ids` is what makes recall idempotent.
+
+    WHY THE FIRST TURN IS SPECIAL. With no keyword match the curator is offered
+    the most recent episodes instead — worth one LLM call at the opening, where
+    the question is usually about the past itself and shares no words with it
+    ("what do you know about me?"), and not worth one on every later turn.
+
+    Failure is silent by design: a session must not die because recall did.
+    """
+    try:
+        import curator
+        info = curator.curate_knowledge_detailed(
+            text, workspace=str(cwd),
+            exclude_ids=desk_ids, exclude_rules=desk_rules,
+            require_match=not first_turn)
+    except Exception as e:
+        renderer.faculty("CURATOR", f"recall unavailable — {e}")
+        return ""
+
+    if not info["block"]:
+        return ""
+    desk_ids.update(info["episode_ids"])
+    desk_rules.update(info["rule_texts"])
+
+    pool = f"{info['n_ep']} memories + {info['n_ln']} rules"
+    if info["fallback"]:
+        renderer.faculty("CURATOR", f"{pool} → deterministic fallback "
+                                    f"(curator unavailable)")
+    else:
+        note = f"{pool} → recalled {len(info['selected'])}"
+        if info["reason"]:
+            note += f" — {info['reason']}"
+        renderer.faculty("CURATOR", note, info["selected"])
+    return info["block"]
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(
         prog="python -m agent.chat",
@@ -173,21 +223,13 @@ def main() -> int:
 
     skills = skills_palette()
     skills["ask_user"] = batch_ask_user
-    # `agent.batch` withholds the raw recall skills on purpose: there the
-    # curator puts memory on the desk before the agent starts, so a second,
-    # uncurated channel would only let the model bypass it. That argument does
-    # not hold here — the curator does not run during a session yet — and
-    # copying the line across left the agent walled off in both directions at
-    # once: nothing handed to it, and no way to go and look. Asked "what do you
-    # know about me?" it answered that it had no memory of previous sessions,
-    # which was true of its palette and false of the store sitting next to it.
-    # So in a session the skills stay: recall is deliberate rather than
-    # automatic, which is worse than the curator and much better than blind.
-    # Without --memory the session does not take part in memory at all, and
-    # that has to cut both ways — it must not read a store it will not write.
-    if not args.memory:
-        skills.pop("recall_episodes", None)
-        skills.pop("recall_learnings", None)
+    # One channel, always curated — the same rule as `agent.batch`. The raw
+    # recall skills would be a second, uncurated way in: they reinforce and
+    # revive on keyword overlap alone, with no judgment between the prefilter
+    # and the write, so an agent free to call them turns salience into a count
+    # of how often a word recurred. The curator reinforces only what it chose.
+    skills.pop("recall_episodes", None)
+    skills.pop("recall_learnings", None)
 
     coding_model = baseline_config.CODING_MODEL or baseline_config.DEFAULT_MODEL
     system_prompt = build_system_prompt(
@@ -205,8 +247,8 @@ def main() -> int:
     log_path = cwd / ".pragma_session.jsonl"
     print()
     print(f"  Pragma live session · {served} · {cwd}")
-    print(f"  memory on exit: {'yes' if args.memory else 'no'} · "
-          f"max {max_steps} steps per turn")
+    print(f"  memory: {'recall on + consolidation on exit' if args.memory else 'off'}"
+          f" · max {max_steps} steps per turn")
     print("  /exit to close the session (Ctrl+C also consolidates)")
     print()
 
@@ -222,6 +264,12 @@ def main() -> int:
 
     history: list | None = None
     turns: list[Turn] = []
+    # What the curator has already put in front of the agent, for the whole
+    # conversation. It is not a cache: the desk IS the history, because the
+    # block is prepended to the turn it was fetched for and stays there. The
+    # sets are what stops it being fetched a second time.
+    desk_ids: set[str] = set()
+    desk_rules: set[str] = set()
 
     try:
         while True:
@@ -235,9 +283,20 @@ def main() -> int:
             if text.lower() in _EXIT_WORDS:
                 break
 
+            # The Turn — and so the raw log, and so what the segmenter reads
+            # on exit — keeps the user's words alone. Only the prompt carries
+            # the recalled memory: a knowledge block replayed as if the user
+            # had typed it would corrupt segmentation and then the episodes.
             turn = Turn(text)
+            prompt = text
+            if args.memory:
+                block = _recall(text, cwd, desk_ids, desk_rules, renderer,
+                                first_turn=not turns)
+                if block:
+                    prompt = f"{block}\n\n{text}"
+
             result = run_agent(
-                cfg, text,
+                cfg, prompt,
                 on_step=_make_on_step(renderer, 0, turn.transcript),
                 history=history,
             )
