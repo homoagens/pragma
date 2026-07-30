@@ -124,6 +124,72 @@ if (-not $PSBoundParameters.ContainsKey('Profile')) {
     $Profile = Ask "Model profile (empty = the model from .env)?" ""
 }
 
+# --- sampling ---------------------------------------------------------------
+# Asked AFTER the profile, because the profile is what selects the endpoint: a
+# question about a server's defaults has to be aimed at the server the session
+# will actually talk to.
+#
+# The numbers are read from that server rather than guessed. They matter because
+# of an asymmetry that is easy to get wrong: Pragma always sends `temperature`,
+# so the server's own value never reaches it, while top_k / top_p / min_p are
+# only sent when set, so there the server decides. Showing both sides is the
+# only way the choice is an informed one.
+$Temperature = ''
+$TopK = ''
+$TopP = ''
+$MinP = ''
+
+$probe = @'
+import json, sys
+sys.path.insert(0, "core")
+import llm_client
+url, _k = llm_client._resolved_endpoint(None, None)
+out = {"base_url": url}
+root = url[:-3] if url.endswith("/v1") else url
+try:
+    import requests
+    p = requests.get(root.rstrip("/") + "/props", timeout=5).json()
+    g = p.get("default_generation_settings") or {}
+    src = g if g else p
+    out["server"] = {k: (src.get(k) if src.get(k) is not None else p.get(k))
+                     for k in ("temperature", "top_k", "top_p", "min_p")}
+except Exception as e:
+    out["error"] = str(e)[:100]
+print(json.dumps(out))
+'@
+$probeFile = Join-Path $env:TEMP "pragma_newsession_probe.py"
+$probe | Out-File -FilePath $probeFile -Encoding ascii
+$srv = $null
+$endpoint = ''
+try {
+    if ($Profile) { $env:PRAGMA_PROFILE = $Profile }
+    Push-Location $Repo
+    $raw = & (Join-Path $Repo "venv\Scripts\python.exe") $probeFile 2>$null
+    Pop-Location
+    $info = ($raw | Out-String).Trim() | ConvertFrom-Json
+    $endpoint = $info.base_url
+    if (-not $info.error) { $srv = $info.server }
+} catch { }
+Remove-Item $probeFile -ErrorAction SilentlyContinue
+
+Write-Host ""
+if ($endpoint) { Write-Host "  endpoint  : $endpoint" -ForegroundColor DarkGray }
+if ($srv) {
+    Write-Host ("  the server's own sampling: temp {0} / top_k {1} / top_p {2} / min_p {3}" -f `
+        $srv.temperature, $srv.top_k, $srv.top_p, $srv.min_p) -ForegroundColor DarkGray
+    Write-Host "  Pragma always sends temperature, so the server's is never used." -ForegroundColor DarkGray
+    Write-Host "  The other three apply only where you leave this session empty." -ForegroundColor DarkGray
+    $ans = Ask "Set sampling for this session? (n = leave it deterministic)" "n"
+    if ($ans -match '^(y|yes|s|si)$') {
+        $Temperature = Ask "  temperature (0 = greedy, the others then do nothing)" "$($srv.temperature)"
+        $TopK = Ask "  top_k  (empty = the server's $($srv.top_k))" ""
+        $TopP = Ask "  top_p  (empty = the server's $($srv.top_p))" ""
+        $MinP = Ask "  min_p  (empty = the server's $($srv.min_p))" ""
+    }
+} else {
+    Write-Host "  backend not reachable - sampling left empty (edit pragma.ps1 later)." -ForegroundColor DarkGray
+}
+
 # --- create ---------------------------------------------------------------------
 foreach ($d in @($Path, (Join-Path $Path "workspace"), (Join-Path $Path ".memoria"))) {
     New-Item -ItemType Directory -Force $d | Out-Null
@@ -167,10 +233,10 @@ $lines = @(
     "    # At temperature 0 decoding is greedy and the other three do nothing;",
     "    # set them only together with a temperature above zero.",
     "    # Qwen3 thinking preset, for reference: 0.6 / 20 / 0.95 / 0.0",
-    "    Temperature = `"`"",
-    "    TopK        = `"`"",
-    "    TopP        = `"`"",
-    "    MinP        = `"`"",
+    "    Temperature = `"$Temperature`"",
+    "    TopK        = `"$TopK`"",
+    "    TopP        = `"$TopP`"",
+    "    MinP        = `"$MinP`"",
     "}",
     "",
     ". (Join-Path `$PragmaSession.Repo `"tools\pragma-session.ps1`")"
