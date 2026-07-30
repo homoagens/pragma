@@ -82,7 +82,78 @@ LLM_API_KEY  = os.environ.get("LLM_API_KEY",  "")
 # Examples: llama3.2, gpt-4o-mini, claude-haiku-4-5
 
 DEFAULT_MODEL       = os.environ.get("DEFAULT_MODEL", "llama3.2")
-DEFAULT_TEMPERATURE = float(os.environ.get("DEFAULT_TEMPERATURE", "0.2"))
+
+# ── Sampling ─────────────────────────────────────────────────────────────────
+# TEMPERATURE IS ALWAYS SENT, the other three only when set. That asymmetry is
+# the whole design, and it comes from how an OpenAI-compatible server resolves
+# a request: a field present in the JSON body wins, a field absent falls back
+# to the server's own launch-time default. So an unset knob here does not mean
+# "some hidden Pragma value" — it means the server decides, which is where a
+# sampling preset for a given model usually already lives.
+#
+# Temperature is the exception because determinism is not a preference here.
+# The memory faculties ask for structured judgement (which fragments matter,
+# what happened, what it means) and pass 0.0 explicitly; a benchmark campaign
+# wants the task to be the variable and not the dice. Leaving temperature to
+# the server would make both of those accidental, so it is stated.
+#
+# Note that at temperature 0 llama.cpp decodes greedily and top_k / top_p /
+# min_p have no effect at all. Setting them is only meaningful together with a
+# temperature above zero.
+DEFAULT_TEMPERATURE = float(os.environ.get("DEFAULT_TEMPERATURE", "0.0"))
+
+
+def _opt_float(name):
+    """An optional sampling knob: a number when set, None when not."""
+    raw = os.environ.get(name, "").strip()
+    if not raw:
+        return None
+    try:
+        return float(raw)
+    except ValueError:
+        return None
+
+
+def _opt_int(name):
+    raw = os.environ.get(name, "").strip()
+    if not raw:
+        return None
+    try:
+        return int(float(raw))
+    except ValueError:
+        return None
+
+
+TOP_K = _opt_int("TOP_K")
+TOP_P = _opt_float("TOP_P")
+MIN_P = _opt_float("MIN_P")
+
+
+def sampling_extras():
+    """The optional samplers, as payload fields — only the ones actually set.
+
+    top_k / min_p are llama.cpp extensions rather than OpenAI fields; a server
+    that does not know them ignores them, which is the same outcome as not
+    sending them, so there is nothing to guard against.
+    """
+    out = {}
+    if TOP_K is not None:
+        out["top_k"] = TOP_K
+    if TOP_P is not None:
+        out["top_p"] = TOP_P
+    if MIN_P is not None:
+        out["min_p"] = MIN_P
+    return out
+
+
+def sampling_line():
+    """One human-readable line: what this process will actually send."""
+    parts = [f"temp {DEFAULT_TEMPERATURE:g}"]
+    for k, v in sampling_extras().items():
+        parts.append(f"{k} {v:g}")
+    if len(parts) == 1:
+        parts.append("top_k/top_p/min_p from the server")
+    return " / ".join(parts)
 
 # The model the endpoint is ACTUALLY serving, resolved at runtime by
 # llm_client.ping_models() via GET /models (llama.cpp reports the loaded

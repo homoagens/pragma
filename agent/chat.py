@@ -273,7 +273,10 @@ def main() -> int:
                     help="workspace (default: PRAGMA_WORKSPACE, else cwd)")
     ap.add_argument("--max-steps", type=int, default=None,
                     help="step budget per turn")
-    ap.add_argument("--temperature", type=float, default=0.0)
+    # None, not 0.0: see agent/batch.py. A literal default here shadowed
+    # DEFAULT_TEMPERATURE and made the environment variable inert.
+    ap.add_argument("--temperature", type=float, default=None,
+                    help="sampling temperature (default: DEFAULT_TEMPERATURE)")
     ap.add_argument("--memory", action="store_true",
                     help="consolidate the session into episodes on exit")
     args = ap.parse_args()

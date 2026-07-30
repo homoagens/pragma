@@ -613,9 +613,13 @@ def main() -> int:
                              f"currently {baseline_config.MAX_STEPS})")
     parser.add_argument("--log", default=None,
                         help="write the full structured step log (JSON) here")
-    parser.add_argument("--temperature", type=float, default=0.0,
-                        help="sampling temperature (default 0.0 for "
-                             "reproducible runs)")
+    # Default None, not 0.0, so DEFAULT_TEMPERATURE is reachable. A literal
+    # 0.0 here was never None, so the config knob it was supposed to fall back
+    # to could not be read by anyone: setting DEFAULT_TEMPERATURE had no effect
+    # and no way to find out why. Two defaults, and the invisible one won.
+    parser.add_argument("--temperature", type=float, default=None,
+                        help="sampling temperature (default: DEFAULT_TEMPERATURE, "
+                             "itself 0.0 for reproducible runs)")
     parser.add_argument("--obs-limit", type=int, default=600,
                         help="max chars of each observation printed to stdout "
                              "(0 = unlimited; the --log file always gets the "

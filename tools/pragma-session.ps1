@@ -20,7 +20,7 @@
 # Bump on every change to this file. The banner and -Info print it, so a
 # window that dot-sourced an older copy shows a stale number and the mismatch
 # is visible at a glance instead of surfacing as a missing command.
-$script:PragmaSessionVersion = "v2 (live session)"
+$script:PragmaSessionVersion = "v3 (live session, sampling)"
 
 if (-not (Get-Variable -Name PragmaSession -Scope Global -ErrorAction SilentlyContinue) -and
     -not (Get-Variable -Name PragmaSession -Scope Script -ErrorAction SilentlyContinue) -and
@@ -75,6 +75,14 @@ Set-SessionEnv "MAX_TOKENS"        (Cfg "MaxTokens"      "")
 Set-SessionEnv "CODING_MAX_TOKENS" (Cfg "MaxTokens"      "")
 Set-SessionEnv "SKILL_MAX_TOKENS"  (Cfg "SkillMaxTokens" "")
 Set-SessionEnv "LLM_TIMEOUT"       (Cfg "Timeout"        "")
+# Sampling. Temperature is always sent by Pragma, so leaving it empty falls
+# back to the repository default (0.0) and NOT to the server's. The other three
+# are only sent when set here: empty really does mean "the server decides",
+# which is where a model's recommended preset usually already lives.
+Set-SessionEnv "DEFAULT_TEMPERATURE" (Cfg "Temperature" "")
+Set-SessionEnv "TOP_K"               (Cfg "TopK"        "")
+Set-SessionEnv "TOP_P"               (Cfg "TopP"        "")
+Set-SessionEnv "MIN_P"               (Cfg "MinP"        "")
 # Real time, real forgetting: a session store is never accelerated implicitly.
 # `pragma -Time` is the only way to move it, and it asks first.
 Remove-Item Env:EPISODE_DECAY_HALF_LIFE_DAYS -ErrorAction SilentlyContinue
@@ -137,6 +145,28 @@ function script:Get-BudgetLine {
     # "120s" when set, plain "repo" when not - never "repos".
     $to  = if ($env:LLM_TIMEOUT) { "$($env:LLM_TIMEOUT)s" } else { $d }
     "ctx $ctx / out $mt / skills $sk / timeout $to"
+}
+
+# What this window will actually SEND. Printed on entry because a sampling
+# setting is invisible once you are talking to the agent, and an experiment run
+# under the wrong preset looks exactly like an experiment run under the right
+# one. The distinction that matters is stated: temperature is always sent, so
+# empty means Pragma's 0.0; the rest are omitted when empty, so the server's
+# launch-time defaults apply.
+function script:Get-SamplingLine {
+    $t = if ($env:DEFAULT_TEMPERATURE) { $env:DEFAULT_TEMPERATURE } else { "0.0 (repo)" }
+    $line = "temp $t"
+    $extra = @()
+    if ($env:TOP_K) { $extra += "top_k $($env:TOP_K)" }
+    if ($env:TOP_P) { $extra += "top_p $($env:TOP_P)" }
+    if ($env:MIN_P) { $extra += "min_p $($env:MIN_P)" }
+    if ($extra.Count -gt 0) { $line += " / " + ($extra -join " / ") }
+    else { $line += " / top_k,top_p,min_p from the server" }
+    if ($env:DEFAULT_TEMPERATURE -eq "0" -or $env:DEFAULT_TEMPERATURE -eq "0.0" -or
+        -not $env:DEFAULT_TEMPERATURE) {
+        $line += "  [greedy: the others have no effect]"
+    }
+    return $line
 }
 
 # Time machine: a BOUNDED jump. It never changes the half-life. At the end of
@@ -220,6 +250,7 @@ function script:Show-PragmaInfo {
     Write-Host "  max steps : $script:SSteps per session"
     Write-Host "  protocol  : $(if ($env:LLM_TOOL_PROTOCOL) { $env:LLM_TOOL_PROTOCOL } else { 'text (repo default)' })"
     Write-Host "  budgets   : $(Get-BudgetLine)"
+    Write-Host "  sampling  : $(Get-SamplingLine)"
     Write-Host "  rules     : $(Get-ContractLine)"
     Write-Host "  half-life : 30 days (real time)"
 }
@@ -334,6 +365,7 @@ Write-Host "  memory    : $env:PRAGMA_DATA_DIR"
 Write-Host "  workspace : $env:PRAGMA_WORKSPACE"
 Write-Host "  protocol  : $(if ($env:LLM_TOOL_PROTOCOL) { $env:LLM_TOOL_PROTOCOL } else { 'text (repo default)' })"
 Write-Host "  budgets   : $(Get-BudgetLine)"
+Write-Host "  sampling  : $(Get-SamplingLine)"
 Write-Host "  rules     : $(Get-ContractLine)"
 
 Push-Location $script:SRepo

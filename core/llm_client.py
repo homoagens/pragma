@@ -313,6 +313,7 @@ def _call_openai_compatible(messages, model, temperature, max_tokens, timeout, b
         "temperature": temperature,
         "max_tokens":  max_tokens,
     }
+    payload.update(config.sampling_extras())
     if response_schema:
         payload["response_format"] = {
             "type": "json_schema",
@@ -357,6 +358,7 @@ def _stream_openai_compatible(messages, model, temperature, max_tokens, timeout,
         "max_tokens":  max_tokens,
         "stream":      True,
     }
+    payload.update(config.sampling_extras())
     headers = {"Content-Type": "application/json"}
     if api_key:
         headers["Authorization"] = f"Bearer {api_key}"
@@ -463,6 +465,10 @@ def call_llm_tools(messages, tools, model=None, temperature=None,
         "tools":       tools,
         "tool_choice": tool_choice,
     }
+    # Only the samplers actually configured. An absent field is not a missing
+    # setting: it hands the choice to the server's launch-time default, which
+    # is where a model's recommended preset usually already lives.
+    payload.update(config.sampling_extras())
     headers = {"Content-Type": "application/json"}
     if api_key:
         headers["Authorization"] = f"Bearer {api_key}"
