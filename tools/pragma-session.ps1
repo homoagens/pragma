@@ -20,7 +20,7 @@
 # Bump on every change to this file. The banner and -Info print it, so a
 # window that dot-sourced an older copy shows a stale number and the mismatch
 # is visible at a glance instead of surfacing as a missing command.
-$script:PragmaSessionVersion = "v3 (live session, sampling)"
+$script:PragmaSessionVersion = "v4 (live session, sampling)"
 
 if (-not (Get-Variable -Name PragmaSession -Scope Global -ErrorAction SilentlyContinue) -and
     -not (Get-Variable -Name PragmaSession -Scope Script -ErrorAction SilentlyContinue) -and
@@ -236,6 +236,7 @@ function script:Show-PragmaInfo {
     Write-Host "  pragma -Oblio           what has faded"
     Write-Host "  pragma -Last            the newest episode, in full"
     Write-Host "  pragma -Sizes           how wordy the store is vs what recall shows"
+    Write-Host "  pragma -Sampling        what is sent, what the server adds, what applies"
     Write-Host "  pragma -Mem             raw learnings.json"
     Write-Host "  pragma -Backup          snapshot the store (do this often)"
     Write-Host "  pragma -Time <min> <mo> age the memory by <mo> months (asks first)" -ForegroundColor DarkGray
@@ -262,7 +263,7 @@ function pragma {
         [switch]$NoMem,
         [switch]$Note, [switch]$Ask, [switch]$Time, [switch]$Chat,
         [switch]$Map, [switch]$Beliefs, [switch]$Diff, [switch]$Oblio,
-        [switch]$Last, [switch]$Mem, [switch]$Sizes,
+        [switch]$Last, [switch]$Mem, [switch]$Sizes, [switch]$Sampling,
         [switch]$Backup, [switch]$Reset, [switch]$Off, [switch]$Info
     )
 
@@ -274,6 +275,7 @@ function pragma {
     if ($Oblio)   { Invoke-MemTool "--oblio";   return }
     if ($Last)    { Invoke-MemTool "--last";    return }
     if ($Sizes)   { Invoke-MemTool "--sizes";   return }
+    if ($Sampling) { Show-Sampling;            return }
 
     if ($Mem) {
         $p = Join-Path $env:PRAGMA_DATA_DIR "learnings.json"
@@ -352,6 +354,123 @@ function pragma {
 
     if (-not $A) { Show-PragmaInfo; return }
     Invoke-Session "$A" (-not $NoMem)
+}
+
+# The full sampling picture, which no single source can give.
+#
+# WHY THIS COMMAND EXISTS. The banner and -Info read this window's environment:
+# they say what Pragma WILL SEND, which is only half the story. The three
+# samplers Pragma omits are decided by the server, and a line that says "from
+# the server" without naming the values tells you what is missing rather than
+# what will happen. Worse, the environment is a snapshot taken at dot-source:
+# edit the session file without re-entering it and -Info reports the old values
+# with no hint that it is doing so.
+#
+# So this asks. Three columns: what the session sends, what the server would
+# supply, and what therefore applies. Plus, when the server has served at least
+# one request, what it ACTUALLY used - the only line here that is a measurement
+# rather than a deduction.
+function script:Show-Sampling {
+    $probe = @'
+import json, sys
+sys.path.insert(0, "core")
+import config, llm_client
+url, _k = llm_client._resolved_endpoint(None, None)
+out = {"base_url": url,
+       "sent": dict({"temperature": config.DEFAULT_TEMPERATURE},
+                    **config.sampling_extras())}
+root = url[:-3] if url.endswith("/v1") else url
+keys = ("temperature", "top_k", "top_p", "min_p")
+
+
+def pick(src, k):
+    for d in src:
+        if isinstance(d, dict) and d.get(k) is not None:
+            v = d[k]
+            return round(v, 4) if isinstance(v, float) else v
+    return None
+
+
+try:
+    import requests
+    p = requests.get(root.rstrip("/") + "/props", timeout=5).json()
+    dgs = p.get("default_generation_settings") or {}
+    out["server"] = {k: pick((dgs.get("params") or {}, dgs, p), k) for k in keys}
+except Exception as e:
+    out["server_error"] = str(e)[:100]
+try:
+    s = requests.get(root.rstrip("/") + "/slots", timeout=5).json()
+    slot = s[0] if isinstance(s, list) and s else s
+    out["last"] = {k: pick((slot.get("params") or {}, slot), k) for k in keys}
+except Exception:
+    pass
+print(json.dumps(out))
+'@
+    $probeFile = Join-Path $env:TEMP "pragma_sampling_probe.py"
+    $probe | Out-File -FilePath $probeFile -Encoding ascii
+    Push-Location $script:SRepo
+    $raw = & $script:PragmaPy $probeFile 2>$null
+    Pop-Location
+    Remove-Item $probeFile -ErrorAction SilentlyContinue
+
+    $info = $null
+    try { $info = ("$raw" | Out-String).Trim() | ConvertFrom-Json } catch { }
+    if (-not $info) {
+        Write-Host ""
+        Write-Host "Could not read the sampling state (is the venv intact?)." -ForegroundColor Red
+        return
+    }
+
+    Write-Host ""
+    Write-Host "sampling for session '$script:SName'" -ForegroundColor Cyan
+    Write-Host "  endpoint : $($info.base_url)"
+    if ($info.server_error) {
+        Write-Host "  server   : unreachable - $($info.server_error)" -ForegroundColor Yellow
+    }
+    Write-Host ""
+    Write-Host "  parameter     this session   the server        applies"
+    Write-Host "  -----------------------------------------------------------"
+
+    $sentT = $info.sent.temperature
+    foreach ($k in @('temperature', 'top_k', 'top_p', 'min_p')) {
+        $sent = $info.sent.$k
+        $srv  = if ($info.server) { $info.server.$k } else { $null }
+        # Pragma always sends temperature, so for that row the server never
+        # applies. For the rest, an omitted field is what hands over control.
+        if ($k -eq 'temperature') {
+            $eff = $sent
+            $srvShown = if ($null -ne $srv) { "$srv (unused)" } else { '?' }
+        } elseif ($null -ne $sent) {
+            $eff = $sent
+            $srvShown = if ($null -ne $srv) { "$srv (overridden)" } else { '?' }
+        } else {
+            $eff = $srv
+            $srvShown = if ($null -ne $srv) { "$srv" } else { '?' }
+        }
+        $sentShown = if ($null -ne $sent) { "$sent" } else { 'not sent' }
+        $effShown  = if ($null -ne $eff)  { "$eff" }  else { 'unknown' }
+        Write-Host ("  {0,-13} {1,-14} {2,-17} {3}" -f $k, $sentShown, $srvShown, $effShown)
+    }
+
+    if ($info.last) {
+        Write-Host ""
+        $l = $info.last
+        Write-Host ("  last request actually served: temp {0} / top_k {1} / top_p {2} / min_p {3}" -f `
+            $l.temperature, $l.top_k, $l.top_p, $l.min_p) -ForegroundColor DarkGray
+        Write-Host "  (a measurement, not a deduction - blank until the first call)" -ForegroundColor DarkGray
+    }
+
+    if ($null -ne $sentT -and [double]$sentT -eq 0) {
+        Write-Host ""
+        Write-Host "  At temperature 0 decoding is greedy: top_k, top_p and min_p" -ForegroundColor Yellow
+        Write-Host "  have no effect whatever the table above says." -ForegroundColor Yellow
+    }
+    Write-Host ""
+    Write-Host "  The memory faculties always run at temperature 0, whatever this" -ForegroundColor DarkGray
+    Write-Host "  session sends: what reaches the store stays deterministic." -ForegroundColor DarkGray
+    Write-Host ""
+    Write-Host "  Read from the environment of THIS window. If you edited" -ForegroundColor DarkGray
+    Write-Host "  pragma.ps1, dot-source it again or these are the old values." -ForegroundColor DarkGray
 }
 
 # Start (or settle) the story clock, so -Map can report how long this store has
