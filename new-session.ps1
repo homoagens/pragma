@@ -191,12 +191,29 @@ if ($srv) {
         $srv.temperature, $srv.top_k, $srv.top_p, $srv.min_p) -ForegroundColor DarkGray
     Write-Host "  Pragma always sends temperature, so the server's is never used." -ForegroundColor DarkGray
     Write-Host "  The other three apply only where you leave this session empty." -ForegroundColor DarkGray
-    $ans = Ask "Set sampling for this session? (n = leave it deterministic)" "n"
-    if ($ans -match '^(y|yes|s|si)$') {
-        $Temperature = Ask "  temperature (0 = greedy, the others then do nothing)" "$($srv.temperature)"
-        $TopK = Ask "  top_k  (empty = the server's $($srv.top_k))" ""
-        $TopP = Ask "  top_p  (empty = the server's $($srv.top_p))" ""
-        $MinP = Ask "  min_p  (empty = the server's $($srv.min_p))" ""
+    Write-Host ""
+    Write-Host "  Enter = keep the defaults: temperature 0 (deterministic)," -ForegroundColor DarkGray
+    Write-Host "          the other three left to the server." -ForegroundColor DarkGray
+    Write-Host "  s     = set them one by one." -ForegroundColor DarkGray
+    $ans = Read-Host "  Your choice (Enter or s)"
+    if ("$ans".Trim() -match '^(s|y|yes|si)$') {
+        Write-Host ""
+        Write-Host "  At each one: Enter keeps what is in brackets." -ForegroundColor DarkGray
+        $Temperature = Ask "  temperature   (0 = deterministic; above 0 the next three start working)" "$($srv.temperature)"
+        $TopK = Ask "  top_k         (Enter = leave to the server, which uses $($srv.top_k))" ""
+        $TopP = Ask "  top_p         (Enter = leave to the server, which uses $($srv.top_p))" ""
+        $MinP = Ask "  min_p         (Enter = leave to the server, which uses $($srv.min_p))" ""
+        Write-Host ""
+        $shown = @("temp $(if ($Temperature) { $Temperature } else { '0.0' })")
+        foreach ($p in @(@('top_k', $TopK, $srv.top_k), @('top_p', $TopP, $srv.top_p),
+                         @('min_p', $MinP, $srv.min_p))) {
+            if ($p[1]) { $shown += "$($p[0]) $($p[1])" }
+            else { $shown += "$($p[0]) $($p[2]) (server)" }
+        }
+        Write-Host "  This session will run at: $($shown -join ' / ')" -ForegroundColor Cyan
+        if ([double]("0" + $Temperature) -eq 0) {
+            Write-Host "  Note: at temperature 0 the other three have no effect." -ForegroundColor Yellow
+        }
     }
 } else {
     Write-Host "  backend not reachable - sampling left empty (edit pragma.ps1 later)." -ForegroundColor DarkGray
