@@ -26,8 +26,18 @@
 # the observed set changes, a line is recorded - which turns "what is it using"
 # into "what has been through here".
 #
-# Read-only by construction: four GETs, no POST, nothing to click that starts or
-# stops anything.
+# The panels are read-only: four GETs, polled on a timer, nothing that starts or
+# stops anything. The test call at the bottom is the one exception, and it is
+# deliberate in both directions - you type the prompt and press the button. It
+# exists because "answers /props" and "is usable" are different questions, and
+# only the second one matters when a campaign is about to start.
+#
+# It also settles an asymmetry that is otherwise invisible: leave its temperature
+# field empty and the field is NOT SENT, so the server's own default applies;
+# type a number and it is sent, and the server's is ignored. That is exactly how
+# every client behaves, and here you can watch it happen instead of reasoning
+# about it. Note that a test call costs GPU: with one slot it queues behind
+# whatever is running, which is why the panel tells you when a slot is busy.
 
 from __future__ import annotations
 
@@ -199,6 +209,70 @@ def render(snap: dict) -> str:
     return "\n".join(lines)
 
 
+def send_test(base: str, model: str, prompt: str, max_tokens: int,
+              temperature: str) -> dict:
+    """One chat completion. Never raises: failures become fields.
+
+    `temperature` is a STRING on purpose. Empty means the key is left out of the
+    body, which is the only way to let the server's own default apply - and the
+    difference between omitting a field and sending 0.0 is not visible anywhere
+    else.
+    """
+    payload = {"model": model or "unknown",
+               "messages": [{"role": "user", "content": prompt}],
+               "max_tokens": max_tokens}
+    t = (temperature or "").strip()
+    if t:
+        try:
+            payload["temperature"] = float(t)
+        except ValueError:
+            return {"error": f"temperature '{t}' is not a number"}
+
+    sent = {k: v for k, v in payload.items() if k not in ("messages",)}
+    t0 = time.time()
+    try:
+        r = requests.post(f"{base}/v1/chat/completions", json=payload,
+                          timeout=600)
+        r.raise_for_status()
+        d = r.json()
+    except Exception as e:
+        return {"error": f"{type(e).__name__}: {str(e)[:200]}", "sent": sent,
+                "secs": time.time() - t0}
+    secs = time.time() - t0
+    choice = (d.get("choices") or [{}])[0]
+    msg = choice.get("message") or {}
+    usage = d.get("usage") or {}
+    return {"sent": sent, "secs": secs,
+            "text": msg.get("content") or "",
+            "reasoning": msg.get("reasoning_content") or "",
+            "finish": choice.get("finish_reason", ""),
+            "prompt_tokens": usage.get("prompt_tokens"),
+            "completion_tokens": usage.get("completion_tokens")}
+
+
+def render_test(res: dict) -> str:
+    if res.get("error"):
+        head = f"FAILED after {res.get('secs', 0):.1f}s   {res['error']}"
+        if res.get("sent"):
+            head += "\nsent: " + json.dumps(res["sent"])
+        return head
+    secs = res["secs"] or 0.0
+    ct = res.get("completion_tokens")
+    tps = f"{ct / secs:.1f} tok/s" if ct and secs > 0 else "-"
+    lines = [
+        f"sent: {json.dumps(res['sent'])}",
+        f"      (a field absent here is decided by the server)",
+        f"{secs:.1f}s   prompt {res.get('prompt_tokens', '?')} tok   "
+        f"completion {ct if ct is not None else '?'} tok   {tps}   "
+        f"finish_reason={res.get('finish') or '?'}",
+        "",
+    ]
+    if res.get("reasoning"):
+        lines += ["--- reasoning ---", res["reasoning"].strip(), ""]
+    lines += ["--- reply ---", res.get("text", "").strip() or "(empty)"]
+    return "\n".join(lines)
+
+
 def signature(snap: dict) -> str:
     """What must change for the history to gain a line.
 
@@ -221,6 +295,8 @@ class Dashboard:
         root.geometry("760x680")
 
         self.results: "queue.Queue[tuple[str, dict]]" = queue.Queue()
+        self.answers: "queue.Queue[dict]" = queue.Queue()
+        self.snaps: dict[str, dict] = {}
         self.panels: dict[str, tuple[ttk.LabelFrame, tk.Text]] = {}
         self.last_sig: dict[str, str] = {}
         self.endpoints: list[str] = []
@@ -244,10 +320,39 @@ class Dashboard:
         self.body = ttk.Frame(root, padding=(8, 0))
         self.body.pack(fill="both", expand=True)
 
+        # --- test call: the only thing here that writes to the server -------
+        test = ttk.LabelFrame(root, text="test call  (uses the GPU: queues behind "
+                                         "a busy slot)", padding=6)
+        test.pack(fill="both", expand=False, padx=8, pady=(8, 0))
+
+        row = ttk.Frame(test)
+        row.pack(fill="x")
+        ttk.Label(row, text="to").pack(side="left")
+        self.target = ttk.Combobox(row, width=28, state="readonly")
+        self.target.pack(side="left", padx=(4, 10))
+        ttk.Label(row, text="max_tokens").pack(side="left")
+        self.maxtok = ttk.Spinbox(row, from_=1, to=4096, width=6)
+        self.maxtok.set("128")
+        self.maxtok.pack(side="left", padx=(4, 10))
+        # Empty on purpose: an empty box means the key is not sent at all, which
+        # is the only way to see what the server would do on its own.
+        ttk.Label(row, text="temperature (empty = let the server decide)").pack(side="left")
+        self.temp = ttk.Entry(row, width=6)
+        self.temp.pack(side="left", padx=4)
+        self.sendbtn = ttk.Button(row, text="Send", command=self.send)
+        self.sendbtn.pack(side="left", padx=6)
+
+        self.prompt = tk.Text(test, height=2, wrap="word", font=("Consolas", 9))
+        self.prompt.pack(fill="x", pady=(6, 4))
+        self.prompt.insert("1.0", "In one sentence: what model are you?")
+        self.answer = tk.Text(test, height=10, wrap="word", font=("Consolas", 9),
+                              state="disabled")
+        self.answer.pack(fill="both", expand=True)
+
         hist = ttk.LabelFrame(root, text="changes seen (model or served parameters)",
                               padding=6)
         hist.pack(fill="both", expand=False, padx=8, pady=8)
-        self.hist = tk.Text(hist, height=9, wrap="none",
+        self.hist = tk.Text(hist, height=7, wrap="none",
                             font=("Consolas", 9), state="disabled")
         self.hist.pack(fill="both", expand=True)
 
@@ -285,6 +390,9 @@ class Dashboard:
         ttk.Button(frame, text="remove",
                    command=lambda b=base: self.remove(b)).pack(anchor="e")
         self.panels[base] = (frame, box)
+        self.target["values"] = self.endpoints
+        if not self.target.get():
+            self.target.set(base)
         self.write(box, "(not polled yet)")
         self.save()
         self.refresh()
@@ -295,6 +403,10 @@ class Dashboard:
             del self.panels[base]
         if base in self.endpoints:
             self.endpoints.remove(base)
+        self.snaps.pop(base, None)
+        self.target["values"] = self.endpoints
+        if self.target.get() == base:
+            self.target.set(self.endpoints[0] if self.endpoints else "")
         self.save()
 
     # --- polling -----------------------------------------------------------
@@ -315,6 +427,7 @@ class Dashboard:
         try:
             while True:
                 base, snap = self.results.get_nowait()
+                self.snaps[base] = snap
                 if base in self.panels:
                     self.write(self.panels[base][1], render(snap))
                 sig = signature(snap)
@@ -323,7 +436,39 @@ class Dashboard:
                     self.log(base, snap, sig)
         except queue.Empty:
             pass
+        try:
+            while True:
+                res = self.answers.get_nowait()
+                self.write(self.answer, render_test(res))
+                self.sendbtn.configure(state="normal", text="Send")
+        except queue.Empty:
+            pass
         self.root.after(200, self.drain)
+
+    # --- the one write ------------------------------------------------------
+    def send(self) -> None:
+        base = self.target.get()
+        if not base:
+            return
+        prompt = self.prompt.get("1.0", "end").strip()
+        if not prompt:
+            return
+        try:
+            mt = max(1, int(self.maxtok.get()))
+        except Exception:
+            mt = 128
+        # The model the endpoint says it has, so the request names the truth
+        # rather than a label; llama.cpp would accept anything, other servers
+        # will not.
+        snap = self.snaps.get(base) or {}
+        model = snap.get("model_id") or snap.get("model_alias") or ""
+        busy = any(s.get("busy") for s in snap.get("slots") or [])
+        note = "  the slot is BUSY: this will wait for it\n\n" if busy else ""
+        self.write(self.answer, note + "waiting...")
+        self.sendbtn.configure(state="disabled", text="...")
+        args = (base, model, prompt, mt, self.temp.get())
+        threading.Thread(target=lambda: self.answers.put(send_test(*args)),
+                         daemon=True).start()
 
     def tick(self) -> None:
         if self.auto.get():
