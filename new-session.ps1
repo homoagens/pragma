@@ -192,17 +192,34 @@ if ($srv) {
     Write-Host "  Pragma always sends temperature, so the server's is never used." -ForegroundColor DarkGray
     Write-Host "  The other three apply only where you leave this session empty." -ForegroundColor DarkGray
     Write-Host ""
-    Write-Host "  Enter = keep the defaults: temperature 0 (deterministic)," -ForegroundColor DarkGray
+    Write-Host "  Enter = Pragma's defaults: temperature 0 (deterministic)," -ForegroundColor DarkGray
     Write-Host "          the other three left to the server." -ForegroundColor DarkGray
+    Write-Host "  m     = match the server: write its four values into this" -ForegroundColor DarkGray
+    Write-Host "          session, so restarting it with other flags cannot" -ForegroundColor DarkGray
+    Write-Host "          move this session without you noticing." -ForegroundColor DarkGray
     Write-Host "  s     = set them one by one." -ForegroundColor DarkGray
-    $ans = Read-Host "  Your choice (Enter or s)"
-    if ("$ans".Trim() -match '^(s|y|yes|si)$') {
+    $ans = "$(Read-Host "  Your choice (Enter, m or s)")".Trim()
+
+    if ($ans -match '^(m|match|e)$') {
+        # Copied, not inherited. Leaving the fields empty would also reproduce
+        # the server's behaviour today, but it would mean "whatever the server
+        # uses", and a later launch flag would move this session silently.
+        # Written out, the values are the session's own and a divergence shows
+        # up as a difference between the banner and /slots.
+        $Temperature = "$($srv.temperature)"
+        $TopK = "$($srv.top_k)"
+        $TopP = "$($srv.top_p)"
+        $MinP = "$($srv.min_p)"
+    } elseif ($ans -match '^(s|set|y|yes|si)$') {
         Write-Host ""
         Write-Host "  At each one: Enter keeps what is in brackets." -ForegroundColor DarkGray
         $Temperature = Ask "  temperature   (0 = deterministic; above 0 the next three start working)" "$($srv.temperature)"
         $TopK = Ask "  top_k         (Enter = leave to the server, which uses $($srv.top_k))" ""
         $TopP = Ask "  top_p         (Enter = leave to the server, which uses $($srv.top_p))" ""
         $MinP = Ask "  min_p         (Enter = leave to the server, which uses $($srv.min_p))" ""
+    }
+
+    if ($Temperature -or $TopK -or $TopP -or $MinP) {
         Write-Host ""
         $shown = @("temp $(if ($Temperature) { $Temperature } else { '0.0' })")
         foreach ($p in @(@('top_k', $TopK, $srv.top_k), @('top_p', $TopP, $srv.top_p),
