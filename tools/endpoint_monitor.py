@@ -266,13 +266,20 @@ class Panel:
 
         sub = ttk.Frame(self.frame)
         sub.pack(fill="x", pady=(2, 0))
-        self.ctx = ttk.Label(sub, text="", foreground=GREY)
-        self.ctx.pack(side="left")
+        # The buttons are packed FIRST, before the label that shares the row.
+        # Tk hands out space in packing order, so a long text on the left claims
+        # the row and pushes whatever comes after it past the window edge - which
+        # is what happened to an unreachable endpoint: its connection error runs
+        # to 157 characters, the row asked for 1007 pixels of a 720-pixel window,
+        # and `remove` became unclickable exactly on the panel you most want to
+        # remove. Reserving them first makes the label the one that gives way.
         ttk.Button(sub, text="remove", width=8,
                    command=lambda: on_remove(base)).pack(side="right")
         self.detail_btn = ttk.Button(sub, text="details", width=8,
                                      command=self.toggle)
         self.detail_btn.pack(side="right", padx=4)
+        self.ctx = ttk.Label(sub, text="", foreground=GREY, anchor="w")
+        self.ctx.pack(side="left", fill="x", expand=True)
 
         self.table = ttk.Frame(self.frame)
         self.table.pack(fill="x", pady=(6, 0))
@@ -291,6 +298,41 @@ class Panel:
         self.details_l.pack(anchor="w")
         self.open = False
 
+    @staticmethod
+    def _why(error: str) -> str:
+        """A connection failure in words, for the headline row.
+
+        Only the cases that occur: nothing listening, a tunnel that dropped
+        mid-flight (its own error, distinct from never having connected), a
+        timeout, a name that does not resolve. Anything else keeps its exception
+        type, which is at least honest.
+        """
+        e = error.lower()
+        if "10061" in e or "refused" in e:
+            return "nothing listening on that port"
+        if "10053" in e or "aborted" in e:
+            return "connection dropped (an SSH tunnel that closed does this)"
+        if "timed out" in e or "timeout" in e:
+            return f"no answer within {TIMEOUT:g}s"
+        if "getaddrinfo" in e or "name or service" in e or "nodename" in e:
+            return "host name does not resolve"
+        return error.split(":")[0].strip()[:70] or "no answer"
+
+    @staticmethod
+    def _wrap(text: str, width: int = 78) -> str:
+        """Hard-wrap for the details pane: it is monospace and must not widen
+        the panel either."""
+        out, line = [], ""
+        for word in text.split():
+            if len(line) + len(word) + 1 > width:
+                out.append(line)
+                line = word
+            else:
+                line = f"{line} {word}".strip()
+        if line:
+            out.append(line)
+        return "\n".join(out)
+
     def toggle(self) -> None:
         self.open = not self.open
         if self.open:
@@ -303,10 +345,15 @@ class Panel:
             self.dot.itemconfig(self.blob, fill=RED)
             self.model.configure(text="unreachable")
             self.right.configure(text="")
-            self.ctx.configure(text=snap["error"])
+            # Short and in plain words here, the whole traceback-ish string under
+            # [details]. Its full length is what made this row unusable, and
+            # "ConnectionError: HTTPConnectionPool" is not worth the space it
+            # takes: the red dot already said it failed, so the line should say
+            # WHY in the two or three cases that actually happen.
+            self.ctx.configure(text=self._why(snap["error"]))
             self.srv_l.configure(text="")
             self.last_l.configure(text="")
-            self.details_l.configure(text=snap["error"])
+            self.details_l.configure(text=self._wrap(snap["error"]))
             return
 
         busy = any(s["busy"] for s in snap["slots"])
