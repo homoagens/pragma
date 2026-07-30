@@ -234,6 +234,11 @@ life cycle of its own:
 - what stops being recalled **fades**: episodes decay with time into a dormant zone, and come back when a later session makes them relevant again;
 - new experience can **reinterpret** older episodes and reformulate a belief, keeping every previous version — the recorded facts are never rewritten.
 
+An episode is centred on what a session **yields**, not on what it was about: a
+fact about you stated in passing outranks the topic that took the most words, and
+a subject discussed and closed with nothing carried forward scores low however
+long it lasted.
+
 Each faculty tags its own line in the output (`[CURATOR]`, `[CONSOLIDATOR]`,
 `[ABSTRACTOR]`, `[FORGETTING]`, `[RECONSOLIDATOR]`), so you can watch what memory did.
 
@@ -269,9 +274,11 @@ pragma "read my notes and tell me what I left unfinished"
 | Command | |
 | --- | --- |
 | `pragma "task"` | run a task, memory on (`-NoMem` for stateless) |
+| `pragma -Chat` | a live session: many turns, one conversation — see below |
 | `pragma -Note "..."` | record an experience — journal entry plus episode |
 | `pragma -Ask "..."` | ask memory something, without touching files |
 | `pragma -Map` · `-Beliefs` · `-Diff` · `-Oblio` · `-Last` · `-Sizes` | inspect what memory holds, concluded, revised, forgot |
+| `pragma -Sampling` | what this session sends, what the server adds, what applies |
 | `pragma -Backup` | snapshot the store |
 | `pragma -Time <min> <months>` | age the memory — see below |
 | `pragma -Reset` · `-Off` · `-Info` | wipe (typed confirmation) · leave · list everything |
@@ -286,9 +293,49 @@ the agent *learns*; this file is what you *decide*, and unlike a memory it is
 never weighed against anything else.
 
 `pragma.ps1` holds only configuration — model profile, step budget, action
-channel, output budgets — and is meant to be edited. The commands themselves
-live in `tools/pragma-session.ps1`, so every session picks up improvements the
-next time you enter it.
+channel, output budgets, sampling — and is meant to be edited. The commands
+themselves live in `tools/pragma-session.ps1`, so every session picks up
+improvements the next time you enter it.
+
+> [!NOTE]
+> **Sampling has two kinds of "empty".** `Temperature` empty means Pragma's own
+> `0.0`: Pragma *always* sends that field, so your server's `--temp` never
+> reaches it. `TopK` / `TopP` / `MinP` empty means they are not sent at all, so
+> the server's launch-time defaults decide. Which is usually what you want — a
+> model's recommended preset already lives there — but it makes "the server is
+> configured" and "the agent runs that way" two different statements.
+> `pragma -Sampling` prints both sides and what therefore applies.
+>
+> The memory faculties always run at temperature 0 whatever a session sends, so
+> raising it loosens the conversation without making what reaches the store any
+> less reproducible.
+
+#### `pragma -Chat` — a live session
+
+> [!WARNING]
+> Days old, and the least settled thing here even by the standards of the memory
+> subsystem. `pragma "task"` remains the path that has run thousands of times.
+
+`pragma "task"` answers one request and consolidates it. `-Chat` keeps a
+conversation:
+
+- the context **stays alive between turns**, so "that table we discussed" works;
+- the curator **recalls once per turn**, on that turn's words. What it places
+  stays in front of the agent, so a memory is put on the desk — and reinforced —
+  once per conversation, not once per turn;
+- when the context fills up, the older turns are **consolidated into episodes
+  rather than summarised**: they leave the message list and what those episodes
+  say takes their place. A conversation that overflows is remembered, not
+  blurred. `CHAT_COMPACT_CHARS` and `CHAT_KEEP_TURNS` set when and how much;
+- on exit a **segmenter** decides where one experience ended and the next began —
+  grouping the turns that belong together, discarding what nothing would miss —
+  and one episode is written per kept segment.
+
+Two more faculty tags appear in a live session: `[SEGMENTER]` and `[COMPACTOR]`.
+
+The raw conversation is appended to `workspace\.pragma_session.jsonl` after
+every turn, before anything else can fail, so consolidation can be re-run after
+a crash: a memory may arrive late, it should not disappear.
 
 > [!TIP]
 > **`-Time` is the laboratory switch.** It ages every episode by *N* simulated
