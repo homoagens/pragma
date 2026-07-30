@@ -393,7 +393,13 @@ class Dashboard:
         log.pack(fill="both", expand=False, pady=(8, 0))
         self.log_box = tk.Text(log, height=6, wrap="none", font=MONO,
                                state="disabled", borderwidth=0)
-        self.log_box.pack(fill="both", expand=True)
+        self.log_box.pack(side="left", fill="both", expand=True)
+        # Clearing the log also forgets what was last seen, so the next poll
+        # writes a fresh baseline line instead of leaving an empty pane until
+        # something happens to change. An empty log that means "nothing has
+        # changed" is indistinguishable from one that means "nothing works".
+        ttk.Button(log, text="clear", width=7,
+                   command=self.clear_log).pack(side="right", anchor="n", padx=(6, 0))
 
         row = ttk.Frame(trial)
         row.pack(fill="x")
@@ -539,6 +545,10 @@ class Dashboard:
         box.delete("1.0", "end")
         box.insert("1.0", text)
         box.configure(state="disabled")
+
+    def clear_log(self) -> None:
+        self.write(self.log_box, "")
+        self.last_sig.clear()
 
     def log(self, base: str, snap: dict) -> None:
         stamp = datetime.now().strftime("%H:%M:%S")
