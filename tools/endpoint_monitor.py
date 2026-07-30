@@ -359,7 +359,18 @@ class Dashboard:
         self.last_sig: dict[str, str] = {}
         self.endpoints: list[str] = []
 
-        bar = ttk.Frame(root, padding=8)
+        # Two tabs, because the two things are not equals. Watching is what you
+        # open this for and it should be all you see; the test call is
+        # occasional, writes to the server, and had no business taking a third
+        # of the window while idle.
+        nb = ttk.Notebook(root)
+        nb.pack(fill="both", expand=True, padx=8, pady=8)
+        watch = ttk.Frame(nb)
+        trial = ttk.Frame(nb, padding=8)
+        nb.add(watch, text="  endpoints  ")
+        nb.add(trial, text="  test call  ")
+
+        bar = ttk.Frame(watch, padding=(0, 8))
         bar.pack(fill="x")
         self.entry = ttk.Entry(bar, width=22)
         self.entry.pack(side="left")
@@ -375,12 +386,16 @@ class Dashboard:
         self.every.pack(side="left")
         ttk.Label(bar, text="s").pack(side="left", padx=(2, 0))
 
-        self.body = ttk.Frame(root, padding=(8, 0))
+        self.body = ttk.Frame(watch)
         self.body.pack(fill="both", expand=True)
 
-        test = ttk.LabelFrame(root, text="test call", padding=6)
-        test.pack(fill="both", expand=False, padx=8, pady=(8, 0))
-        row = ttk.Frame(test)
+        log = ttk.LabelFrame(watch, text="log", padding=6)
+        log.pack(fill="both", expand=False, pady=(8, 0))
+        self.log_box = tk.Text(log, height=6, wrap="none", font=MONO,
+                               state="disabled", borderwidth=0)
+        self.log_box.pack(fill="both", expand=True)
+
+        row = ttk.Frame(trial)
         row.pack(fill="x")
         self.target = ttk.Combobox(row, width=24, state="readonly")
         self.target.pack(side="left")
@@ -393,22 +408,20 @@ class Dashboard:
         self.temp.pack(side="left")
         self.sendbtn = ttk.Button(row, text="send", width=7, command=self.send)
         self.sendbtn.pack(side="left", padx=8)
-        ttk.Label(row, text="temp empty = the field is not sent, so the server decides",
-                  foreground=GREY).pack(side="left")
+        ttk.Button(row, text="clear", width=7,
+                   command=lambda: self.write(self.answer, "")).pack(side="left")
 
-        self.prompt = ttk.Entry(test, font=MONO)
+        ttk.Label(trial, foreground=GREY,
+                  text="temp empty = the field is not sent, so the server's own "
+                       "default applies").pack(anchor="w", pady=(6, 0))
+
+        self.prompt = ttk.Entry(trial, font=MONO)
         self.prompt.pack(fill="x", pady=(6, 4))
         self.prompt.insert(0, "In one sentence: what model are you?")
         self.prompt.bind("<Return>", lambda _e: self.send())
-        self.answer = tk.Text(test, height=9, wrap="word", font=MONO,
+        self.answer = tk.Text(trial, wrap="word", font=MONO,
                               state="disabled", borderwidth=0)
         self.answer.pack(fill="both", expand=True)
-
-        log = ttk.LabelFrame(root, text="log", padding=6)
-        log.pack(fill="both", expand=False, padx=8, pady=8)
-        self.log_box = tk.Text(log, height=6, wrap="none", font=MONO,
-                               state="disabled", borderwidth=0)
-        self.log_box.pack(fill="both", expand=True)
 
         for e in self.load():
             self.add(e)
