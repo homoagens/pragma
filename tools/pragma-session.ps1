@@ -466,8 +466,10 @@ print(json.dumps(out))
         Write-Host "  have no effect whatever the table above says." -ForegroundColor Yellow
     }
     Write-Host ""
-    Write-Host "  The memory faculties always run at temperature 0, whatever this" -ForegroundColor DarkGray
-    Write-Host "  session sends: what reaches the store stays deterministic." -ForegroundColor DarkGray
+    Write-Host "  Curator, segmenter, consolidator and reconsolidator always run at" -ForegroundColor DarkGray
+    Write-Host "  temperature 0 whatever this session sends: what reaches the store" -ForegroundColor DarkGray
+    Write-Host "  stays deterministic. The history summariser is the exception - it" -ForegroundColor DarkGray
+    Write-Host "  is pinned at 0.2 in memory.py, so a 0.2 above is usually it." -ForegroundColor DarkGray
     Write-Host ""
     Write-Host "  Read from the environment of THIS window. If you edited" -ForegroundColor DarkGray
     Write-Host "  pragma.ps1, dot-source it again or these are the old values." -ForegroundColor DarkGray
