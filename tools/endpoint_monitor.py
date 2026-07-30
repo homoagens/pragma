@@ -103,7 +103,13 @@ def probe(base: str) -> dict:
         out["up"] = True
         out["ms"] = int((time.time() - t0) * 1000)
     except Exception as e:
-        out["error"] = f"{type(e).__name__}: {str(e)[:140]}"
+        # Generous, because the diagnosis lives at the END of these messages:
+        # requests wraps the real cause several layers deep, so the WinError
+        # code that says "refused" or "aborted" sits past 140 characters. Cut
+        # there and the headline can only report "ConnectionError", which is
+        # what the red dot already said. Shortening for display is the panel's
+        # job, not the probe's.
+        out["error"] = f"{type(e).__name__}: {str(e)[:600]}"
         return out
 
     # llama.cpp keeps the samplers two levels down, in
