@@ -149,10 +149,22 @@ root = url[:-3] if url.endswith("/v1") else url
 try:
     import requests
     p = requests.get(root.rstrip("/") + "/props", timeout=5).json()
-    g = p.get("default_generation_settings") or {}
-    src = g if g else p
-    out["server"] = {k: (src.get(k) if src.get(k) is not None else p.get(k))
-                     for k in ("temperature", "top_k", "top_p", "min_p")}
+    # llama.cpp nests the samplers two levels down, in
+    # default_generation_settings.params; n_ctx sits one level up. Looking only
+    # at the outer object found nothing and reported blanks, which reads exactly
+    # like a server with no defaults.
+    dgs = p.get("default_generation_settings") or {}
+    params = dgs.get("params") or {}
+
+    def pick(k):
+        for d in (params, dgs, p):
+            if isinstance(d, dict) and d.get(k) is not None:
+                v = d[k]
+                # 0.6 arrives as 0.6000000238418579: float32 through JSON.
+                return round(v, 4) if isinstance(v, float) else v
+        return None
+
+    out["server"] = {k: pick(k) for k in ("temperature", "top_k", "top_p", "min_p")}
 except Exception as e:
     out["error"] = str(e)[:100]
 print(json.dumps(out))
