@@ -20,7 +20,7 @@
 # Bump on every change to this file. The banner and -Info print it, so a
 # window that dot-sourced an older copy shows a stale number and the mismatch
 # is visible at a glance instead of surfacing as a missing command.
-$script:PragmaSessionVersion = "v4 (live session, sampling)"
+$script:PragmaSessionVersion = "v5 (live session, sampling)"
 
 if (-not (Get-Variable -Name PragmaSession -Scope Global -ErrorAction SilentlyContinue) -and
     -not (Get-Variable -Name PragmaSession -Scope Script -ErrorAction SilentlyContinue) -and
@@ -377,6 +377,7 @@ sys.path.insert(0, "core")
 import config, llm_client
 url, _k = llm_client._resolved_endpoint(None, None)
 out = {"base_url": url,
+       "summary_temperature": getattr(config, "SUMMARY_TEMPERATURE", None),
        "sent": dict({"temperature": config.DEFAULT_TEMPERATURE},
                     **config.sampling_extras())}
 root = url[:-3] if url.endswith("/v1") else url
@@ -466,10 +467,14 @@ print(json.dumps(out))
         Write-Host "  have no effect whatever the table above says." -ForegroundColor Yellow
     }
     Write-Host ""
-    Write-Host "  Curator, segmenter, consolidator and reconsolidator always run at" -ForegroundColor DarkGray
-    Write-Host "  temperature 0 whatever this session sends: what reaches the store" -ForegroundColor DarkGray
-    Write-Host "  stays deterministic. The history summariser is the exception - it" -ForegroundColor DarkGray
-    Write-Host "  is pinned at 0.2 in memory.py, so a 0.2 above is usually it." -ForegroundColor DarkGray
+    Write-Host "  Other calls in a run, which this session does NOT control:" -ForegroundColor DarkGray
+    Write-Host "    memory faculties  temp 0   curator, segmenter, consolidator," -ForegroundColor DarkGray
+    Write-Host "                               reconsolidator - the store stays" -ForegroundColor DarkGray
+    Write-Host "                               deterministic whatever you send here" -ForegroundColor DarkGray
+    $st = if ($null -ne $info.summary_temperature) { $info.summary_temperature } else { "?" }
+    Write-Host "    history summary   temp $st   SUMMARY_TEMPERATURE; the one call" -ForegroundColor DarkGray
+    Write-Host "                               that samples, so a $st in the line above" -ForegroundColor DarkGray
+    Write-Host "                               means something compressed its context" -ForegroundColor DarkGray
     Write-Host ""
     Write-Host "  Read from the environment of THIS window. If you edited" -ForegroundColor DarkGray
     Write-Host "  pragma.ps1, dot-source it again or these are the old values." -ForegroundColor DarkGray

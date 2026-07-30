@@ -25,7 +25,9 @@ def summarize(text, context="conversation", model=None):
     return llm_client.call_llm(
         messages    = messages,
         model       = model,
-        temperature = 0.2,
+        # Not 0.0 like the memory faculties and not the session's either: see
+        # config.SUMMARY_TEMPERATURE for why this call is its own case.
+        temperature = config.SUMMARY_TEMPERATURE,
         max_tokens  = 2048,
     )
 

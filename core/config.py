@@ -128,6 +128,25 @@ TOP_K = _opt_int("TOP_K")
 TOP_P = _opt_float("TOP_P")
 MIN_P = _opt_float("MIN_P")
 
+# The history summariser (memory.summarize), used by the ReAct compressor and by
+# the UI worker. It had 0.2 written into memory.py since the first release, back
+# when DEFAULT_TEMPERATURE was also 0.2 - so it was never a decision, it was the
+# default spelled out. Lowering DEFAULT_TEMPERATURE to 0.0 left it agreeing with
+# nothing, and invisible: it appears in no config, no banner, no manifest, and
+# surfaced only by asking the server what it had last been sent.
+#
+# It matters more than a stray constant. Unlike the four memory faculties, which
+# pass 0.0 and answer under a grammar, this one writes free prose while sampling,
+# so it is the single non-deterministic call in an otherwise pinned run - and its
+# output enters the context and shapes every step after it. Two identical runs
+# that both compress diverge from that point.
+#
+# The value is deliberately UNCHANGED at 0.2: naming a number is safe, moving it
+# is not. Greedy decoding of a long summary with no schema can loop, which is
+# not something to discover mid-campaign. Try 0.0 between campaigns, not inside
+# one.
+SUMMARY_TEMPERATURE = float(os.environ.get("SUMMARY_TEMPERATURE", "0.2"))
+
 
 def sampling_extras():
     """The optional samplers, as payload fields — only the ones actually set.
