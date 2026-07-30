@@ -28,6 +28,10 @@ core/skills/wip_*/
 *.log
 todo.json
 
+# The endpoint list the monitor remembers: ports are a fact about one machine
+# (and over a tunnel they are the tunnel's, not the server's), never the project's
+tools/endpoint_monitor.local.json
+
 # Local-only docs (not for publication)
 MANUAL.md
 
