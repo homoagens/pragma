@@ -246,7 +246,9 @@ def _post_with_retry(url, headers, payload, timeout, label, stop_event=None):
     known) and a live elapsed counter, so a long call is visibly alive."""
     disp = getattr(config, "SERVED_MODEL", "") or label
     last = None
-    for attempt in range(5):
+    attempt = 0            # 502: the backend is loading, wait long
+    transport = 0          # dropped connection: retry fast or fail fast
+    while attempt < 5:
         if stop_event is not None and stop_event.is_set():
             raise LLMInterrupted("LLM call aborted by stop signal")
         start = time.time()
@@ -271,14 +273,40 @@ def _post_with_retry(url, headers, payload, timeout, label, stop_event=None):
                     f"[bold cyan]{disp} is thinking... "
                     f"{int(time.time() - start)}s[/bold cyan]")
         if holder["exc"] is not None:
-            raise holder["exc"]
+            exc = holder["exc"]
+            # A dropped connection is not a failed request, it is a request
+            # that never arrived — and over an SSH tunnel it is routine: the
+            # link blinks, the next attempt half a second later goes through.
+            # Until now a single blip cost a whole faculty call, which is how
+            # a curator ends up on its deterministic fallback for no reason
+            # anyone could name.
+            #
+            # ConnectionError is exactly the right predicate. ConnectTimeout
+            # inherits from it (nothing was established, retry is free);
+            # ReadTimeout does NOT (the model has been generating for the whole
+            # timeout, and retrying buys another one). LLMInterrupted is a
+            # deliberate stop and must never be retried — the interrupt is
+            # IMPLEMENTED as a forced ConnectionError, so the order of these
+            # checks is what keeps a stop from turning into three more calls.
+            if (not isinstance(exc, LLMInterrupted)
+                    and isinstance(exc, requests.exceptions.ConnectionError)
+                    and transport < 2):
+                transport += 1
+                wait = 1 if transport == 1 else 3
+                _console.print(
+                    f"[yellow][llm_client] connection lost — retrying in "
+                    f"{wait}s ({transport}/2)[/yellow]")
+                time.sleep(wait)
+                continue
+            raise exc
         last = holder["resp"]
         if last.status_code != 502:
             break
-        wait = 30 * (attempt + 1)
+        attempt += 1
+        wait = 30 * attempt
         _console.print(
             f"[yellow][llm_client] 502 — waiting {wait}s and retrying "
-            f"({attempt + 1}/5)...[/yellow]"
+            f"({attempt}/5)...[/yellow]"
         )
         # Sleep in small slices so stop is responsive during backoff
         slept = 0.0
