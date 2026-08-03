@@ -215,10 +215,17 @@ def _ask_curator(task: str, eps: list[dict], lns: list[dict],
             response_schema=_CURATOR_SCHEMA,
         )
         data = extract_json(raw)
-    except Exception:
-        return None, ""
+    except Exception as e:
+        # The reason travels with the failure. Swallowing it left the operator
+        # with "curator unavailable" and nothing else - and the causes are very
+        # different things to do about: an endpoint that dropped, a call that
+        # queued behind a campaign until it timed out, a reply truncated before
+        # any JSON appeared. Without the cause, all three look like the memory
+        # being broken.
+        return None, f"{type(e).__name__}: {str(e)[:160]}"
     if not isinstance(data, dict):
-        return None, ""
+        head = " ".join(str(raw).split())[:120]
+        return None, f"reply was not JSON: {head}"
     reason = str(data.get("reason", "")).strip()
     sel = data.get("selected", [])
     if not isinstance(sel, list):
@@ -409,6 +416,7 @@ def curate_knowledge_detailed(task: str, workspace: str = "", model=None,
 
     refs, reason = _ask_curator(task, eps, lns, model=model)
     if refs is None:                       # LLM failed → deterministic fallback
+        info["reason"] = reason            # perche', non solo che
         info["block"], refs = _fallback(eps, lns, workspace, no_reinforce)
         info["episode_ids"], info["rule_texts"] = _placed(refs, eps, lns)
         info["fallback"] = True

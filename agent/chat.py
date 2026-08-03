@@ -256,7 +256,8 @@ def _recall(text: str, cwd, desk_ids: set[str], desk_rules: set[str],
     pool = f"{info['n_ep']} memories + {info['n_ln']} rules"
     if info["fallback"]:
         renderer.faculty("CURATOR", f"{pool} → deterministic fallback "
-                                    f"(curator unavailable)")
+                                    f"(curator unavailable)"
+        + (f" — {info['reason']}" if info.get("reason") else ""))
     else:
         note = f"{pool} → recalled {len(info['selected'])}"
         if info["reason"]:

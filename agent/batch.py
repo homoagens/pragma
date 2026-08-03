@@ -790,7 +790,8 @@ confirmed mid-task. Therefore:
             if info["fallback"]:
                 renderer.faculty("CURATOR",
                                  f"{pool} → deterministic fallback "
-                                 f"(curator unavailable)")
+                                 f"(curator unavailable)"
+                + (f" — {info['reason']}" if info.get("reason") else ""))
             elif info["empty"]:
                 renderer.faculty("CURATOR",
                                  f"{pool} → empty desk (nothing relevant)")
