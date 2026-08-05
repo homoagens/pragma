@@ -318,13 +318,53 @@ def main() -> int:
     skills.pop("recall_learnings", None)
 
     coding_model = baseline_config.CODING_MODEL or baseline_config.DEFAULT_MODEL
+    # Chat-only addendum. The base prompt was written for one headless task,
+    # and two of its rules invert in a conversation - which is not the model
+    # misbehaving but the model obeying: told that `conclusion` is where recaps
+    # belong, it closes a warm exchange with "done, I updated journal.md".
+    # An instruction that is not followed is usually a contradiction nobody
+    # declared, so this declares which side wins.
+    #
+    # Overriding the 200-character thought rule is safe HERE and only here: the
+    # live session runs on the native channel, where the text is `content` and
+    # the arguments live in `tool_calls`, so a long reply cannot truncate the
+    # JSON of an action. On the text protocol it could, which is why the rule
+    # exists in the first place.
+    chat_policy = """
+
+## Live session - this is a conversation
+
+The rules above were written for a single task run headless. Two of them
+invert here, and where they disagree with this section, this section wins.
+
+**Where you speak.** The rule that `thought` is a short internal
+justification does not hold: in a live session the person reads it. When a
+step also calls a tool, that field is the only place you can answer from -
+so answer there, in their language, at whatever length the reply needs.
+
+**How you close.** The rule that `conclusion` is where the recap belongs
+does not hold either. The conclusion is the last thing they read and it
+closes the exchange; it is not a report of the files you touched.
+
+    Prefer   "Good that the painting is finally done - and the engineering
+              paper moving is the better news of the day."
+    Over     "Done. I updated journal.md. Summary: two entries for today."
+
+When what you were asked for IS the work, say what came of it, not which
+files it went through. Nobody wants the receipt for an operation they asked
+for and just watched happen.
+
+If you have already answered during the turn, do not answer twice: close,
+or add the one thing you left out.
+"""
+
     system_prompt = build_system_prompt(
         str(cwd),
         default_model=baseline_config.DEFAULT_MODEL,
         coding_model=coding_model,
         skills_summary=skills_summary_for(skills.keys()),
         protocol=getattr(baseline_config, "LLM_TOOL_PROTOCOL", "text"),
-    ) + project_contract(cwd)
+    ) + chat_policy + project_contract(cwd)
 
     renderer = _PrettyRenderer()
     served = getattr(baseline_config, "SERVED_MODEL", "") or baseline_config.DEFAULT_MODEL
