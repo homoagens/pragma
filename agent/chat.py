@@ -395,7 +395,13 @@ def main() -> int:
             before = len(history or [])
             result = run_agent(
                 cfg, prompt,
-                on_step=_make_on_step(renderer, 0, turn.transcript),
+                # A wider budget for what the model said: in a conversation the
+                # thought field is where it talks to you, and the batch cap cut
+                # the replies short before the consolidator ever saw them.
+                on_step=_make_on_step(
+                    renderer, 0, turn.transcript,
+                    text_limit=getattr(baseline_config,
+                                       "CHAT_TRANSCRIPT_CHARS", 2000)),
                 history=history,
                 # Everything already in the history is a finished turn. The
                 # loop may compress its own step traffic; the conversation is

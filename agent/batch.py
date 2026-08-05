@@ -517,11 +517,24 @@ def batch_ask_user(topic: str = "", context: str = "", mode: str = "input",
 
 # ── step router ───────────────────────────────────────────────────────────────
 
-def _make_on_step(renderer, obs_limit: int, transcript: list[str]):
+def _make_on_step(renderer, obs_limit: int, transcript: list[str],
+                  text_limit: int = 300):
     """Build the on_step callback for run_agent. Routes each event to the
     active renderer and appends a compact line to `transcript` (same shape
     the server feeds to the consolidation worker, used here only with
-    --memory)."""
+    --memory).
+
+    `text_limit` caps what the model SAID - thoughts and finals. 300 is right
+    for a batch run, where a thought is machinery and five hundred steps of it
+    would bury the work. It is wrong for a conversation, where the model has
+    nowhere else to speak: a step that also calls a tool carries the reply to
+    the user in its thought, and cutting that at 300 loses the end of the
+    sentence - the question it just asked, typically. The transcript is what
+    the consolidator reads, so the loss is permanent and silent.
+
+    Observations keep their own, smaller cap: those are file contents, and no
+    amount of them makes a better memory.
+    """
 
     def _emit_stats() -> None:
         """Per-call LLM stats (tokens · time · speed · context use). The
@@ -548,7 +561,7 @@ def _make_on_step(renderer, obs_limit: int, transcript: list[str]):
             text = " ".join(str(ev.get("content", "")).split())
             renderer.thought(step, text)
             _emit_stats()
-            transcript.append(f"THOUGHT: {text[:300]}")
+            transcript.append(f"THOUGHT: {text[:text_limit]}")
         elif t == "action":
             name = ev.get("name", "")
             args = ev.get("args", {}) or {}
@@ -561,7 +574,7 @@ def _make_on_step(renderer, obs_limit: int, transcript: list[str]):
         elif t == "final":
             renderer.final(step, str(ev.get("content", "")))
             _emit_stats()
-            transcript.append(f"FINAL: {str(ev.get('content', ''))[:300]}")
+            transcript.append(f"FINAL: {str(ev.get('content', ''))[:text_limit]}")
         elif t == "error":
             content = str(ev.get("content", ""))
             renderer.error(step, content)

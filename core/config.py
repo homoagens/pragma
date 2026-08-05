@@ -383,6 +383,23 @@ CHAT_COMPACT_CHARS = int(os.environ.get(
     "CHAT_COMPACT_CHARS", str(int(CONTEXT_WINDOW * 4 * 0.50))))
 CHAT_KEEP_TURNS = int(os.environ.get("CHAT_KEEP_TURNS", "3"))
 
+# How much of what the model SAID survives into the transcript a turn is
+# consolidated from. The batch default is 300 characters, which is right there:
+# a thought is machinery, and five hundred steps of it would bury the work.
+#
+# In a conversation it is the wrong measure, because the model has nowhere else
+# to speak. A step that also calls a tool carries the reply to the user in its
+# thought field - and 300 characters cut it mid-sentence, typically losing the
+# question it had just asked. Observed: a warm reply ending in "hai già in mente
+# qualcosa?" reached the consolidator without the question, while the receipt
+# ("done, I appended to the journal") arrived whole at 2000. The transcript then
+# argues the opposite of what the consolidator is told - that an episode is
+# never about having written a file.
+#
+# 2000 matches the budget the closing reply already gets: in a conversation the
+# two are the same kind of thing and there is no reason to rank them.
+CHAT_TRANSCRIPT_CHARS = int(os.environ.get("CHAT_TRANSCRIPT_CHARS", "2000"))
+
 # When compressing the message list, how many chars per message are kept
 # in the text fed to the summarizer. Too low loses information; too high
 # blows the summarizer's own token budget. 2000 is a balanced default.
