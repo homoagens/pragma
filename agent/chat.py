@@ -60,6 +60,7 @@ from skills import skills_summary_for      # noqa: E402
 
 from agent.batch import (                  # noqa: E402
     _PrettyRenderer,
+    _pool_line,
     _make_on_step,
     batch_ask_user,
 )
@@ -283,7 +284,7 @@ def _recall(text: str, cwd, desk_ids: set[str], desk_rules: set[str],
         # "looked, found nothing" costs one line and is the difference between
         # a faculty that is idle and a faculty that is stuck.
         renderer.faculty("CURATOR",
-                         f"{info['n_ep']} memories + {info['n_ln']} rules → "
+                         _pool_line(info) + " → "
                          f"nothing bore on this"
                          + (f" — {info['reason']}" if info.get("reason") else ""))
         return ""
@@ -291,7 +292,7 @@ def _recall(text: str, cwd, desk_ids: set[str], desk_rules: set[str],
     desk_rules.update(info["rule_texts"])
     reinforced.update(info["episode_ids"])
 
-    pool = f"{info['n_ep']} memories + {info['n_ln']} rules"
+    pool = _pool_line(info)
     if info["fallback"]:
         renderer.faculty("CURATOR", f"{pool} → deterministic fallback "
                                     f"(curator unavailable)"

@@ -96,8 +96,13 @@ def _episode_text(ep: dict) -> str:
 
 def _episode_candidates(task: str, workspace: str,
                         exclude_ids: set[str] | None = None,
-                        require_match: bool = False) -> list[dict]:
-    """Candidate episodes for one request, best first.
+                        require_match: bool = False) -> tuple[list[dict], int]:
+    """Candidate episodes for one request, best first, and how many were weighed.
+
+    The second number is what the store actually holds for this request. The
+    prefilter is cheap and reads everything; the curator is expensive and sees
+    only the best n. Reporting the survivors alone made a store of thirty look
+    like a store of ten.
 
     `exclude_ids` drops episodes before scoring, not after: a live session
     curates once per turn, and an episode already on the desk must not keep
@@ -124,7 +129,7 @@ def _episode_candidates(task: str, workspace: str,
         matched.sort(key=lambda c: (c["score"],
                                     estore.effective_salience(c["ep"]),
                                     c["ep"].get("ts", "")), reverse=True)
-        return matched[:n]
+        return matched[:n], len(scored)
     # Nothing keyword-relevant — offer the most recent as candidates and let
     # the curator decide (it will usually return an empty desk). One task is
     # worth that call: the opening question of a session often shares no words
@@ -137,27 +142,29 @@ def _episode_candidates(task: str, workspace: str,
     # allowed on the first turn and refused afterwards, so the curator wakes
     # for a genuine change of subject rather than for the passage of time.
     if require_match:
-        return []
+        return [], len(scored)
     scored.sort(key=lambda c: c["ep"].get("ts", ""), reverse=True)
-    return scored[:n]
+    return scored[:n], len(scored)
 
 
 def _learning_candidates(task: str,
-                         exclude_texts: set[str] | None = None) -> list[dict]:
+                         exclude_texts: set[str] | None = None) -> tuple[list[dict], int]:
     m = getattr(config, "CURATOR_CANDIDATES_LEARNINGS", 8)
     skip = exclude_texts or set()
     path = Path(config.LEARNINGS_PATH)
     if not path.exists():
-        return []
+        return [], 0
     try:
         entries = json.loads(path.read_text(encoding="utf-8")).get("entries", [])
     except Exception:
-        return []
+        return [], 0
     qtok = _tokens(task)
     out = []
+    pool = 0
     for e in entries:
         if e.get("status", "active") == "retired":
             continue
+        pool += 1
         text = e.get("text", "")
         if text in skip:
             continue
@@ -166,7 +173,7 @@ def _learning_candidates(task: str,
             continue
         out.append({"entry": e, "score": kw * float(e.get("confidence", 0.5))})
     out.sort(key=lambda c: c["score"], reverse=True)
-    return out[:m]
+    return out[:m], pool
 
 
 # ── Stage 2: the curator LLM call ─────────────────────────────────────────────
@@ -396,15 +403,18 @@ def curate_knowledge_detailed(task: str, workspace: str = "", model=None,
         "fallback": bool,   # curator LLM failed → deterministic top-k
         "empty":    bool }  # nothing relevant, or the curator chose an empty desk
     """
-    info = {"block": "", "n_ep": 0, "n_ln": 0, "selected": [],
+    info = {"block": "", "n_ep": 0, "n_ln": 0, "pool_ep": 0, "pool_ln": 0,
+            "selected": [],
             "episode_ids": [], "rule_texts": [],
             "reason": "", "fallback": False, "empty": False}
     if not task or not task.strip():
         info["empty"] = True
         return info
-    eps = _episode_candidates(task, workspace, exclude_ids, require_match)
-    lns = _learning_candidates(task, exclude_rules)
+    eps, pool_ep = _episode_candidates(task, workspace, exclude_ids,
+                                       require_match)
+    lns, pool_ln = _learning_candidates(task, exclude_rules)
     info["n_ep"], info["n_ln"] = len(eps), len(lns)
+    info["pool_ep"], info["pool_ln"] = pool_ep, pool_ln
     if not eps and not lns:
         info["empty"] = True
         return info

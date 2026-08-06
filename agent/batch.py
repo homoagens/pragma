@@ -346,6 +346,19 @@ class _MarkdownRenderer:
             _out(f"- {d}")
 
 
+def _pool_line(info) -> str:
+    """"3 of 34 memories + 0 of 12 rules" - offered, out of what was weighed.
+
+    The prefilter reads the whole store and hands the curator only the best
+    CURATOR_CANDIDATES_EPISODES of them. Printing the survivors alone made a
+    store of thirty look like a store of ten, and hid the funnel entirely.
+    """
+    def part(n, pool, noun):
+        return f"{n} of {pool} {noun}" if pool > n else f"{n} {noun}"
+    return (part(info["n_ep"], info.get("pool_ep", 0), "memories") + " + "
+            + part(info["n_ln"], info.get("pool_ln", 0), "rules"))
+
+
 class _PrettyRenderer:
     """Live terminal rendering via rich — the default when stdout is a TTY.
     No timestamps (they're noise live); hierarchy is typographic: dim italic
@@ -798,7 +811,7 @@ confirmed mid-task. Therefore:
             info = curator.curate_knowledge_detailed(task, workspace=str(cwd))
             if info["block"]:
                 prefix_parts.append(info["block"])
-            pool = f"{info['n_ep']} memories + {info['n_ln']} rules"
+            pool = _pool_line(info)
             if info["fallback"]:
                 renderer.faculty("CURATOR",
                                  f"{pool} → deterministic fallback "
