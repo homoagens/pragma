@@ -194,17 +194,37 @@ def segment(user_turns: list[str], model=None) -> tuple[list[tuple[list[int], bo
 
 
 def describe(segments, total: int) -> str:
-    """One line for the session log."""
+    """One line for the session log, in turns and episodes.
+
+    "0 of 1 segment(s) kept from 2 turn(s), 1 merged" was accurate and
+    unreadable: `segment` is this module's own vocabulary, `1 merged` sounds
+    like a third quantity rather than a description of the one segment, and
+    the sentence never reaches the only thing the operator wants to know -
+    whether anything was written down.
+
+    So: what went in, what came out, and what happened in between. The reason
+    the model gave is appended by the caller, so this half states the fact and
+    the other half explains it.
+    """
     kept = [s for s in segments if s[1]]
-    # Counted over ALL segments, not just the kept ones: a dropped segment
-    # that merged two turns is still a grouping decision, and hiding it made
-    # the line report one merge where the model had made two.
-    merged = sum(1 for s in segments if len(s[0]) > 1)
-    parts = [f"{len(kept)} of {len(segments)} segment(s) kept "
-             f"from {total} turn(s)"]
-    if merged:
-        parts.append(f"{merged} merged")
-    return ", ".join(parts)
+    dropped = len(segments) - len(kept)
+
+    def plural(n, noun):
+        return f"{n} {noun}" if n == 1 else f"{n} {noun}s"
+
+    line = plural(total, "turn")
+    # Grouping is stated as the count of exchanges, which covers the merges in
+    # DROPPED segments too - those are still decisions the model made, and an
+    # earlier wording that counted only the kept ones reported one merge where
+    # there had been two. Said only when it happened: with no grouping, "2
+    # turns read as 2 exchanges" is noise.
+    if len(segments) < total:
+        line += f" read as {plural(len(segments), 'exchange')}"
+    line += " -> " + ("no episode" if not kept
+                      else plural(len(kept), "episode"))
+    if dropped and kept:
+        line += f" ({dropped} dropped)"
+    return line
 
 
 def as_json(segments, total: int) -> str:
