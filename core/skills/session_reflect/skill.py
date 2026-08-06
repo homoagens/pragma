@@ -99,6 +99,7 @@ def session_reflect_detailed(transcript: str = "",
             ],
             temperature=0.0,
             max_tokens=config.MEMORY_MAX_TOKENS,
+            template_kwargs=config.memory_template_kwargs(),
         )
         result = extract_json(raw)
     except Exception as e:

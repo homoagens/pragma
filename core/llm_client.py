@@ -332,7 +332,7 @@ LAST_STATS: dict = {}
 _SCHEMA_UNSUPPORTED = [False]
 
 
-def _call_openai_compatible(messages, model, temperature, max_tokens, timeout, base_url, api_key, stop_event=None, response_schema=None):
+def _call_openai_compatible(messages, model, temperature, max_tokens, timeout, base_url, api_key, stop_event=None, response_schema=None, template_kwargs=None):
     """Standard OpenAI /chat/completions — works with Groq, Ollama, vLLM, etc."""
     global LAST_STATS
     payload = {
@@ -342,6 +342,12 @@ def _call_openai_compatible(messages, model, temperature, max_tokens, timeout, b
         "max_tokens":  max_tokens,
     }
     payload.update(config.sampling_extras())
+    # Variables handed to the server's chat template. Not an OpenAI field: a
+    # server that does not know it ignores it, which is the same outcome as
+    # not sending it. Used to ask a reasoning model to skip its thinking phase
+    # on calls where there is nothing to think about.
+    if template_kwargs:
+        payload["chat_template_kwargs"] = template_kwargs
     if response_schema:
         payload["response_format"] = {
             "type": "json_schema",
@@ -560,7 +566,8 @@ def call_llm_tools(messages, tools, model=None, temperature=None,
 
 
 def call_llm(messages, model=None, temperature=None, max_tokens=None, timeout=None,
-             base_url=None, api_key=None, stop_event=None, response_schema=None):
+             base_url=None, api_key=None, stop_event=None, response_schema=None,
+             template_kwargs=None):
     """
     Send messages to the OpenAI-compatible endpoint and return the response text.
 
@@ -600,7 +607,7 @@ def call_llm(messages, model=None, temperature=None, max_tokens=None, timeout=No
     try:
         text, finish = _call_openai_compatible(
             messages, model, temperature, max_tokens, timeout, url, key,
-            stop_event, response_schema,
+            stop_event, response_schema, template_kwargs,
         )
     except LLMInterrupted:
         raise
@@ -619,7 +626,7 @@ def call_llm(messages, model=None, temperature=None, max_tokens=None, timeout=No
                       f"continuing without schemas.")
             text, finish = _call_openai_compatible(
                 messages, model, temperature, max_tokens, timeout, url, key,
-                stop_event, None,
+                stop_event, None, template_kwargs,
             )
         else:
             raise

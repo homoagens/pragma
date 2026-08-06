@@ -78,6 +78,10 @@ Set-SessionEnv "SKILL_MAX_TOKENS"  (Cfg "SkillMaxTokens" "")
 # did; set it when the model reasons its way through a three-line verdict and
 # you would rather it did not do so at the agent's budget.
 Set-SessionEnv "MEMORY_MAX_TOKENS" (Cfg "MemoryMaxTokens" "")
+# "1" asks the chat template to skip the thinking phase on memory calls only.
+# The agent keeps thinking. Off unless set, because a curator that does not
+# deliberate may choose differently - a change in the memory, not just its speed.
+Set-SessionEnv "MEMORY_NO_THINK"   (Cfg "MemoryNoThink"   "")
 Set-SessionEnv "LLM_TIMEOUT"       (Cfg "Timeout"        "")
 # Sampling. Temperature is always sent by Pragma, so leaving it empty falls
 # back to the repository default (0.0) and NOT to the server's. The other three
@@ -158,6 +162,8 @@ function script:Get-BudgetLine {
     # waits a long time before its first step is usually waiting on the
     # curator, and this is the number that explains it.
     $mem = if ($env:MEMORY_MAX_TOKENS) { $env:MEMORY_MAX_TOKENS } else { "as skills" }
+    # Stated because it changes what the faculties DO, not only how fast.
+    if ($env:MEMORY_NO_THINK) { $mem = "$mem no-think" }
     # "120s" when set, plain "repo" when not - never "repos".
     $to  = if ($env:LLM_TIMEOUT) { "$($env:LLM_TIMEOUT)s" } else { $d }
     "ctx $ctx / out $mt / skills $sk / memory $mem / timeout $to"
@@ -368,7 +374,7 @@ function pragma {
         Remove-Item Env:PRAGMA_WORKSPACE, Env:PRAGMA_DATA_DIR -ErrorAction SilentlyContinue
         Remove-Item Env:PRAGMA_PROFILE, Env:LLM_TOOL_PROTOCOL -ErrorAction SilentlyContinue
         Remove-Item Env:CONTEXT_WINDOW, Env:MAX_TOKENS, Env:CODING_MAX_TOKENS -ErrorAction SilentlyContinue
-        Remove-Item Env:SKILL_MAX_TOKENS, Env:MEMORY_MAX_TOKENS, Env:LLM_TIMEOUT -ErrorAction SilentlyContinue
+        Remove-Item Env:SKILL_MAX_TOKENS, Env:MEMORY_MAX_TOKENS, Env:MEMORY_NO_THINK, Env:LLM_TIMEOUT -ErrorAction SilentlyContinue
         Write-Host "off - defaults restored for this window"
         return
     }

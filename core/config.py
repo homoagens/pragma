@@ -297,6 +297,34 @@ SKILL_MAX_TOKENS       = int(os.environ.get("SKILL_MAX_TOKENS", str(_skill_defau
 MEMORY_MAX_TOKENS      = int(os.environ.get("MEMORY_MAX_TOKENS",
                                             str(SKILL_MAX_TOKENS)))
 
+# Ask the chat template to skip the thinking phase, for the memory calls only.
+#
+# WHY IT IS WORTH ASKING. A curator picks three fragments from a numbered list
+# and its output shape is already forced by a JSON schema. Measured against a
+# reasoning model: 83 completion tokens and 8.6s with thinking, 17 tokens and
+# 1.6s without, same answer. On a session that curates once per turn, that is
+# the difference between memory you notice and memory you wait for.
+#
+# WHY IT IS OFF BY DEFAULT. It is not a speed setting, it is a change of
+# faculty: a curator that does not deliberate may well select differently, and
+# what the store ends up holding is the thing under study here. Opt in per
+# session, and do not compare runs across the switch.
+#
+# WHY BOTH KEYS. Templates disagree on the name - `enable_thinking` is the
+# common one, `thinking` is used by others. Probing a llama.cpp server showed
+# both honoured and an invented key inert, so an extra one costs nothing while
+# a missing one leaves thinking quietly on. A template that reads neither
+# simply ignores both, which is the same as not asking.
+MEMORY_NO_THINK = (os.environ.get("MEMORY_NO_THINK", "").strip().lower()
+                   in ("1", "true", "yes", "on"))
+
+
+def memory_template_kwargs():
+    """chat_template_kwargs for a memory call, or None to send the field."""
+    if not MEMORY_NO_THINK:
+        return None
+    return {"enable_thinking": False, "thinking": False}
+
 # write_file emits a soft warning in the observation when content exceeds
 # this many bytes — the agent learns to prefer incremental edits.
 WRITE_FILE_SOFT_LIMIT = int(os.environ.get("WRITE_FILE_SOFT_LIMIT", "8000"))
