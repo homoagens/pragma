@@ -112,6 +112,22 @@ def _ep_for_prompt(ep: dict) -> dict:
     }
 
 
+# Why the last call did nothing, or "" when it worked.
+#
+# Both functions below return "nothing to do" and "the call failed" as the same
+# value - an empty list, None - because neither must ever break consolidation.
+# That policy is right and it hid a real failure: an endpoint that blinked
+# during reconsolidation produced exactly the output of a faculty that ran and
+# decided no episode needed rereading. In a campaign about reinterpretation,
+# that is the one confusion you cannot afford.
+#
+# So the reason is left here for the caller to report. Module state rather than
+# a changed return type, following llm_client.LAST_STATS: the signature is used
+# by a skill whose lineage feeds the frozen corpus, and widening it would ripple
+# further than the problem.
+LAST_ERROR: str = ""
+
+
 def reconsolidate_episodes(new_ep: dict, targets: list[dict],
                            model=None) -> list[dict]:
     """Ask the model to re-read `targets` in the light of `new_ep`.
@@ -121,6 +137,8 @@ def reconsolidate_episodes(new_ep: dict, targets: list[dict],
     new interpretation must be non-empty and actually different from the old.
     Never raises — reconsolidation must not break consolidation.
     """
+    global LAST_ERROR
+    LAST_ERROR = ""
     if not targets:
         return []
     import json
@@ -147,9 +165,11 @@ def reconsolidate_episodes(new_ep: dict, targets: list[dict],
             response_schema=_EPISODIC_SCHEMA,
         )
         data = extract_json(raw)
-    except Exception:
+    except Exception as e:
+        LAST_ERROR = f"{type(e).__name__}: {str(e)[:160]}"
         return []
     if not isinstance(data, dict):
+        LAST_ERROR = "reply was not JSON: " + " ".join(str(raw).split())[:120]
         return []
 
     out: list[dict] = []
@@ -227,6 +247,8 @@ def reformulate_belief(text: str, contradicting_evidence: list[str],
     defensible reformulation — retire it" (or on any failure: fail safe by
     retiring, the pre-Stage-3 behaviour). Never raises.
     """
+    global LAST_ERROR
+    LAST_ERROR = ""
     import json
     payload = json.dumps({
         "belief":                 text,
@@ -245,7 +267,8 @@ def reformulate_belief(text: str, contradicting_evidence: list[str],
             response_schema=_REFORMULATION_SCHEMA,
         )
         data = extract_json(raw)
-    except Exception:
+    except Exception as e:
+        LAST_ERROR = f"{type(e).__name__}: {str(e)[:160]}"
         return None
     if not isinstance(data, dict) or not data.get("reformulate"):
         return None

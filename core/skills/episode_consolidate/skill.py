@@ -464,7 +464,8 @@ def episode_consolidate_detailed(transcript: str = "", workspace: str = "",
               "surprises": len(surprises), "sweep": swept,
               "semantic_ran": False,
               "new_assertions": [], "confirmed": [], "contradicted": [],
-              "retired": [], "reconsolidated": [], "reformulated": []}
+              "retired": [], "reconsolidated": [], "reformulated": [],
+              "reconsolidate_error": ""}
     if degraded and llm_note:
         _degraded_note = llm_note + " — deterministic fallback episode saved"
     elif degraded:
@@ -524,8 +525,15 @@ def episode_consolidate_detailed(transcript: str = "", workspace: str = "",
             if linked:
                 ep["links"] = sorted(set(ep.get("links") or []) | set(linked))
                 estore.save(store / f"{ep['id']}.json", ep)
-        except Exception:
-            pass  # reconsolidation must never break consolidation
+            # Not breaking consolidation is the policy; being silent about it
+            # was an accident. reconsolidate.LAST_ERROR distinguishes "nothing
+            # needed rereading" from "the faculty could not run" - which the
+            # empty list alone cannot.
+            if getattr(reconsolidate, "LAST_ERROR", ""):
+                result["reconsolidate_error"] = reconsolidate.LAST_ERROR
+        except Exception as e:
+            # Still never fatal, but no longer invisible.
+            result["reconsolidate_error"] = f"{type(e).__name__}: {str(e)[:160]}"
 
     learnings_path = Path(config.LEARNINGS_PATH)
     learnings = _load_learnings(learnings_path)
@@ -700,6 +708,8 @@ def episode_consolidate_detailed(transcript: str = "", workspace: str = "",
         _recon_note += f"; reconsolidated {len(result['reconsolidated'])} episode(s)"
     if result["reformulated"]:
         _recon_note += f", reformulated {len(result['reformulated'])} belief(s)"
+    if result.get("reconsolidate_error"):
+        _recon_note += f"; RECONSOLIDATOR FAILED - {result['reconsolidate_error']}"
     result["summary"] = (
         f"OK: episode {ep['id']} saved ({len(surprises)} surprises); "
         f"semantics: +{len(result['new_assertions'])} assertions, "
