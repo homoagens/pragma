@@ -526,11 +526,10 @@ def _make_on_step(renderer, obs_limit: int, transcript: list[str],
 
     `text_limit` caps what the model SAID - thoughts and finals. 300 is right
     for a batch run, where a thought is machinery and five hundred steps of it
-    would bury the work. It is wrong for a conversation, where the model has
-    nowhere else to speak: a step that also calls a tool carries the reply to
-    the user in its thought, and cutting that at 300 loses the end of the
-    sentence - the question it just asked, typically. The transcript is what
-    the consolidator reads, so the loss is permanent and silent.
+    would bury the work. A live session raises it, not because the thought is
+    where the reply belongs - it is told the opposite - but because when the
+    model puts one there anyway, the transcript is what the consolidator reads
+    and the loss would be permanent and silent.
 
     Observations keep their own, smaller cap: those are file contents, and no
     amount of them makes a better memory.

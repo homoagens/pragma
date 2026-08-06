@@ -387,17 +387,14 @@ CHAT_KEEP_TURNS = int(os.environ.get("CHAT_KEEP_TURNS", "3"))
 # consolidated from. The batch default is 300 characters, which is right there:
 # a thought is machinery, and five hundred steps of it would bury the work.
 #
-# In a conversation it is the wrong measure, because the model has nowhere else
-# to speak. A step that also calls a tool carries the reply to the user in its
-# thought field - and 300 characters cut it mid-sentence, typically losing the
-# question it had just asked. Observed: a warm reply ending in "hai già in mente
-# qualcosa?" reached the consolidator without the question, while the receipt
-# ("done, I appended to the journal") arrived whole at 2000. The transcript then
-# argues the opposite of what the consolidator is told - that an episode is
-# never about having written a file.
-#
-# 2000 matches the budget the closing reply already gets: in a conversation the
-# two are the same kind of thing and there is no reason to rank them.
+# A live session is told to answer in the conclusion and keep the thought to one
+# line, so in the intended case this budget is never reached. It exists for the
+# case where the model does it anyway - and it did, before it was told not to:
+# a reply ending "one paper under review, two being written" was cut inside
+# "due in scritt|ura", so the substance of the day never reached memory while
+# the receipt arrived whole. What the model says has to survive into the episode
+# whichever field it came out of; where it belongs is a matter for the prompt,
+# not for a truncation that loses it silently.
 CHAT_TRANSCRIPT_CHARS = int(os.environ.get("CHAT_TRANSCRIPT_CHARS", "2000"))
 
 # When compressing the message list, how many chars per message are kept

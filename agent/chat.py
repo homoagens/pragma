@@ -216,6 +216,27 @@ def _compact(history: list, turns: list[Turn], turn_msgs: list[int],
     return new_history, cut_at
 
 
+class _ChatRenderer(_PrettyRenderer):
+    """The pretty renderer, minus the thinking out loud.
+
+    This is the half of the fix the prompt cannot do alone. Telling a model
+    that a channel is internal is easy to ignore while its output is visibly
+    delivered to the reader - and it WAS delivered: the model answered in the
+    thought, called a tool, then answered again in the conclusion, so the
+    person read the same thing twice, the second time as a receipt.
+
+    With the text no longer printed, the instruction is simply true. The step
+    rule and the action line stay, so the conversation still shows what is
+    being done to the files - only the model's private note goes quiet.
+
+    `--show-thoughts` brings it back for debugging, where the whole point is
+    to see what the model told itself.
+    """
+
+    def thought(self, step, text):
+        self._rule(step)
+
+
 def _recall(text: str, cwd, desk_ids: set[str], desk_rules: set[str],
             reinforced: set[str], renderer, first_turn: bool) -> str:
     """The curator's contribution to one turn, or "".
@@ -278,6 +299,9 @@ def main() -> int:
     # DEFAULT_TEMPERATURE and made the environment variable inert.
     ap.add_argument("--temperature", type=float, default=None,
                     help="sampling temperature (default: DEFAULT_TEMPERATURE)")
+    ap.add_argument("--show-thoughts", action="store_true",
+                    help="print the model's private note at each step "
+                         "(debugging: it is not part of the conversation)")
     ap.add_argument("--memory", action="store_true",
                     help="consolidate the session into episodes on exit")
     args = ap.parse_args()
@@ -334,28 +358,28 @@ def main() -> int:
 
 ## Live session - this is a conversation
 
-The rules above were written for a single task run headless. Two of them
-invert here, and where they disagree with this section, this section wins.
+Where the rules above disagree with this section, this section wins.
 
-**Where you speak.** The rule that `thought` is a short internal
-justification does not hold: in a live session the person reads it. When a
-step also calls a tool, that field is the only place you can answer from -
-so answer there, in their language, at whatever length the reply needs.
+**`thought` IS NOT SHOWN TO THE PERSON.** It is your own note about the
+immediate next step - one short sentence - and anything else you put there
+is simply lost. Everything you want to say goes in `conclusion`, whole.
 
-**How you close.** The rule that `conclusion` is where the recap belongs
-does not hold either. The conclusion is the last thing they read and it
-closes the exchange; it is not a report of the files you touched.
+    Prefer   thought:    "Checking the end of the journal before appending."
+             conclusion: <your whole reply to them>
 
-    Prefer   "Good that the painting is finally done - and the engineering
-              paper moving is the better news of the day."
-    Over     "Done. I updated journal.md. Summary: two entries for today."
+    Over     thought:    <your whole reply to them>
+             conclusion: "Done. I updated journal.md."
 
-When what you were asked for IS the work, say what came of it, not which
-files it went through. Nobody wants the receipt for an operation they asked
-for and just watched happen.
+The second shape is the one to avoid: it delivers the answer where nobody
+reads it, and the receipt where the answer belonged. Do not answer in the
+thought and then summarise at the end - answer once, at the end.
 
-If you have already answered during the turn, do not answer twice: close,
-or add the one thing you left out.
+**The conclusion closes the exchange**, it does not report on it. When what
+you were asked for IS the work, say what came of it, not which files it went
+through. Nobody wants the receipt for an operation they asked for and just
+watched happen.
+
+If the turn needed no tools at all, the conclusion is simply your reply.
 """
 
     system_prompt = build_system_prompt(
@@ -366,7 +390,7 @@ or add the one thing you left out.
         protocol=getattr(baseline_config, "LLM_TOOL_PROTOCOL", "text"),
     ) + chat_policy + project_contract(cwd)
 
-    renderer = _PrettyRenderer()
+    renderer = _PrettyRenderer() if args.show_thoughts else _ChatRenderer()
     served = getattr(baseline_config, "SERVED_MODEL", "") or baseline_config.DEFAULT_MODEL
     max_steps = args.max_steps or baseline_config.MAX_STEPS
 
