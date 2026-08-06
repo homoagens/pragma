@@ -260,6 +260,15 @@ def _recall(text: str, cwd, desk_ids: set[str], desk_rules: set[str],
     """
     try:
         import curator
+        # Say so BEFORE the call, as the other faculties do. Recall runs ahead
+        # of the turn's first step, so without this the screen shows nothing
+        # but the model's spinner - indistinguishable from the agent already
+        # working on the answer. On a slow endpoint that is minutes of not
+        # knowing which of the two you are waiting for.
+        renderer.faculty_running(
+            "CURATOR",
+            "searching memory for what bears on this…" if not first_turn
+            else "opening the conversation — offering the latest memories…")
         info = curator.curate_knowledge_detailed(
             text, workspace=str(cwd),
             exclude_ids=desk_ids, exclude_rules=desk_rules,
@@ -269,6 +278,14 @@ def _recall(text: str, cwd, desk_ids: set[str], desk_rules: set[str],
         return ""
 
     if not info["block"]:
+        # Now that the faculty announces itself, an empty recall cannot just
+        # return: an opening line followed by nothing reads as a hang. Saying
+        # "looked, found nothing" costs one line and is the difference between
+        # a faculty that is idle and a faculty that is stuck.
+        renderer.faculty("CURATOR",
+                         f"{info['n_ep']} memories + {info['n_ln']} rules → "
+                         f"nothing bore on this"
+                         + (f" — {info['reason']}" if info.get("reason") else ""))
         return ""
     desk_ids.update(info["episode_ids"])
     desk_rules.update(info["rule_texts"])
