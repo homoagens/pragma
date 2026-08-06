@@ -391,10 +391,19 @@ def _assemble(refs: list[str], eps: list[dict], lns: list[dict],
               workspace: str, no_reinforce: set[str] | None = None) -> str:
     if not refs:
         return ""
+    # The header used to end "may be outdated, verify against the actual
+    # files", which is right about one half of a memory and wrong about the
+    # other. What a past session DID is a record: there is no file that can
+    # confirm or deny a conversation, and sending the agent to look for one
+    # got exactly that - asked what was discussed yesterday, with three dated
+    # episodes from yesterday in front of it, it went and read the journal
+    # instead. What a memory says about the CURRENT state of the files is the
+    # part that goes stale, and that part still deserves the warning.
     lines = [
         "[Relevant memory — fragments the context curator selected for this "
-        "task; notes and rules from past sessions, may be outdated, verify "
-        "against the actual files]"
+        "task. What happened in a past session is a record: it is dated, and "
+        "no file confirms or denies it. What a fragment claims about the "
+        "CURRENT state of the files may be out of date — check that part.]"
     ]
     for r in refs:
         if r.startswith("E"):
