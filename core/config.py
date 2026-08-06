@@ -598,6 +598,12 @@ CURATOR_ENABLED = os.environ.get(
 # How wide the deterministic prefilter casts its net before the LLM chooses.
 CURATOR_CANDIDATES_EPISODES  = int(os.environ.get("CURATOR_CANDIDATES_EPISODES", "10"))
 CURATOR_CANDIDATES_LEARNINGS = int(os.environ.get("CURATOR_CANDIDATES_LEARNINGS", "8"))
+# How many of those slots are reserved for the most recent episodes, whatever
+# they are about. Keywords answer questions about a SUBJECT; a question about a
+# TIME - "what did we talk about yesterday" - shares no words with the episode
+# that holds the answer, and would be met with the store's greatest hits.
+# Reserved out of the pool, not added to it: the prompt does not grow.
+CURATOR_CANDIDATES_RECENT    = int(os.environ.get("CURATOR_CANDIDATES_RECENT", "3"))
 # Cap on how many fragments the curator may place on the desk.
 CURATOR_MAX_FRAGMENTS = int(os.environ.get("CURATOR_MAX_FRAGMENTS", "6"))
 

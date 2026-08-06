@@ -124,12 +124,37 @@ def _episode_candidates(task: str, workspace: str,
                           else 0)
             scored.append({"path": p, "ep": ep, "score": score, "kw": kw,
                            "dormant": zone == "dormant"})
-    matched = [c for c in scored if c["score"] > 0]
+    # RELEVANCE IS THE KEYWORDS, NOT THE SCORE. The workspace boost is a
+    # tiebreak between episodes that already match; it must not decide WHETHER
+    # one matches. It used to: with a boost of 2, every episode in the current
+    # workspace scored above zero, so in a store with a single workspace -
+    # which is what a personal memory is - everything "matched", the fallback
+    # below became unreachable, and the sort fell through to salience. The
+    # curator was then handed the ten most IMPORTANT episodes for every
+    # question, including the ones about last night.
+    matched = [c for c in scored if c["kw"] > 0]
     if matched:
         matched.sort(key=lambda c: (c["score"],
                                     estore.effective_salience(c["ep"]),
                                     c["ep"].get("ts", "")), reverse=True)
-        return matched[:n], len(scored)
+        # SOME SLOTS ARE ALWAYS THE LATEST NEWS. A question can be about a
+        # subject or about a time, and keywords only find the first kind:
+        # "what did we talk about yesterday" shares no words with an episode
+        # ABOUT yesterday. These are candidates, not selections - the curator
+        # still decides - so the cost of offering them is a few lines of
+        # prompt, while the cost of withholding them is a memory that cannot
+        # answer the most ordinary question there is.
+        r = max(getattr(config, "CURATOR_CANDIDATES_RECENT", 3), 0)
+        out = matched[:max(n - r, 0)]
+        seen = {id(c["ep"]) for c in out}
+        for c in sorted(scored, key=lambda c: c["ep"].get("ts", ""),
+                        reverse=True):
+            if len(out) >= n:
+                break
+            if id(c["ep"]) not in seen:
+                out.append(c)
+                seen.add(id(c["ep"]))
+        return out, len(scored)
     # Nothing keyword-relevant — offer the most recent as candidates and let
     # the curator decide (it will usually return an empty desk). One task is
     # worth that call: the opening question of a session often shares no words
