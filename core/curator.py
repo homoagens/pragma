@@ -28,6 +28,7 @@ from __future__ import annotations
 
 import json
 import re
+from datetime import datetime, timezone
 from pathlib import Path
 
 import config
@@ -43,6 +44,11 @@ belong on its desk — no more, no less.
 You receive the TASK and a numbered list of CANDIDATE fragments: past
 EPISODES (E1, E2, ...) and learned RULES (L1, L2, ...). Some episodes may be
 dormant (faded from disuse); selecting one revives it.
+
+Each episode carries WHEN it happened, relative to TODAY. When the task asks
+about a time ("yesterday", "last week", "when did we..."), that stamp decides,
+not the wording: an episode that merely mentions the same question is not an
+episode that answers it.
 
 Select ONLY the fragments that probably change the quality of the next step —
 pertinence, not "it might help". Order the selection from most to least
@@ -203,10 +209,41 @@ def _learning_candidates(task: str,
 
 # ── Stage 2: the curator LLM call ─────────────────────────────────────────────
 
+def _when(ts: str) -> str:
+    """"yesterday", "3 days ago", or the plain date. Empty when unparseable.
+
+    A memory has a WHEN, and the curator was never told it. Asked which
+    episode bore on "what did we talk about yesterday", it saw ten undated
+    cards and no notion of what day it was, so it did the only thing left and
+    matched the words - choosing the episode that RECORDED someone asking
+    that question over the ones that answered it.
+
+    Stated in relative form because that is the form the question takes.
+    "2026-08-05" requires the model to know today's date and subtract;
+    "yesterday" is the word the user actually used.
+    """
+    try:
+        when = datetime.strptime(str(ts)[:10], "%Y-%m-%d").date()
+    except Exception:
+        return ""
+    days = (datetime.now(timezone.utc).date() - when).days
+    if days < 0:
+        return str(ts)[:10]
+    if days == 0:
+        return "today"
+    if days == 1:
+        return "yesterday"
+    if days < 14:
+        return f"{days} days ago"
+    return str(ts)[:10]
+
+
 def _episode_card(ref: str, c: dict) -> str:
     ep = c["ep"]
     tag = " [dormant]" if c["dormant"] else ""
-    lines = [f"{ref}{tag} goal: {ep.get('goal', '')}"]
+    when = _when(ep.get("ts", ""))
+    stamp = f" ({when})" if when else ""
+    lines = [f"{ref}{tag}{stamp} goal: {ep.get('goal', '')}"]
     nar = _truncate(ep.get("narrative", ""), config.MEMORY_NARRATIVE_CHARS)
     if nar:
         lines.append(f"   what happened: {nar}")
@@ -234,7 +271,12 @@ def _ask_curator(task: str, eps: list[dict], lns: list[dict],
         cards.append(_episode_card(f"E{i}", c))
     for i, c in enumerate(lns, 1):
         cards.append(_learning_card(f"L{i}", c))
-    payload = f"TASK:\n{task}\n\nCANDIDATES:\n" + "\n".join(cards)
+    # The date anchors the relative stamps on the cards. Without it "yesterday"
+    # on a card and "yesterday" in the question are two strings that happen to
+    # look alike; with it they are the same day.
+    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    payload = (f"TODAY: {today}\n\nTASK:\n{task}\n\nCANDIDATES:\n"
+               + "\n".join(cards))
     try:
         raw = llm_client.call_llm(
             messages=[
