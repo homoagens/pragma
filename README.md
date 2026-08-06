@@ -333,6 +333,15 @@ conversation:
 
 Two more faculty tags appear in a live session: `[SEGMENTER]` and `[COMPACTOR]`.
 
+> [!NOTE]
+> **A session shows the actions, not the thinking.** Batch prints the model's
+> per-step note, because there you are watching a task run. A conversation
+> hides it: the reply belongs in the closing message, and showing both made the
+> agent answer twice — once mid-turn, then again as a receipt. The tool calls
+> stay visible, so you still see what is being done to your files.
+> `pragma -Chat -Verbose` brings the notes back when what you want to see is
+> what the model told itself.
+
 The raw conversation is appended to `workspace\.pragma_session.jsonl` after
 every turn, before anything else can fail, so consolidation can be re-run after
 a crash: a memory may arrive late, it should not disappear.
