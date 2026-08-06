@@ -74,6 +74,10 @@ Set-SessionEnv "CONTEXT_WINDOW"    (Cfg "ContextWindow"  "")
 Set-SessionEnv "MAX_TOKENS"        (Cfg "MaxTokens"      "")
 Set-SessionEnv "CODING_MAX_TOKENS" (Cfg "MaxTokens"      "")
 Set-SessionEnv "SKILL_MAX_TOKENS"  (Cfg "SkillMaxTokens" "")
+# The memory faculties, separately. Empty follows SkillMaxTokens, as it always
+# did; set it when the model reasons its way through a three-line verdict and
+# you would rather it did not do so at the agent's budget.
+Set-SessionEnv "MEMORY_MAX_TOKENS" (Cfg "MemoryMaxTokens" "")
 Set-SessionEnv "LLM_TIMEOUT"       (Cfg "Timeout"        "")
 # Sampling. Temperature is always sent by Pragma, so leaving it empty falls
 # back to the repository default (0.0) and NOT to the server's. The other three
@@ -150,9 +154,13 @@ function script:Get-BudgetLine {
     $ctx = if ($env:CONTEXT_WINDOW)   { $env:CONTEXT_WINDOW }   else { $d }
     $mt  = if ($env:MAX_TOKENS)       { $env:MAX_TOKENS }       else { $d }
     $sk  = if ($env:SKILL_MAX_TOKENS) { $env:SKILL_MAX_TOKENS } else { $d }
+    # Stated separately from "skills" now that it can differ. A session that
+    # waits a long time before its first step is usually waiting on the
+    # curator, and this is the number that explains it.
+    $mem = if ($env:MEMORY_MAX_TOKENS) { $env:MEMORY_MAX_TOKENS } else { "as skills" }
     # "120s" when set, plain "repo" when not - never "repos".
     $to  = if ($env:LLM_TIMEOUT) { "$($env:LLM_TIMEOUT)s" } else { $d }
-    "ctx $ctx / out $mt / skills $sk / timeout $to"
+    "ctx $ctx / out $mt / skills $sk / memory $mem / timeout $to"
 }
 
 # What this window will actually SEND. Printed on entry because a sampling
@@ -360,7 +368,7 @@ function pragma {
         Remove-Item Env:PRAGMA_WORKSPACE, Env:PRAGMA_DATA_DIR -ErrorAction SilentlyContinue
         Remove-Item Env:PRAGMA_PROFILE, Env:LLM_TOOL_PROTOCOL -ErrorAction SilentlyContinue
         Remove-Item Env:CONTEXT_WINDOW, Env:MAX_TOKENS, Env:CODING_MAX_TOKENS -ErrorAction SilentlyContinue
-        Remove-Item Env:SKILL_MAX_TOKENS, Env:LLM_TIMEOUT -ErrorAction SilentlyContinue
+        Remove-Item Env:SKILL_MAX_TOKENS, Env:MEMORY_MAX_TOKENS, Env:LLM_TIMEOUT -ErrorAction SilentlyContinue
         Write-Host "off - defaults restored for this window"
         return
     }

@@ -312,7 +312,7 @@ def _ask_episode(transcript: str, corrective: bool = False,
             {"role": "user",   "content": user_msg},
         ],
         temperature=0.0,
-        max_tokens=config.SKILL_MAX_TOKENS,
+        max_tokens=config.MEMORY_MAX_TOKENS,
         response_schema=_EPISODE_SCHEMA,
     )
     data = extract_json(raw)
@@ -559,7 +559,7 @@ def episode_consolidate_detailed(transcript: str = "", workspace: str = "",
                 {"role": "user",   "content": payload},
             ],
             temperature=0.0,
-            max_tokens=config.SKILL_MAX_TOKENS,
+            max_tokens=config.MEMORY_MAX_TOKENS,
             response_schema=_SEMANTIC_SCHEMA,
         )
         sem = extract_json(raw)

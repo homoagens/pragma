@@ -276,6 +276,27 @@ _skill_default = (int(MAX_TOKENS * SKILL_MAX_TOKENS_RATIO)
                   if SKILL_MAX_TOKENS_RATIO > 0 else MAX_TOKENS)
 SKILL_MAX_TOKENS       = int(os.environ.get("SKILL_MAX_TOKENS", str(_skill_default)))
 
+# The memory faculties read THIS one, so that the reasoning above can be
+# revisited for them without touching the skills.
+#
+# The argument for one shared budget still holds, which is why the default
+# here is SKILL_MAX_TOKENS and nothing changes until someone sets it. What
+# does not hold is the COUPLING: raising the agent's output budget, a decision
+# about writing files, silently widened the curator's too — and a curator
+# spending six thousand tokens on a verdict of three lines is a session that
+# waits minutes before its first step, on an endpoint where that can reach the
+# timeout and fall back to the deterministic path for no reason anyone could
+# name from the outside.
+#
+# Both directions cost something, so neither is the safe one:
+#   too high — the faculty is free to ramble, the wait is real, and long
+#              narratives change what the memory CONTAINS, not just its speed;
+#   too low  — on a thinking model the reasoning eats the budget and the JSON
+#              is truncated, which reads as a faculty that found nothing.
+# Set it against your model, and prefer erring high on one that reasons.
+MEMORY_MAX_TOKENS      = int(os.environ.get("MEMORY_MAX_TOKENS",
+                                            str(SKILL_MAX_TOKENS)))
+
 # write_file emits a soft warning in the observation when content exceeds
 # this many bytes — the agent learns to prefer incremental edits.
 WRITE_FILE_SOFT_LIMIT = int(os.environ.get("WRITE_FILE_SOFT_LIMIT", "8000"))

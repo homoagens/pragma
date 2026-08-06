@@ -98,7 +98,7 @@ def session_reflect_detailed(transcript: str = "",
                  "content": f"Task transcript:\n\n{transcript}"},
             ],
             temperature=0.0,
-            max_tokens=config.SKILL_MAX_TOKENS,
+            max_tokens=config.MEMORY_MAX_TOKENS,
         )
         result = extract_json(raw)
     except Exception as e:

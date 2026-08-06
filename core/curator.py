@@ -211,7 +211,7 @@ def _ask_curator(task: str, eps: list[dict], lns: list[dict],
             ],
             model=model,
             temperature=0.0,
-            max_tokens=getattr(config, "SKILL_MAX_TOKENS", 2048),
+            max_tokens=config.MEMORY_MAX_TOKENS,
             response_schema=_CURATOR_SCHEMA,
         )
         data = extract_json(raw)

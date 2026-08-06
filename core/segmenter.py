@@ -178,7 +178,7 @@ def segment(user_turns: list[str], model=None) -> tuple[list[tuple[list[int], bo
                       {"role": "user", "content": numbered}],
             model=model,
             temperature=0.0,
-            max_tokens=config.SKILL_MAX_TOKENS,
+            max_tokens=config.MEMORY_MAX_TOKENS,
             response_schema=_SCHEMA,
         )
         data = extract_json(raw)

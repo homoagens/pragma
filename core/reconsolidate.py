@@ -161,7 +161,7 @@ def reconsolidate_episodes(new_ep: dict, targets: list[dict],
             ],
             model=model,
             temperature=0.0,
-            max_tokens=config.SKILL_MAX_TOKENS,
+            max_tokens=config.MEMORY_MAX_TOKENS,
             response_schema=_EPISODIC_SCHEMA,
         )
         data = extract_json(raw)
@@ -263,7 +263,7 @@ def reformulate_belief(text: str, contradicting_evidence: list[str],
             ],
             model=model,
             temperature=0.0,
-            max_tokens=config.SKILL_MAX_TOKENS,
+            max_tokens=config.MEMORY_MAX_TOKENS,
             response_schema=_REFORMULATION_SCHEMA,
         )
         data = extract_json(raw)
