@@ -212,7 +212,7 @@ def _ask_curator(task: str, eps: list[dict], lns: list[dict],
             model=model,
             temperature=0.0,
             max_tokens=config.MEMORY_MAX_TOKENS,
-            template_kwargs=config.memory_template_kwargs(),
+            template_kwargs=config.memory_template_kwargs("select"),
             response_schema=_CURATOR_SCHEMA,
         )
         data = extract_json(raw)

@@ -311,17 +311,48 @@ MEMORY_MAX_TOKENS      = int(os.environ.get("MEMORY_MAX_TOKENS",
 # session, and do not compare runs across the switch.
 #
 # WHY BOTH KEYS. Templates disagree on the name - `enable_thinking` is the
-# common one, `thinking` is used by others. Probing a llama.cpp server showed
-# both honoured and an invented key inert, so an extra one costs nothing while
-# a missing one leaves thinking quietly on. A template that reads neither
-# simply ignores both, which is the same as not asking.
-MEMORY_NO_THINK = (os.environ.get("MEMORY_NO_THINK", "").strip().lower()
-                   in ("1", "true", "yes", "on"))
+# common one, `thinking` is used by others. Probing two models showed one
+# honouring both and the other honouring only `enable_thinking` while ignoring
+# `thinking` in silence, so an extra key costs nothing while a missing one
+# leaves thinking quietly on. A template that reads neither ignores both,
+# which llm_client notices and reports.
+#
+# WHY THREE STATES AND NOT A BOOLEAN. The six faculties do not do the same
+# kind of work, and the case for silencing them is not the same either.
+#
+#   SELECT  the curator picks fragments from a numbered list, the segmenter
+#           partitions turns. Routing decisions, output already forced by a
+#           schema, temperature 0. Deliberation here is mostly the prompt
+#           restated - and a bad pick costs one mediocre turn.
+#   WRITE   the consolidator composes a narrative, the abstractor generalises
+#           a RULE from one episode, the reconsolidator revises a belief.
+#           These compose rather than choose, and the abstractor's step is
+#           inductive by nature. A bad generalisation is WRITTEN INTO the
+#           store, recalled by later sessions, and shapes what the agent does
+#           next: the error compounds instead of expiring.
+#
+# So the asymmetry is in the cost of being wrong, not in the tokens. "select"
+# is the setting to reach for; "all" is for when you have measured that the
+# writers do just as well without.
+_NO_THINK = os.environ.get("MEMORY_NO_THINK", "").strip().lower()
+if _NO_THINK in ("1", "true", "yes", "on"):
+    _NO_THINK = "all"          # what the flag meant when it was a boolean
+elif _NO_THINK in ("0", "false", "no", "off"):
+    _NO_THINK = ""
+MEMORY_NO_THINK = _NO_THINK if _NO_THINK in ("select", "write", "all") else ""
 
 
-def memory_template_kwargs():
-    """chat_template_kwargs for a memory call, or None to send the field."""
+def memory_template_kwargs(kind="write"):
+    """chat_template_kwargs for a memory call, or None to send no field.
+
+    `kind` is "select" or "write" — which of the two groups above the calling
+    faculty belongs to. It defaults to "write" so that a call site added later
+    and left unmarked keeps its thinking: the conservative side of the switch
+    is the one where being wrong is permanent.
+    """
     if not MEMORY_NO_THINK:
+        return None
+    if MEMORY_NO_THINK != "all" and MEMORY_NO_THINK != kind:
         return None
     return {"enable_thinking": False, "thinking": False}
 

@@ -313,7 +313,7 @@ def _ask_episode(transcript: str, corrective: bool = False,
         ],
         temperature=0.0,
         max_tokens=config.MEMORY_MAX_TOKENS,
-        template_kwargs=config.memory_template_kwargs(),
+        template_kwargs=config.memory_template_kwargs("write"),
         response_schema=_EPISODE_SCHEMA,
     )
     data = extract_json(raw)
@@ -561,7 +561,7 @@ def episode_consolidate_detailed(transcript: str = "", workspace: str = "",
             ],
             temperature=0.0,
             max_tokens=config.MEMORY_MAX_TOKENS,
-            template_kwargs=config.memory_template_kwargs(),
+            template_kwargs=config.memory_template_kwargs("write"),
             response_schema=_SEMANTIC_SCHEMA,
         )
         sem = extract_json(raw)
