@@ -20,7 +20,7 @@
 # Bump on every change to this file. The banner and -Info print it, so a
 # window that dot-sourced an older copy shows a stale number and the mismatch
 # is visible at a glance instead of surfacing as a missing command.
-$script:PragmaSessionVersion = "v5 (live session, sampling)"
+$script:PragmaSessionVersion = "v6 (live session, sampling)"
 
 if (-not (Get-Variable -Name PragmaSession -Scope Global -ErrorAction SilentlyContinue) -and
     -not (Get-Variable -Name PragmaSession -Scope Script -ErrorAction SilentlyContinue) -and
@@ -120,9 +120,17 @@ function script:Invoke-MemTool([string[]]$toolArgs) {
 
 # A live session: many turns in one conversation, consolidated on exit.
 # Experimental - `pragma "task"` remains the settled one-shot path.
-function script:Invoke-Chat {
+function script:Invoke-Chat([bool]$showThoughts = $false) {
     Push-Location $script:SRepo
-    & $script:PragmaPy -m agent.chat --memory --max-steps $script:SSteps
+    # The model's per-step note is hidden by default: in a conversation the
+    # reply belongs in the closing message, and showing both made the agent
+    # answer twice. -Verbose brings it back when what you want to see is what
+    # the model told itself.
+    if ($showThoughts) {
+        & $script:PragmaPy -m agent.chat --memory --max-steps $script:SSteps --show-thoughts
+    } else {
+        & $script:PragmaPy -m agent.chat --memory --max-steps $script:SSteps
+    }
     Pop-Location
 }
 
@@ -230,6 +238,7 @@ function script:Show-PragmaInfo {
     Write-Host '  pragma -Note "..."      record an experience (journal + episode)'
     Write-Host '  pragma -Ask "..."       ask memory something, no file changes'
     Write-Host "  pragma -Chat            live session: many turns, one conversation" -ForegroundColor DarkGray
+    Write-Host "  pragma -Chat -Verbose   the same, showing the model's per-step notes" -ForegroundColor DarkGray
     Write-Host "  pragma -Map             what is in memory now"
     Write-Host "  pragma -Beliefs         what it has concluded"
     Write-Host "  pragma -Diff            meanings it has revised, before/after"
@@ -268,7 +277,11 @@ function pragma {
     )
 
     if ($Info)    { Show-PragmaInfo;            return }
-    if ($Chat)    { Invoke-Chat;                return }
+    # -Verbose is NOT declared above: an attribute like [Parameter(Position=0)]
+    # already makes this an advanced function, so PowerShell supplies -Verbose
+    # itself and declaring it again is a duplicate-parameter error. Reading the
+    # common one gives the same spelling without fighting the shell.
+    if ($Chat)    { Invoke-Chat ($PSBoundParameters.ContainsKey('Verbose')); return }
     if ($Map)     { Invoke-MemTool "";          return }
     if ($Beliefs) { Invoke-MemTool "--beliefs"; return }
     if ($Diff)    { Invoke-MemTool "--diff";    return }
