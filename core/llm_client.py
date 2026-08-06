@@ -332,6 +332,36 @@ LAST_STATS: dict = {}
 _SCHEMA_UNSUPPORTED = [False]
 
 
+_NOTHINK_IGNORED = [False]
+
+
+def _warn_if_still_thinking(template_kwargs, msg):
+    """Say it once when the template ignored a request not to think.
+
+    Asking is not the same as being obeyed, and the difference is invisible:
+    the server accepts an unknown chat-template variable without complaint, so
+    a template that reads neither key returns a perfectly ordinary reply while
+    the model goes on thinking. The banner would say no-think, the wait would
+    not change, and nothing anywhere would name the cause.
+
+    Not hypothetical. Two models were probed: one honoured `enable_thinking`
+    and `thinking` alike, the other honoured only the first and ignored the
+    second in silence. Which key a template reads is a property of the model,
+    and the only thing that can notice the mismatch is the reply itself.
+    """
+    if _NOTHINK_IGNORED[0] or not template_kwargs:
+        return
+    if not any(v is False for v in template_kwargs.values()):
+        return
+    if not (msg.get("reasoning_content") or "").strip():
+        return
+    _NOTHINK_IGNORED[0] = True
+    _console.print(
+        "[yellow]MEMORY_NO_THINK is set, but the model still returned a "
+        "thinking block: this template reads neither key. The memory calls "
+        "are as slow as before.[/yellow]")
+
+
 def _call_openai_compatible(messages, model, temperature, max_tokens, timeout, base_url, api_key, stop_event=None, response_schema=None, template_kwargs=None):
     """Standard OpenAI /chat/completions — works with Groq, Ollama, vLLM, etc."""
     global LAST_STATS
@@ -374,6 +404,7 @@ def _call_openai_compatible(messages, model, temperature, max_tokens, timeout, b
     choice = data["choices"][0]
     msg    = choice.get("message", {})
     finish = choice.get("finish_reason", "")
+    _warn_if_still_thinking(template_kwargs, msg)
     text   = (msg.get("content") or msg.get("reasoning_content") or "").strip()
     return text, finish
 
