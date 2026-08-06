@@ -20,6 +20,7 @@
 # system_prompt + skills. See README.md for an example.
 
 import json
+import re
 import threading
 from dataclasses import dataclass
 from pathlib import Path
@@ -181,6 +182,18 @@ _NO_TOOL_STREAK = [0]
 _NO_TOOL_LIMIT = 1
 
 
+# The pseudo-XML a model writes when it decides to produce content instead of
+# calling a tool. Tolerant on purpose: the closing tags are often missing or
+# malformed - that is what "the model wrote it by hand" means - and a strict
+# pattern would match none of the cases it exists for.
+_TOOL_CALL_XML = re.compile(
+    r"<tool_call>\s*<function\s*=\s*(?P<name>[A-Za-z0-9_]+)\s*>(?P<body>.*?)"
+    r"(?:</tool_call>|\Z)", re.S)
+_TOOL_PARAM_XML = re.compile(
+    r"<parameter\s*=\s*(?P<key>[A-Za-z0-9_]+)\s*>(?P<val>.*?)"
+    r"(?:</parameter>|(?=<parameter)|\Z)", re.S)
+
+
 def _action_from_text(text: str):
     """A text-protocol action hidden in prose, or None.
 
@@ -189,21 +202,47 @@ def _action_from_text(text: str):
     no tool-call id, so the loop stores it as text - which is honest, because
     that is how it arrived.
     """
-    if not text or "action" not in text:
+    if not text:
         return None
-    try:
-        import json as _j
-        from json_parser import extract_json
-        data = extract_json(text)
-        if (isinstance(data, dict) and isinstance(data.get("action"), str)
-                and data["action"] and isinstance(data.get("args", {}), dict)):
-            return _j.dumps({"thought": data.get("thought", "") or
-                             "(action recovered from the reply text)",
-                             "action": data["action"],
-                             "args": data.get("args") or {}},
-                            ensure_ascii=False)
-    except Exception:
-        pass
+    import json as _j
+
+    def _wrap(name, args, thought=""):
+        return _j.dumps({"thought": thought or "(action recovered from the reply text)",
+                         "action": name, "args": args or {}}, ensure_ascii=False)
+
+    if "action" in text:
+        try:
+            from json_parser import extract_json
+            data = extract_json(text)
+            if (isinstance(data, dict) and isinstance(data.get("action"), str)
+                    and data["action"] and isinstance(data.get("args", {}), dict)):
+                return _wrap(data["action"], data.get("args"),
+                             data.get("thought", ""))
+        except Exception:
+            pass
+
+    # The other shape a model writes when it means to call a tool but produces
+    # content instead. Several families emit this pseudo-XML natively, and it
+    # reached a user as a FINAL ANSWER - the reply was the markup, path and all.
+    # A net that only knows the JSON form has a hole shaped exactly like
+    # whatever the model in front of it actually writes, so it has to know both.
+    m = _TOOL_CALL_XML.search(text)
+    if m:
+        name = m.group("name").strip()
+        args = {}
+        for pm in _TOOL_PARAM_XML.finditer(m.group("body") or ""):
+            args[pm.group("key").strip()] = pm.group("val").strip()
+        if not args:
+            # Some variants carry a JSON object instead of <parameter> tags.
+            try:
+                from json_parser import extract_json
+                blob = extract_json(m.group("body") or "")
+                if isinstance(blob, dict):
+                    args = blob
+            except Exception:
+                pass
+        if name:
+            return _wrap(name, args)
     return None
 
 
