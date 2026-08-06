@@ -85,6 +85,13 @@ Set-SessionEnv "MEMORY_MAX_TOKENS" (Cfg "MemoryMaxTokens" "")
 # turn. Off unless set: this changes the judgement, not only the speed.
 Set-SessionEnv "MEMORY_NO_THINK"   (Cfg "MemoryNoThink"   "")
 Set-SessionEnv "LLM_TIMEOUT"       (Cfg "Timeout"        "")
+# How wide the deterministic prefilter casts its net before the curator judges.
+# The right width depends on the store: ten candidates out of thirty is a very
+# different funnel from ten out of three hundred.
+Set-SessionEnv "CURATOR_CANDIDATES_EPISODES"  (Cfg "CuratorEpisodes"  "")
+Set-SessionEnv "CURATOR_CANDIDATES_RECENT"    (Cfg "CuratorRecent"    "")
+Set-SessionEnv "CURATOR_CANDIDATES_LEARNINGS" (Cfg "CuratorLearnings" "")
+Set-SessionEnv "CURATOR_MAX_FRAGMENTS"        (Cfg "CuratorFragments" "")
 # Sampling. Temperature is always sent by Pragma, so leaving it empty falls
 # back to the repository default (0.0) and NOT to the server's. The other three
 # are only sent when set here: empty really does mean "the server decides",
@@ -170,6 +177,26 @@ function script:Get-BudgetLine {
     # "120s" when set, plain "repo" when not - never "repos".
     $to  = if ($env:LLM_TIMEOUT) { "$($env:LLM_TIMEOUT)s" } else { $d }
     "ctx $ctx / out $mt / skills $sk / memory $mem / timeout $to"
+}
+
+# The recall funnel: how many memories reach the curator, how many of those
+# slots are held for the newest, and how many may end up on the desk.
+#
+# Printed ONLY when this session sets one of them. Left alone the numbers live
+# in the repository and the line would say "repo" four times, which is a line
+# that costs a reader something and tells them nothing. Once a session tunes
+# the funnel, the tuning is exactly what needs to be visible.
+function script:Get-RecallLine {
+    if (-not ($env:CURATOR_CANDIDATES_EPISODES -or $env:CURATOR_CANDIDATES_RECENT -or
+              $env:CURATOR_CANDIDATES_LEARNINGS -or $env:CURATOR_MAX_FRAGMENTS)) {
+        return ""
+    }
+    $d = "repo"
+    $ep = if ($env:CURATOR_CANDIDATES_EPISODES)  { $env:CURATOR_CANDIDATES_EPISODES }  else { $d }
+    $re = if ($env:CURATOR_CANDIDATES_RECENT)    { $env:CURATOR_CANDIDATES_RECENT }    else { $d }
+    $ln = if ($env:CURATOR_CANDIDATES_LEARNINGS) { $env:CURATOR_CANDIDATES_LEARNINGS } else { $d }
+    $mx = if ($env:CURATOR_MAX_FRAGMENTS)        { $env:CURATOR_MAX_FRAGMENTS }        else { $d }
+    "$ep candidates ($re held for the newest) + $ln rules -> max $mx on the desk"
 }
 
 # What this window will actually SEND. Printed on entry because a sampling
@@ -279,6 +306,8 @@ function script:Show-PragmaInfo {
     Write-Host "  budgets   : $(Get-BudgetLine)"
     Write-Host "  sampling  : $(Get-SamplingLine)"
     Write-Host "  rules     : $(Get-ContractLine)"
+    $rl = Get-RecallLine
+    if ($rl) { Write-Host "  recall    : $rl" }
     Write-Host "  half-life : 30 days (real time)"
 }
 
@@ -378,6 +407,8 @@ function pragma {
         Remove-Item Env:PRAGMA_PROFILE, Env:LLM_TOOL_PROTOCOL -ErrorAction SilentlyContinue
         Remove-Item Env:CONTEXT_WINDOW, Env:MAX_TOKENS, Env:CODING_MAX_TOKENS -ErrorAction SilentlyContinue
         Remove-Item Env:SKILL_MAX_TOKENS, Env:MEMORY_MAX_TOKENS, Env:MEMORY_NO_THINK, Env:LLM_TIMEOUT -ErrorAction SilentlyContinue
+        Remove-Item Env:CURATOR_CANDIDATES_EPISODES, Env:CURATOR_CANDIDATES_RECENT -ErrorAction SilentlyContinue
+        Remove-Item Env:CURATOR_CANDIDATES_LEARNINGS, Env:CURATOR_MAX_FRAGMENTS -ErrorAction SilentlyContinue
         Write-Host "off - defaults restored for this window"
         return
     }
@@ -523,6 +554,8 @@ Write-Host "  protocol  : $(if ($env:LLM_TOOL_PROTOCOL) { $env:LLM_TOOL_PROTOCOL
 Write-Host "  budgets   : $(Get-BudgetLine)"
 Write-Host "  sampling  : $(Get-SamplingLine)"
 Write-Host "  rules     : $(Get-ContractLine)"
+$rl = Get-RecallLine
+if ($rl) { Write-Host "  recall    : $rl" }
 
 Push-Location $script:SRepo
 $served = & $script:PragmaPy -c @"
