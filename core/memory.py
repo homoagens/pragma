@@ -58,14 +58,44 @@ def compress(messages, threshold=None, context="conversation", model=None,
     if len(messages) <= threshold:
         return messages
 
-    recent_n   = config.MESSAGES_RECENT
     has_system = bool(messages) and messages[0].get("role") == "system"
 
     head_n = (1 if has_system else 0) if protect is None else max(protect, 0)
     head_n = min(head_n, len(messages))
-    head        = messages[:head_n]
-    to_compress = messages[head_n:-recent_n] if recent_n else messages[head_n:]
-    recent      = messages[-recent_n:] if recent_n else []
+    head   = messages[:head_n]
+
+    # The recent window is carved out of what is LEFT after the head, never out
+    # of the whole list. With a long protect fence the two would otherwise
+    # overlap and the same messages would be emitted twice - head and window
+    # both claiming them. Harmless while nothing was compressed, a duplicated
+    # conversation the moment something is.
+    tail        = messages[head_n:]
+    recent_n    = min(config.MESSAGES_RECENT, len(tail))
+    to_compress = tail[:len(tail) - recent_n]
+    recent      = tail[len(tail) - recent_n:]
+
+    # MESSAGES_RECENT is a COUNT, and a count is not a size. Six messages can be
+    # three hundred tokens or thirty thousand, and the six are preserved either
+    # way - so a window that will not fit could not be made to fit by
+    # compressing, no matter how hard: the part that overflowed was the part
+    # nobody was allowed to touch.
+    #
+    # The excess is MOVED into the summarised half rather than dropped: it is
+    # still recent, it just stops being verbatim, and nothing is lost that the
+    # summary cannot carry.
+    #
+    # The subtlety is the tool protocol. A `tool` message is the RESULT of the
+    # assistant turn before it, and a result whose call has been summarised away
+    # is an orphan that most servers reject outright. So after trimming, any
+    # leading `tool` messages follow their call into the summary.
+    budget = getattr(config, "RECENT_MAX_CHARS", 0)
+    if budget > 0 and recent:
+        def _size(ms):
+            return sum(len(m.get("content") or "") for m in ms)
+        while len(recent) > 1 and _size(recent) > budget:
+            to_compress.append(recent.pop(0))
+        while len(recent) > 1 and (recent[0].get("role") == "tool"):
+            to_compress.append(recent.pop(0))
 
     if not to_compress:
         return messages

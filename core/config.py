@@ -362,6 +362,18 @@ MAX_MESSAGES     = int(os.environ.get("MAX_MESSAGES", "30"))
 MAX_CHARS        = int(CONTEXT_WINDOW * 4 * 0.55)  # ~55% of context window in chars
 MESSAGES_RECENT  = int(os.environ.get("MESSAGES_RECENT", "6"))
 
+# A ceiling in characters on those recent messages, because MESSAGES_RECENT is
+# a count and a count is not a size: six turns can be three hundred tokens or
+# thirty thousand, and they were preserved either way. That left a hole no
+# amount of compression could close - the messages that overflowed the window
+# were exactly the ones nobody was allowed to touch. Anything past this budget
+# is moved into the summarised half instead: still recent, no longer verbatim.
+#
+# A quarter of the window. In ordinary use it is never reached, so behaviour is
+# unchanged; it exists for the run where one step returns something enormous.
+RECENT_MAX_CHARS = int(os.environ.get(
+    "RECENT_MAX_CHARS", str(int(CONTEXT_WINDOW * 4 * 0.25))))
+
 # Character budget for conversation history carried across requests.
 # 15% of context window — enough for 4-6 detailed exchanges.
 HISTORY_MAX_CHARS = int(CONTEXT_WINDOW * 4 * 0.15)
