@@ -604,6 +604,25 @@ CURATOR_CANDIDATES_LEARNINGS = int(os.environ.get("CURATOR_CANDIDATES_LEARNINGS"
 # that holds the answer, and would be met with the store's greatest hits.
 # Reserved out of the pool, not added to it: the prompt does not grow.
 CURATOR_CANDIDATES_RECENT    = int(os.environ.get("CURATOR_CANDIDATES_RECENT", "3"))
+
+# ── Segmenting a batch run ──
+# Whether a one-shot `pragma "task"` is JUDGED before it becomes an episode.
+#
+# A batch run has always written one, on the reasoning that the user asked for
+# it and that settles the matter. It does not: "check whether the server is up"
+# then becomes a memory with the same standing as a session where something was
+# decided, and over months those records compete for the curator's candidate
+# slots, age and go dormant like everything else, and - since a belief needs
+# only two source episodes - repeated trivia can abstract into a rule.
+#
+# OFF BY DEFAULT, and the reason is not caution about the idea. The frozen
+# evaluation corpus and the campaigns answering the reviewers both run through
+# the batch path, and this changes HOW MANY episodes a run produces. That
+# number appears in the published run inventory, so it has to change by an
+# explicit act rather than as a side effect of pulling the repository. Set
+# BATCH_SEGMENT=1 for ordinary use; leave it unset to reproduce a campaign.
+BATCH_SEGMENT = (os.environ.get("BATCH_SEGMENT", "").strip().lower()
+                 in ("1", "true", "yes", "on"))
 # Cap on how many fragments the curator may place on the desk.
 CURATOR_MAX_FRAGMENTS = int(os.environ.get("CURATOR_MAX_FRAGMENTS", "6"))
 

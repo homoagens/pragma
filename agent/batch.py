@@ -876,6 +876,32 @@ confirmed mid-task. Therefore:
     # because Y" is exactly the episode the next session needs most. Only a
     # None result (interruption, LLM death) leaves nothing reliable to record.
     if args.memory:
+        # Ask first whether this run was worth remembering. A batch request is
+        # weaker evidence of importance than it looks: the user asked for
+        # something, which says it was worth DOING, not that it will be worth
+        # recalling in three months. The same faculty that judges a
+        # conversation can judge one request - it is one segment of one turn.
+        #
+        # A failing segmenter keeps the episode, like everywhere else: this
+        # decides what is stored, and the cost of a dull memory is far below
+        # the cost of a lost one.
+        if getattr(baseline_config, "BATCH_SEGMENT", False):
+            try:
+                import segmenter
+                renderer.faculty_running("SEGMENTER",
+                                         "deciding whether this is worth keeping…")
+                segments, why = segmenter.segment([task])
+                keep = any(k for _idx, k, _w in segments)
+                note = next((w for _i, k, w in segments if k or not keep), "")
+                renderer.faculty("SEGMENTER",
+                                 segmenter.describe(segments, 1)
+                                 + (f" — {why or note}" if (why or note) else ""))
+                if not keep:
+                    return 0
+            except Exception as e:
+                renderer.faculty("SEGMENTER",
+                                 f"unavailable — keeping the episode ({e})")
+
         renderer.faculty_running("CONSOLIDATOR", "writing the session episode…")
         try:
             from skills.episode_consolidate.skill import (

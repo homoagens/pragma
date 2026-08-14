@@ -165,23 +165,26 @@ def segment(user_turns: list[str], model=None) -> tuple[list[tuple[list[int], bo
     n = len(user_turns)
     if n == 0:
         return [], ""
-    if n == 1:
-        # Nothing to weigh one turn against, and a session someone bothered to
-        # start is worth more than the doubt.
-        return [([0], True, "single turn")], "single turn kept"
+    # A single turn used to be kept by fiat, on the argument that there was
+    # nothing to weigh it against. That argument confuses comparison with
+    # judgement: whether an exchange is worth remembering is a property of the
+    # exchange, not of the ones beside it, and "hi, are you there?" is not made
+    # memorable by being alone. Judged like any other segment now — and still
+    # kept if the judgement itself fails, by the fallback below.
 
     numbered = "\n".join(f"{i + 1}. {t.strip()[:500]}"
                          for i, t in enumerate(user_turns))
     try:
-        raw = llm_client.call_llm(
-            messages=[{"role": "system", "content": _SYSTEM},
-                      {"role": "user", "content": numbered}],
-            model=model,
-            temperature=0.0,
-            max_tokens=config.MEMORY_MAX_TOKENS,
-            template_kwargs=config.memory_template_kwargs("select"),
-            response_schema=_SCHEMA,
-        )
+        with llm_client.faculty("SEGMENTER"):
+            raw = llm_client.call_llm(
+                messages=[{"role": "system", "content": _SYSTEM},
+                          {"role": "user", "content": numbered}],
+                model=model,
+                temperature=0.0,
+                max_tokens=config.MEMORY_MAX_TOKENS,
+                template_kwargs=config.memory_template_kwargs("select"),
+                response_schema=_SCHEMA,
+            )
         data = extract_json(raw)
         if not isinstance(data, dict):
             raise ValueError("non-object reply")
