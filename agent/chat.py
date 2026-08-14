@@ -133,8 +133,13 @@ def _consolidate(turns: list[Turn], cwd: Path, renderer,
         # out rather than splitting them across two thin memories.
         transcript = "\n".join(line for j in idx for line in turns[j].transcript)
         try:
-            res = episode_consolidate_detailed(
-                transcript=transcript, workspace=str(cwd), source="chat")
+            # Only this loop knows which of how many is in flight, so the
+            # progress is set here while the faculty names itself further down.
+            # Writing four episodes on a slow endpoint is minutes of spinner:
+            # "2/4" is the difference between waiting and wondering.
+            with llm_client.step(f"{i}/{len(kept)}"):
+                res = episode_consolidate_detailed(
+                    transcript=transcript, workspace=str(cwd), source="chat")
             renderer.faculty("CONSOLIDATOR",
                              f"[{i}/{len(kept)}] {res.get('summary', '')}")
             ep = _load_episode(res.get("episode_id", ""))

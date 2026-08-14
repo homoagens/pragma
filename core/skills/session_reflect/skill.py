@@ -91,16 +91,17 @@ def session_reflect_detailed(transcript: str = "",
             f"recalled. Call session_reflect without store_path.")}
 
     try:
-        raw = llm_client.call_llm(
-            messages=[
-                {"role": "system", "content": _REFLECT_SYSTEM},
-                {"role": "user",
-                 "content": f"Task transcript:\n\n{transcript}"},
-            ],
-            temperature=0.0,
-            max_tokens=config.MEMORY_MAX_TOKENS,
-            template_kwargs=config.memory_template_kwargs("write"),
-        )
+        with llm_client.faculty("REFLECT"):
+            raw = llm_client.call_llm(
+                messages=[
+                    {"role": "system", "content": _REFLECT_SYSTEM},
+                    {"role": "user",
+                     "content": f"Task transcript:\n\n{transcript}"},
+                ],
+                temperature=0.0,
+                max_tokens=config.MEMORY_MAX_TOKENS,
+                template_kwargs=config.memory_template_kwargs("write"),
+            )
         result = extract_json(raw)
     except Exception as e:
         return {"status": "error",

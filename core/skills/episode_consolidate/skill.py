@@ -306,16 +306,17 @@ def _ask_episode(transcript: str, corrective: bool = False,
             "object: the character '{' must be the FIRST character of your "
             "reply. No preamble, no reasoning narration.]"
         )
-    raw = llm_client.call_llm(
-        messages=[
-            {"role": "system", "content": _EPISODE_SYSTEM},
-            {"role": "user",   "content": user_msg},
-        ],
-        temperature=0.0,
-        max_tokens=config.MEMORY_MAX_TOKENS,
-        template_kwargs=config.memory_template_kwargs("write"),
-        response_schema=_EPISODE_SCHEMA,
-    )
+    with llm_client.faculty("CONSOLIDATOR"):
+        raw = llm_client.call_llm(
+            messages=[
+                {"role": "system", "content": _EPISODE_SYSTEM},
+                {"role": "user",   "content": user_msg},
+            ],
+            temperature=0.0,
+            max_tokens=config.MEMORY_MAX_TOKENS,
+            template_kwargs=config.memory_template_kwargs("write"),
+            response_schema=_EPISODE_SCHEMA,
+        )
     data = extract_json(raw)
     if not isinstance(data, dict):
         raise RuntimeError("consolidation returned non-object JSON")
@@ -554,16 +555,17 @@ def episode_consolidate_detailed(transcript: str = "", workspace: str = "",
 
     result["semantic_ran"] = True   # the abstraction LLM call is about to run
     try:
-        raw = llm_client.call_llm(
-            messages=[
-                {"role": "system", "content": _SEMANTIC_SYSTEM},
-                {"role": "user",   "content": payload},
-            ],
-            temperature=0.0,
-            max_tokens=config.MEMORY_MAX_TOKENS,
-            template_kwargs=config.memory_template_kwargs("write"),
-            response_schema=_SEMANTIC_SCHEMA,
-        )
+        with llm_client.faculty("ABSTRACTOR"):
+            raw = llm_client.call_llm(
+                messages=[
+                    {"role": "system", "content": _SEMANTIC_SYSTEM},
+                    {"role": "user",   "content": payload},
+                ],
+                temperature=0.0,
+                max_tokens=config.MEMORY_MAX_TOKENS,
+                template_kwargs=config.memory_template_kwargs("write"),
+                response_schema=_SEMANTIC_SCHEMA,
+            )
         sem = extract_json(raw)
     except Exception as e:
         result["summary"] = (

@@ -154,17 +154,18 @@ def reconsolidate_episodes(new_ep: dict, targets: list[dict],
     }, ensure_ascii=False, indent=2)
 
     try:
-        raw = llm_client.call_llm(
-            messages=[
-                {"role": "system", "content": _EPISODIC_SYSTEM},
-                {"role": "user",   "content": payload},
-            ],
-            model=model,
-            temperature=0.0,
-            max_tokens=config.MEMORY_MAX_TOKENS,
-            template_kwargs=config.memory_template_kwargs("write"),
-            response_schema=_EPISODIC_SCHEMA,
-        )
+        with llm_client.faculty("RECONSOLIDATOR"):
+            raw = llm_client.call_llm(
+                messages=[
+                    {"role": "system", "content": _EPISODIC_SYSTEM},
+                    {"role": "user",   "content": payload},
+                ],
+                model=model,
+                temperature=0.0,
+                max_tokens=config.MEMORY_MAX_TOKENS,
+                template_kwargs=config.memory_template_kwargs("write"),
+                response_schema=_EPISODIC_SCHEMA,
+            )
         data = extract_json(raw)
     except Exception as e:
         LAST_ERROR = f"{type(e).__name__}: {str(e)[:160]}"
@@ -257,17 +258,18 @@ def reformulate_belief(text: str, contradicting_evidence: list[str],
         "supporting_sources":     [str(s)[:200] for s in (sources_summary or [])],
     }, ensure_ascii=False, indent=2)
     try:
-        raw = llm_client.call_llm(
-            messages=[
-                {"role": "system", "content": _SEMANTIC_SYSTEM},
-                {"role": "user",   "content": payload},
-            ],
-            model=model,
-            temperature=0.0,
-            max_tokens=config.MEMORY_MAX_TOKENS,
-            template_kwargs=config.memory_template_kwargs("write"),
-            response_schema=_REFORMULATION_SCHEMA,
-        )
+        with llm_client.faculty("RECONSOLIDATOR"):
+            raw = llm_client.call_llm(
+                messages=[
+                    {"role": "system", "content": _SEMANTIC_SYSTEM},
+                    {"role": "user",   "content": payload},
+                ],
+                model=model,
+                temperature=0.0,
+                max_tokens=config.MEMORY_MAX_TOKENS,
+                template_kwargs=config.memory_template_kwargs("write"),
+                response_schema=_REFORMULATION_SCHEMA,
+            )
         data = extract_json(raw)
     except Exception as e:
         LAST_ERROR = f"{type(e).__name__}: {str(e)[:160]}"

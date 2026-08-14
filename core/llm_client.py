@@ -18,6 +18,8 @@
 
 import threading
 import time
+from contextlib import contextmanager
+
 import requests
 from rich.console import Console
 
@@ -261,8 +263,9 @@ def _post_with_retry(url, headers, payload, timeout, label, stop_event=None):
             except Exception as e:
                 holder["exc"] = e
 
+        who = _who(disp)
         with _console.status(
-            f"[bold cyan]{disp} is thinking...[/bold cyan]",
+            f"[bold cyan]{who} is thinking...[/bold cyan]",
             spinner="dots",
         ) as status:
             t = threading.Thread(target=_worker, daemon=True)
@@ -270,7 +273,7 @@ def _post_with_retry(url, headers, payload, timeout, label, stop_event=None):
             while t.is_alive():
                 t.join(timeout=0.5)
                 status.update(
-                    f"[bold cyan]{disp} is thinking... "
+                    f"[bold cyan]{who} is thinking... "
                     f"{int(time.time() - start)}s[/bold cyan]")
         if holder["exc"] is not None:
             exc = holder["exc"]
@@ -330,6 +333,56 @@ LAST_STATS: dict = {}
 # without structured output costs one failed request per process instead of
 # one per faculty call. Mirrors _TOOLS_UNSUPPORTED on the action channel.
 _SCHEMA_UNSUPPORTED = [False]
+
+
+# ── Who is calling ────────────────────────────────────────────────────────────
+# The spinner used to show the model and nothing else, so every faculty looked
+# alike: on a slow endpoint that is minutes of watching a model name with no
+# way to tell the curator from the consolidator, or a faculty at work from one
+# that is stuck.
+#
+# The label is module state set around the call rather than an argument
+# threaded through call_llm, deliberately. An argument would have to be added
+# at every call site, and the site added next year would be the one that
+# forgets it - which is precisely the silent-faculty problem again, reappearing
+# as a missing parameter. Set here, an unlabelled call simply falls back to the
+# old text, and any faculty added later inherits the behaviour by using the
+# context manager.
+_FACULTY: list[str] = [""]
+_STEP: list[str] = [""]
+
+
+@contextmanager
+def faculty(name: str):
+    """Name the faculty making the calls inside this block."""
+    prev = _FACULTY[0]
+    _FACULTY[0] = name or ""
+    try:
+        yield
+    finally:
+        _FACULTY[0] = prev
+
+
+@contextmanager
+def step(text: str):
+    """Progress within one faculty's work, e.g. "2/3" while writing episodes.
+
+    Separate from `faculty` because the two are set by different people: the
+    faculty names itself, while only the orchestrator above it knows which of
+    how many items is in flight.
+    """
+    prev = _STEP[0]
+    _STEP[0] = text or ""
+    try:
+        yield
+    finally:
+        _STEP[0] = prev
+
+
+def _who(disp: str) -> str:
+    """"[CONSOLIDATOR 2/3] model" — or just the model when nothing is set."""
+    tag = " ".join(p for p in (_FACULTY[0], _STEP[0]) if p)
+    return f"[{tag}] {disp}" if tag else disp
 
 
 _NOTHINK_IGNORED = [False]

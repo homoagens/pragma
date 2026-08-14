@@ -278,17 +278,18 @@ def _ask_curator(task: str, eps: list[dict], lns: list[dict],
     payload = (f"TODAY: {today}\n\nTASK:\n{task}\n\nCANDIDATES:\n"
                + "\n".join(cards))
     try:
-        raw = llm_client.call_llm(
-            messages=[
-                {"role": "system", "content": _CURATOR_SYSTEM},
-                {"role": "user",   "content": payload},
-            ],
-            model=model,
-            temperature=0.0,
-            max_tokens=config.MEMORY_MAX_TOKENS,
-            template_kwargs=config.memory_template_kwargs("select"),
-            response_schema=_CURATOR_SCHEMA,
-        )
+        with llm_client.faculty("CURATOR"):
+            raw = llm_client.call_llm(
+                messages=[
+                    {"role": "system", "content": _CURATOR_SYSTEM},
+                    {"role": "user",   "content": payload},
+                ],
+                model=model,
+                temperature=0.0,
+                max_tokens=config.MEMORY_MAX_TOKENS,
+                template_kwargs=config.memory_template_kwargs("select"),
+                response_schema=_CURATOR_SCHEMA,
+            )
         data = extract_json(raw)
     except Exception as e:
         # The reason travels with the failure. Swallowing it left the operator
