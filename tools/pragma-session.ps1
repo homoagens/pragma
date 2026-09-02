@@ -128,9 +128,9 @@ function script:Get-ContractLine {
 function script:Invoke-MemTool([string[]]$toolArgs) {
     Push-Location $script:SRepo
     if ($toolArgs -and $toolArgs[0]) {
-        & $script:PragmaPy examples_memory\mem_map.py @toolArgs
+        & $script:PragmaPy research\tools\mem_map.py @toolArgs
     } else {
-        & $script:PragmaPy examples_memory\mem_map.py
+        & $script:PragmaPy research\tools\mem_map.py
     }
     Pop-Location
 }
@@ -579,7 +579,7 @@ if ($parts[0] -eq "OK") {
     $prof = Cfg "Profile" ""
     if ($prof) {
         try {
-            $mj = Get-Content (Join-Path $script:SRepo "examples_memory\models.json") -Raw | ConvertFrom-Json
+            $mj = Get-Content (Join-Path $script:SRepo "research\models.json") -Raw | ConvertFrom-Json
             $want = $mj.$prof.model
         } catch { }
     }

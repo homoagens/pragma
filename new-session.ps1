@@ -41,7 +41,7 @@ param(
     # folder name.
     [string]$Name,
 
-    # A profile from examples_memory\models.json. Empty = the model in .env.
+    # A profile from research\models.json. Empty = the model in .env.
     [string]$Profile,
 
     # Step budget for one task.

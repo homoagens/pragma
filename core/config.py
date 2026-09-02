@@ -36,7 +36,7 @@ DEBUG = os.environ.get("PRAGMA_DEBUG", "").lower() in ("1", "true", "yes")
 # MODEL PROFILE (optional) — one switch routes everything
 # ─────────────────────────────────────────────
 # PRAGMA_PROFILE=<name> selects a profile from models.json (next to .env,
-# gitignored — it holds local ports; fallback: examples_memory/models.json):
+# gitignored — it holds local ports; fallback: research/models.json):
 #   { "27b": {"base_url": "http://127.0.0.1:8100/v1", "model": "Qwen3.6-27b"} }
 # The profile overrides LLM_BASE_URL / DEFAULT_MODEL for THIS process, and sets
 # PRAGMA_ARCHIVE_TAG=<name> so demo runs of an alternate model archive into
@@ -47,7 +47,7 @@ if PROFILE:
     import json as _json
     os.environ.setdefault("PRAGMA_ARCHIVE_TAG", PROFILE)
     _ROOT = Path(__file__).resolve().parent.parent
-    for _mj in (_ROOT / "models.json", _ROOT / "examples_memory" / "models.json"):
+    for _mj in (_ROOT / "models.json", _ROOT / "research" / "models.json"):
         try:
             _p = _json.loads(_mj.read_text(encoding="utf-8")).get(PROFILE)
         except Exception:

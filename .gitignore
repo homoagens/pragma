@@ -36,7 +36,7 @@ tools/endpoint_monitor.local.json
 MANUAL.md
 
 # Local-only memory demos / walkthroughs (script + generated log)
-examples_memory/
+research/
 
 # IDE
 .vscode/
@@ -54,3 +54,4 @@ README-zenodo-record.md
 
 # Undo snapshots written by the agent into a workspace (core/checkpoint.py)
 .pragma_checkpoints/
+sandbox/
