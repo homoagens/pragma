@@ -364,6 +364,68 @@ def _ask_episode(transcript: str, corrective: bool = False,
     return data
 
 
+def _belief_key(text: str) -> str:
+    """What makes two beliefs the same belief.
+
+    Everything downstream of the Abstractor compares beliefs as strings, and
+    the strings are model-written prose. A trailing full stop, "in testing"
+    against "on testing", "a file" against "a lesson file": each of those was
+    enough to file a second record for something already known, and to lose a
+    confirmation that arrived paraphrased.
+    """
+    return " ".join(re.sub(r"[^a-z0-9 ]+", " ", (text or "").lower()).split())
+
+
+def _merge_duplicates(entries: list[dict]) -> list[dict]:
+    """Fold records that hold the same belief into the earliest of them.
+
+    Admission and confirmation both go through _belief_key, so records only
+    converge here after the fact: reformulating two beliefs can land them on
+    the same sentence, and nothing rechecked afterwards. In the corpus this
+    left one belief stored twice with its evidence split four sources against
+    three, which understates a belief that in fact rests on seven.
+
+    Nothing is discarded. The absorbed record's text and its whole history are
+    kept in the survivor's text_history, so what the store used to say stays
+    readable.
+    """
+    by_key: dict[str, dict] = {}
+    order: list[dict] = []
+    for e in entries:
+        k = _belief_key(e.get("text", ""))
+        keep = by_key.get(k)
+        if keep is None:
+            by_key[k] = e
+            order.append(e)
+            continue
+        # the earlier record survives, so ids and timestamps stay stable
+        if str(e.get("ts", "")) < str(keep.get("ts", "")):
+            order[order.index(keep)] = e
+            keep, e = e, keep
+            by_key[k] = keep
+        hist = list(keep.get("text_history") or [])
+        hist += list(e.get("text_history") or [])
+        if e.get("text") and e.get("text") != keep.get("text"):
+            hist.append({"ts": e.get("ts", ""), "text": e.get("text", ""),
+                         "reason": "merged: a second record of the same belief"})
+        keep["text_history"] = sorted(hist, key=lambda h: str(h.get("ts", "")))
+        keep["sources"] = sorted(set(keep.get("sources") or [])
+                                 | set(e.get("sources") or []))
+        keep["confirmations"] = (keep.get("confirmations", 0)
+                                 + e.get("confirmations", 0))
+        keep["contradictions"] = (keep.get("contradictions", 0)
+                                  + e.get("contradictions", 0))
+        keep["reformulations"] = (keep.get("reformulations", 0)
+                                  + e.get("reformulations", 0))
+        # the higher confidence, not the sum: merging is not new evidence
+        keep["confidence"] = max(keep.get("confidence", 0.5),
+                                 e.get("confidence", 0.5))
+        if "retired" in (keep.get("status"), e.get("status")):
+            keep["status"] = "retired"
+        keep["merged"] = keep.get("merged", 0) + 1
+    return order
+
+
 def _load_learnings(path: Path) -> dict:
     if not path.exists():
         return {"entries": [], "created_at": _now()}
@@ -652,7 +714,18 @@ def episode_consolidate_detailed(transcript: str = "", workspace: str = "",
             continue
         if not text or len(sources) < min_sources:
             continue
-        if any(e.get("text") == text for e in entries):
+        key = _belief_key(text)
+        known = next((e for e in entries if _belief_key(e.get("text", "")) == key),
+                     None)
+        if known is not None:
+            # The Abstractor has restated something already held. That is
+            # evidence for it, not a new belief: dropping it silently, as this
+            # did, threw away the sources the restatement came with.
+            known["sources"] = sorted(set(known.get("sources") or []) | set(sources))
+            known["confirmations"] = known.get("confirmations", 0) + 1
+            known["confidence"] = min(0.95, known.get("confidence", 0.5)
+                                      + getattr(config, "SEMANTIC_CONFIRM_BONUS", 0.1))
+            result["confirmed"].append(known["text"])
             continue
         entry = {"kind": kind, "text": text, "label": workspace or "", "ts": ts,
                  "sources": sources, "confidence": 0.6,
@@ -673,8 +746,10 @@ def episode_consolidate_detailed(transcript: str = "", workspace: str = "",
     ep_by_id[ep["id"]] = ep
 
     for text in sem.get("confirms") or []:
+        _k = _belief_key(text)
         for e in entries:
-            if e.get("text") == text and e.get("status", "active") != "retired":
+            if (_belief_key(e.get("text", "")) == _k
+                    and e.get("status", "active") != "retired"):
                 e["confidence"] = min(0.95, e.get("confidence", 0.5) + bonus)
                 e["confirmations"] = e.get("confirmations", 0) + 1
                 e.setdefault("sources", []).append(ep["id"])
@@ -682,8 +757,10 @@ def episode_consolidate_detailed(transcript: str = "", workspace: str = "",
                 break
 
     for text in sem.get("contradicts") or []:
+        _k = _belief_key(text)
         for e in entries:
-            if e.get("text") == text and e.get("status", "active") != "retired":
+            if (_belief_key(e.get("text", "")) == _k
+                    and e.get("status", "active") != "retired"):
                 e["confidence"] = max(0.05, e.get("confidence", 0.5) - malus)
                 e["contradictions"] = e.get("contradictions", 0) + 1
                 result["contradicted"].append(text)
@@ -757,6 +834,13 @@ def episode_consolidate_detailed(transcript: str = "", workspace: str = "",
             result["reformulated"].append(
                 {"from": text, "to": e["text"],
                  "reason": reformed.get("reason", ""), "via": "bridge"})
+
+    # Reformulation can land two beliefs on the same sentence, so the fold runs
+    # here, after every rewrite and immediately before the store is written.
+    before = len(learnings.get("entries") or [])
+    learnings["entries"] = _merge_duplicates(learnings.get("entries") or [])
+    if len(learnings["entries"]) < before:
+        result["merged_beliefs"] = before - len(learnings["entries"])
 
     try:
         learnings_path.parent.mkdir(parents=True, exist_ok=True)
