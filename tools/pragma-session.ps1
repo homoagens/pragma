@@ -66,8 +66,12 @@ function script:Set-SessionEnv([string]$name, $value) {
     else { Remove-Item -Path "Env:$name" -ErrorAction SilentlyContinue }
 }
 
-$env:PRAGMA_WORKSPACE = Join-Path $script:SRoot "workspace"
-$env:PRAGMA_DATA_DIR  = Join-Path $script:SRoot ".memoria"
+# Workspace and memory travel explicitly when the launcher supplies them: in
+# the project model they are no longer two subfolders of one session root, and
+# the store deliberately does not live inside the workspace. A session file
+# written before that keeps working - the fallbacks are what it always did.
+$env:PRAGMA_WORKSPACE = Cfg "Workspace" (Join-Path $script:SRoot "workspace")
+$env:PRAGMA_DATA_DIR  = Cfg "Memory"    (Join-Path $script:SRoot ".memoria")
 Set-SessionEnv "PRAGMA_PROFILE"    (Cfg "Profile" "")
 Set-SessionEnv "LLM_TOOL_PROTOCOL" $script:SProto
 Set-SessionEnv "CONTEXT_WINDOW"    (Cfg "ContextWindow"  "")
@@ -311,7 +315,10 @@ function script:Show-PragmaInfo {
     Write-Host "  half-life : 30 days (real time)"
 }
 
-function pragma {
+# global: so the command survives being dot-sourced from inside a module
+# function, where an unqualified definition would stay in the module's
+# scope and never reach the window the operator is typing into.
+function global:pragma {
     param(
         [Parameter(Position = 0)]$A,
         [Parameter(Position = 1)]$B,
