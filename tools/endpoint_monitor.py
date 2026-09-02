@@ -214,7 +214,7 @@ def render_test(res: dict) -> str:
     tps = f"{ct / secs:.1f} tok/s" if ct and secs > 0 else "-"
     lines = [
         f"sent  {json.dumps(res['sent'])}",
-        f"      a field absent above was decided by the server",
+        "      a field absent above was decided by the server",
         f"got   {secs:.1f}s   prompt {res.get('prompt_tokens', '?')} tok   "
         f"completion {ct if ct is not None else '?'} tok   {tps}   "
         f"finish_reason={res.get('finish') or '?'}",

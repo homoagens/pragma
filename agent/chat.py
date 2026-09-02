@@ -297,7 +297,7 @@ def _recall(text: str, cwd, desk_ids: set[str], desk_rules: set[str],
         # a faculty that is idle and a faculty that is stuck.
         renderer.faculty("CURATOR",
                          _pool_line(info) + " → "
-                         f"nothing bore on this"
+                         "nothing bore on this"
                          + (f" — {info['reason']}" if info.get("reason") else ""))
         return ""
     desk_ids.update(info["episode_ids"])

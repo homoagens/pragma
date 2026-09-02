@@ -10,7 +10,7 @@
 from __future__ import annotations
 
 import platform
-from datetime import datetime, timezone
+from datetime import timezone
 from core import clock
 
 
