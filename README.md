@@ -418,8 +418,8 @@ Agents a Sense of Time: A Reconsolidating Episodic–Semantic Memory Architectur
 The evaluation corpus, the experimental stimuli, and the derived datasets are deposited
 separately from this repository, under a persistent identifier:
 
-**DOI:** [10.5281/zenodo.21474334](https://doi.org/10.5281/zenodo.21474334)
-*(the deposit is being finalized; the link resolves once it is published)*
+**DOI:** [10.5281/zenodo.21474333](https://doi.org/10.5281/zenodo.21474333)
+*(concept DOI: it always resolves to the most recent version of the deposit)*
 
 The deposit holds the raw execution traces of every archived run — session transcripts,
 episodic and semantic stores with their revision histories, and metadata pinning the
