@@ -210,7 +210,15 @@ function script:Enable-Project($entry) {
         return $false
     }
     if (-not (Test-Path $entry.memory)) {
-        New-Item -ItemType Directory -Force -Path $entry.memory | Out-Null
+        try {
+            New-Item -ItemType Directory -Force -ErrorAction Stop `
+                     -Path $entry.memory | Out-Null
+        } catch {
+            Write-Host "pragma: the store of '$($entry.name)' cannot be opened" -ForegroundColor Red
+            Write-Host "        $($entry.memory)" -ForegroundColor DarkGray
+            Write-Host "        $($_.Exception.Message)" -ForegroundColor DarkGray
+            return $false
+        }
     }
 
     $settings = @{}
@@ -242,13 +250,68 @@ function script:Enable-Project($entry) {
 
 # --- registration -------------------------------------------------------------
 
+function script:Test-ProjectName([string]$name) {
+    # The name becomes a directory under ~/.pragma/projects, so anything that
+    # is really a path has to be refused here rather than producing something
+    # like ...\projects\C:\Users\tu\test and failing four calls later.
+    # The message names the parameter that WAS wanted: passing a folder to
+    # -Name is the obvious mistake, because "register this folder" reads like
+    # it should take the folder.
+    if (-not $name -or -not $name.Trim()) {
+        Write-Host "pragma: a project needs a name" -ForegroundColor Red
+        return $false
+    }
+    $bad = [IO.Path]::GetInvalidFileNameChars()
+    if ($name.IndexOfAny($bad) -ge 0 -or $name -match '[\\/:]') {
+        Write-Host "pragma: '$name' is not a name, it looks like a path" -ForegroundColor Red
+        Write-Host "        pragma -Register -Name <short-name> [-Workspace <folder>]" -ForegroundColor DarkGray
+        Write-Host "        the folder defaults to the one you are in." -ForegroundColor DarkGray
+        return $false
+    }
+    if ($name -in @('.', '..')) {
+        Write-Host "pragma: '$name' is not a usable name" -ForegroundColor Red
+        return $false
+    }
+    return $true
+}
+
+function script:Test-Workspace([string]$ws) {
+    # A workspace is a folder you work in, not the whole of your home or a
+    # drive. Registering one of those points the agent at everything you own.
+    $n = $ws.TrimEnd('\','/')
+    $root = [IO.Path]::GetPathRoot($n).TrimEnd('\','/')
+    if ($n -ieq $root) {
+        Write-Host "pragma: '$ws' is a drive root - pick a project folder" -ForegroundColor Red
+        return $false
+    }
+    $guarded = @{}
+    if ($env:USERPROFILE) { $guarded[$env:USERPROFILE] = "home" }
+    $desk = [Environment]::GetFolderPath('Desktop')
+    if ($desk) { $guarded[$desk] = "Desktop" }
+    foreach ($p in $guarded.Keys) {
+        if ($n -ieq $p.TrimEnd([char]92, [char]47)) {
+            Write-Host "pragma: that is your $($guarded[$p]) folder, not a project" -ForegroundColor Red
+            Write-Host "        pragma -Register -Name <name> -Workspace <folder>" -ForegroundColor DarkGray
+            return $false
+        }
+    }
+    return $true
+}
+
 function script:New-Project([string]$name, [string]$workspace) {
+    if (-not (Test-ProjectName $name)) { return $null }
     $entries = @(Read-Registry)
     if ($entries | Where-Object { $_.name -eq $name }) {
         Write-Host "pragma: a project named '$name' already exists" -ForegroundColor Red
         return $null
     }
-    $ws = (Resolve-Path -LiteralPath $workspace).Path
+    try {
+        $ws = (Resolve-Path -LiteralPath $workspace -ErrorAction Stop).Path
+    } catch {
+        Write-Host "pragma: no such folder: $workspace" -ForegroundColor Red
+        return $null
+    }
+    if (-not (Test-Workspace $ws)) { return $null }
     # One folder, one project - and nesting counts. An exact-match test alone
     # let a subdirectory of a registered workspace become a second project,
     # after which walking up from a deeper path finds whichever is nearer:
@@ -278,7 +341,17 @@ function script:New-Project([string]$name, [string]$workspace) {
     # already own and often a git repository, and a memory directory inside it
     # is one forgotten .gitignore away from publishing personal episodes.
     $memory = Join-Path $script:ProjectsRoot $name
-    New-Item -ItemType Directory -Force -Path (Join-Path $memory "episodes") | Out-Null
+    try {
+        # -ErrorAction Stop, and the registry written only afterwards: this
+        # failed once and the code carried on regardless, leaving an entry
+        # pointing at a store that was never created.
+        New-Item -ItemType Directory -Force -ErrorAction Stop `
+                 -Path (Join-Path $memory "episodes") | Out-Null
+    } catch {
+        Write-Host "pragma: could not create the store at $memory" -ForegroundColor Red
+        Write-Host "        $($_.Exception.Message)" -ForegroundColor DarkGray
+        return $null
+    }
     $entry = [pscustomobject]@{
         name        = $name
         workspace   = $ws
@@ -302,7 +375,8 @@ function Start-Pragma {
         [string]$Project,
         [switch]$List,
         [switch]$Register,
-        [string]$Name
+        [string]$Name,
+        [string]$Workspace
     )
 
     if ($List) {
@@ -320,8 +394,9 @@ function Start-Pragma {
     }
 
     if ($Register) {
-        $n = if ($Name) { $Name } else { Split-Path -Leaf (Get-Location).Path }
-        $entry = New-Project $n (Get-Location).Path
+        $ws = if ($Workspace) { $Workspace } else { (Get-Location).Path }
+        $n  = if ($Name) { $Name } else { Split-Path -Leaf $ws }
+        $entry = New-Project $n $ws
         if ($entry) { Enable-Project $entry | Out-Null }
         return
     }
@@ -354,7 +429,10 @@ function Start-Pragma {
         Write-Host "  No projects yet." -ForegroundColor DarkGray
         Write-Host ""
         Write-Host "  Register the folder you are in:" -ForegroundColor DarkGray
-        Write-Host "    pragma -Register -Name <name>"
+        Write-Host "    pragma -Register -Name <short-name>"
+        Write-Host ""
+        Write-Host "  or name the folder explicitly:" -ForegroundColor DarkGray
+        Write-Host "    pragma -Register -Name <short-name> -Workspace <folder>"
         Write-Host ""
         return
     }
