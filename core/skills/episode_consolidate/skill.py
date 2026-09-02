@@ -326,10 +326,67 @@ def _clean_list(items) -> list[str]:
     return out
 
 
+def _importance_anchors(store: Path, k: int = 5) -> list[tuple[float, str]]:
+    """A few stored episodes to judge the new one against, low to high.
+
+    Asked for a number on an abstract scale, the Consolidator answers with the
+    bands the prompt names: in the revision corpus 1193 episodes used 13
+    distinct values, and one family put half of everything on 0.80. Episodes
+    sharing a value are indistinguishable at formation, which is what leaves
+    the ordering to be decided by how often something was later retrieved.
+
+    Comparison is the thing a language model is reliably good at, so the store
+    hands it a scale made of its own past judgements. Anchors are deduplicated
+    by value and spread across the range actually present: showing five
+    episodes that all scored 0.80 would teach the model to answer 0.80.
+    """
+    seen: dict[float, str] = {}
+    for sub_dir in (store, store / "dormant"):
+        if not sub_dir.is_dir():
+            continue
+        for f in sorted(sub_dir.glob("ep_*.json")):
+            try:
+                ep = json.loads(f.read_text(encoding="utf-8"))
+            except Exception:
+                continue
+            imp, goal = ep.get("importance"), (ep.get("goal") or "").strip()
+            if imp is None or not goal:
+                continue
+            seen.setdefault(round(float(imp), 2), goal)
+    vals = sorted(seen)
+    # Two distinct values are the minimum that can define a direction. With
+    # fewer, no scale exists yet and inventing one would be worse than the
+    # absolute judgement it replaces.
+    if len(vals) < 2 or k < 2:
+        return []
+    if len(vals) <= k:
+        picked = vals
+    else:
+        step = (len(vals) - 1) / (k - 1)
+        picked = sorted({vals[round(i * step)] for i in range(k)})
+    return [(v, seen[v]) for v in picked]
+
+
+def _anchor_block(anchors: list[tuple[float, str]]) -> str:
+    """The calibration the Consolidator is shown, or "" when there is none."""
+    if not anchors:
+        return ""
+    lines = [f"  {v:.2f}  {g[:110]}" for v, g in anchors]
+    return (
+        "\n\nFor calibration, importance scores this memory has already given, "
+        "lowest first:\n" + "\n".join(lines) +
+        "\n\nPlace THIS session against those, and score it accordingly: below "
+        "the lowest, above the highest, or between two of them. Do not round to "
+        "a band - if it sits between two anchors, give a value between them. "
+        "They are past judgements, not a rule: say so with your number if this "
+        "session plainly outranks or falls short of all of them."
+    )
+
+
 def _ask_episode(transcript: str, corrective: bool = False,
-                 json_only: bool = False) -> dict:
+                 json_only: bool = False, anchors: str = "") -> dict:
     """One LLM call for the consolidation step. Raises on failure."""
-    user_msg = f"Session transcript:\n\n{transcript}"
+    user_msg = f"Session transcript:\n\n{transcript}{anchors}"
     if corrective:
         user_msg += (
             "\n\n[IMPORTANT: your previous attempt returned literal '...' "
@@ -478,12 +535,22 @@ def episode_consolidate_detailed(transcript: str = "", workspace: str = "",
     # JSON-first output. If the LLM fails twice, do NOT lose the session:
     # fall through with empty data and let the deterministic fallback
     # below build a minimal factual episode instead.
+    # The scale is read once, before the call, from what the store already
+    # holds. Best effort: a memory that cannot be read is a memory without a
+    # scale, not a consolidation that fails.
+    try:
+        anchors = _anchor_block(_importance_anchors(
+            store, getattr(config, "EPISODE_IMPORTANCE_ANCHORS", 5)))
+    except Exception:
+        anchors = ""
+
     llm_note = ""
     try:
-        ep_data = _ask_episode(transcript)
+        ep_data = _ask_episode(transcript, anchors=anchors)
     except Exception:
         try:
-            ep_data = _ask_episode(transcript, json_only=True)
+            ep_data = _ask_episode(transcript, json_only=True,
+                                   anchors=anchors)
         except Exception as e2:
             ep_data = {}
             llm_note = f" [consolidation LLM failed twice: {str(e2)[:120]}]"
@@ -499,7 +566,8 @@ def episode_consolidate_detailed(transcript: str = "", workspace: str = "",
     # after a double failure above, go straight to the fallback.
     if (_is_placeholder(goal) or _is_placeholder(narrative)) and not llm_note:
         try:
-            ep_data   = _ask_episode(transcript, corrective=True)
+            ep_data   = _ask_episode(transcript, corrective=True,
+                                     anchors=anchors)
             goal      = _as_text(ep_data.get("goal")).strip()
             narrative = _as_text(ep_data.get("narrative")).strip()
         except Exception:

@@ -564,6 +564,27 @@ EPISODE_RECALL_RULE  = os.environ.get("EPISODE_RECALL_RULE", "asymptotic")
 EPISODE_RECALL_PROCEDURAL_FACTOR = float(
     os.environ.get("EPISODE_RECALL_PROCEDURAL_FACTOR", "0.25"))
 
+# How many already-stored episodes are shown to the Consolidator as a scale for
+# its importance judgement. Asked in the abstract, the judgement collapses onto
+# the bands the prompt names: across 1193 episodes of the revision corpus only
+# 13 distinct values were ever used, 0.80 and 0.70 took 54% of the corpus
+# between them, and one model family put 51% of everything on 0.80. Episodes
+# that land on the same value are indistinguishable at formation, and it is
+# then recall - not judgement - that orders them.
+#
+# Comparison is what a language model does well and an absolute scale is not,
+# so the store supplies the scale: a few of its own past episodes, spread
+# across whatever range it actually holds. 0 disables the block entirely and
+# restores the absolute judgement of the published evaluation.
+#
+# The scale is the store's own past judgements, so it is a feedback loop: a
+# memory that started out badly calibrated will keep confirming itself. The
+# Consolidator is told the anchors are precedents rather than a rule, and is
+# free to score below or above all of them, but nothing enforces that. Watch
+# it on a long-lived store.
+EPISODE_IMPORTANCE_ANCHORS = int(
+    os.environ.get("EPISODE_IMPORTANCE_ANCHORS", "5"))
+
 # How many episodes recall_episodes returns by default.
 EPISODES_RECALL_TOP_K = int(os.environ.get("EPISODES_RECALL_TOP_K", "3"))
 
