@@ -11,6 +11,10 @@ from pathlib import Path
 import config
 import llm_client
 from json_parser import extract_json
+try:                      # core/ is normally on sys.path directly
+    import clock
+except ImportError:       # imported as a package instead
+    from core import clock
 
 
 _REFLECT_SYSTEM = """You are a reflection assistant for an AI coding agent.
@@ -35,7 +39,7 @@ Rules:
 
 
 def _now() -> str:
-    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    return clock.stamp()
 
 
 def _load_store(path: Path) -> dict:

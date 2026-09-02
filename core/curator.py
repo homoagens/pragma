@@ -35,6 +35,10 @@ import config
 import episodes as estore
 import llm_client
 from json_parser import extract_json
+try:                      # core/ is normally on sys.path directly
+    import clock
+except ImportError:       # imported as a package instead
+    from core import clock
 
 
 _CURATOR_SYSTEM = """You are the context curator for an AI coding agent.
@@ -226,7 +230,7 @@ def _when(ts: str) -> str:
         when = datetime.strptime(str(ts)[:10], "%Y-%m-%d").date()
     except Exception:
         return ""
-    days = (datetime.now(timezone.utc).date() - when).days
+    days = (clock.now().date() - when).days
     if days < 0:
         return str(ts)[:10]
     if days == 0:
@@ -274,7 +278,7 @@ def _ask_curator(task: str, eps: list[dict], lns: list[dict],
     # The date anchors the relative stamps on the cards. Without it "yesterday"
     # on a card and "yesterday" in the question are two strings that happen to
     # look alike; with it they are the same day.
-    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    today = clock.today()
     payload = (f"TODAY: {today}\n\nTASK:\n{task}\n\nCANDIDATES:\n"
                + "\n".join(cards))
     try:

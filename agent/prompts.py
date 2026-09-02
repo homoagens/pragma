@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import platform
 from datetime import datetime, timezone
+from core import clock
 
 
 # How the agent is told to express an action. The rest of the prompt — identity,
@@ -106,7 +107,7 @@ def _now_block() -> str:
     local, while stored episode timestamps are UTC, and near midnight the two
     disagree by a day.
     """
-    local = datetime.now().astimezone()
+    local = clock.local_now()
     utc = local.astimezone(timezone.utc)
     return (
         f"- Current date and time: {local:%Y-%m-%d %H:%M} local "

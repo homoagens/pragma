@@ -32,12 +32,16 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 import config
+try:                      # core/ is normally on sys.path directly
+    import clock
+except ImportError:       # imported as a package instead
+    from core import clock
 
 DORMANT_SUBDIR = "dormant"
 
 
 def now_iso() -> str:
-    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    return clock.stamp()
 
 
 def _parse_ts(s: str):
@@ -53,7 +57,7 @@ def age_days(ep: dict, now: datetime | None = None) -> float:
     ref = _parse_ts(ep.get("last_recalled") or "") or _parse_ts(ep.get("ts") or "")
     if ref is None:
         return 0.0
-    now = now or datetime.now(timezone.utc)
+    now = now or clock.now()
     return max(0.0, (now - ref).total_seconds() / 86400.0)
 
 
@@ -148,7 +152,7 @@ def sweep(store=None, learnings_path=None) -> dict:
     result = {"dormant": [], "deleted": []}
     try:
         threshold = getattr(config, "EPISODE_DORMANT_THRESHOLD", 0.15)
-        now = datetime.now(timezone.utc)
+        now = clock.now()
         for p, ep in load(active_dir(store)):
             if effective_salience(ep, now) < threshold:
                 to_dormant(p, ep, store)

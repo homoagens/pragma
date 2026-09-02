@@ -32,6 +32,10 @@ import episodes as estore
 import llm_client
 import reconsolidate
 from json_parser import extract_json
+try:                      # core/ is normally on sys.path directly
+    import clock
+except ImportError:       # imported as a package instead
+    from core import clock
 
 
 _EPISODE_SYSTEM = """You are the memory-consolidation module of an AI agent.
@@ -223,7 +227,7 @@ def _tokens(s: str) -> set[str]:
 
 
 def _now() -> str:
-    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    return clock.stamp()
 
 
 def _episode_text(ep: dict) -> str:
@@ -424,7 +428,7 @@ def episode_consolidate_detailed(transcript: str = "", workspace: str = "",
     )
 
     ep = {
-        "id":  f"ep_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{uuid.uuid4().hex[:4]}",
+        "id":  f"ep_{clock.now().strftime('%Y%m%d_%H%M%S')}_{uuid.uuid4().hex[:4]}",
         "ts":  _now(),
         "workspace": workspace or "",
         "source":    source or "",

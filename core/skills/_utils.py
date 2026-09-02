@@ -3,10 +3,14 @@
 # This file is part of Pragma <https://github.com/homoagens/pragma>.
 
 from datetime import datetime, timezone
+try:                      # core/ is normally on sys.path directly
+    import clock
+except ImportError:       # imported as a package instead
+    from core import clock
 
 
 def _now() -> str:
-    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    return clock.stamp()
 
 
 # Directories that are never the answer to a code search: dependencies, build
