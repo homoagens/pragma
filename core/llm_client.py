@@ -421,9 +421,12 @@ def _call_openai_compatible(messages, model, temperature, max_tokens, timeout, b
     payload = {
         "model":       model,
         "messages":    messages,
-        "temperature": temperature,
         "max_tokens":  max_tokens,
     }
+    # Omitted, not defaulted: an absent field is what hands the choice to
+    # the server, exactly as it already does for top_k, top_p and min_p.
+    if temperature is not None:
+        payload["temperature"] = temperature
     payload.update(config.sampling_extras())
     # Variables handed to the server's chat template. Not an OpenAI field: a
     # server that does not know it ignores it, which is the same outcome as
@@ -472,10 +475,13 @@ def _stream_openai_compatible(messages, model, temperature, max_tokens, timeout,
     payload = {
         "model":       model,
         "messages":    messages,
-        "temperature": temperature,
         "max_tokens":  max_tokens,
         "stream":      True,
     }
+    # Omitted, not defaulted: an absent field is what hands the choice to
+    # the server, exactly as it already does for top_k, top_p and min_p.
+    if temperature is not None:
+        payload["temperature"] = temperature
     payload.update(config.sampling_extras())
     headers = {"Content-Type": "application/json"}
     if api_key:
@@ -578,11 +584,14 @@ def call_llm_tools(messages, tools, model=None, temperature=None,
     payload = {
         "model":       model,
         "messages":    messages,
-        "temperature": temperature,
         "max_tokens":  max_tokens,
         "tools":       tools,
         "tool_choice": tool_choice,
     }
+    # Omitted, not defaulted: an absent field is what hands the choice to
+    # the server, exactly as it already does for top_k, top_p and min_p.
+    if temperature is not None:
+        payload["temperature"] = temperature
     # Only the samplers actually configured. An absent field is not a missing
     # setting: it hands the choice to the server's launch-time default, which
     # is where a model's recommended preset usually already lives.

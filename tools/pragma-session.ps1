@@ -210,7 +210,9 @@ function script:Get-RecallLine {
 # empty means Pragma's 0.0; the rest are omitted when empty, so the server's
 # launch-time defaults apply.
 function script:Get-SamplingLine {
-    $t = if ($env:DEFAULT_TEMPERATURE) { $env:DEFAULT_TEMPERATURE } else { "0.0 (repo)" }
+    $t = if ($env:DEFAULT_TEMPERATURE -eq "server") { "from the server" }
+         elseif ($env:DEFAULT_TEMPERATURE) { $env:DEFAULT_TEMPERATURE }
+         else { "0.0 (repo)" }
     $line = "temp $t"
     $extra = @()
     if ($env:TOP_K) { $extra += "top_k $($env:TOP_K)" }
@@ -218,8 +220,9 @@ function script:Get-SamplingLine {
     if ($env:MIN_P) { $extra += "min_p $($env:MIN_P)" }
     if ($extra.Count -gt 0) { $line += " / " + ($extra -join " / ") }
     else { $line += " / top_k,top_p,min_p from the server" }
-    if ($env:DEFAULT_TEMPERATURE -eq "0" -or $env:DEFAULT_TEMPERATURE -eq "0.0" -or
-        -not $env:DEFAULT_TEMPERATURE) {
+    if ($env:DEFAULT_TEMPERATURE -ne "server" -and (
+        $env:DEFAULT_TEMPERATURE -eq "0" -or $env:DEFAULT_TEMPERATURE -eq "0.0" -or
+        -not $env:DEFAULT_TEMPERATURE)) {
         $line += "  [greedy: the others have no effect]"
     }
     return $line
@@ -509,9 +512,11 @@ print(json.dumps(out))
     foreach ($k in @('temperature', 'top_k', 'top_p', 'min_p')) {
         $sent = $info.sent.$k
         $srv  = if ($info.server) { $info.server.$k } else { $null }
-        # Pragma always sends temperature, so for that row the server never
-        # applies. For the rest, an omitted field is what hands over control.
-        if ($k -eq 'temperature') {
+        # An omitted field is what hands control to the server - for every one
+        # of the four. Temperature used to be the exception because Pragma
+        # always sent it; with Temperature = "server" it is omitted like the
+        # rest, so the row must stop claiming the server's value is unused.
+        if ($k -eq 'temperature' -and $null -ne $sent) {
             $eff = $sent
             $srvShown = if ($null -ne $srv) { "$srv (unused)" } else { '?' }
         } elseif ($null -ne $sent) {

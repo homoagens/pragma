@@ -100,7 +100,21 @@ DEFAULT_MODEL       = os.environ.get("DEFAULT_MODEL", "llama3.2")
 # Note that at temperature 0 llama.cpp decodes greedily and top_k / top_p /
 # min_p have no effect at all. Setting them is only meaningful together with a
 # temperature above zero.
-DEFAULT_TEMPERATURE = float(os.environ.get("DEFAULT_TEMPERATURE", "0.0"))
+# DEFAULT_TEMPERATURE=server hands the temperature to the endpoint as well,
+# by omitting the field from the request instead of sending a number. Until
+# now three of the four sampling parameters honoured "unset means the server
+# decides" and this one did not: it was always sent, so a server's own
+# temperature could never apply - and at 0.0 the decoding is greedy, which
+# makes the other three inert however the server had set them.
+#
+# The faculties are unaffected. Curator, consolidator, abstractor and
+# reconsolidator pass temperature=0.0 explicitly at the call site, so the
+# store stays deterministic whatever this says.
+#
+# Empty still means 0.0, not "server": changing what an unset value means
+# would silently move every existing setup the day it upgraded.
+_temp_raw = os.environ.get("DEFAULT_TEMPERATURE", "0.0").strip()
+DEFAULT_TEMPERATURE = None if _temp_raw.lower() == "server" else float(_temp_raw)
 
 
 def _opt_float(name):
@@ -167,7 +181,10 @@ def sampling_extras():
 
 def sampling_line():
     """One human-readable line: what this process will actually send."""
-    parts = [f"temp {DEFAULT_TEMPERATURE:g}"]
+    if DEFAULT_TEMPERATURE is None:
+        parts = ["temp from the server"]
+    else:
+        parts = [f"temp {DEFAULT_TEMPERATURE:g}"]
     for k, v in sampling_extras().items():
         parts.append(f"{k} {v:g}")
     if len(parts) == 1:
