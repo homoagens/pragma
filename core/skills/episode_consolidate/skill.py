@@ -21,7 +21,9 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
+import os
 import re
 import uuid
 from datetime import datetime, timezone
@@ -252,6 +254,40 @@ def _episode_lite(ep: dict) -> dict:
     }
 
 
+def _session_key(transcript: str) -> str:
+    """The identity of a session, for telling a retry from a new session.
+
+    PRAGMA_SESSION_ID, when the caller sets it, wins. It has to: the failure
+    this guards against re-runs the whole session, so the agent acts again and
+    the transcript comes back different — in the executions where this happened
+    the two episodes describe the same work in different words. Only the caller
+    knows that the second attempt is the same session as the first.
+
+    Without it, the transcript is the identity. That still catches a repeated
+    consolidation call, which is the narrower case.
+    """
+    given = os.environ.get("PRAGMA_SESSION_ID", "").strip()
+    if given:
+        return hashlib.sha256(("sid:" + given).encode("utf-8")).hexdigest()[:16]
+    return hashlib.sha256(transcript.strip().encode("utf-8")).hexdigest()[:16]
+
+
+def _already_consolidated(store: Path, key: str) -> dict | None:
+    """The episode this session already produced, if it produced one.
+
+    Both zones are scanned: a session retried after a long interval could find
+    its own episode already dormant.
+    """
+    for d in (estore.active_dir(store), estore.dormant_dir(store)):
+        try:
+            for _p, ep in estore.load(d):
+                if ep.get("session_key") == key:
+                    return ep
+        except Exception:
+            continue
+    return None
+
+
 def _load_episodes(store: Path) -> list[dict]:
     out = []
     if not store.is_dir():
@@ -355,6 +391,23 @@ def episode_consolidate_detailed(transcript: str = "", workspace: str = "",
 
     store = Path(store_dir) if store_dir else Path(config.EPISODES_DIR)
 
+    # ── 0. Has this exact session already been consolidated? ────────────────
+    # Consolidation is idempotent per session. Without this, a harness that
+    # retries a session it has already consolidated files a second episode for
+    # the same events, and the abstraction pass counts the same evidence twice.
+    # Returning early also spares the model call.
+    session_key = _session_key(transcript)
+    _prior = _already_consolidated(store, session_key)
+    if _prior is not None:
+        return {"status": "ok",
+                "summary": (f"episode {_prior.get('id', '?')} already recorded "
+                            f"this session; nothing rewritten"),
+                "episode_id": _prior.get("id", ""),
+                "surprises": len(_prior.get("surprises") or []),
+                "already_consolidated": True,
+                "new_assertions": [], "confirmed": [],
+                "contradicted": [], "retired": []}
+
     # ── 1. Consolidation: transcript → episode ──────────────────────────
     # First attempt; on failure (typically: the model narrated a thinking
     # process and got truncated before the JSON) retry once demanding
@@ -430,6 +483,7 @@ def episode_consolidate_detailed(transcript: str = "", workspace: str = "",
     ep = {
         "id":  f"ep_{clock.now().strftime('%Y%m%d_%H%M%S')}_{uuid.uuid4().hex[:4]}",
         "ts":  _now(),
+        "session_key": session_key,
         "workspace": workspace or "",
         "source":    source or "",
         # Provenance: the model that actually produced this session — resolved
