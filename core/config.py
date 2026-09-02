@@ -537,6 +537,24 @@ SALIENCE_SURPRISE_WEIGHT  = float(os.environ.get("SALIENCE_SURPRISE_WEIGHT", "0.
 SALIENCE_IMPORTANCE_WEIGHT = float(os.environ.get("SALIENCE_IMPORTANCE_WEIGHT", "0.40"))
 SALIENCE_CAP              = float(os.environ.get("SALIENCE_CAP", "0.95"))
 
+# Recalling an episode reinforces it. The two terms of a stored salience have
+# different shapes, and that asymmetry decides what a long-lived store ends up
+# ordering by: the importance judgement is bounded by SALIENCE_IMPORTANCE_WEIGHT
+# and is spent once, while reinforcement used to be additive and unbounded. Four
+# recalls were worth the entire judgement, and in the evaluation corpus 77 of
+# 1193 episodes ended pinned to the ceiling, where seven distinct importance
+# values had become one number.
+#
+#   asymptotic (default)  s <- s + boost * (1 - s)
+#       Each recall closes part of the remaining distance to 1.0, so a faded
+#       episode gains much more from being needed again than an already strong
+#       one does, the ordering the model produced is never overwritten, and the
+#       ceiling is approached rather than hit.
+#   additive              s <- min(1.0, s + boost)
+#       The behaviour of the frozen corpus and of the published evaluation.
+EPISODE_RECALL_BOOST = float(os.environ.get("EPISODE_RECALL_BOOST", "0.10"))
+EPISODE_RECALL_RULE  = os.environ.get("EPISODE_RECALL_RULE", "asymptotic")
+
 # How many episodes recall_episodes returns by default.
 EPISODES_RECALL_TOP_K = int(os.environ.get("EPISODES_RECALL_TOP_K", "3"))
 

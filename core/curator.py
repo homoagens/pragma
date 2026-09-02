@@ -16,7 +16,7 @@
 #   2. CURATE     — one LLM call with a dedicated system prompt: given the
 #      task and the numbered candidates, return the ids worth putting on the
 #      desk, ordered by usefulness. Pertinence is judged, not keyword-matched.
-#   3. APPLY      — only the SELECTED episodes are reinforced (salience +0.1,
+#   3. APPLY      — only the SELECTED episodes are reinforced (episodes.reinforced,
 #      last_recalled refreshed) and, if dormant, revived. Remembering
 #      strengthens the memory — and now "remembering" means the curator
 #      judged it relevant, not that a keyword happened to overlap.
@@ -385,7 +385,7 @@ def _reinforce(c: dict, workspace: str,
             revived = True
         if ep.get("id") not in (no_reinforce or set()):
             ep["last_recalled"] = estore.now_iso()
-            ep["salience"] = min(1.0, float(ep.get("salience", 0.5)) + 0.1)
+            ep["salience"] = estore.reinforced(ep.get("salience", 0.5))
         estore.save(path, ep)
     except Exception:
         pass

@@ -52,6 +52,25 @@ def _parse_ts(s: str):
         return None
 
 
+def reinforced(salience: float) -> float:
+    """The stored salience after one recall.
+
+    Under the default rule each recall closes a fixed fraction of what is left
+    between the value and 1.0, so the increment shrinks as an episode grows
+    strong and is largest for one that had almost faded. Ordering by the
+    formation judgement survives any number of recalls, and no clamp is needed
+    because the ceiling is a limit rather than a wall.
+
+    EPISODE_RECALL_RULE=additive restores the flat +boost of the frozen
+    revision, under which four recalls were worth the whole judgement.
+    """
+    s = float(salience)
+    boost = getattr(config, "EPISODE_RECALL_BOOST", 0.10)
+    if getattr(config, "EPISODE_RECALL_RULE", "asymptotic") == "additive":
+        return min(1.0, s + boost)
+    return s + boost * (1.0 - s)
+
+
 def age_days(ep: dict, now: datetime | None = None) -> float:
     """Days since the episode was last recalled (or created, if never)."""
     ref = _parse_ts(ep.get("last_recalled") or "") or _parse_ts(ep.get("ts") or "")
