@@ -306,7 +306,9 @@ function script:Show-PragmaInfo {
     # not reachable under that name any more. Say so here rather than
     # letting `pragma -List` fail with a parameter error.
     Write-Host ""
-    Write-Host "  Start-Pragma            the project menu (switch, new, list)" -ForegroundColor DarkGray
+    Write-Host "  pragma -Settings        what this project overrides" -ForegroundColor DarkGray
+    Write-Host "  pragma -Set <k> <v>     change one (an empty value clears it)" -ForegroundColor DarkGray
+    Write-Host "  pragma -Projects        the project menu (switch, new, list)" -ForegroundColor DarkGray
     Write-Host "  pragma -Reset           WIPE this memory (typed confirmation)" -ForegroundColor DarkGray
     Write-Host ""
     Write-Host "  session   : $script:SName"
@@ -334,8 +336,32 @@ function global:pragma {
         [switch]$Note, [switch]$Ask, [switch]$Time, [switch]$Chat,
         [switch]$Map, [switch]$Beliefs, [switch]$Diff, [switch]$Oblio,
         [switch]$Last, [switch]$Mem, [switch]$Sizes, [switch]$Sampling,
-        [switch]$Backup, [switch]$Reset, [switch]$Off, [switch]$Info
+        [switch]$Backup, [switch]$Reset, [switch]$Off, [switch]$Info,
+        [string[]]$Set, [switch]$Settings, [switch]$Projects
     )
+
+    # Once a project is open this function IS `pragma`, so the launcher is no
+    # longer reachable under that name. Rather than make the operator remember
+    # which of two commands owns which flag, the two that they will reach for
+    # are forwarded. Guarded because a session file can still be dot-sourced
+    # on its own, with no module loaded.
+    if ($null -ne $Set -or $Settings -or $Projects) {
+        if (-not (Get-Command Start-Pragma -ErrorAction SilentlyContinue)) {
+            Write-Host "This needs the Pragma module:" -ForegroundColor Yellow
+            Write-Host "  Import-Module $(Join-Path (Split-Path -Parent $PSCommandPath) 'Pragma.psd1')"
+            return
+        }
+        if ($Projects) { Start-Pragma; return }
+        if ($Settings) { Start-Pragma -Settings; return }
+        # `pragma -Set Temperature server` binds "Temperature" to -Set and lets
+        # "server" fall into the positional $A. Gathering them back is what
+        # makes the obvious spelling work.
+        $pair = @($Set)
+        if ($null -ne $A) { $pair += "$A" }
+        if ($null -ne $B) { $pair += "$B" }
+        Start-Pragma -Set $pair
+        return
+    }
 
     if ($Info)    { Show-PragmaInfo;            return }
     # -Verbose is NOT declared above: an attribute like [Parameter(Position=0)]

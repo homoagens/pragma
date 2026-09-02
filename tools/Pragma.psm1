@@ -252,6 +252,9 @@ function script:Enable-Project($entry) {
             Workspace = $entry.workspace; Memory = $entry.memory }
     foreach ($k in $settings.Keys) { $s[$k] = $settings[$k] }
     $global:PragmaSession = $s
+    # Names the project this window is on. -Set reads it, and it is the same
+    # variable the batch contract uses to skip the menu.
+    $env:PRAGMA_PROJECT = $entry.name
 
     . $script:SessionScript
 
@@ -387,6 +390,83 @@ function script:New-Project([string]$name, [string]$workspace) {
 
 # --- the entry point ----------------------------------------------------------
 
+function script:Get-SettableKeys {
+    # Read from pragma-session.ps1 rather than copied into a list here. A
+    # second copy of the same set would drift the first time a key was added
+    # there, and -Set would reject something that works.
+    $structural = @('Name', 'Root', 'Repo', 'Workspace', 'Memory')
+    $keys = @()
+    try {
+        $text = Get-Content -Raw $script:SessionScript
+        foreach ($m in [regex]::Matches($text, 'Cfg "([A-Za-z]+)"')) {
+            $k = $m.Groups[1].Value
+            if ($k -notin $structural -and $k -notin $keys) { $keys += $k }
+        }
+    } catch { }
+    return ($keys | Sort-Object)
+}
+
+function script:Resolve-Project([string]$name) {
+    if ($name) { return Get-EntryByName $name }
+    if ($env:PRAGMA_PROJECT) {
+        $e = Get-EntryByName $env:PRAGMA_PROJECT
+        if ($e) { return $e }
+    }
+    $here = Get-EntryByPath (Get-Location).Path
+    if ($here) { return $here }
+    return Get-LastOpened
+}
+
+function script:Show-Settings($entry) {
+    Write-Host ""
+    Write-Host "  settings for '$($entry.name)'" -ForegroundColor Cyan
+    $props = @()
+    if ($entry.settings) { $props = @($entry.settings.PSObject.Properties) }
+    if ($props.Count -eq 0) {
+        Write-Host "    none - every value falls back to the repository default" -ForegroundColor DarkGray
+    } else {
+        foreach ($p in $props) {
+            Write-Host ("    {0,-18} {1}" -f $p.Name, $p.Value)
+        }
+    }
+    Write-Host ""
+    Write-Host "  settable: $((Get-SettableKeys) -join ', ')" -ForegroundColor DarkGray
+    Write-Host "  pragma -Set <key> <value>   ('' clears it)" -ForegroundColor DarkGray
+    Write-Host ""
+}
+
+function script:Set-ProjectSetting($entry, [string]$key, [string]$value) {
+    $keys = Get-SettableKeys
+    $match = $keys | Where-Object { $_ -ieq $key } | Select-Object -First 1
+    if (-not $match) {
+        Write-Host "pragma: '$key' is not a setting" -ForegroundColor Red
+        Write-Host "        settable: $($keys -join ', ')" -ForegroundColor DarkGray
+        return $false
+    }
+    $entries = @(Read-Registry)
+    foreach ($e in $entries) {
+        if ($e.name -ne $entry.name) { continue }
+        if (-not $e.settings) {
+            $e | Add-Member -NotePropertyName settings -NotePropertyValue ([pscustomobject]@{}) -Force
+        }
+        if ($value -eq "") {
+            # Clearing is not the same as setting the empty string: an absent
+            # key means "the repository default", which is what the operator
+            # asked for when they cleared it.
+            $e.settings.PSObject.Properties.Remove($match)
+            Write-Host "pragma: $match cleared - back to the repository default" -ForegroundColor Green
+        } else {
+            $e.settings | Add-Member -NotePropertyName $match -NotePropertyValue $value -Force
+            Write-Host "pragma: $match = $value" -ForegroundColor Green
+        }
+        Write-Registry $entries
+        return $true
+    }
+    Write-Host "pragma: '$($entry.name)' is not in the registry any more" -ForegroundColor Red
+    return $false
+}
+
+
 function Start-Pragma {
     [CmdletBinding()]
     param(
@@ -394,8 +474,40 @@ function Start-Pragma {
         [switch]$List,
         [switch]$Register,
         [string]$Name,
-        [string]$Workspace
+        [string]$Workspace,
+        [string[]]$Set,
+        [switch]$Settings
     )
+
+    if ($null -ne $Set -or $Settings) {
+        $entry = Resolve-Project $Project
+        if (-not $entry) {
+            Write-Host "pragma: no project to configure. Open one first, or pass -Project." -ForegroundColor Red
+            return
+        }
+        # A bare -Set cannot list: PowerShell demands an argument for a
+        # [string[]] parameter, so listing has its own switch.
+        if ($Settings -or $null -eq $Set -or $Set.Count -eq 0) {
+            Show-Settings $entry; return
+        }
+        # Both spellings, because both are what people type.
+        if ($Set.Count -eq 1 -and $Set[0] -match '^([A-Za-z]+)=(.*)$') {
+            $k = $Matches[1]; $v = $Matches[2]
+        } elseif ($Set.Count -ge 2) {
+            $k = $Set[0]; $v = ($Set[1..($Set.Count - 1)] -join ' ')
+        } else {
+            Write-Host "pragma: -Set <key> <value>   or   -Set <key>=<value>" -ForegroundColor Red
+            return
+        }
+        if (Set-ProjectSetting $entry $k $v) {
+            # Re-activated on the spot: a setting that needed a new window to
+            # take effect is exactly the kind of silent mismatch this exists to
+            # remove, and the banner shows what changed.
+            $fresh = Get-EntryByName $entry.name
+            if ($fresh) { Enable-Project $fresh | Out-Null }
+        }
+        return
+    }
 
     if ($List) {
         $entries = @(Read-Registry)
@@ -519,7 +631,9 @@ function pragma {
         [switch]$List,
         [switch]$Register,
         [string]$Name,
-        [string]$Workspace
+        [string]$Workspace,
+        [string[]]$Set,
+        [switch]$Settings
     )
     Start-Pragma @PSBoundParameters
 }
