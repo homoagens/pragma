@@ -160,29 +160,43 @@ function script:Show-Brief($entry, $brief) {
 # entirely.
 
 function script:Show-Menu([object[]]$items, [string]$hint) {
-    $sel = 0
-    $top = $null
+    # Drawn once, then redrawn over itself. The first attempt recorded the
+    # cursor BEFORE drawing and returned to it, which a console that scrolls
+    # invalidates: every keypress appended a fresh copy of the menu instead of
+    # replacing it. Deriving the top from where the drawing actually ENDED
+    # survives scrolling, because the end moves with the content.
+    #
+    # [Console] rather than $Host.UI.RawUI: the .NET API drives the console
+    # directly and does not depend on virtual-terminal sequences being enabled,
+    # which on a classic PowerShell 5.1 window they may not be.
+    $sel   = 0
+    $lines = $items.Count + 2          # the rows, a blank, the hint
+    # Never the last column: writing into it wraps, which silently adds a row
+    # and puts the count the redraw depends on permanently out of step.
+    $width = 78
+    try { $width = [Math]::Max(24, [Math]::Min(78, [Console]::BufferWidth - 1)) } catch { }
+    $first = $true
+
     while ($true) {
-        if ($null -eq $top) {
-            $top = $Host.UI.RawUI.CursorPosition
-            # Reserve the rows now so a menu drawn at the bottom of the window
-            # does not scroll away from the position just recorded.
-            for ($i = 0; $i -lt $items.Count + 2; $i++) { Write-Host "" }
-            $Host.UI.RawUI.CursorPosition = $top
+        if (-not $first) {
+            $y = [Math]::Max(0, [Console]::CursorTop - $lines)
+            try { [Console]::SetCursorPosition(0, $y) } catch { }
         }
-        $Host.UI.RawUI.CursorPosition = $top
         for ($i = 0; $i -lt $items.Count; $i++) {
-            $it = $items[$i]
-            $pad = (" " * 68)
+            $row = ("  " + $(if ($i -eq $sel) { ">" } else { " " }) + " " + $items[$i].label)
+            if ($row.Length -gt $width) { $row = $row.Substring(0, $width) }
+            $row = $row.PadRight($width)
             if ($i -eq $sel) {
-                Write-Host ("  > " + $it.label + $pad).Substring(0, 70) -ForegroundColor Black -BackgroundColor Cyan
+                Write-Host $row -ForegroundColor Black -BackgroundColor Cyan
             } else {
-                Write-Host ("    " + $it.label + $pad).Substring(0, 70) -NoNewline
-                Write-Host ""
+                Write-Host $row
             }
         }
-        Write-Host ""
-        Write-Host ("  " + $hint + (" " * 60)).Substring(0, 70) -ForegroundColor DarkGray
+        Write-Host ("".PadRight($width))
+        $tip = "  " + $hint
+        if ($tip.Length -gt $width) { $tip = $tip.Substring(0, $width) }
+        Write-Host $tip.PadRight($width) -ForegroundColor DarkGray
+        $first = $false
 
         $key = [Console]::ReadKey($true)
         switch ($key.Key) {
@@ -190,9 +204,9 @@ function script:Show-Menu([object[]]$items, [string]$hint) {
             'DownArrow' { $sel = ($sel + 1) % $items.Count }
             'Enter'     { return $items[$sel] }
             'Escape'    { return $null }
-            'Q'         { return $null }
             default {
                 $ch = "$($key.KeyChar)".ToLower()
+                if ($ch -eq 'q') { return $null }
                 foreach ($it in $items) {
                     if ($it.key -and $it.key -eq $ch) { return $it }
                 }
