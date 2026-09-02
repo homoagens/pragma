@@ -254,10 +254,11 @@ def _episode_lite(ep: dict) -> dict:
     }
 
 
-def _session_key(transcript: str) -> str:
+def _session_key(transcript: str, session_id: str = "") -> str:
     """The identity of a session, for telling a retry from a new session.
 
-    PRAGMA_SESSION_ID, when the caller sets it, wins. It has to: the failure
+    An id passed by an in-process caller wins, then PRAGMA_SESSION_ID for a
+    caller in another process. It has to: the failure
     this guards against re-runs the whole session, so the agent acts again and
     the transcript comes back different — in the executions where this happened
     the two episodes describe the same work in different words. Only the caller
@@ -266,7 +267,7 @@ def _session_key(transcript: str) -> str:
     Without it, the transcript is the identity. That still catches a repeated
     consolidation call, which is the narrower case.
     """
-    given = os.environ.get("PRAGMA_SESSION_ID", "").strip()
+    given = (session_id or os.environ.get("PRAGMA_SESSION_ID", "")).strip()
     if given:
         return hashlib.sha256(("sid:" + given).encode("utf-8")).hexdigest()[:16]
     return hashlib.sha256(transcript.strip().encode("utf-8")).hexdigest()[:16]
@@ -375,7 +376,8 @@ def _load_learnings(path: Path) -> dict:
 
 
 def episode_consolidate_detailed(transcript: str = "", workspace: str = "",
-                                 source: str = "", store_dir: str = "") -> dict:
+                                 source: str = "", store_dir: str = "",
+                                 session_id: str = "") -> dict:
     """
     Structured-result variant of episode_consolidate. Returns:
       { "status": "ok" | "error",
@@ -396,7 +398,7 @@ def episode_consolidate_detailed(transcript: str = "", workspace: str = "",
     # retries a session it has already consolidated files a second episode for
     # the same events, and the abstraction pass counts the same evidence twice.
     # Returning early also spares the model call.
-    session_key = _session_key(transcript)
+    session_key = _session_key(transcript, session_id)
     _prior = _already_consolidated(store, session_key)
     if _prior is not None:
         return {"status": "ok",
@@ -783,7 +785,8 @@ def episode_consolidate_detailed(transcript: str = "", workspace: str = "",
 
 
 def episode_consolidate(transcript: str = "", workspace: str = "",
-                        source: str = "", store_dir: str = "") -> str:
+                        source: str = "", store_dir: str = "",
+                        session_id: str = "") -> str:
     """
     [H] Consolidate a finished session transcript into an episodic memory
     record, then distill semantic assertions when patterns recur across
@@ -800,4 +803,4 @@ def episode_consolidate(transcript: str = "", workspace: str = "",
     Normally invoked by the runtime at end of task, not by the agent.
     """
     return episode_consolidate_detailed(transcript, workspace, source,
-                                        store_dir)["summary"]
+                                        store_dir, session_id)["summary"]

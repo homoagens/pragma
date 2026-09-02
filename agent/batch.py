@@ -907,6 +907,10 @@ confirmed mid-task. Therefore:
             from skills.episode_consolidate.skill import (
                 episode_consolidate_detailed,
             )
+            # No session_id here on purpose: batch is one session per
+            # process, so a harness that retries it passes PRAGMA_SESSION_ID
+            # in the environment and the skill picks it up. Inventing one here
+            # would make a genuine retry look like new work.
             res = episode_consolidate_detailed(
                 transcript="\n".join(transcript),
                 workspace=str(cwd), source="batch")

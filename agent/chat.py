@@ -138,8 +138,15 @@ def _consolidate(turns: list[Turn], cwd: Path, renderer,
             # Writing four episodes on a slow endpoint is minutes of spinner:
             # "2/4" is the difference between waiting and wondering.
             with llm_client.step(f"{i}/{len(kept)}"):
+                # Name the segment so that consolidating it twice writes one
+                # episode. The first turn's start is stable across a retry and
+                # differs between segments, which a single per-session id would
+                # not: chat files one episode per kept segment.
+                sid = (f"chat:{cwd}:"
+                       f"{turns[idx[0]].started.strftime('%Y%m%dT%H%M%S')}")
                 res = episode_consolidate_detailed(
-                    transcript=transcript, workspace=str(cwd), source="chat")
+                    transcript=transcript, workspace=str(cwd), source="chat",
+                    session_id=sid)
             renderer.faculty("CONSOLIDATOR",
                              f"[{i}/{len(kept)}] {res.get('summary', '')}")
             ep = _load_episode(res.get("episode_id", ""))
