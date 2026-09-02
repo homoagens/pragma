@@ -299,6 +299,11 @@ function script:Show-PragmaInfo {
     Write-Host "  pragma -Time <min> <mo> age the memory by <mo> months (asks first)" -ForegroundColor DarkGray
     Write-Host "  pragma -Info            this list"
     Write-Host "  pragma -Off             unset everything for this window"
+    # Once a project is open, `pragma` is this command and the launcher is
+    # not reachable under that name any more. Say so here rather than
+    # letting `pragma -List` fail with a parameter error.
+    Write-Host ""
+    Write-Host "  Start-Pragma            the project menu (switch, new, list)" -ForegroundColor DarkGray
     Write-Host "  pragma -Reset           WIPE this memory (typed confirmation)" -ForegroundColor DarkGray
     Write-Host ""
     Write-Host "  session   : $script:SName"

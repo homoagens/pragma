@@ -18,7 +18,11 @@
 # NOTE: keep this file pure ASCII. PowerShell 5.1 reads BOM-less files as ANSI,
 # and one fancy dash or quote silently corrupts the script.
 
-Set-StrictMode -Version 2.0
+# No Set-StrictMode here. It is dynamically scoped and the session script is
+# dot-sourced into this module's session state, so the functions it defines
+# inherit it - and pragma -Sampling, written years before, reads absent
+# properties on purpose to mean "not sent". Under strict mode those throw,
+# and the table printed 0.0 for values that were never sent at all.
 
 $script:PragmaHome     = Join-Path $env:USERPROFILE ".pragma"
 $script:RegistryPath   = Join-Path $script:PragmaHome "registry.json"
