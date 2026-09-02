@@ -52,7 +52,7 @@ def _parse_ts(s: str):
         return None
 
 
-def reinforced(salience: float) -> float:
+def reinforced(salience: float, factor: float = 1.0) -> float:
     """The stored salience after one recall.
 
     Under the default rule each recall closes a fixed fraction of what is left
@@ -61,11 +61,16 @@ def reinforced(salience: float) -> float:
     formation judgement survives any number of recalls, and no clamp is needed
     because the ceiling is a limit rather than a wall.
 
+    `factor` scales the increment by what the recall was worth. A fragment
+    fetched to see how a file is laid out and one fetched because of what it
+    means are both recalls, and crediting them equally is what let a routine
+    episode draw level with a consequential one.
+
     EPISODE_RECALL_RULE=additive restores the flat +boost of the frozen
     revision, under which four recalls were worth the whole judgement.
     """
     s = float(salience)
-    boost = getattr(config, "EPISODE_RECALL_BOOST", 0.10)
+    boost = getattr(config, "EPISODE_RECALL_BOOST", 0.10) * max(0.0, float(factor))
     if getattr(config, "EPISODE_RECALL_RULE", "asymptotic") == "additive":
         return min(1.0, s + boost)
     return s + boost * (1.0 - s)

@@ -555,6 +555,15 @@ SALIENCE_CAP              = float(os.environ.get("SALIENCE_CAP", "0.95"))
 EPISODE_RECALL_BOOST = float(os.environ.get("EPISODE_RECALL_BOOST", "0.10"))
 EPISODE_RECALL_RULE  = os.environ.get("EPISODE_RECALL_RULE", "asymptotic")
 
+# What a recall was worth. The Curator says why it took each fragment; a
+# fragment taken to see how something is written earns a fraction of what one
+# taken for what it means earns. Measured over 799 recorded selections in the
+# revision corpus, a quarter of all retrievals were purely procedural and drew
+# the full increment - which is what let a routine episode reach the salience
+# of a consequential one. 1.0 restores the old undifferentiated credit.
+EPISODE_RECALL_PROCEDURAL_FACTOR = float(
+    os.environ.get("EPISODE_RECALL_PROCEDURAL_FACTOR", "0.25"))
+
 # How many episodes recall_episodes returns by default.
 EPISODES_RECALL_TOP_K = int(os.environ.get("EPISODES_RECALL_TOP_K", "3"))
 

@@ -59,8 +59,15 @@ pertinence, not "it might help". Order the selection from most to least
 useful. Be strict: an empty desk beats a noisy one. A dormant fragment is
 worth selecting only if it is genuinely relevant to THIS task.
 
+For each selected fragment say what you are taking it FOR, in the same order:
+  "substantive" - for what happened or what it means: a decision, a lesson, a
+                  consequence, a constraint that bears on this task.
+  "procedural"  - only to see how something is done or laid out: a file's
+                  shape, a naming convention, the format of an entry.
+
 Respond with ONLY a JSON object:
 { "selected": ["E2", "L1", "E5"],   // candidate ids, most useful first
+  "uses": ["substantive", "procedural", "substantive"],   // one per selection
   "reason": "<one short line: why these, or why the desk stays empty>" }
 
 If nothing is truly relevant, return an empty "selected" list."""
@@ -74,6 +81,12 @@ _CURATOR_SCHEMA = {
     "type": "object",
     "properties": {
         "selected": {"type": "array", "items": {"type": "string"}},
+        # Parallel to "selected". Left out of "required" on purpose: a model
+        # that omits it still yields a usable curation, and every unlabelled
+        # recall is credited in full, as it was before.
+        "uses":     {"type": "array",
+                     "items": {"type": "string",
+                               "enum": ["substantive", "procedural"]}},
         "reason":   {"type": "string"},
     },
     "required": ["selected", "reason"],
@@ -268,8 +281,12 @@ def _learning_card(ref: str, c: dict) -> str:
 
 
 def _ask_curator(task: str, eps: list[dict], lns: list[dict],
-                 model=None) -> tuple[list[str] | None, str]:
-    """Return (ordered selected refs, reason). refs is None on LLM failure."""
+                 model=None) -> tuple[list[str] | None, str, dict[str, str]]:
+    """Return (ordered selected refs, reason, ref -> use).
+
+    refs is None on LLM failure. The use map is best effort: a ref missing from
+    it is credited as substantive, which is what every recall used to get.
+    """
     cards = []
     for i, c in enumerate(eps, 1):
         cards.append(_episode_card(f"E{i}", c))
@@ -302,18 +319,28 @@ def _ask_curator(task: str, eps: list[dict], lns: list[dict],
         # queued behind a campaign until it timed out, a reply truncated before
         # any JSON appeared. Without the cause, all three look like the memory
         # being broken.
-        return None, f"{type(e).__name__}: {str(e)[:160]}"
+        return None, f"{type(e).__name__}: {str(e)[:160]}", {}
     if not isinstance(data, dict):
         head = " ".join(str(raw).split())[:120]
-        return None, f"reply was not JSON: {head}"
+        return None, f"reply was not JSON: {head}", {}
     reason = str(data.get("reason", "")).strip()
     sel = data.get("selected", [])
     if not isinstance(sel, list):
-        return [], reason
+        return [], reason, {}
     # Keep only well-formed, existing refs, in the model's order, deduped.
     valid = {f"E{i}" for i in range(1, len(eps) + 1)} | \
             {f"L{i}" for i in range(1, len(lns) + 1)}
     cap = getattr(config, "CURATOR_MAX_FRAGMENTS", 6)
+    # "uses" is positional against the model's own list, so it is read before
+    # the refs are filtered - dropping an invalid ref must not shift the labels
+    # of the ones after it.
+    raw_uses = data.get("uses")
+    uses: dict[str, str] = {}
+    if isinstance(raw_uses, list):
+        for r, u in zip(sel, raw_uses):
+            u = str(u).strip().lower()
+            if u in ("substantive", "procedural"):
+                uses[str(r).strip().upper()] = u
     out, seen = [], set()
     for r in sel:
         r = str(r).strip().upper()
@@ -322,7 +349,7 @@ def _ask_curator(task: str, eps: list[dict], lns: list[dict],
             seen.add(r)
         if len(out) >= cap:
             break
-    return out, reason
+    return out, reason, {r: u for r, u in uses.items() if r in seen}
 
 
 def _human_labels(refs: list[str], eps: list[dict], lns: list[dict]) -> list[str]:
@@ -366,7 +393,8 @@ def _format_episode(c: dict, workspace: str, revived: bool) -> list[str]:
 
 
 def _reinforce(c: dict, workspace: str,
-               no_reinforce: set[str] | None = None) -> tuple[list[str], bool]:
+               no_reinforce: set[str] | None = None,
+               use: str = "substantive") -> tuple[list[str], bool]:
     """Revive if dormant, reinforce salience; return (formatted lines, revived).
     Best effort — bookkeeping must never break curation.
 
@@ -385,7 +413,12 @@ def _reinforce(c: dict, workspace: str,
             revived = True
         if ep.get("id") not in (no_reinforce or set()):
             ep["last_recalled"] = estore.now_iso()
-            ep["salience"] = estore.reinforced(ep.get("salience", 0.5))
+            # Recorded, not just applied: an operator reading the episode has
+            # to be able to see why a recall moved it as little as it did.
+            ep["last_recall_use"] = use
+            factor = (getattr(config, "EPISODE_RECALL_PROCEDURAL_FACTOR", 0.25)
+                      if use == "procedural" else 1.0)
+            ep["salience"] = estore.reinforced(ep.get("salience", 0.5), factor)
         estore.save(path, ep)
     except Exception:
         pass
@@ -393,7 +426,8 @@ def _reinforce(c: dict, workspace: str,
 
 
 def _assemble(refs: list[str], eps: list[dict], lns: list[dict],
-              workspace: str, no_reinforce: set[str] | None = None) -> str:
+              workspace: str, no_reinforce: set[str] | None = None,
+              uses: dict[str, str] | None = None) -> str:
     if not refs:
         return ""
     # The header used to end "may be outdated, verify against the actual
@@ -414,7 +448,8 @@ def _assemble(refs: list[str], eps: list[dict], lns: list[dict],
         if r.startswith("E"):
             idx = int(r[1:]) - 1
             if 0 <= idx < len(eps):
-                block, _ = _reinforce(eps[idx], workspace, no_reinforce)
+                block, _ = _reinforce(eps[idx], workspace, no_reinforce,
+                                      (uses or {}).get(r, "substantive"))
                 lines.extend(block)
         elif r.startswith("L"):
             idx = int(r[1:]) - 1
@@ -506,7 +541,7 @@ def curate_knowledge_detailed(task: str, workspace: str = "", model=None,
         info["fallback"] = True
         return info
 
-    refs, reason = _ask_curator(task, eps, lns, model=model)
+    refs, reason, uses = _ask_curator(task, eps, lns, model=model)
     if refs is None:                       # LLM failed → deterministic fallback
         info["reason"] = reason            # perche', non solo che
         info["block"], refs = _fallback(eps, lns, workspace, no_reinforce)
@@ -516,8 +551,9 @@ def curate_knowledge_detailed(task: str, workspace: str = "", model=None,
     info["reason"] = reason
     info["selected"] = _human_labels(refs, eps, lns)
     info["episode_ids"], info["rule_texts"] = _placed(refs, eps, lns)
+    info["uses"] = uses
     info["block"] = _assemble(refs, eps, lns, workspace,
-                              no_reinforce)          # [] → "" (empty desk)
+                              no_reinforce, uses)    # [] → "" (empty desk)
     info["empty"] = not info["block"]
     return info
 
