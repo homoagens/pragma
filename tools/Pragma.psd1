@@ -12,8 +12,8 @@
     Copyright         = '(C) 2026 Homo Agens. AGPL-3.0-or-later.'
     Description       = 'One command, many projects: chooses a Pragma project, sets this window up for it, and gets out of the way.'
     PowerShellVersion = '5.1'
-    FunctionsToExport = @('Start-Pragma')
-    AliasesToExport   = @('pragma')
+    FunctionsToExport = @('Start-Pragma', 'pragma')
+    AliasesToExport   = @()
     CmdletsToExport   = @()
     VariablesToExport = @()
 }

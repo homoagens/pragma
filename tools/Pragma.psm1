@@ -470,7 +470,13 @@ function Start-Pragma {
 
     switch ($choice.action) {
         'continue' { Enable-Project $current | Out-Null }
-        'chat'     { if (Enable-Project $current) { pragma -Chat } }
+        'chat' {
+            # global: is not decoration. Inside this module `pragma` resolves to
+            # the module's own alias for Start-Pragma, which has no -Chat; the
+            # session script's function is the one just dot-sourced into the
+            # global scope, and only the qualifier reaches it.
+            if (Enable-Project $current) { global:pragma -Chat }
+        }
         'new' {
             $n = Read-Host "  name for this project"
             if (-not $n) { return }
@@ -492,5 +498,26 @@ function Start-Pragma {
     }
 }
 
-Set-Alias -Name pragma -Value Start-Pragma
-Export-ModuleMember -Function Start-Pragma -Alias pragma
+# `pragma` is a FUNCTION and deliberately not an alias. PowerShell resolves an
+# alias BEFORE a function of the same name, so an alias here would keep
+# shadowing the session command that Enable-Project dot-sources into the global
+# scope, and `pragma -Chat` at the prompt would fail with "a parameter cannot
+# be found". A function is simply replaced in the global function table by the
+# session's `function global:pragma`, which is exactly the handover wanted:
+# before a project is open `pragma` gets you one, after it is the full command
+# surface. Start-Pragma is never shadowed and always reopens the menu.
+#
+# No [CmdletBinding()]: it would add the common parameters, and -Info would
+# then be ambiguous against -InformationAction.
+function pragma {
+    param(
+        [string]$Project,
+        [switch]$List,
+        [switch]$Register,
+        [string]$Name,
+        [string]$Workspace
+    )
+    Start-Pragma @PSBoundParameters
+}
+
+Export-ModuleMember -Function Start-Pragma, pragma
