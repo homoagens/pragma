@@ -33,31 +33,26 @@ except ImportError as _e:
 DEBUG = os.environ.get("PRAGMA_DEBUG", "").lower() in ("1", "true", "yes")
 
 # ─────────────────────────────────────────────
-# MODEL PROFILE (optional) — one switch routes everything
-# ─────────────────────────────────────────────
-# PRAGMA_PROFILE=<name> selects a profile from models.json (next to .env,
-# gitignored — it holds local ports; fallback: research/models.json):
-#   { "27b": {"base_url": "http://127.0.0.1:8100/v1", "model": "Qwen3.6-27b"} }
-# The profile overrides LLM_BASE_URL / DEFAULT_MODEL for THIS process, and sets
-# PRAGMA_ARCHIVE_TAG=<name> so demo runs of an alternate model archive into
-# their own subfolder. Resolved here (config is imported by everything), so it
-# works identically for batch, the demos and the UI. No profile → no change.
-PROFILE = os.environ.get("PRAGMA_PROFILE", "").strip()
-if PROFILE:
-    import json as _json
-    os.environ.setdefault("PRAGMA_ARCHIVE_TAG", PROFILE)
-    _ROOT = Path(__file__).resolve().parent.parent
-    for _mj in (_ROOT / "models.json", _ROOT / "research" / "models.json"):
-        try:
-            _p = _json.loads(_mj.read_text(encoding="utf-8")).get(PROFILE)
-        except Exception:
-            _p = None
-        if isinstance(_p, dict):
-            if _p.get("base_url"):
-                os.environ["LLM_BASE_URL"] = str(_p["base_url"])
-            if _p.get("model"):
-                os.environ["DEFAULT_MODEL"] = str(_p["model"])
-            break
+# THE ENDPOINT DECIDES THE MODEL
+# ─────────────────────────────
+# There used to be a PRAGMA_PROFILE here, naming an entry in a gitignored
+# models.json that overrode LLM_BASE_URL and DEFAULT_MODEL together. It is gone,
+# because on a single-model server it could not do what it promised: llama.cpp
+# serves whatever is loaded and ignores the "model" field of the request, so a
+# profile only relabelled the same endpoint. In practice every profile pointed
+# at one local port, and which model answered was decided by what was listening
+# there - never by the profile.
+#
+# So the endpoint is the whole choice. Point LLM_BASE_URL at the server you
+# want (configure, or LLM_BASE_URL per window) and the model follows. What the
+# endpoint is really serving is resolved at runtime into SERVED_MODEL, which is
+# what the banners and the episodes record - a label can lie the moment another
+# model is loaded on the same port, and the endpoint cannot.
+#
+# PRAGMA_ARCHIVE_TAG still exists and is still what keeps an alternate model's
+# runs in their own archive subfolder; it is now set directly instead of being
+# inferred from a profile name.
+PROFILE = ""
 
 # ─────────────────────────────────────────────
 # LLM ENDPOINT (OpenAI-compatible)

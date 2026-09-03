@@ -72,7 +72,10 @@ function script:Set-SessionEnv([string]$name, $value) {
 # written before that keeps working - the fallbacks are what it always did.
 $env:PRAGMA_WORKSPACE = Cfg "Workspace" (Join-Path $script:SRoot "workspace")
 $env:PRAGMA_DATA_DIR  = Cfg "Memory"    (Join-Path $script:SRoot ".memoria")
-Set-SessionEnv "PRAGMA_PROFILE"    (Cfg "Profile" "")
+# The endpoint is the whole model choice: llama.cpp serves what is loaded and
+# ignores the model field of the request, so naming a server is naming a model.
+# Empty hands it back to .env, which is what configure writes.
+Set-SessionEnv "LLM_BASE_URL"      (Cfg "Endpoint" "")
 Set-SessionEnv "LLM_TOOL_PROTOCOL" $script:SProto
 Set-SessionEnv "CONTEXT_WINDOW"    (Cfg "ContextWindow"  "")
 Set-SessionEnv "MAX_TOKENS"        (Cfg "MaxTokens"      "")
@@ -314,7 +317,7 @@ function script:Show-PragmaInfo {
     Write-Host "  session   : $script:SName"
     Write-Host "  memory    : $env:PRAGMA_DATA_DIR"
     Write-Host "  workspace : $env:PRAGMA_WORKSPACE"
-    Write-Host "  profile   : $(if ($env:PRAGMA_PROFILE) { $env:PRAGMA_PROFILE } else { '(default .env model)' })"
+    Write-Host "  endpoint  : $(if ($env:LLM_BASE_URL) { $env:LLM_BASE_URL } else { '(from .env)' })"
     Write-Host "  max steps : $script:SSteps per session"
     Write-Host "  protocol  : $(if ($env:LLM_TOOL_PROTOCOL) { $env:LLM_TOOL_PROTOCOL } else { 'text (repo default)' })"
     Write-Host "  budgets   : $(Get-BudgetLine)"
@@ -451,7 +454,7 @@ function global:pragma {
 
     if ($Off) {
         Remove-Item Env:PRAGMA_WORKSPACE, Env:PRAGMA_DATA_DIR -ErrorAction SilentlyContinue
-        Remove-Item Env:PRAGMA_PROFILE, Env:LLM_TOOL_PROTOCOL -ErrorAction SilentlyContinue
+        Remove-Item Env:LLM_BASE_URL, Env:LLM_TOOL_PROTOCOL -ErrorAction SilentlyContinue
         Remove-Item Env:CONTEXT_WINDOW, Env:MAX_TOKENS, Env:CODING_MAX_TOKENS -ErrorAction SilentlyContinue
         Remove-Item Env:SKILL_MAX_TOKENS, Env:MEMORY_MAX_TOKENS, Env:MEMORY_NO_THINK, Env:LLM_TIMEOUT -ErrorAction SilentlyContinue
         Remove-Item Env:CURATOR_CANDIDATES_EPISODES, Env:CURATOR_CANDIDATES_RECENT -ErrorAction SilentlyContinue
@@ -634,27 +637,6 @@ Pop-Location
 $parts = ("$served" -split '\|')
 if ($parts[0] -eq "OK") {
     Write-Host "  serving   : $($parts[1])" -ForegroundColor Green
-    # A profile that names a different model than the endpoint is serving means
-    # memories would be written under the wrong attribution. Compare loosely -
-    # llama.cpp reports the full GGUF name while a profile carries a short one -
-    # and warn only when neither contains the other: a warning that cries wolf
-    # is a warning you stop reading.
-    $want = $null
-    $prof = Cfg "Profile" ""
-    if ($prof) {
-        try {
-            $mj = Get-Content (Join-Path $script:SRepo "research\models.json") -Raw | ConvertFrom-Json
-            $want = $mj.$prof.model
-        } catch { }
-    }
-    $norm = { param($s) ($s -replace '[^a-zA-Z0-9]', '').ToLower() }
-    $nWant   = & $norm $want
-    $nServed = & $norm $parts[1]
-    if ($nWant -and $nServed -and
-        -not ($nServed.Contains($nWant) -or $nWant.Contains($nServed))) {
-        Write-Host "  WARNING: profile '$prof' says '$want'," -ForegroundColor Yellow
-        Write-Host "           but the endpoint is serving '$($parts[1])'." -ForegroundColor Yellow
-    }
 } else {
     Write-Host "  serving   : backend DOWN - start your LLM server first" -ForegroundColor Yellow
 }

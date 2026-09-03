@@ -58,7 +58,6 @@ def main() -> int:
     except Exception:
         base_url, api_key = config.LLM_BASE_URL, ""
     out["endpoint"] = base_url
-    out["profile"] = config.PROFILE or ""
 
     ok, detail = llm_client.ping_models(timeout=4)
     out["up"] = bool(ok)

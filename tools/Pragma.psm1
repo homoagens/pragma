@@ -482,9 +482,6 @@ function script:Show-Endpoint($ep) {
         return
     }
     Write-Host ("    url       {0}" -f $ep.endpoint)
-    if ($ep.profile) {
-        Write-Host ("    profile   {0}" -f $ep.profile) -ForegroundColor DarkGray
-    }
     if ($ep.up) {
         Write-Host ("    serving   {0}" -f $ep.serving)
         if ($ep.configured_model -and $ep.serving -and

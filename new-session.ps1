@@ -29,7 +29,7 @@
   .\new-session.ps1
 
 .EXAMPLE
-  .\new-session.ps1 -Path D:\pragma-notes -Name notes -Profile 27b
+  .\new-session.ps1 -Path D:\pragma-notes -Name notes -Endpoint http://127.0.0.1:8096/v1
 #>
 
 [CmdletBinding()]
@@ -41,8 +41,10 @@ param(
     # folder name.
     [string]$Name,
 
-    # A profile from research\models.json. Empty = the model in .env.
-    [string]$Profile,
+    # The OpenAI-compatible server this session talks to, ending in /v1.
+    # Empty = the endpoint in .env. Naming a server is naming a model:
+    # llama.cpp serves what is loaded and ignores the model field.
+    [string]$Endpoint,
 
     # Step budget for one task.
     [int]$MaxSteps = 50,
@@ -120,8 +122,8 @@ if ((Test-Path $sessionFile) -and -not $Force) {
 if (-not $Name) {
     $Name = Ask "A short name for it?" (Split-Path $Path -Leaf)
 }
-if (-not $PSBoundParameters.ContainsKey('Profile')) {
-    $Profile = Ask "Model profile (empty = the model from .env)?" ""
+if (-not $PSBoundParameters.ContainsKey('Endpoint')) {
+    $Endpoint = Ask "Endpoint URL (empty = the one from .env)?" ""
 }
 
 # --- sampling ---------------------------------------------------------------
@@ -174,7 +176,7 @@ $probe | Out-File -FilePath $probeFile -Encoding ascii
 $srv = $null
 $endpoint = ''
 try {
-    if ($Profile) { $env:PRAGMA_PROFILE = $Profile }
+    if ($Endpoint) { $env:LLM_BASE_URL = $Endpoint }
     Push-Location $Repo
     $raw = & (Join-Path $Repo "venv\Scripts\python.exe") $probeFile 2>$null
     Pop-Location
@@ -258,7 +260,7 @@ $lines = @(
     "    Name     = `"$Name`"",
     "    Root     = `"$Path`"",
     "    Repo     = `"$Repo`"",
-    "    Profile  = `"$Profile`"        # `"`" = the model from the repo .env",
+    "    Endpoint = `"$Endpoint`"        # `"`" = the endpoint from the repo .env",
     "    MaxSteps = $MaxSteps",
     "    Protocol = `"$Protocol`"    # native | text",
     "",
