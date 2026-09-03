@@ -39,6 +39,30 @@ $script:BriefScript    = Join-Path $PSScriptRoot "pragma_brief.py"
 $script:EndpointScript = Join-Path $PSScriptRoot "pragma_endpoint.py"
 $script:Python         = Join-Path $script:RepoRoot "venv\Scripts\python.exe"
 
+# When this file was read. PowerShell loads a module once per session and keeps
+# it, so editing the file - or pulling a new one - changes nothing in a window
+# that is already open. That is correct behaviour and a genuinely confusing one:
+# the fix looks like a missing feature, twice over. Comparing this against the
+# file's timestamp turns "it is not there" into a line that says why.
+$script:LoadedAt = try { (Get-Item $PSCommandPath).LastWriteTimeUtc } catch { $null }
+
+function script:Test-Stale {
+    if (-not $script:LoadedAt) { return $false }
+    try { return ((Get-Item $PSCommandPath).LastWriteTimeUtc -gt $script:LoadedAt) }
+    catch { return $false }
+}
+
+function script:Show-StaleNotice {
+    if (-not (Test-Stale)) { return }
+    Write-Host ""
+    Write-Host "  This window is running an older copy of Pragma." -ForegroundColor Yellow
+    Write-Host "  The file changed after it was loaded, and PowerShell keeps a" -ForegroundColor DarkGray
+    Write-Host "  module for the life of the session." -ForegroundColor DarkGray
+    Write-Host "    Import-Module `"$(Join-Path $PSScriptRoot 'Pragma.psd1')`" -Force" -ForegroundColor DarkGray
+    Write-Host "  or open a new terminal." -ForegroundColor DarkGray
+    Write-Host ""
+}
+
 
 # --- the registry -------------------------------------------------------------
 # One file, one entry per project. It holds what pragma.ps1 used to hold: a
@@ -752,6 +776,11 @@ function Start-Pragma {
     $here = Get-EntryByPath (Get-Location).Path
     $current = if ($here) { $here } else { Get-LastOpened }
 
+    if (Test-Stale) {
+        Show-StaleNotice
+        Write-Host "  any key to continue" -ForegroundColor DarkGray
+        [Console]::ReadKey($true) | Out-Null
+    }
     Invoke-MenuLoop $current
 }
 
