@@ -331,13 +331,28 @@ function script:Test-ProjectName([string]$name) {
     return $true
 }
 
+function script:Show-WhatAWorkspaceIs([string]$ws) {
+    # The first refusal anyone meets, and the first version of it only said
+    # what the folder was NOT. Someone registering their first project has no
+    # reason to know the word "workspace" yet, so the refusal has to teach it -
+    # and end with a line that can be typed.
+    Write-Host "        A workspace is the one folder the agent reads and writes in:" -ForegroundColor DarkGray
+    Write-Host "        a project, a notes folder. Not everything you own." -ForegroundColor DarkGray
+    Write-Host ""
+    Write-Host "        Make one and register it:" -ForegroundColor DarkGray
+    $example = Join-Path $ws "notes"
+    Write-Host "          mkdir `"$example`"" -ForegroundColor DarkGray
+    Write-Host "          pragma -Register -Name notes -Workspace `"$example`"" -ForegroundColor DarkGray
+}
+
 function script:Test-Workspace([string]$ws) {
     # A workspace is a folder you work in, not the whole of your home or a
     # drive. Registering one of those points the agent at everything you own.
     $n = $ws.TrimEnd('\','/')
     $root = [IO.Path]::GetPathRoot($n).TrimEnd('\','/')
     if ($n -ieq $root) {
-        Write-Host "pragma: '$ws' is a drive root - pick a project folder" -ForegroundColor Red
+        Write-Host "pragma: '$ws' is a whole drive." -ForegroundColor Red
+        Show-WhatAWorkspaceIs $n
         return $false
     }
     $guarded = @{}
@@ -346,8 +361,8 @@ function script:Test-Workspace([string]$ws) {
     if ($desk) { $guarded[$desk] = "Desktop" }
     foreach ($p in $guarded.Keys) {
         if ($n -ieq $p.TrimEnd([char]92, [char]47)) {
-            Write-Host "pragma: that is your $($guarded[$p]) folder, not a project" -ForegroundColor Red
-            Write-Host "        pragma -Register -Name <name> -Workspace <folder>" -ForegroundColor DarkGray
+            Write-Host "pragma: that is your $($guarded[$p]) folder." -ForegroundColor Red
+            Show-WhatAWorkspaceIs $n
             return $false
         }
     }
