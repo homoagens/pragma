@@ -486,9 +486,10 @@ function script:Show-Endpoint($ep) {
         Write-Host ("    serving   {0}" -f $ep.serving)
         if ($ep.configured_model -and $ep.serving -and
             ($ep.configured_model -ne $ep.serving)) {
-            # The label can lie the moment a different model is loaded on the
-            # same port; the endpoint cannot.
-            Write-Host ("    configured {0}  - the endpoint is serving something else" -f $ep.configured_model) -ForegroundColor DarkYellow
+            # Worth showing, not worth alarming about: DEFAULT_MODEL is a label
+            # sent in the request, and llama.cpp serves what is loaded whatever
+            # it says. Provenance already records the served name, not this one.
+            Write-Host ("    labelled  {0}  (.env label only, the endpoint decides)" -f $ep.configured_model) -ForegroundColor DarkGray
         }
         if ($ep.PSObject.Properties.Name -contains 'build' -and $ep.build) {
             Write-Host ("    build     {0}" -f $ep.build) -ForegroundColor DarkGray
