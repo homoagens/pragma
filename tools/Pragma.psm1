@@ -158,11 +158,13 @@ function script:Show-Brief($entry, $brief) {
             $lines += "{0} episode(s) close to fading" -f $brief.fading
         }
         if ($brief.last_goal) { $lines += "last time you were on: " + $brief.last_goal }
+        # Same colours as the settings panel: whether there is anything to talk
+        # to is the one thing worth finding without reading.
         Write-Host "  serving   " -ForegroundColor DarkGray -NoNewline
         if ($brief.serving) {
-            Write-Host $brief.serving
+            Write-Host $brief.serving -ForegroundColor Green
         } else {
-            Write-Host ("backend " + $brief.backend) -ForegroundColor DarkYellow
+            Write-Host ("backend " + $brief.backend) -ForegroundColor Red
         }
         if ($lines.Count) {
             Write-Host ""
@@ -483,13 +485,21 @@ function script:Show-Endpoint($ep) {
     }
     Write-Host ("    url       {0}" -f $ep.endpoint)
     if ($ep.up) {
-        Write-Host ("    serving   {0}" -f $ep.serving)
+        # The one line worth finding at a glance: whether there is anything to
+        # talk to. Green for yes, red for no - the rest of the panel is detail.
+        Write-Host "    serving   " -NoNewline
+        Write-Host $ep.serving -ForegroundColor Green
         if ($ep.configured_model -and $ep.serving -and
             ($ep.configured_model -ne $ep.serving)) {
             # Worth showing, not worth alarming about: DEFAULT_MODEL is a label
             # sent in the request, and llama.cpp serves what is loaded whatever
             # it says. Provenance already records the served name, not this one.
-            Write-Host ("    labelled  {0}  (.env label only, the endpoint decides)" -f $ep.configured_model) -ForegroundColor DarkGray
+            # Not a fault: DEFAULT_MODEL is a label sent in the request, and
+            # llama.cpp serves what is loaded whatever it says. Said here only
+            # because a stale label is confusing to read, with the one command
+            # that ends the confusion.
+            Write-Host ("    labelled  {0}  - stale .env label, harmless" -f $ep.configured_model) -ForegroundColor DarkGray
+            Write-Host "              pragma -Set Endpoint <url>, or fix DEFAULT_MODEL in .env" -ForegroundColor DarkGray
         }
         if ($ep.PSObject.Properties.Name -contains 'build' -and $ep.build) {
             Write-Host ("    build     {0}" -f $ep.build) -ForegroundColor DarkGray
@@ -498,7 +508,11 @@ function script:Show-Endpoint($ep) {
             Write-Host ("    context   {0} tokens" -f $ep.n_ctx) -ForegroundColor DarkGray
         }
     } else {
-        Write-Host ("    down      {0}" -f $ep.detail) -ForegroundColor DarkYellow
+        Write-Host "    serving   " -NoNewline
+        Write-Host "backend down" -ForegroundColor Red
+        if ($ep.detail) {
+            Write-Host ("              {0}" -f $ep.detail) -ForegroundColor DarkGray
+        }
     }
     Write-Host ""
 
