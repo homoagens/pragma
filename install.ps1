@@ -145,29 +145,79 @@ $ErrorActionPreference = 'Continue'
 try {
     $py = Join-Path $Root "venv\Scripts\python.exe"
     if (-not (Test-Path $py)) {
-        # Not simply `python`. On a shared machine the first python on PATH can
-        # belong to another account entirely - the machine PATH is searched
-        # before the user's, so no amount of fixing your own PATH puts yours in
-        # front - and building the venv from it inherits that installation's pip
-        # configuration too, which is how an install ends up reaching for a
-        # private package index that does not resolve.
+        # Not simply `python`. Three things go wrong with that on a machine
+        # nobody has prepared:
         #
-        # The py launcher answers with the Python registered for THIS user, so
-        # it is preferred where it exists. -Python overrides both.
-        $exe, $pre = if ($Python) {
+        #   - on a shared one the first python on PATH can belong to another
+        #     account, because the machine PATH is searched before the user's -
+        #     so fixing your own PATH never puts yours in front - and the venv
+        #     then inherits that installation's pip configuration too;
+        #   - on a clean Windows 11 `python` exists but is a stub that opens the
+        #     Microsoft Store, so it resolves and then does nothing useful;
+        #   - an interpreter old enough to fail on this code builds a venv
+        #     perfectly well, and the failure surfaces much later as something
+        #     that looks unrelated.
+        #
+        # So candidates are PROBED rather than trusted: each is asked its own
+        # version and path, and the first that is new enough wins.
+        $minor = 10        # README says 3.10+; the annotations need it
+        $candidates = @()
+        if ($Python) {
             if (-not (Test-Path $Python)) { throw "no such interpreter: $Python" }
-            $Python, @()
-        } elseif (Get-Command py -ErrorAction SilentlyContinue) {
-            "py", @("-3")
+            $candidates += ,@($Python, @())
         } else {
-            "python", @()
+            if (Get-Command py -ErrorAction SilentlyContinue) {
+                $candidates += ,@("py", @("-3"))
+            }
+            if (Get-Command python -ErrorAction SilentlyContinue) {
+                $candidates += ,@("python", @())
+            }
         }
+
+        $chosen = $null
+        $seen   = @()
+        foreach ($c in $candidates) {
+            $exe, $pre = $c
+            $probe = $null
+            try {
+                $probe = & $exe @pre -c "import sys;print('%d.%d|%s' % (sys.version_info[0], sys.version_info[1], sys.executable))" 2>$null
+            } catch { }
+            if (-not $probe) { continue }          # the Store stub answers nothing
+            $ver, $path = "$probe".Trim() -split '\|', 2
+            $mj, $mn = $ver -split '\.'
+            $seen += "$ver at $path"
+            if ([int]$mj -ge 3 -and [int]$mn -ge $minor) {
+                $chosen = @{ Exe = $exe; Pre = $pre; Version = $ver; Path = $path }
+                break
+            }
+        }
+
+        if (-not $chosen) {
+            Write-Host ""
+            if ($seen.Count -gt 0) {
+                Write-Warn "no Python 3.$minor or newer was found. Seen:"
+                foreach ($s in $seen) { Write-Host "    $s" -ForegroundColor DarkGray }
+            } else {
+                Write-Warn "no usable Python was found on this machine."
+            }
+            Write-Host ""
+            Write-Step "Install one for your account:"
+            Write-Host "    winget install Python.Python.3.12 --scope user" -ForegroundColor DarkGray
+            Write-Step "or point this at one you already have:"
+            Write-Host "    .\install.ps1 -Python C:\path\to\python.exe" -ForegroundColor DarkGray
+            Write-Host ""
+            # A machine without Python is an expected state, not a crash: the
+            # message above IS the outcome, and a PowerShell stack trace under
+            # it only buries the two lines worth reading.
+            $ErrorActionPreference = $prevEAP
+            exit 1
+        }
+
         # Say which one, always. This whole class of confusion is invisible
         # until someone prints the path.
-        $which = & $exe @pre -c "import sys; print(sys.executable)"
-        Write-Step "creating the virtual environment with:"
-        Write-Host "    $which" -ForegroundColor DarkGray
-        & $exe @pre -m venv (Join-Path $Root "venv")
+        Write-Step "creating the virtual environment with Python $($chosen.Version):"
+        Write-Host "    $($chosen.Path)" -ForegroundColor DarkGray
+        & $chosen.Exe @($chosen.Pre) -m venv (Join-Path $Root "venv")
         if ($LASTEXITCODE -ne 0) {
             throw "creating the virtual environment failed. Pass -Python <path to python.exe>."
         }
