@@ -752,20 +752,6 @@ function Start-Pragma {
     $here = Get-EntryByPath (Get-Location).Path
     $current = if ($here) { $here } else { Get-LastOpened }
 
-    if (-not $current -and $entries.Count -eq 0) {
-        Write-Host ""
-        Write-Host "  Pragma" -ForegroundColor Cyan
-        Write-Host "  No projects yet." -ForegroundColor DarkGray
-        Write-Host ""
-        Write-Host "  Register the folder you are in:" -ForegroundColor DarkGray
-        Write-Host "    pragma -Register -Name <short-name>"
-        Write-Host ""
-        Write-Host "  or name the folder explicitly:" -ForegroundColor DarkGray
-        Write-Host "    pragma -Register -Name <short-name> -Workspace <folder>"
-        Write-Host ""
-        return
-    }
-
     Invoke-MenuLoop $current
 }
 
@@ -780,10 +766,135 @@ function Start-Pragma {
 # pass, so after a chat you SEE what it consolidated - the episode count moves
 # under you.
 
+function script:Invoke-NewProject {
+    # A project IS a folder, so the folder is asked first and the name follows
+    # from it. The first version asked for a name with no folder in sight, which
+    # put the abstract half before the concrete one.
+    New-Page
+    Write-Host ""
+    Write-Host "  New project" -ForegroundColor Cyan
+    Write-Host ""
+    Write-Host "  A project is one folder the agent works in, plus a memory of" -ForegroundColor DarkGray
+    Write-Host "  its own that Pragma keeps elsewhere." -ForegroundColor DarkGray
+    Write-Host ""
+
+    $here = (Get-Location).Path
+    $ws = Read-Host "  folder  [$here]"
+    if (-not $ws) { $ws = $here }
+    $ws = $ws.Trim('"').Trim()
+    if (-not (Test-Path $ws)) {
+        Write-Host ""
+        $mk = Read-Host "  '$ws' does not exist. Create it? [y/N]"
+        if ($mk -notmatch '^[yYsS]') { Write-Host ""; return $null }
+        try { New-Item -ItemType Directory -Force -Path $ws -ErrorAction Stop | Out-Null }
+        catch {
+            Write-Host "  could not create it: $($_.Exception.Message)" -ForegroundColor Red
+            Wait-Key; return $null
+        }
+    }
+
+    $leaf = Split-Path -Leaf ($ws.TrimEnd('\','/'))
+    $name = Read-Host "  name    [$leaf]"
+    if (-not $name) { $name = $leaf }
+
+    Write-Host ""
+    $entry = New-Project $name $ws
+    if (-not $entry) { Wait-Key }
+    return $entry
+}
+
+function script:Invoke-DeleteProject($entry) {
+    New-Page
+    Write-Host ""
+    Write-Host "  Delete a project" -ForegroundColor Cyan
+    Write-Host ""
+    $entries = @(Read-Registry)
+    $picks = @()
+    foreach ($e in $entries) {
+        $picks += [pscustomobject]@{ key = ''
+                                     label = ("{0,-18} {1}" -f $e.name, $e.workspace)
+                                     entry = $e }
+    }
+    $picks += [pscustomobject]@{ key = 'q'; label = "back"; entry = $null }
+    $p = Show-Menu $picks "enter select . esc back"
+    Write-Host ""
+    if (-not $p -or -not $p.entry) { return $entry }
+    $doomed = $p.entry
+
+    $store = $doomed.memory
+    $n = 0
+    try { $n = @(Get-ChildItem -Path (Join-Path $store "episodes") -Filter "ep_*.json" -Recurse -ErrorAction SilentlyContinue).Count } catch { }
+
+    New-Page
+    Write-Host ""
+    Write-Host "  Delete '$($doomed.name)'" -ForegroundColor Red
+    Write-Host ""
+    Write-Host "  This removes, for good:" -ForegroundColor DarkGray
+    Write-Host "    the memory        $store"
+    Write-Host "                      $n episode(s), and every belief drawn from them"
+    Write-Host "    the registry entry"
+    Write-Host ""
+    # The workspace is the operator's own folder - often a git repository, often
+    # the only copy of something. Pragma removes what Pragma made; deleting
+    # someone's documents is not a menu item.
+    Write-Host "  This does NOT touch:" -ForegroundColor DarkGray
+    Write-Host "    the workspace     $($doomed.workspace)"
+    $bk = Join-Path (Join-Path $script:PragmaHome "backups") $doomed.name
+    if (Test-Path $bk) {
+        Write-Host "    the snapshots     $bk"
+    }
+    Write-Host ""
+    Write-Host "  There is no undo." -ForegroundColor Red
+    Write-Host ""
+    $typed = Read-Host "  Type the project name to confirm"
+    if ($typed -ne $doomed.name) {
+        Write-Host ""
+        Write-Host "  not deleted" -ForegroundColor Green
+        Wait-Key
+        return $entry
+    }
+
+    try {
+        if (Test-Path $store) { Remove-Item -Recurse -Force -Path $store -ErrorAction Stop }
+    } catch {
+        Write-Host "  could not remove the store: $($_.Exception.Message)" -ForegroundColor Red
+        Wait-Key
+        return $entry
+    }
+    Write-Registry @($entries | Where-Object { $_.name -ne $doomed.name })
+    Write-Host ""
+    Write-Host "  '$($doomed.name)' deleted. The workspace is still there." -ForegroundColor Green
+    Wait-Key
+
+    # If the window was on the project just deleted, it is on nothing now.
+    if ($entry -and $entry.name -eq $doomed.name) { return $null }
+    return $entry
+}
+
+
 function script:Invoke-MenuLoop($entry) {
     $active = $null
     while ($true) {
-        if (-not $entry) { return }
+        # No project is a state to offer something from, not a reason to print
+        # instructions and leave. Landing here used to be a dead end: the one
+        # thing to do next was described rather than offered.
+        if (-not $entry) {
+            New-Page
+            Write-Host ""
+            Write-Host "  Pragma" -ForegroundColor Cyan
+            Write-Host ""
+            Write-Host "  No projects yet." -ForegroundColor DarkGray
+            Write-Host ""
+            $first = @(
+                [pscustomobject]@{ key = 'n'; label = "new project"; action = 'new' }
+                [pscustomobject]@{ key = 'q'; label = "quit";        action = 'quit' }
+            )
+            $c = Show-Menu $first "enter select . esc quit"
+            Write-Host ""
+            if (-not $c -or $c.action -eq 'quit') { return }
+            $entry = Invoke-NewProject
+            continue
+        }
         if (-not $active -or $active.name -ne $entry.name) {
             if (-not (Enable-Project $entry)) { return }
             $active = Get-EntryByName $entry.name
@@ -802,6 +913,7 @@ function script:Invoke-MenuLoop($entry) {
             [pscustomobject]@{ key = 's'; label = "settings        what this project overrides";  action = 'settings' }
             [pscustomobject]@{ key = 'p'; label = "switch project";                               action = 'switch' }
             [pscustomobject]@{ key = 'n'; label = "new project";                                  action = 'new' }
+            [pscustomobject]@{ key = 'd'; label = "delete project";                               action = 'delete' }
             [pscustomobject]@{ key = 'q'; label = "quit";                                         action = 'quit' }
         )
         $choice = Show-Menu $items "enter select . up/down move . esc quit"
@@ -835,14 +947,13 @@ function script:Invoke-MenuLoop($entry) {
             'memory'   { Invoke-MemoryMenu }
             'settings' { $entry = Invoke-SettingsMenu $entry }
             'new' {
-                New-Page
-                $n = Read-Host "  name for this project"
-                if ($n) {
-                    $w = Read-Host "  workspace folder (blank = $((Get-Location).Path))"
-                    if (-not $w) { $w = (Get-Location).Path }
-                    $fresh = New-Project $n $w
-                    if ($fresh) { $entry = $fresh; $active = $null }
-                    else { Wait-Key }
+                $fresh = Invoke-NewProject
+                if ($fresh) { $entry = $fresh; $active = $null }
+            }
+            'delete' {
+                $after = Invoke-DeleteProject $entry
+                if (-not $after -or ($entry -and $after.name -ne $entry.name)) {
+                    $entry = $after; $active = $null
                 }
             }
             'switch' {
