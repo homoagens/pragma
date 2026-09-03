@@ -69,7 +69,7 @@ cd pragma
 Three twin scripts, in order — `install` → `configure` → `start`:
 
 ```bat
-install.bat          :: Windows — create venv + install deps
+install.bat          :: Windows — venv + deps, and `pragma` in every window
 configure.bat        :: interactive: writes .env (backend URL, model, key)
 start.bat            :: launch Pragma (opens the UI)
 ```
@@ -80,6 +80,14 @@ chmod +x install.sh configure.sh start.sh
 ./configure.sh       # interactive: writes .env (backend URL, model, key)
 ./start.sh           # launch Pragma (opens the UI)
 ```
+
+On Windows `install` also adds one line to your PowerShell profile, so `pragma`
+exists in every terminal with no paths to type. It is written between markers
+and rewritten in place on a re-run, so installing twice — or after moving the
+repository — updates the path rather than leaving a stale import behind, and a
+line you had added by hand is adopted rather than duplicated. `.\install.ps1
+-NoProfile` skips it; `.\install.ps1 -Uninstall` removes it and touches nothing
+else.
 
 `configure` asks for your **OpenAI-compatible backend URL** (must end in `/v1`), the
 model name, and an optional API key, then checks the endpoint answers. Re-run it any time
