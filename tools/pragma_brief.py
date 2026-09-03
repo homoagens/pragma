@@ -135,7 +135,14 @@ def brief(store: Path, since: str = "") -> dict:
         ok, detail = llm_client.ping_models(timeout=4)
         out["serving"] = (getattr(config, "SERVED_MODEL", "")
                           or config.DEFAULT_MODEL) if ok else ""
-        out["backend"] = "up" if ok else f"down - {str(detail)[:70]}"
+        # Trimmed to the first clause: the caller shows this under the
+        # serving line, and a urllib traceback fragment is noise there.
+        # The useful half is before the em dash; what follows it is the
+        # urllib traceback, which is noise on a one-line notice.
+        _why = ""
+        if not ok:
+            _why = str(detail).split("—")[0].split(" - ")[0].strip()[:76]
+        out["backend"] = "up" if ok else f"down - {_why}"
     except Exception as e:
         out["serving"] = ""
         out["backend"] = f"unknown - {type(e).__name__}"

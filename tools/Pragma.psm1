@@ -159,12 +159,24 @@ function script:Show-Brief($entry, $brief) {
         }
         if ($brief.last_goal) { $lines += "last time you were on: " + $brief.last_goal }
         # Same colours as the settings panel: whether there is anything to talk
-        # to is the one thing worth finding without reading.
+        # to is the one thing worth finding without reading. Keyed on the
+        # backend state rather than on the model name, because a server that
+        # answers without reporting a model is up - and colouring that red said
+        # the opposite of what had just been measured.
+        $isUp = ($brief.backend -eq "up")
         Write-Host "  serving   " -ForegroundColor DarkGray -NoNewline
-        if ($brief.serving) {
-            Write-Host $brief.serving -ForegroundColor Green
+        if ($isUp) {
+            $what = if ($brief.serving) { $brief.serving } else { "up (model not reported)" }
+            Write-Host $what -ForegroundColor Green
         } else {
-            Write-Host ("backend " + $brief.backend) -ForegroundColor Red
+            # Two lines, as in the settings panel: the state belongs on the
+            # serving line, the reason underneath. Inline it was truncated
+            # mid-word and pushed the line past the width of the page.
+            Write-Host "backend down" -ForegroundColor Red
+            $why = "$($brief.backend)" -replace '^down - ', ''
+            if ($why -and $why -ne "up") {
+                Write-Host ("            " + $why) -ForegroundColor DarkGray
+            }
         }
         if ($lines.Count) {
             Write-Host ""
