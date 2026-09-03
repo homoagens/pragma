@@ -460,7 +460,22 @@ function global:pragma {
         return
     }
 
-    if (-not $A) { Show-PragmaInfo; return }
+    if (-not $A) {
+        # Bare `pragma` reopens the menu. Once a project is open this function
+        # replaces the launcher's own `pragma`, so without this the menu became
+        # unreachable by the name that opened it: quit, type pragma, and get a
+        # banner instead of the thing you just left. The menu is the program,
+        # so the name that starts it has to keep starting it.
+        #
+        # Only when the module is loaded. A session file dot-sourced on its own
+        # has no menu to return to, and there the banner is the right answer.
+        if (Get-Command Start-Pragma -ErrorAction SilentlyContinue) {
+            Start-Pragma
+            return
+        }
+        Show-PragmaInfo
+        return
+    }
     Invoke-Session "$A" (-not $NoMem)
 }
 
