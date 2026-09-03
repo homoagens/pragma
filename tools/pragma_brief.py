@@ -125,6 +125,20 @@ def brief(store: Path, since: str = "") -> dict:
         if s < threshold * 1.5:
             fading.append(round(s, 3))
     out["fading"] = len(fading)
+
+    # The backend, asked here so the entry page can say whether it is up. It is
+    # the thing worth knowing BEFORE choosing "chat", and the launcher clears
+    # the screen, so the session banner that used to carry it is gone by the
+    # time the page is drawn.
+    try:
+        import llm_client
+        ok, detail = llm_client.ping_models(timeout=4)
+        out["serving"] = (getattr(config, "SERVED_MODEL", "")
+                          or config.DEFAULT_MODEL) if ok else ""
+        out["backend"] = "up" if ok else f"down - {str(detail)[:70]}"
+    except Exception as e:
+        out["serving"] = ""
+        out["backend"] = f"unknown - {type(e).__name__}"
     return out
 
 

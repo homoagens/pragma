@@ -119,6 +119,13 @@ function script:Get-Brief($entry) {
     } catch { return $null }
 }
 
+function script:New-Page {
+    # Each view replaces the last rather than scrolling under it. Guarded
+    # because a host without a console cannot clear one, and a briefing is
+    # never worth failing over.
+    try { Clear-Host } catch { }
+}
+
 function script:Show-Brief($entry, $brief) {
     Write-Host ""
     Write-Host "  Pragma" -ForegroundColor Cyan -NoNewline
@@ -150,6 +157,12 @@ function script:Show-Brief($entry, $brief) {
             $lines += "{0} episode(s) close to fading" -f $brief.fading
         }
         if ($brief.last_goal) { $lines += "last time you were on: " + $brief.last_goal }
+        Write-Host "  serving   " -ForegroundColor DarkGray -NoNewline
+        if ($brief.serving) {
+            Write-Host $brief.serving
+        } else {
+            Write-Host ("backend " + $brief.backend) -ForegroundColor DarkYellow
+        }
         if ($lines.Count) {
             Write-Host ""
             Write-Host "  Since you left" -ForegroundColor DarkGray
@@ -597,6 +610,7 @@ function script:Invoke-MenuLoop($entry) {
             $entry = $active
         }
 
+        New-Page
         $brief = Get-Brief $entry
         Show-Brief $entry $brief
 
@@ -613,6 +627,8 @@ function script:Invoke-MenuLoop($entry) {
         $choice = Show-Menu $items "enter select . up/down move . esc quit"
         Write-Host ""
         if (-not $choice -or $choice.action -eq 'quit') {
+            New-Page
+            Write-Host ""
             Write-Host "  the window stays on '$($entry.name)' - pragma -Info for the commands" -ForegroundColor DarkGray
             Write-Host ""
             return
@@ -624,19 +640,22 @@ function script:Invoke-MenuLoop($entry) {
                 # to the module's own function, which has no -Chat; the session
                 # script's is the one dot-sourced into the global scope, and only
                 # the qualifier reaches it.
+                New-Page
                 global:pragma -Chat
+                Wait-Key
             }
             'task' {
                 $task = Read-Host "  task"
-                if ($task) { global:pragma $task }
+                if ($task) { New-Page; global:pragma $task; Wait-Key }
             }
             'ask' {
                 $q = Read-Host "  ask memory"
-                if ($q) { global:pragma -Ask $q }
+                if ($q) { New-Page; global:pragma -Ask $q; Wait-Key }
             }
             'memory'   { Invoke-MemoryMenu }
-            'settings' { Show-Settings $entry; Wait-Key }
+            'settings' { New-Page; Show-Settings $entry; Wait-Key }
             'new' {
+                New-Page
                 $n = Read-Host "  name for this project"
                 if ($n) {
                     $w = Read-Host "  workspace folder (blank = $((Get-Location).Path))"
@@ -653,6 +672,8 @@ function script:Invoke-MenuLoop($entry) {
                                                  label = ("{0,-18} {1}" -f $e.name, $e.workspace)
                                                  entry = $e }
                 }
+                New-Page
+                Write-Host ""
                 Write-Host "  Which project" -ForegroundColor DarkGray
                 $p = Show-Menu $picks "enter select . esc cancel"
                 Write-Host ""
@@ -669,6 +690,10 @@ function script:Wait-Key {
 }
 
 function script:Invoke-MemoryMenu {
+    New-Page
+    Write-Host ""
+    Write-Host "  Memory" -ForegroundColor Cyan
+    Write-Host ""
     $items = @(
         [pscustomobject]@{ key = 'm'; label = "map         what is in memory now";        action = 'Map' }
         [pscustomobject]@{ key = 'b'; label = "beliefs     what it has concluded";        action = 'Beliefs' }
@@ -682,6 +707,7 @@ function script:Invoke-MemoryMenu {
     if (-not $c -or -not $c.action) { return }
     # Splatting needs a variable, not an inline hashtable: the session command
     # takes these as separate switches, not as a value.
+    New-Page
     $splat = @{ $c.action = $true }
     global:pragma @splat
     Wait-Key
