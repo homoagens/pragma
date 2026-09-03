@@ -36,6 +36,7 @@ $script:ProjectsRoot   = Join-Path $script:PragmaHome "projects"
 $script:RepoRoot       = Split-Path -Parent $PSScriptRoot
 $script:SessionScript  = Join-Path $PSScriptRoot "pragma-session.ps1"
 $script:BriefScript    = Join-Path $PSScriptRoot "pragma_brief.py"
+$script:EndpointScript = Join-Path $PSScriptRoot "pragma_endpoint.py"
 $script:Python         = Join-Path $script:RepoRoot "venv\Scripts\python.exe"
 
 
@@ -461,6 +462,78 @@ function script:Show-Settings($entry) {
     Write-Host ""
 }
 
+function script:Get-Endpoint {
+    if (-not (Test-Path $script:Python)) { return $null }
+    try {
+        $json = & $script:Python $script:EndpointScript 2>$null
+        if (-not $json) { return $null }
+        return ($json | ConvertFrom-Json)
+    } catch { return $null }
+}
+
+function script:Show-Endpoint($ep) {
+    # A sampling value means nothing on its own: what applies is whichever side
+    # supplies it. This is the page where that is chosen, so both sides are on
+    # it - the server's own defaults and what this project sends over them.
+    Write-Host "  endpoint" -ForegroundColor Cyan
+    if (-not $ep) {
+        Write-Host "    could not be read" -ForegroundColor DarkYellow
+        Write-Host ""
+        return
+    }
+    Write-Host ("    url       {0}" -f $ep.endpoint)
+    if ($ep.profile) {
+        Write-Host ("    profile   {0}" -f $ep.profile) -ForegroundColor DarkGray
+    }
+    if ($ep.up) {
+        Write-Host ("    serving   {0}" -f $ep.serving)
+        if ($ep.configured_model -and $ep.serving -and
+            ($ep.configured_model -ne $ep.serving)) {
+            # The label can lie the moment a different model is loaded on the
+            # same port; the endpoint cannot.
+            Write-Host ("    configured {0}  - the endpoint is serving something else" -f $ep.configured_model) -ForegroundColor DarkYellow
+        }
+        if ($ep.PSObject.Properties.Name -contains 'build' -and $ep.build) {
+            Write-Host ("    build     {0}" -f $ep.build) -ForegroundColor DarkGray
+        }
+        if ($ep.PSObject.Properties.Name -contains 'n_ctx' -and $ep.n_ctx) {
+            Write-Host ("    context   {0} tokens" -f $ep.n_ctx) -ForegroundColor DarkGray
+        }
+    } else {
+        Write-Host ("    down      {0}" -f $ep.detail) -ForegroundColor DarkYellow
+    }
+    Write-Host ""
+
+    $keys = @('temperature', 'top_k', 'top_p', 'min_p')
+    Write-Host ("    {0,-14}{1,-14}{2,-14}{3}" -f "", "the server", "this project", "applies") -ForegroundColor DarkGray
+    foreach ($k in $keys) {
+        $srv = $null; $snd = $null
+        if ($ep.server -and ($ep.server.PSObject.Properties.Name -contains $k)) {
+            $srv = $ep.server.$k
+        }
+        if ($ep.sending -and ($ep.sending.PSObject.Properties.Name -contains $k)) {
+            $snd = $ep.sending.$k
+        }
+        # Rounded: llama.cpp reports 0.949999988079071 for a top_p of 0.95, and
+        # the full float overflows the column and reads as a different number.
+        $srvT = if ($null -ne $srv) { "{0:g}" -f [math]::Round([double]$srv, 4) } elseif ($ep.server_readable) { "-" } else { "?" }
+        $sndT = if ($null -ne $snd) { "{0:g}" -f [math]::Round([double]$snd, 4) } else { "not sent" }
+        $eff  = if ($null -ne $snd) { $sndT } else { $srvT }
+        Write-Host ("    {0,-14}{1,-14}{2,-14}{3}" -f $k, $srvT, $sndT, $eff)
+    }
+    # Greedy is a property of the pair, not of one number, and it silently
+    # voids the other three.
+    $tsent = $null
+    if ($ep.sending -and ($ep.sending.PSObject.Properties.Name -contains 'temperature')) {
+        $tsent = [double]$ep.sending.temperature
+    }
+    if ($null -ne $tsent -and $tsent -eq 0) {
+        Write-Host "    at temperature 0 decoding is greedy - the other three do nothing" -ForegroundColor DarkGray
+    }
+    Write-Host ""
+}
+
+
 function script:Set-Sampling($entry, [string]$mode) {
     # Four parameters, but only three states worth being in, and the fourth
     # number is not independent of the others: at temperature 0 the decoding is
@@ -506,6 +579,7 @@ function script:Set-Sampling($entry, [string]$mode) {
 function script:Invoke-SettingsMenu($entry) {
     New-Page
     Show-Settings $entry
+    Show-Endpoint (Get-Endpoint)
     $items = @(
         [pscustomobject]@{ key = 's'; label = "sampling: the server's      all four omitted, the endpoint decides"; action = 'server' }
         [pscustomobject]@{ key = 'm'; label = "sampling: by hand           enter the four yourself";                action = 'manual' }
