@@ -108,8 +108,14 @@ where you were" and the read-only weighting of the previously open store.
 ### Two rules that keep it simple
 
 **One folder, one project.** So `pragma` from inside a registered workspace never
-has to ask which memory it means. If two memories over one folder are ever
-wanted, register it twice under two names and accept being asked.
+has to ask which memory it means. Enforced in both directions: a subdirectory
+of a registered workspace cannot become a second project, and neither can a
+folder containing one — otherwise a deep path would resolve to whichever
+project sits nearest, which is the ambiguity the rule exists to remove.
+
+Two memories over one folder are therefore not possible. That is deliberate
+rather than an omission: the alternative is being asked which one, every time,
+from every directory — the question this whole design exists to stop asking.
 
 **The memory always lives under `~/.pragma/projects/<name>/`.** Never inside the
 workspace. A workspace is a folder you already own and often a git repository;
