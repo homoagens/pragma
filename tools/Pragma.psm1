@@ -9,11 +9,17 @@
 #
 #     Import-Module <repo>\tools\Pragma.psd1
 #
-# WHAT THIS IS AND IS NOT. It chooses a project, sets this window's environment
-# for it, and gets out of the way: you are left at your own prompt, where
-# `pragma -Chat`, git and python coexist. It is deliberately not a shell of its
-# own - that would be tidier and would make the tool useless to a developer and
-# unusable in batch.
+# WHAT THIS IS. `pragma` opens a menu and stays there: an action runs and
+# returns to it, and quitting the menu leaves the program, the way a terminal
+# harness behaves. The window keeps the project's environment afterwards, so
+# `pragma -Chat` and the rest still work at the prompt.
+#
+# This reverses the first design, which set the window up and got out of the
+# way. The argument for that shape was that a loop would be unusable to a
+# developer and impossible in batch; only the second half held. Batch never
+# reaches the menu - a project named by -Project or PRAGMA_PROJECT skips it,
+# and a redirected stdin refuses it - so the loop costs the batch path
+# nothing.
 #
 # NOTE: keep this file pure ASCII. PowerShell 5.1 reads BOM-less files as ANSI,
 # and one fancy dash or quote silently corrupts the script.
@@ -567,52 +573,120 @@ function Start-Pragma {
         return
     }
 
-    $brief = if ($current) { Get-Brief $current } else { $null }
-    if ($current) { Show-Brief $current $brief }
+    Invoke-MenuLoop $current
+}
 
-    $items = @()
-    if ($current) {
-        $items += [pscustomobject]@{ key = ''; label = "continue here"; action = 'continue' }
-        $items += [pscustomobject]@{ key = 'c'; label = "continue, straight into chat"; action = 'chat' }
-    }
-    $items += [pscustomobject]@{ key = 'n'; label = "new project"; action = 'new' }
-    if ($entries.Count -gt 0) {
-        $items += [pscustomobject]@{ key = 'p'; label = "switch project"; action = 'switch' }
-    }
 
-    $choice = Show-Menu $items "enter select . up/down move . esc quit"
-    Write-Host ""
-    if (-not $choice) { return }
+# --- the loop -----------------------------------------------------------------
+# The menu is the program: an action runs, and when it finishes you are back
+# here rather than at the shell. Quitting leaves. This is the opposite of what
+# the first version did, and the reason is use rather than principle - the
+# batch path never sees the menu anyway, so the loop costs nothing there.
+#
+# One thing the loop gives away for free: the briefing is recomputed on every
+# pass, so after a chat you SEE what it consolidated - the episode count moves
+# under you.
 
-    switch ($choice.action) {
-        'continue' { Enable-Project $current | Out-Null }
-        'chat' {
-            # global: is not decoration. Inside this module `pragma` resolves to
-            # the module's own alias for Start-Pragma, which has no -Chat; the
-            # session script's function is the one just dot-sourced into the
-            # global scope, and only the qualifier reaches it.
-            if (Enable-Project $current) { global:pragma -Chat }
+function script:Invoke-MenuLoop($entry) {
+    $active = $null
+    while ($true) {
+        if (-not $entry) { return }
+        if (-not $active -or $active.name -ne $entry.name) {
+            if (-not (Enable-Project $entry)) { return }
+            $active = Get-EntryByName $entry.name
+            $entry = $active
         }
-        'new' {
-            $n = Read-Host "  name for this project"
-            if (-not $n) { return }
-            $w = Read-Host "  workspace folder (blank = $((Get-Location).Path))"
-            if (-not $w) { $w = (Get-Location).Path }
-            $entry = New-Project $n $w
-            if ($entry) { Enable-Project $entry | Out-Null }
-        }
-        'switch' {
-            $picks = @()
-            foreach ($e in $entries) {
-                $picks += [pscustomobject]@{ key = ''; label = ("{0,-18} {1}" -f $e.name, $e.workspace); entry = $e }
-            }
-            Write-Host "  Which project" -ForegroundColor DarkGray
-            $p = Show-Menu $picks "enter select . esc cancel"
+
+        $brief = Get-Brief $entry
+        Show-Brief $entry $brief
+
+        $items = @(
+            [pscustomobject]@{ key = 'c'; label = "chat            many turns, one conversation"; action = 'chat' }
+            [pscustomobject]@{ key = 't'; label = "task            one task, then back here";     action = 'task' }
+            [pscustomobject]@{ key = 'a'; label = "ask             a question, no file changes";  action = 'ask' }
+            [pscustomobject]@{ key = 'm'; label = "memory          map, beliefs, oblivion, last"; action = 'memory' }
+            [pscustomobject]@{ key = 's'; label = "settings        what this project overrides";  action = 'settings' }
+            [pscustomobject]@{ key = 'p'; label = "switch project";                               action = 'switch' }
+            [pscustomobject]@{ key = 'n'; label = "new project";                                  action = 'new' }
+            [pscustomobject]@{ key = 'q'; label = "quit";                                         action = 'quit' }
+        )
+        $choice = Show-Menu $items "enter select . up/down move . esc quit"
+        Write-Host ""
+        if (-not $choice -or $choice.action -eq 'quit') {
+            Write-Host "  the window stays on '$($entry.name)' - pragma -Info for the commands" -ForegroundColor DarkGray
             Write-Host ""
-            if ($p) { Enable-Project $p.entry | Out-Null }
+            return
+        }
+
+        switch ($choice.action) {
+            'chat' {
+                # global: is not decoration. Inside this module `pragma` resolves
+                # to the module's own function, which has no -Chat; the session
+                # script's is the one dot-sourced into the global scope, and only
+                # the qualifier reaches it.
+                global:pragma -Chat
+            }
+            'task' {
+                $task = Read-Host "  task"
+                if ($task) { global:pragma $task }
+            }
+            'ask' {
+                $q = Read-Host "  ask memory"
+                if ($q) { global:pragma -Ask $q }
+            }
+            'memory'   { Invoke-MemoryMenu }
+            'settings' { Show-Settings $entry; Wait-Key }
+            'new' {
+                $n = Read-Host "  name for this project"
+                if ($n) {
+                    $w = Read-Host "  workspace folder (blank = $((Get-Location).Path))"
+                    if (-not $w) { $w = (Get-Location).Path }
+                    $fresh = New-Project $n $w
+                    if ($fresh) { $entry = $fresh; $active = $null }
+                    else { Wait-Key }
+                }
+            }
+            'switch' {
+                $picks = @()
+                foreach ($e in @(Read-Registry)) {
+                    $picks += [pscustomobject]@{ key = ''
+                                                 label = ("{0,-18} {1}" -f $e.name, $e.workspace)
+                                                 entry = $e }
+                }
+                Write-Host "  Which project" -ForegroundColor DarkGray
+                $p = Show-Menu $picks "enter select . esc cancel"
+                Write-Host ""
+                if ($p) { $entry = $p.entry }
+            }
         }
     }
 }
+
+function script:Wait-Key {
+    Write-Host "  any key to go back" -ForegroundColor DarkGray
+    [Console]::ReadKey($true) | Out-Null
+    Write-Host ""
+}
+
+function script:Invoke-MemoryMenu {
+    $items = @(
+        [pscustomobject]@{ key = 'm'; label = "map         what is in memory now";        action = 'Map' }
+        [pscustomobject]@{ key = 'b'; label = "beliefs     what it has concluded";        action = 'Beliefs' }
+        [pscustomobject]@{ key = 'd'; label = "diff        meanings it has revised";      action = 'Diff' }
+        [pscustomobject]@{ key = 'o'; label = "oblivion    what has faded";               action = 'Oblio' }
+        [pscustomobject]@{ key = 'l'; label = "last        the newest episode, in full";  action = 'Last' }
+        [pscustomobject]@{ key = 'q'; label = "back";                                     action = '' }
+    )
+    $c = Show-Menu $items "enter select . esc back"
+    Write-Host ""
+    if (-not $c -or -not $c.action) { return }
+    # Splatting needs a variable, not an inline hashtable: the session command
+    # takes these as separate switches, not as a value.
+    $splat = @{ $c.action = $true }
+    global:pragma @splat
+    Wait-Key
+}
+
 
 # `pragma` is a FUNCTION and deliberately not an alias. PowerShell resolves an
 # alias BEFORE a function of the same name, so an alias here would keep

@@ -1,6 +1,8 @@
 # One command, many projects
 
-*Design settled 2026-09-02. Nothing below is implemented yet.*
+*Design settled 2026-09-02, revised and built 2026-09-03. The launcher, the
+registry and the menu exist; the migration and everything under "Later" do
+not.*
 
 Today a session is a folder holding `pragma.ps1`, `workspace/` and `.memoria/`,
 entered by dot-sourcing an absolute path into a PowerShell window. The path is
@@ -13,10 +15,18 @@ This replaces that with one command, a registry, and a briefing.
 ## The shape
 
 `pragma` with no argument prints where you are, what changed while you were
-away, and a short menu. Picking a project sets the environment for **the current
-PowerShell window** and returns you to your own prompt. It is not a shell of its
-own: `pragma -Chat`, `git`, `python` and everything else coexist, which is what
-makes the tool usable by a developer and scriptable in batch.
+away, and a menu it then stays in: an action runs and returns to the menu, and
+quitting the menu leaves the program - the way a terminal harness behaves. The
+window keeps the project's environment afterwards, so `pragma -Chat` and the
+rest still work at the prompt.
+
+*Revised 2026-09-03.* This shape replaces the first one, which set the window up
+and got out of the way. The argument for that was that a loop would be unusable
+to a developer and impossible in batch. Only the second half held, and it turned
+out not to apply: batch never reaches the menu, because a project named by
+`-Project` or `PRAGMA_PROJECT` skips it and a redirected stdin refuses it. What
+the loop actually costs is mixing `git` and `pragma` on one command line, which
+is a smaller price than it sounded.
 
 ```
 $ pragma
@@ -32,13 +42,16 @@ $ pragma
     1 belief revised - "the user prefers fixed-price contracts"
     last time you were on: sorting out the git fork
 
-  [enter]  continue here
-     c     continue, straight into chat
-     n     new project
-     p     switch project
-     m     what it remembers   (map · beliefs · oblivion · diff)
+  > chat            many turns, one conversation
+    task            one task, then back here
+    ask             a question, no file changes
+    memory          map, beliefs, oblivion, last
+    settings        what this project overrides
+    switch project
+    new project
+    quit
 
-  or just type the task
+  enter select . up/down move . esc quit
 ```
 
 **The briefing is the point; the menu is packaging.** Entering a session is
@@ -47,24 +60,26 @@ store knows exactly when it was last touched, what fell dormant since, and which
 beliefs were revised. The moment of return is the one moment when a sense of
 time is worth something, and it was the only moment not using it.
 
-**The menu costs nothing on the common path.** Enter does the frequent thing;
-typing a task skips the menu entirely. A menu is good for discovery and bad for
-repetition, and this is opened daily.
+**The loop recomputes the briefing every pass.** After a chat you see what it
+consolidated: the episode count moves under you, and anything that went dormant
+while you worked is named. That is not decoration - it is the one moment the
+store's sense of time is legible.
 
-**Four entries, not fourteen.** The diagnostics collapse under `m`. The rare
-commands (`-Reset`, `-Time`, `-Backup`) stay flags and never appear: whoever
-needs them already knows they want them.
+**Eight entries, not twenty.** chat, task, ask, memory, settings, switch, new,
+quit. The diagnostics collapse into `memory`. The rare commands (`-Reset`,
+`-Time`, `-Backup`) stay flags and never appear: whoever needs them already
+knows they want them.
 
-**"Continue" means the memory continues, not the conversation.** Chat holds its
-turns in process memory only; on exit they become episodes and the literal
-transcript is gone. Continuing opens a fresh conversation with the desk already
-laid and the briefing just read. Persisting raw transcripts would compete with
-the episodes — if the transcript is always there, the memory matters less — so
-it is deliberately not done.
+**Coming back continues the memory, not the conversation.** Chat holds its turns
+in process memory only; on exit they become episodes and the literal transcript
+is gone. Reopening a project lays the desk and shows the briefing, and the
+conversation starts fresh. Persisting raw transcripts would compete with the
+episodes — if the transcript is always there, the memory matters less — so it is
+deliberately not done.
 
-**Chat does not start by itself.** Landing inside chat would mean leaving it
-before you can run `git status` or look at a file. `c` is one keystroke for
-those who want it.
+**Chat does not start by itself.** Landing straight in chat would mean leaving
+something you did not ask to enter before you could look at anything else. It is
+the first entry and one keystroke away.
 
 ## The registry
 
