@@ -53,7 +53,12 @@ def main() -> None:
 
     cur   = read_current()
     base  = ask("Backend URL (ends in /v1)", cur.get("LLM_BASE_URL") or DEFAULT_URL)
-    model = ask("Model name (as the server reports it)", cur.get("DEFAULT_MODEL", ""))
+    # Empty is the good answer for a single-model server: the request field is
+    # then filled from whatever the endpoint reports, so it cannot go stale the
+    # day another model is loaded on the same port. Name one only when the
+    # endpoint hosts several and the field actually selects between them.
+    model = ask("Model name (empty = ask the endpoint each time)",
+                cur.get("DEFAULT_MODEL", ""))
     key   = ask("API key (leave empty for local servers)", cur.get("LLM_API_KEY", ""))
     new_vals = {"LLM_BASE_URL": base, "DEFAULT_MODEL": model, "LLM_API_KEY": key}
 

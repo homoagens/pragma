@@ -145,6 +145,36 @@ DEFAULT_BASE_URL = "http://127.0.0.1:8080/v1"
 
 # ── Endpoint resolution ────────────────────────────────────────────────────────
 
+def resolved_model(model=None) -> str:
+    """The model name to put in a request.
+
+    An explicit argument wins, then DEFAULT_MODEL, and an empty DEFAULT_MODEL
+    means "whatever the endpoint is serving" - resolved by asking it once and
+    reusing the answer. That is the right default for a single-model server:
+    llama.cpp ignores the field and serves what is loaded, so a name typed into
+    .env is a label that goes stale the moment another model is put on the same
+    port, and reading it back as though it were true is how a run gets filed
+    under the wrong model.
+
+    Set DEFAULT_MODEL explicitly when the endpoint hosts several and the field
+    actually selects one - vLLM with more than one loaded, or a hosted API.
+    """
+    if model:
+        return model
+    if config.DEFAULT_MODEL:
+        return config.DEFAULT_MODEL
+    served = getattr(config, "SERVED_MODEL", "")
+    if not served:
+        try:
+            ping_models(timeout=5)            # fills config.SERVED_MODEL
+        except Exception:
+            pass
+        served = getattr(config, "SERVED_MODEL", "")
+    # Empty is a legitimate answer: a server that cannot be reached gets the
+    # field omitted rather than a guess, and reports its own error.
+    return served or ""
+
+
 def _resolved_endpoint(base_url, api_key):
     """Resolve (base_url, api_key) applying fallback from config.
 
@@ -575,7 +605,7 @@ def call_llm_tools(messages, tools, model=None, temperature=None,
     """
     import json as _json
 
-    model       = model or config.DEFAULT_MODEL
+    model       = resolved_model(model)
     temperature = config.DEFAULT_TEMPERATURE if temperature is None else temperature
     max_tokens  = max_tokens or config.MAX_TOKENS
     timeout     = timeout or config.TIMEOUT
@@ -681,7 +711,7 @@ def call_llm(messages, model=None, temperature=None, max_tokens=None, timeout=No
 
     Hits POST {base_url}/chat/completions. Automatic retry on 502.
     """
-    if model       is None: model       = config.DEFAULT_MODEL
+    model = resolved_model(model)
     if temperature is None: temperature = config.DEFAULT_TEMPERATURE
     if max_tokens  is None: max_tokens  = config.MAX_TOKENS
     if timeout     is None: timeout     = config.TIMEOUT
@@ -740,7 +770,7 @@ def stream_llm(messages, model=None, temperature=None, max_tokens=None, timeout=
     Like call_llm but calls on_token(chunk: str) for each text fragment as it
     arrives over SSE. Returns the complete response text when done.
     """
-    if model       is None: model       = config.DEFAULT_MODEL
+    model = resolved_model(model)
     if temperature is None: temperature = config.DEFAULT_TEMPERATURE
     if max_tokens  is None: max_tokens  = config.MAX_TOKENS
     if timeout     is None: timeout     = config.TIMEOUT
