@@ -398,7 +398,10 @@ function script:New-Project([string]$name, [string]$workspace) {
         workspace   = $ws
         memory      = $memory
         last_opened = $null
-        settings    = [pscustomobject]@{}
+        # The endpoint decides unless told otherwise. The alternative default,
+        # an empty set, is not neutral: it means the repository's 0.0, which is
+        # greedy - a deliberate-looking choice nobody made.
+        settings    = [pscustomobject]@{ Temperature = "server" }
     }
     Write-Registry ($entries + $entry)
     Write-Host "pragma: registered '$name'" -ForegroundColor Green
@@ -414,7 +417,10 @@ function script:Get-SettableKeys {
     # Read from pragma-session.ps1 rather than copied into a list here. A
     # second copy of the same set would drift the first time a key was added
     # there, and -Set would reject something that works.
-    $structural = @('Name', 'Root', 'Repo', 'Workspace', 'Memory')
+    # Backups belongs here too: it is written by the launcher, and letting it
+    # be set by hand would allow pointing snapshots of the whole memory back
+    # into a workspace - the leak the launcher exists to prevent.
+    $structural = @('Name', 'Root', 'Repo', 'Workspace', 'Memory', 'Backups')
     $keys = @()
     try {
         $text = Get-Content -Raw $script:SessionScript
@@ -453,6 +459,66 @@ function script:Show-Settings($entry) {
     Write-Host "  settable: $((Get-SettableKeys) -join ', ')" -ForegroundColor DarkGray
     Write-Host "  pragma -Set <key> <value>   ('' clears it)" -ForegroundColor DarkGray
     Write-Host ""
+}
+
+function script:Set-Sampling($entry, [string]$mode) {
+    # Four parameters, but only three states worth being in, and the fourth
+    # number is not independent of the others: at temperature 0 the decoding is
+    # greedy and top_k, top_p and min_p do nothing whatever they say. Offering
+    # them as a set stops a project sitting in a combination that reads as
+    # deliberate and is inert.
+    switch ($mode) {
+        'server' {
+            # Omitted, all four: an absent field is what hands the choice over.
+            Set-ProjectSetting $entry 'Temperature' 'server' | Out-Null
+            foreach ($k in 'TopK', 'TopP', 'MinP') {
+                Set-ProjectSetting $entry $k '' | Out-Null
+            }
+            Write-Host "  sampling: the endpoint decides all four" -ForegroundColor Green
+        }
+        'greedy' {
+            Set-ProjectSetting $entry 'Temperature' '0.0' | Out-Null
+            foreach ($k in 'TopK', 'TopP', 'MinP') {
+                Set-ProjectSetting $entry $k '' | Out-Null
+            }
+            Write-Host "  sampling: greedy - the most likely token, every time" -ForegroundColor Green
+        }
+        'manual' {
+            Write-Host ""
+            Write-Host "  Blank leaves that one to the server." -ForegroundColor DarkGray
+            foreach ($k in 'Temperature', 'TopK', 'TopP', 'MinP') {
+                $cur = ""
+                if ($entry.settings -and
+                    ($entry.settings.PSObject.Properties.Name -contains $k)) {
+                    $cur = $entry.settings.$k
+                }
+                $shown = if ($cur -ne "") { " [$cur]" } else { " [server]" }
+                $v = Read-Host ("  " + $k.PadRight(12) + $shown)
+                # Enter keeps what is there; "-" is how you clear one, since an
+                # empty answer cannot mean both "keep" and "clear".
+                if ($v -eq '-') { Set-ProjectSetting $entry $k '' | Out-Null }
+                elseif ($v -ne '') { Set-ProjectSetting $entry $k $v | Out-Null }
+            }
+        }
+    }
+}
+
+function script:Invoke-SettingsMenu($entry) {
+    New-Page
+    Show-Settings $entry
+    $items = @(
+        [pscustomobject]@{ key = 's'; label = "sampling: the server's      all four omitted, the endpoint decides"; action = 'server' }
+        [pscustomobject]@{ key = 'm'; label = "sampling: by hand           enter the four yourself";                action = 'manual' }
+        [pscustomobject]@{ key = 'g'; label = "sampling: greedy            temperature 0, deterministic";           action = 'greedy' }
+        [pscustomobject]@{ key = 'q'; label = "back";                                                               action = '' }
+    )
+    $c = Show-Menu $items "enter select . esc back"
+    Write-Host ""
+    if (-not $c -or -not $c.action) { return $entry }
+    Set-Sampling $entry $c.action
+    $fresh = Get-EntryByName $entry.name
+    if ($fresh) { Enable-Project $fresh | Out-Null; return $fresh }
+    return $entry
 }
 
 function script:Set-ProjectSetting($entry, [string]$key, [string]$value) {
@@ -654,7 +720,7 @@ function script:Invoke-MenuLoop($entry) {
                 if ($q) { New-Page; global:pragma -Ask $q; Wait-Key }
             }
             'memory'   { Invoke-MemoryMenu }
-            'settings' { New-Page; Show-Settings $entry; Wait-Key }
+            'settings' { $entry = Invoke-SettingsMenu $entry }
             'new' {
                 New-Page
                 $n = Read-Host "  name for this project"
