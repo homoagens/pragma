@@ -7,6 +7,7 @@
 #     .\install.ps1              environment + profile line
 #     .\install.ps1 -NoProfile   environment only, leave the profile alone
 #     .\install.ps1 -Uninstall   remove the profile line (keeps venv and data)
+#     .\install.ps1 -Python <exe>  build the venv with that interpreter
 #
 # The profile edit is written between markers and replaced in place on a
 # re-run, so installing twice, or after moving the repository, updates the path
@@ -18,7 +19,8 @@
 [CmdletBinding()]
 param(
     [switch]$NoProfile,
-    [switch]$Uninstall
+    [switch]$Uninstall,
+    [string]$Python
 )
 
 $ErrorActionPreference = 'Stop'
@@ -143,10 +145,31 @@ $ErrorActionPreference = 'Continue'
 try {
     $py = Join-Path $Root "venv\Scripts\python.exe"
     if (-not (Test-Path $py)) {
-        Write-Step "creating the virtual environment..."
-        & python -m venv (Join-Path $Root "venv")
+        # Not simply `python`. On a shared machine the first python on PATH can
+        # belong to another account entirely - the machine PATH is searched
+        # before the user's, so no amount of fixing your own PATH puts yours in
+        # front - and building the venv from it inherits that installation's pip
+        # configuration too, which is how an install ends up reaching for a
+        # private package index that does not resolve.
+        #
+        # The py launcher answers with the Python registered for THIS user, so
+        # it is preferred where it exists. -Python overrides both.
+        $exe, $pre = if ($Python) {
+            if (-not (Test-Path $Python)) { throw "no such interpreter: $Python" }
+            $Python, @()
+        } elseif (Get-Command py -ErrorAction SilentlyContinue) {
+            "py", @("-3")
+        } else {
+            "python", @()
+        }
+        # Say which one, always. This whole class of confusion is invisible
+        # until someone prints the path.
+        $which = & $exe @pre -c "import sys; print(sys.executable)"
+        Write-Step "creating the virtual environment with:"
+        Write-Host "    $which" -ForegroundColor DarkGray
+        & $exe @pre -m venv (Join-Path $Root "venv")
         if ($LASTEXITCODE -ne 0) {
-            throw "python -m venv failed. Is Python 3.11+ on PATH?"
+            throw "creating the virtual environment failed. Pass -Python <path to python.exe>."
         }
     }
     Write-Step "installing dependencies..."
