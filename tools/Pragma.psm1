@@ -805,6 +805,243 @@ function Start-Pragma {
 # pass, so after a chat you SEE what it consolidated - the episode count moves
 # under you.
 
+# --- backups ------------------------------------------------------------------
+# pragma -Backup only ever snapshotted the store, which is how a day ended with
+# the memory safe and the workspace overwritten. The two halves are separate by
+# design - the store is Pragma's, the workspace is yours - and that is exactly
+# why a backup has to be able to take either, or both.
+#
+# Every archive carries a manifest naming what is inside and where each part
+# came from, so a restore does not have to guess. Archives written before this
+# existed have none, and are read by inspecting their contents instead.
+
+function script:Get-BackupRoot($entry) {
+    Join-Path (Join-Path $script:PragmaHome "backups") $entry.name
+}
+
+function script:New-Snapshot($entry, [string]$what, [string]$tag = "") {
+    $root = Get-BackupRoot $entry
+    New-Item -ItemType Directory -Force -Path $root | Out-Null
+    $stamp = Get-Date -Format "yyyy-MM-dd_HHmmss"
+    $name = if ($tag) { "$tag-$what" + "_$stamp" } else { $what + "_$stamp" }
+    $zip = Join-Path $root ($name + ".zip")
+
+    $stage = Join-Path ([IO.Path]::GetTempPath()) ("pragma-snap-" + [guid]::NewGuid().ToString("N"))
+    New-Item -ItemType Directory -Force -Path $stage | Out-Null
+    try {
+        $eps = 0
+        if ($what -ne "workspace" -and (Test-Path $entry.memory)) {
+            Copy-Item -Recurse -Force -Path $entry.memory -Destination (Join-Path $stage "memory")
+            try {
+                $eps = @(Get-ChildItem -Recurse -Path (Join-Path $stage "memory") -Filter "ep_*.json" -ErrorAction SilentlyContinue).Count
+            } catch { }
+        }
+        if ($what -ne "memory" -and (Test-Path $entry.workspace)) {
+            Copy-Item -Recurse -Force -Path $entry.workspace -Destination (Join-Path $stage "workspace")
+        }
+        $manifest = [pscustomobject]@{
+            pragma_backup = 1
+            project       = $entry.name
+            kind          = $what
+            created       = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ")
+            memory_from   = $entry.memory
+            workspace_from = $entry.workspace
+            episodes      = $eps
+        }
+        ($manifest | ConvertTo-Json) |
+            Set-Content -Encoding UTF8 (Join-Path $stage "pragma-backup.json")
+        Compress-Archive -Path (Join-Path $stage "*") -DestinationPath $zip -Force
+    } finally {
+        Remove-Item -Recurse -Force -Path $stage -ErrorAction SilentlyContinue
+    }
+    return (Get-Item $zip)
+}
+
+function script:Read-SnapshotInfo([string]$zipPath) {
+    # The manifest when there is one, otherwise inferred from the entry names -
+    # the archives this replaced still have to be restorable.
+    $info = [ordered]@{ kind = "?"; created = ""; episodes = $null; legacy = $true }
+    try {
+        Add-Type -AssemblyName System.IO.Compression.FileSystem -ErrorAction SilentlyContinue
+        $z = [IO.Compression.ZipFile]::OpenRead($zipPath)
+        try {
+            $m = $z.Entries | Where-Object { $_.FullName -eq "pragma-backup.json" }
+            if ($m) {
+                $r = New-Object IO.StreamReader($m.Open())
+                $j = $r.ReadToEnd() | ConvertFrom-Json
+                $r.Dispose()
+                $info.kind = "$($j.kind)"
+                $info.created = "$($j.created)"
+                $info.episodes = $j.episodes
+                $info.legacy = $false
+            } else {
+                # Separators are normalised first: Compress-Archive on
+                # PowerShell 5.1 writes backslashes into the entry names, so
+                # matching on "/" alone read a store full of episodes as a
+                # workspace - and this is the shape every archive written
+                # before the manifest existed has.
+                # [char]92 rather than a literal backslash, and .Replace
+                # rather than -replace: a lone backslash is an invalid
+                # regex, and writing one into this file is a trap that
+                # has already been walked into once.
+                $names = $z.Entries | ForEach-Object {
+                    $_.FullName.Replace([char]92, [char]47) }
+                $hasMem = @($names | Where-Object { $_ -match '^(memory/)?episodes/' }).Count -gt 0
+                $hasWs  = @($names | Where-Object { $_ -match '^workspace/' }).Count -gt 0
+                if ($hasMem -and $hasWs) { $info.kind = "both" }
+                elseif ($hasMem) { $info.kind = "memory" }
+                elseif ($hasWs) { $info.kind = "workspace" }
+                else { $info.kind = "workspace" }
+                $info.episodes = @($names | Where-Object { $_ -match 'ep_.*\.json$' }).Count
+            }
+        } finally { $z.Dispose() }
+    } catch { }
+    return $info
+}
+
+function script:Invoke-Restore($entry) {
+    New-Page
+    Write-Host ""
+    Write-Host "  Restore a snapshot" -ForegroundColor Cyan
+    Write-Host ""
+    $root = Get-BackupRoot $entry
+    $files = @()
+    if (Test-Path $root) {
+        $files = @(Get-ChildItem -Path $root -Filter "*.zip" | Sort-Object LastWriteTime -Descending)
+    }
+    if ($files.Count -eq 0) {
+        Write-Host "  No snapshots for '$($entry.name)' yet." -ForegroundColor DarkGray
+        Write-Host "  $root" -ForegroundColor DarkGray
+        Write-Host ""
+        Wait-Key
+        return
+    }
+
+    $picks = @()
+    foreach ($f in $files) {
+        $i = Read-SnapshotInfo $f.FullName
+        $ep = if ($null -ne $i.episodes) { "$($i.episodes) ep" } else { "" }
+        $picks += [pscustomobject]@{
+            key = ''
+            label = ("{0,-11} {1:yyyy-MM-dd HH:mm}  {2,8:N0} KB  {3}" -f `
+                     $i.kind, $f.LastWriteTime, ($f.Length / 1KB), $ep)
+            file = $f; info = $i }
+    }
+    $picks += [pscustomobject]@{ key = 'q'; label = "back"; file = $null }
+    $p = Show-Menu $picks "enter select . esc back"
+    Write-Host ""
+    if (-not $p -or -not $p.file) { return }
+
+    New-Page
+    Write-Host ""
+    Write-Host "  Restore into '$($entry.name)'" -ForegroundColor Red
+    Write-Host ""
+    Write-Host "    from   $($p.file.Name)"
+    Write-Host "    holds  $($p.info.kind)"
+    Write-Host ""
+    if ($p.info.kind -ne "workspace") {
+        Write-Host "  The memory is REPLACED - what is there now goes:" -ForegroundColor DarkGray
+        Write-Host "    $($entry.memory)"
+    }
+    if ($p.info.kind -ne "memory") {
+        # Merge, not replace: a workspace holds files Pragma never made, and a
+        # restore has no business deleting what it cannot have created.
+        Write-Host "  The workspace is OVERWRITTEN FILE BY FILE - anything added" -ForegroundColor DarkGray
+        Write-Host "  since the snapshot stays where it is:" -ForegroundColor DarkGray
+        Write-Host "    $($entry.workspace)"
+    }
+    Write-Host ""
+    Write-Host "  A snapshot of the current state is taken first, so this is" -ForegroundColor DarkGray
+    Write-Host "  undoable." -ForegroundColor DarkGray
+    Write-Host ""
+    $typed = Read-Host "  Type the project name to confirm"
+    if ($typed -ne $entry.name) {
+        Write-Host ""
+        Write-Host "  nothing restored" -ForegroundColor Green
+        Wait-Key
+        return
+    }
+
+    Write-Host ""
+    try {
+        $safety = New-Snapshot $entry $p.info.kind "BEFORE-RESTORE"
+        Write-Host "  current state saved as $($safety.Name)" -ForegroundColor Green
+    } catch {
+        Write-Host "  could not take the safety snapshot: $($_.Exception.Message)" -ForegroundColor Red
+        Write-Host "  nothing restored." -ForegroundColor Red
+        Wait-Key
+        return
+    }
+
+    $stage = Join-Path ([IO.Path]::GetTempPath()) ("pragma-rest-" + [guid]::NewGuid().ToString("N"))
+    try {
+        Expand-Archive -Path $p.file.FullName -DestinationPath $stage -Force
+        # Legacy archives put the store at the root; the manifest-era ones put
+        # it under memory/.
+        $srcMem = Join-Path $stage "memory"
+        if (-not (Test-Path $srcMem)) {
+            if (Test-Path (Join-Path $stage "episodes")) { $srcMem = $stage } else { $srcMem = $null }
+        }
+        $srcWs = Join-Path $stage "workspace"
+        if (-not (Test-Path $srcWs)) { $srcWs = $null }
+
+        if ($srcMem -and $p.info.kind -ne "workspace") {
+            Remove-Item -Recurse -Force -Path $entry.memory -ErrorAction SilentlyContinue
+            New-Item -ItemType Directory -Force -Path $entry.memory | Out-Null
+            Copy-Item -Recurse -Force -Path (Join-Path $srcMem "*") -Destination $entry.memory
+            Write-Host "  memory restored" -ForegroundColor Green
+        }
+        if ($srcWs -and $p.info.kind -ne "memory") {
+            New-Item -ItemType Directory -Force -Path $entry.workspace | Out-Null
+            Copy-Item -Recurse -Force -Path (Join-Path $srcWs "*") -Destination $entry.workspace
+            Write-Host "  workspace restored" -ForegroundColor Green
+        }
+    } catch {
+        Write-Host "  restore failed: $($_.Exception.Message)" -ForegroundColor Red
+        Write-Host "  the safety snapshot above still holds the previous state." -ForegroundColor DarkGray
+    } finally {
+        Remove-Item -Recurse -Force -Path $stage -ErrorAction SilentlyContinue
+    }
+    Write-Host ""
+    Wait-Key
+}
+
+function script:Invoke-BackupMenu($entry) {
+    while ($true) {
+        New-Page
+        Write-Host ""
+        Write-Host "  Backups" -ForegroundColor Cyan
+        Write-Host ""
+        $root = Get-BackupRoot $entry
+        $n = 0
+        if (Test-Path $root) { $n = @(Get-ChildItem -Path $root -Filter "*.zip").Count }
+        Write-Host "    memory     $($entry.memory)" -ForegroundColor DarkGray
+        Write-Host "    workspace  $($entry.workspace)" -ForegroundColor DarkGray
+        Write-Host "    snapshots  $n in $root" -ForegroundColor DarkGray
+        Write-Host ""
+        $items = @(
+            [pscustomobject]@{ key = 'b'; label = "snapshot both        the memory and the workspace"; action = 'both' }
+            [pscustomobject]@{ key = 'm'; label = "snapshot memory      episodes and beliefs only";    action = 'memory' }
+            [pscustomobject]@{ key = 'w'; label = "snapshot workspace   your files only";             action = 'workspace' }
+            [pscustomobject]@{ key = 'r'; label = "restore a snapshot";                                action = 'restore' }
+            [pscustomobject]@{ key = 'q'; label = "back";                                              action = '' }
+        )
+        $c = Show-Menu $items "enter select . esc back"
+        Write-Host ""
+        if (-not $c -or -not $c.action) { return }
+        if ($c.action -eq 'restore') { Invoke-Restore $entry; continue }
+        try {
+            $z = New-Snapshot $entry $c.action
+            Write-Host ("  saved {0}  ({1:N1} KB)" -f $z.Name, ($z.Length / 1KB)) -ForegroundColor Green
+        } catch {
+            Write-Host "  could not write the snapshot: $($_.Exception.Message)" -ForegroundColor Red
+        }
+        Write-Host ""
+        Wait-Key
+    }
+}
+
+
 function script:Invoke-NewProject {
     # A project IS a folder, so the folder is asked first and the name follows
     # from it. The first version asked for a name with no folder in sight, which
@@ -952,6 +1189,7 @@ function script:Invoke-MenuLoop($entry) {
             [pscustomobject]@{ key = 'a'; label = "ask             a question, no file changes";  action = 'ask' }
             [pscustomobject]@{ key = 'm'; label = "memory          map, beliefs, oblivion, last"; action = 'memory' }
             [pscustomobject]@{ key = 's'; label = "settings        what this project overrides";  action = 'settings' }
+            [pscustomobject]@{ key = 'b'; label = "backups         snapshot or restore";              action = 'backups' }
             [pscustomobject]@{ key = 'p'; label = "switch project";                               action = 'switch' }
             [pscustomobject]@{ key = 'n'; label = "new project";                                  action = 'new' }
             [pscustomobject]@{ key = 'd'; label = "delete project";                               action = 'delete' }
@@ -987,6 +1225,7 @@ function script:Invoke-MenuLoop($entry) {
             }
             'memory'   { Invoke-MemoryMenu }
             'settings' { $entry = Invoke-SettingsMenu $entry }
+            'backups'  { Invoke-BackupMenu $entry }
             'new' {
                 $fresh = Invoke-NewProject
                 if ($fresh) { $entry = $fresh; $active = $null }
