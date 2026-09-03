@@ -87,11 +87,11 @@ the first entry and one keystroke away.
 
 ```json
 {
-  "name": "my-memory",
-  "workspace": "D:/pragma-my-memory/workspace",
-  "memory":    "C:/Users/<user>/.pragma/projects/my-memory",
+  "name": "notes",
+  "workspace": "D:/notes",
+  "memory":    "C:/Users/<user>/.pragma/projects/notes",
   "last_opened": "2026-09-02T23:47:00Z",
-  "settings": { "Profile": "ds4-flash", "MaxSteps": 500, "Protocol": "native",
+  "settings": { "Profile": "my-profile", "MaxSteps": 500, "Protocol": "native",
                 "MemoryNoThink": "select", "CuratorEpisodes": 20,
                 "CuratorRecent": 5, "Temperature": 0.6, "TopK": 20, "TopP": 0.95 }
 }
@@ -115,7 +115,7 @@ wanted, register it twice under two names and accept being asked.
 workspace. A workspace is a folder you already own and often a git repository;
 a `.pragma/` directory inside it is one forgotten `.gitignore` away from
 publishing personal episodes. One convention, no exceptions — including for the
-existing `my-memory` store, which moves rather than earning a special case.
+existing personal store, which moves rather than earning a special case.
 
 The workspace itself is a real directory you already work in. Nothing of the
 agent's is written into it, and `PRAGMA.md` is created only on request.
@@ -166,14 +166,18 @@ From then on `pragma` exists in every window, with no paths. `-Chat`, `-Ask`,
 `-Map` stay switch parameters: the surface does not change, only how a project
 is chosen.
 
-## Migrating `my-memory`
+## Migrating an existing session
 
-The one existing session, in order:
+A folder created by `new-session.ps1`, in order:
 
 1. Build and prove the launcher on a throwaway project.
-2. Only once `pragma` opens `my-memory` correctly: copy `.memoria` to
-   `~/.pragma/projects/my-memory`, write the registry entry with the eight
-   settings above, delete `pragma.ps1`.
+2. Only once `pragma` opens the migrated project correctly: copy its `.memoria`
+   to `~/.pragma/projects/<name>`, write the registry entry carrying every
+   setting the old `pragma.ps1` held, delete that file.
+
+Those settings are the migration. The files copy themselves; a profile or a
+curator width left behind leaves a memory that behaves differently the day
+after, in a way nothing announces.
 
 The two ways coexist until step 2 — the dot-source keeps working because it
 reads the same store — so the memory in daily use is never unavailable.
