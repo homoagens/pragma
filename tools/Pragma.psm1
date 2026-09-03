@@ -149,6 +149,16 @@ function script:New-Page {
     # because a host without a console cannot clear one, and a briefing is
     # never worth failing over.
     try { Clear-Host } catch { }
+    # Clear-Host empties the visible screen and leaves the scrollback, so the
+    # page just replaced is still a wheel-turn above - which is not what
+    # replacing it promised. ESC[3J drops the scrollback as well, on hosts that
+    # understand it; asking first keeps the escape from being printed as text
+    # on one that does not.
+    try {
+        if ($Host.UI.SupportsVirtualTerminal -and -not [Console]::IsOutputRedirected) {
+            [Console]::Write([string][char]27 + "[3J")
+        }
+    } catch { }
 }
 
 function script:Show-Brief($entry, $brief) {
@@ -920,7 +930,9 @@ function script:Invoke-MenuLoop($entry) {
             )
             $c = Show-Menu $first "enter select . esc quit"
             Write-Host ""
-            if (-not $c -or $c.action -eq 'quit') { return }
+            # Leaving from here cleared nothing, so the one menu someone with no
+            # projects ever sees was the one left on their screen.
+            if (-not $c -or $c.action -eq 'quit') { New-Page; return }
             $entry = Invoke-NewProject
             continue
         }
