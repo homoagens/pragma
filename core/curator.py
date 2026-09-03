@@ -217,11 +217,35 @@ def _learning_candidates(task: str,
         if text in skip:
             continue
         kw = len(_tokens(text) & qtok)
-        if kw <= 0:
-            continue
-        out.append({"entry": e, "score": kw * float(e.get("confidence", 0.5))})
-    out.sort(key=lambda c: c["score"], reverse=True)
-    return out[:m], pool
+        out.append({"entry": e, "kw": kw,
+                    "score": kw * float(e.get("confidence", 0.5))})
+
+    matched = [c for c in out if c["kw"] > 0]
+    matched.sort(key=lambda c: c["score"], reverse=True)
+    picked = matched[:m]
+
+    # SOME SLOTS ARE ALWAYS THE STRONGEST BELIEFS. Requiring a keyword match
+    # was fatal here in a way it never was for episodes, which have had a
+    # fallback of their own for exactly this reason. A belief is a general
+    # statement, and the questions it answers are general too: measured on a
+    # real store of 32 beliefs, "cosa sai su di me?" matched none of them,
+    # "chi sono io?" none, and even "what do you know about me?" matched one -
+    # so the layer that exists to say what is known about someone was silent
+    # precisely when asked.
+    #
+    # Keyword matches still come first and still rank by confidence; the rest
+    # of the slots go to the most confident beliefs the query did not name.
+    # These are candidates, not selections - the curator still decides, and it
+    # returns an empty desk readily - so the cost of offering them is a few
+    # lines of prompt against a semantic layer that could not be reached.
+    if len(picked) < m:
+        seen = {id(c) for c in picked}
+        rest = sorted((c for c in out if id(c) not in seen),
+                      key=lambda c: (float(c["entry"].get("confidence", 0.5)),
+                                     len(c["entry"].get("sources") or [])),
+                      reverse=True)
+        picked += rest[:m - len(picked)]
+    return picked, pool
 
 
 # ── Stage 2: the curator LLM call ─────────────────────────────────────────────
