@@ -385,7 +385,13 @@ function global:pragma {
 
     if ($Backup) {
         $stamp = Get-Date -Format "yyyy-MM-dd_HHmmss"
-        $dir   = Join-Path $script:SRoot "backups"
+        # Beside the STORE, never inside the workspace. Under the project
+        # model Root is the workspace - a folder you already own and often a
+        # git repository - so the old placement would have dropped a zip of
+        # the whole memory into it, one `git add .` away from publishing every
+        # episode. The default keeps the historical location for session files
+        # written before the launcher existed.
+        $dir   = Cfg "Backups" (Join-Path $script:SRoot "backups")
         New-Item -ItemType Directory -Force $dir | Out-Null
         # Never overwrite an existing snapshot: a backup that silently replaces
         # a backup is not a backup. Two in the same second get a suffix.

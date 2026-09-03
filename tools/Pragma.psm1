@@ -268,7 +268,8 @@ function script:Enable-Project($entry) {
     # model they are no longer two subfolders of one session root.
     $s = @{ Name = $entry.name; Repo = $script:RepoRoot
             Root = $entry.workspace
-            Workspace = $entry.workspace; Memory = $entry.memory }
+            Workspace = $entry.workspace; Memory = $entry.memory
+            Backups = (Join-Path $script:PragmaHome (Join-Path "backups" $entry.name)) }
     foreach ($k in $settings.Keys) { $s[$k] = $settings[$k] }
     $global:PragmaSession = $s
     # Names the project this window is on. -Set reads it, and it is the same
