@@ -204,26 +204,39 @@ function script:New-Page {
 }
 
 function script:Show-Logo {
-    # The mark itself, converted from interface-web/logo.png rather
-    # than drawn by hand: the shape that exists, at the smallest size
-    # that still keeps the dot separate from the bowl. Pure ASCII like
-    # the rest of this file, and painted so it follows the accent.
+    # The mark, converted from interface-web/logo.png, drawn with half
+    # blocks: every cell carries two vertical pixels, so the shape gets
+    # twice the resolution and takes half the rows. F is a full cell, T an
+    # upper half, B a lower half - written as letters so this file stays
+    # pure ASCII while the output is not, and so the fallback for a console
+    # that cannot draw them is one map instead of a second copy of the art.
+    $glyph = if ($script:UseVT) {
+        @{ 'F' = [char]0x2588; 'T' = [char]0x2580; 'B' = [char]0x2584 }
+    } else {
+        @{ 'F' = '#'; 'T' = '#'; 'B' = '#' }
+    }
     $art = @(
-        '  ###############',
-        '  #################',
-        '              ######',
-        '          ##    ####',
-        '          ##    ####',
-        '     ###       #####',
-        '   ################',
-        '  ###############',
-        '  ######',
-        '  ####',
-        '  ##'
+        '  BFFFFFFFFFFFFFFBB',
+        '  FFFFFFFFFFFFFFFFFFB',
+        '  TTTTTTTTTTTTTTFFFFFB',
+        '                 FFFFF    ___',
+        '           FF    FFFFF   | _ \_ _ __ _ __ _ _ __  __ _',
+        '      BF   TT    FFFFF   |  _/ ''_/ _` / _` | ''  \/ _` |',
+        '    BFFFBBBBBBBBFFFFFT   |_| |_| \__,_\__, |_|_|_\__,_|',
+        '  BFFFFFFFFFFFFFFFFF                  |___/',
+        '  FFFFFFFFFFFFFFFT',
+        '  FFFFFT',
+        '  FFFT',
+        '  FT'
     )
-    foreach ($l in $art) {
-        if ($script:UseVT) { Write-Host (Paint $l 'accent') }
-        else { Write-Host $l -ForegroundColor Magenta }
+    foreach ($row in $art) {
+        $out = ''
+        foreach ($ch in $row.ToCharArray()) {
+            $k = [string]$ch
+            $out += if ($glyph.ContainsKey($k)) { $glyph[$k] } else { $ch }
+        }
+        if ($script:UseVT) { Write-Host (Paint $out 'accent') }
+        else { Write-Host $out -ForegroundColor Magenta }
     }
 }
 
