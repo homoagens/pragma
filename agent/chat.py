@@ -141,7 +141,7 @@ def _slash_help() -> None:
     print()
 
 
-def _run_slash(cmd: str, store_dir: str) -> bool:
+def _run_slash(cmd: str) -> bool:
     """True when the input was a command and has been dealt with.
 
     Never raises: a broken command must not end a conversation that has
@@ -186,7 +186,11 @@ def _run_slash(cmd: str, store_dir: str) -> bool:
         print("  this needs research/tools/mem_map.py, which is not in the")
         print("  repository - see the note in the README.")
         return True
-    args = [sys.executable, str(tool), store_dir]
+    # No store path: mem_map resolves it from PRAGMA_DATA_DIR itself, which is
+    # the same source of truth the rest of the process uses. Passing one here
+    # meant passing EPISODES_DIR - one level too deep - and it dutifully looked
+    # for episodes/episodes and found an empty store.
+    args = [sys.executable, str(tool)]
     if action != "map":
         args.append("--" + action)
     try:
@@ -606,8 +610,7 @@ If the turn needed no tools at all, the conclusion is simply your reply.
             # else so it never reaches the model, never becomes a Turn, and
             # never lands in an episode as though it had been said.
             if text.startswith("/"):
-                if not _run_slash(text.split()[0].lower(),
-                                  str(baseline_config.EPISODES_DIR)):
+                if not _run_slash(text.split()[0].lower()):
                     break        # /exit, or a page the launcher owns
                 continue
 
