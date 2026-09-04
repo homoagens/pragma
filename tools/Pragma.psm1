@@ -64,6 +64,48 @@ function script:Show-StaleNotice {
 }
 
 
+# --- colour ---------------------------------------------------------------
+# Write-Host has sixteen names and none of them is a purple worth looking at:
+# the nearest, Magenta, is the DOS one. A terminal that understands virtual
+# terminal sequences can do 24-bit colour, and this one asks before using them
+# so a console that cannot is left with the named colours it does understand.
+#
+# PRAGMA_ACCENT overrides the hue as "R;G;B" - "255;140;0" for orange, say -
+# because a colour someone has to like is not a thing to hardcode and argue
+# about.
+
+$script:UseVT = $false
+try {
+    $script:UseVT = ($Host.UI.SupportsVirtualTerminal -and -not [Console]::IsOutputRedirected)
+} catch { }
+
+$script:Accent = "178;132;255"
+if ($env:PRAGMA_ACCENT -match '^\d{1,3};\d{1,3};\d{1,3}$') {
+    $script:Accent = $env:PRAGMA_ACCENT
+}
+
+function script:Paint([string]$text, [string]$role) {
+    # Returns the text ready to print: wrapped in escapes where they work,
+    # untouched where they do not, so every caller is one line either way.
+    if (-not $script:UseVT) { return $text }
+    $e = [char]27
+    switch ($role) {
+        'accent'   { return "$e[38;2;$($script:Accent)m$text$e[0m" }
+        'selected' { return "$e[48;2;76;40;130m$e[38;2;255;255;255m$text$e[0m" }
+        'dim'      { return "$e[38;2;128;128;128m$text$e[0m" }
+        default    { return $text }
+    }
+}
+
+function script:Write-Accent([string]$text) {
+    # The fallback is Magenta rather than nothing: on a console without VT the
+    # headings should still be the colour they mean, even if it is a coarser
+    # one.
+    if ($script:UseVT) { Write-Host (Paint $text 'accent') }
+    else { Write-Host $text -ForegroundColor Magenta }
+}
+
+
 # --- the registry -------------------------------------------------------------
 # One file, one entry per project. It holds what pragma.ps1 used to hold: a
 # session file was never only an entry point, it carried the per-project model
@@ -163,7 +205,7 @@ function script:New-Page {
 
 function script:Show-Brief($entry, $brief) {
     Write-Host ""
-    Write-Host "  Pragma" -ForegroundColor Cyan -NoNewline
+    Write-Host (Paint "  Pragma" 'accent') -NoNewline
     Write-Host ("  ." + (Get-Date -Format "  dddd d MMMM, HH:mm")) -ForegroundColor DarkGray
     Write-Host ""
     Write-Host "  project   " -ForegroundColor DarkGray -NoNewline
@@ -259,7 +301,8 @@ function script:Show-Menu([object[]]$items, [string]$hint) {
             if ($row.Length -gt $width) { $row = $row.Substring(0, $width) }
             $row = $row.PadRight($width)
             if ($i -eq $sel) {
-                Write-Host $row -ForegroundColor Black -BackgroundColor Cyan
+                if ($script:UseVT) { Write-Host (Paint $row 'selected') }
+                else { Write-Host $row -ForegroundColor Black -BackgroundColor Magenta }
             } else {
                 Write-Host $row
             }
@@ -509,7 +552,7 @@ function script:Resolve-Project([string]$name) {
 
 function script:Show-Settings($entry) {
     Write-Host ""
-    Write-Host "  settings for '$($entry.name)'" -ForegroundColor Cyan
+    Write-Accent "  settings for '$($entry.name)'"
     $props = @()
     if ($entry.settings) { $props = @($entry.settings.PSObject.Properties) }
     if ($props.Count -eq 0) {
@@ -538,7 +581,7 @@ function script:Show-Endpoint($ep) {
     # A sampling value means nothing on its own: what applies is whichever side
     # supplies it. This is the page where that is chosen, so both sides are on
     # it - the server's own defaults and what this project sends over them.
-    Write-Host "  endpoint" -ForegroundColor Cyan
+    Write-Accent "  endpoint"
     if (-not $ep) {
         Write-Host "    could not be read" -ForegroundColor DarkYellow
         Write-Host ""
@@ -902,7 +945,7 @@ function script:Read-SnapshotInfo([string]$zipPath) {
 function script:Invoke-Restore($entry) {
     New-Page
     Write-Host ""
-    Write-Host "  Restore a snapshot" -ForegroundColor Cyan
+    Write-Accent "  Restore a snapshot"
     Write-Host ""
     $root = Get-BackupRoot $entry
     $files = @()
@@ -1010,7 +1053,7 @@ function script:Invoke-BackupMenu($entry) {
     while ($true) {
         New-Page
         Write-Host ""
-        Write-Host "  Backups" -ForegroundColor Cyan
+        Write-Accent "  Backups"
         Write-Host ""
         $root = Get-BackupRoot $entry
         $n = 0
@@ -1048,7 +1091,7 @@ function script:Invoke-NewProject {
     # put the abstract half before the concrete one.
     New-Page
     Write-Host ""
-    Write-Host "  New project" -ForegroundColor Cyan
+    Write-Accent "  New project"
     Write-Host ""
     Write-Host "  A project is one folder the agent works in, plus a memory of" -ForegroundColor DarkGray
     Write-Host "  its own that Pragma keeps elsewhere." -ForegroundColor DarkGray
@@ -1082,7 +1125,7 @@ function script:Invoke-NewProject {
 function script:Invoke-DeleteProject($entry) {
     New-Page
     Write-Host ""
-    Write-Host "  Delete a project" -ForegroundColor Cyan
+    Write-Accent "  Delete a project"
     Write-Host ""
     $entries = @(Read-Registry)
     $picks = @()
@@ -1157,7 +1200,7 @@ function script:Invoke-MenuLoop($entry) {
         if (-not $entry) {
             New-Page
             Write-Host ""
-            Write-Host "  Pragma" -ForegroundColor Cyan
+            Write-Accent "  Pragma"
             Write-Host ""
             Write-Host "  No projects yet." -ForegroundColor DarkGray
             Write-Host ""
@@ -1263,7 +1306,7 @@ function script:Wait-Key {
 function script:Invoke-MemoryMenu {
     New-Page
     Write-Host ""
-    Write-Host "  Memory" -ForegroundColor Cyan
+    Write-Accent "  Memory"
     Write-Host ""
     $items = @(
         [pscustomobject]@{ key = 'm'; label = "map         what is in memory now";        action = 'Map' }
