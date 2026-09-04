@@ -204,19 +204,23 @@ function script:New-Page {
 }
 
 function script:Show-Logo([switch]$Compact) {
-    # Converted from interface-web/logo.png, binarised at full resolution
-    # and then area-averaged: sampling one point per cell of an antialiased
-    # image put a bleed line along the top bar and split the dot across two
-    # rows. Half blocks carry two vertical pixels each, so this is drawn at
-    # twice the resolution it occupies.
+    # The mark and the word are one drawing: the tail of the mark is the P
+    # that the word then continues from. Composited rather than placed side
+    # by side - the word is laid down first and the mark drawn over it, so
+    # wherever the mark has ink it wins and the alignment cannot drift.
+    #
+    # The mark comes from interface-web/logo.png, binarised at full
+    # resolution and then area-averaged: sampling one point per cell of an
+    # antialiased image put a bleed line along the top bar and split the dot
+    # across two rows.
     #
     # F is a full cell, T an upper half, B a lower half. Written as letters
-    # so the file stays pure ASCII while the output is not - and so the
+    # so this file stays pure ASCII while the output is not, and so the
     # fallback for a console that cannot draw blocks is one map rather than
     # a second copy of the art.
     #
-    # Full size once, on the way in, and a line thereafter: sixteen rows is
-    # right for an arrival and wrong for every redraw of a menu.
+    # Whole once, on the way in, and a line thereafter: this is right for an
+    # arrival and wrong for the fourth redraw of a menu.
     if ($Compact) {
         if ($script:UseVT) { Write-Host (Paint '  Pragma' 'accent') -NoNewline }
         else { Write-Host '  Pragma' -ForegroundColor Magenta -NoNewline }
@@ -228,22 +232,19 @@ function script:Show-Logo([switch]$Compact) {
         @{ 'F' = '#'; 'T' = '#'; 'B' = '#' }
     }
     $art = @(
-        '  BFFFFFFFFFFFFFFFFFFFFFFFFFFBBB',
-        ' FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFB',
-        ' FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFB',
-        '                           TTTFFFFFFFFFB',
-        '                               TFFFFFFFFB',
-        '                   BFFB         FFFFFFFFF    ___',
-        '                  TFFFFT        FFFFFFFFF   | _ \_ _ __ _ __ _ _ __  __ _',
-        '         BBFF                  BFFFFFFFFT   |  _/ ''_/ _` / _` | ''  \/ _` |',
-        '      BBFFFFF               BBFFFFFFFFFT    |_| |_| \__,_\__, |_|_|_\__,_|',
-        '    BFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFT                   |___/',
-        ' BFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFTT',
-        ' FFFFFFFFFFFFFFFFFFFFFFFFFFFTTTT',
-        ' FFFFFFFFFFT',
-        ' FFFFFFFT',
-        ' FFFFTT',
-        ' FTT'
+        ' BFFFFFFFFFFFFFFFFFFBB',
+        ' FFFFFFFFFFFFFFFFFFFFFFFB',
+        '                 TTFFFFFFF',
+        '                    TFFFFFF',
+        '            BFFB     FFFFFF',
+        '       BB           BFFFFFT',
+        '    BFFFF        BBFFFFFFT',
+        '  BFFFFFFFFFFFFFFFFFFFFTT',
+        ' FFFFFFFFFFFFFFFFFFTTT',
+        ' FFFFFFT   _ _ __ _ __ _ _ __  __ _',
+        ' FFFFT    | ''_/ _` / _` | ''  \/ _` |',
+        ' FT       |_| \__,_\__, |_|_|_\__,_|',
+        '                    |___/'
     )
     foreach ($row in $art) {
         $out = ''
