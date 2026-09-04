@@ -569,6 +569,8 @@ If the turn needed no tools at all, the conclusion is simply your reply.
     print(f"  Pragma live session · {served} · {cwd}")
     print(f"  memory: {'recall on + consolidation on exit' if args.memory else 'off'}"
           f" · max {max_steps} steps per turn")
+    print("  ctrl+D back to the briefing, twice to leave"
+          "   |   ctrl+C leaves and consolidates")
     # The commands, on the way in. A menu made them discoverable by existing;
     # a bare prompt hides them behind knowing to ask, which is the one thing
     # the menu did better.
