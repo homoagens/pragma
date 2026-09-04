@@ -1310,6 +1310,12 @@ function script:Invoke-MenuLoop($entry) {
             return
         }
 
+        # Ctrl+D asked to come back here rather than leave. Saying so lets a
+        # second Ctrl+D, with nothing typed in between, mean what it usually
+        # means - out - instead of bouncing off this screen forever.
+        $env:PRAGMA_CAME_BACK = if ($want -eq 'refresh') { "1" } else { "" }
+        if ($want -eq 'refresh') { continue }
+
         switch ($want) {
             'settings' { $entry = Invoke-SettingsMenu $entry }
             'backups'  { Invoke-BackupMenu $entry }

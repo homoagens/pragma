@@ -95,6 +95,18 @@ _SLASH = {
 }
 
 
+def _ask_launcher(action: str) -> bool:
+    """Leave a note for the launcher. False when there is nobody to read it."""
+    path = os.environ.get("PRAGMA_REQUEST")
+    if not path:
+        return False
+    try:
+        Path(path).write_text(json.dumps({"action": action}), encoding="utf-8")
+        return True
+    except Exception:
+        return False
+
+
 def _accent() -> str:
     """The launcher's accent as an ANSI foreground, or nothing.
 
@@ -159,19 +171,16 @@ def _run_slash(cmd: str) -> bool:
             os.system("cls" if os.name == "nt" else "clear")
         except Exception:
             pass
+        # An empty screen is not an interface. The banner costs three lines and
+        # is the only thing that says what can be typed here.
+        _slash_banner()
         return True
     if action == "exit":
         return False                      # handled by the caller's exit path
     if action.startswith("ask:"):
         want = action.split(":", 1)[1]
-        path = os.environ.get("PRAGMA_REQUEST")
-        if not path:
+        if not _ask_launcher(want):
             print("  that one needs the launcher: start with `pragma`.")
-            return True
-        try:
-            Path(path).write_text(json.dumps({"action": want}), encoding="utf-8")
-        except Exception as e:
-            print(f"  could not ask the launcher: {type(e).__name__}")
             return True
         # False ends the loop the same way /exit does, so the turns consolidate
         # before the launcher takes over. Leaving without that would drop the
@@ -599,7 +608,18 @@ If the turn needed no tools at all, the conclusion is simply your reply.
         while True:
             try:
                 text = input(_prompt()).strip()
-            except (EOFError, KeyboardInterrupt):
+            except EOFError:
+                # Ctrl+D steps back to the briefing; pressed again with nothing
+                # typed since, it leaves. A single key that both retreats and
+                # quits depending on where you are is how every shell behaves,
+                # and doing it in two presses means neither is a surprise.
+                print()
+                if not turns and os.environ.get("PRAGMA_CAME_BACK"):
+                    break                       # nothing said since the last one
+                if not _ask_launcher("refresh"):
+                    break                       # no launcher to go back to
+                break
+            except KeyboardInterrupt:
                 print()
                 break
             if not text:
