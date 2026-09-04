@@ -203,31 +203,47 @@ function script:New-Page {
     } catch { }
 }
 
-function script:Show-Logo {
-    # The mark, converted from interface-web/logo.png, drawn with half
-    # blocks: every cell carries two vertical pixels, so the shape gets
-    # twice the resolution and takes half the rows. F is a full cell, T an
-    # upper half, B a lower half - written as letters so this file stays
-    # pure ASCII while the output is not, and so the fallback for a console
-    # that cannot draw them is one map instead of a second copy of the art.
+function script:Show-Logo([switch]$Compact) {
+    # Converted from interface-web/logo.png, binarised at full resolution
+    # and then area-averaged: sampling one point per cell of an antialiased
+    # image put a bleed line along the top bar and split the dot across two
+    # rows. Half blocks carry two vertical pixels each, so this is drawn at
+    # twice the resolution it occupies.
+    #
+    # F is a full cell, T an upper half, B a lower half. Written as letters
+    # so the file stays pure ASCII while the output is not - and so the
+    # fallback for a console that cannot draw blocks is one map rather than
+    # a second copy of the art.
+    #
+    # Full size once, on the way in, and a line thereafter: sixteen rows is
+    # right for an arrival and wrong for every redraw of a menu.
+    if ($Compact) {
+        if ($script:UseVT) { Write-Host (Paint '  Pragma' 'accent') -NoNewline }
+        else { Write-Host '  Pragma' -ForegroundColor Magenta -NoNewline }
+        return
+    }
     $glyph = if ($script:UseVT) {
         @{ 'F' = [char]0x2588; 'T' = [char]0x2580; 'B' = [char]0x2584 }
     } else {
         @{ 'F' = '#'; 'T' = '#'; 'B' = '#' }
     }
     $art = @(
-        '  BFFFFFFFFFFFFFFBB',
-        '  FFFFFFFFFFFFFFFFFFB',
-        '  TTTTTTTTTTTTTTFFFFFB',
-        '                 FFFFF    ___',
-        '           FF    FFFFF   | _ \_ _ __ _ __ _ _ __  __ _',
-        '      BF   TT    FFFFF   |  _/ ''_/ _` / _` | ''  \/ _` |',
-        '    BFFFBBBBBBBBFFFFFT   |_| |_| \__,_\__, |_|_|_\__,_|',
-        '  BFFFFFFFFFFFFFFFFF                  |___/',
-        '  FFFFFFFFFFFFFFFT',
-        '  FFFFFT',
-        '  FFFT',
-        '  FT'
+        '  BFFFFFFFFFFFFFFFFFFFFFFFFFFBBB',
+        ' FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFB',
+        ' FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFB',
+        '                           TTTFFFFFFFFFB',
+        '                               TFFFFFFFFB',
+        '                   BFFB         FFFFFFFFF    ___',
+        '                  TFFFFT        FFFFFFFFF   | _ \_ _ __ _ __ _ _ __  __ _',
+        '         BBFF                  BFFFFFFFFT   |  _/ ''_/ _` / _` | ''  \/ _` |',
+        '      BBFFFFF               BBFFFFFFFFFT    |_| |_| \__,_\__, |_|_|_\__,_|',
+        '    BFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFT                   |___/',
+        ' BFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFTT',
+        ' FFFFFFFFFFFFFFFFFFFFFFFFFFFTTTT',
+        ' FFFFFFFFFFT',
+        ' FFFFFFFT',
+        ' FFFFTT',
+        ' FTT'
     )
     foreach ($row in $art) {
         $out = ''
@@ -243,8 +259,15 @@ function script:Show-Logo {
 
 function script:Show-Brief($entry, $brief) {
     Write-Host ""
-    Show-Logo
-    Write-Host ("   " + (Get-Date -Format "dddd d MMMM, HH:mm")) -ForegroundColor DarkGray
+    if (-not $script:LogoShown) {
+        Show-Logo
+        $script:LogoShown = $true
+        Write-Host ""
+        Write-Host ("   " + (Get-Date -Format "dddd d MMMM, HH:mm")) -ForegroundColor DarkGray
+    } else {
+        Show-Logo -Compact
+        Write-Host ("   ." + (Get-Date -Format "  dddd d MMMM, HH:mm")) -ForegroundColor DarkGray
+    }
     Write-Host ""
     Write-Host "  project   " -ForegroundColor DarkGray -NoNewline
     Write-Host $entry.name -ForegroundColor White
