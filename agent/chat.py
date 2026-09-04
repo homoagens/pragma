@@ -41,6 +41,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import subprocess
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
@@ -67,6 +68,131 @@ from agent.batch import (                  # noqa: E402
 from agent.prompts import build_system_prompt, project_contract  # noqa: E402
 
 _EXIT_WORDS = {"/exit", "/quit", "/bye", "exit", "quit"}
+
+# What a slash reaches without leaving the conversation. The alternative was
+# quitting the chat, walking a menu and coming back, which is the cost that
+# stopped anyone looking at their own memory mid-thought.
+#
+# Each entry is (what it runs, one line of help). "memory" values name a
+# mem_map flag; "call" values name a python callable resolved at use.
+_SLASH = {
+    "/help":     ("help",    "this list"),
+    "/info":     ("help",    "this list"),
+    "/map":      ("map",     "what is in memory now"),
+    "/beliefs":  ("beliefs", "what it has concluded"),
+    "/diff":     ("diff",    "meanings it has revised"),
+    "/oblio":    ("oblio",   "what has faded"),
+    "/last":     ("last",    "the newest episode, in full"),
+    "/sizes":    ("sizes",   "how wordy the store is"),
+    "/backup":   ("backup",  "snapshot the memory now"),
+    "/clear":    ("clear",   "clear the screen, keep the conversation"),
+    "/exit":     ("exit",    "close the session and consolidate"),
+}
+
+
+def _slash_help() -> None:
+    print()
+    print("  commands")
+    seen = set()
+    for name, (action, blurb) in _SLASH.items():
+        if action in seen and action == "help":
+            continue
+        seen.add(action)
+        print(f"    {name:<10} {blurb}")
+    print()
+    print("  anything else is a message to the agent.")
+    print()
+
+
+def _snapshot_memory(store_dir: str) -> None:
+    """Zip the store, right now, from inside the conversation.
+
+    The moment anyone realises they want a snapshot is the moment before doing
+    something to the memory - which is mid-conversation, not after walking out
+    to a menu. Memory only: the workspace is the launcher's business, and it
+    knows where the project's files are while this does not.
+
+    The manifest matches the launcher's so its restore can read what this
+    writes. Two writers of one format is a thing to watch; the alternative was
+    a backup you cannot reach when you want it.
+    """
+    import zipfile
+    store = Path(store_dir)
+    if store.name == "episodes":
+        store = store.parent
+    if not store.is_dir():
+        print("  no store to snapshot")
+        return
+    home = Path(os.environ.get("USERPROFILE") or Path.home())
+    out = home / ".pragma" / "backups" / (os.environ.get("PRAGMA_PROJECT") or store.name)
+    out.mkdir(parents=True, exist_ok=True)
+    stamp = datetime.now().strftime("%Y-%m-%d_%H%M%S")
+    zpath = out / f"memory_{stamp}.zip"
+    n = 0
+    try:
+        with zipfile.ZipFile(zpath, "w", zipfile.ZIP_DEFLATED) as z:
+            for f in store.rglob("*"):
+                if f.is_file():
+                    z.write(f, "memory/" + f.relative_to(store).as_posix())
+                    if f.name.startswith("ep_") and f.suffix == ".json":
+                        n += 1
+            z.writestr("pragma-backup.json", json.dumps({
+                "pragma_backup": 1,
+                "project": os.environ.get("PRAGMA_PROJECT") or store.name,
+                "kind": "memory",
+                "created": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+                "memory_from": str(store),
+                "workspace_from": os.environ.get("PRAGMA_WORKSPACE", ""),
+                "episodes": n,
+            }, indent=2))
+        kb = zpath.stat().st_size / 1024
+        print(f"  saved {zpath.name}  ({kb:.1f} KB, {n} episodes)")
+        print(f"  {out}")
+    except Exception as e:
+        print(f"  could not write the snapshot: {type(e).__name__}: {str(e)[:100]}")
+
+
+def _run_slash(cmd: str, store_dir: str) -> bool:
+    """True when the input was a command and has been dealt with.
+
+    Never raises: a broken command must not end a conversation that has
+    unconsolidated turns in it.
+    """
+    action = (_SLASH.get(cmd) or (None, None))[0]
+    if action is None:
+        print(f"  no such command: {cmd}   (/help for the list)")
+        return True
+    if action == "help":
+        _slash_help()
+        return True
+    if action == "clear":
+        try:
+            os.system("cls" if os.name == "nt" else "clear")
+        except Exception:
+            pass
+        return True
+    if action == "exit":
+        return False                      # handled by the caller's exit path
+
+    # The inspection commands are mem_map's, which is the tool that already
+    # knows how to render a store. Called rather than reimplemented: two
+    # renderings of the same memory would disagree the first time one changed.
+    tool = Path(__file__).resolve().parent.parent / "research" / "tools" / "mem_map.py"
+    if not tool.is_file():
+        print("  this needs research/tools/mem_map.py, which is not in the")
+        print("  repository - see the note in the README.")
+        return True
+    args = [sys.executable, str(tool), store_dir]
+    if action == "backup":
+        _snapshot_memory(store_dir)
+        return True
+    if action != "map":
+        args.append("--" + action)
+    try:
+        subprocess.run(args, check=False)
+    except Exception as e:
+        print(f"  {type(e).__name__}: {str(e)[:120]}")
+    return True
 
 
 class Turn:
@@ -473,6 +599,13 @@ If the turn needed no tools at all, the conclusion is simply your reply.
                 continue
             if text.lower() in _EXIT_WORDS:
                 break
+            # A slash is a command, not a message. Checked before anything
+            # else so it never reaches the model, never becomes a Turn, and
+            # never lands in an episode as though it had been said.
+            if text.startswith("/"):
+                _run_slash(text.split()[0].lower(),
+                           str(baseline_config.EPISODES_DIR))
+                continue
 
             # The Turn — and so the raw log, and so what the segmenter reads
             # on exit — keeps the user's words alone. Only the prompt carries

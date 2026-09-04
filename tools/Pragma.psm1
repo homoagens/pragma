@@ -203,10 +203,27 @@ function script:New-Page {
     } catch { }
 }
 
+function script:Show-Logo {
+    # Pure ASCII, like the rest of this file, and painted rather than
+    # named so it carries the accent colour the operator chose.
+    $art = @(
+        '  ___                        ',
+        ' | _ \_ _ __ _ __ _ _ __  __ _ ',
+        ' |  _/ ''_/ _` / _` | ''  \/ _` |',
+        ' |_| |_| \__,_\__, |_|_|_\__,_|',
+        '              |___/          '
+    )
+    foreach ($l in $art) {
+        if ($script:UseVT) { Write-Host (Paint $l 'accent') }
+        else { Write-Host $l -ForegroundColor Magenta }
+    }
+}
+
+
 function script:Show-Brief($entry, $brief) {
     Write-Host ""
-    Write-Host (Paint "  Pragma" 'accent') -NoNewline
-    Write-Host ("  ." + (Get-Date -Format "  dddd d MMMM, HH:mm")) -ForegroundColor DarkGray
+    Show-Logo
+    Write-Host ("   " + (Get-Date -Format "dddd d MMMM, HH:mm")) -ForegroundColor DarkGray
     Write-Host ""
     Write-Host "  project   " -ForegroundColor DarkGray -NoNewline
     Write-Host $entry.name -ForegroundColor White
