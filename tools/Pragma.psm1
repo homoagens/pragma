@@ -204,14 +204,22 @@ function script:New-Page {
 }
 
 function script:Show-Logo {
-    # Pure ASCII, like the rest of this file, and painted rather than
-    # named so it carries the accent colour the operator chose.
+    # The mark itself, converted from interface-web/logo.png rather
+    # than drawn by hand: the shape that exists, at the smallest size
+    # that still keeps the dot separate from the bowl. Pure ASCII like
+    # the rest of this file, and painted so it follows the accent.
     $art = @(
-        '  ___                        ',
-        ' | _ \_ _ __ _ __ _ _ __  __ _ ',
-        ' |  _/ ''_/ _` / _` | ''  \/ _` |',
-        ' |_| |_| \__,_\__, |_|_|_\__,_|',
-        '              |___/          '
+        '  ###############',
+        '  #################',
+        '              ######',
+        '          ##    ####',
+        '          ##    ####',
+        '     ###       #####',
+        '   ################',
+        '  ###############',
+        '  ######',
+        '  ####',
+        '  ##'
     )
     foreach ($l in $art) {
         if ($script:UseVT) { Write-Host (Paint $l 'accent') }
