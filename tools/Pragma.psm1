@@ -204,23 +204,23 @@ function script:New-Page {
 }
 
 function script:Show-Logo([switch]$Compact) {
-    # The mark and the word are one drawing: the tail of the mark is the P
-    # that the word then continues from. Composited rather than placed side
-    # by side - the word is laid down first and the mark drawn over it, so
-    # wherever the mark has ink it wins and the alignment cannot drift.
+    # The mark from interface-web/logo.png, at eight rows against the word's
+    # four. Twelve rows made a picture with a caption under it rather than a
+    # logotype; at this ratio the mark reads as the letter the word starts
+    # with, which is what it is.
     #
-    # The mark comes from interface-web/logo.png, binarised at full
-    # resolution and then area-averaged: sampling one point per cell of an
-    # antialiased image put a bleed line along the top bar and split the dot
-    # across two rows.
+    # Beside rather than flowing out of the tail, which was the nicer idea:
+    # at this size the bowl's lower sweep is as wide as the whole mark, so a
+    # word tucked under it gets eaten. That trick needs a mark three times
+    # this tall, and a mark three times this tall is the problem it was
+    # meant to solve.
     #
-    # F is a full cell, T an upper half, B a lower half. Written as letters
-    # so this file stays pure ASCII while the output is not, and so the
-    # fallback for a console that cannot draw blocks is one map rather than
-    # a second copy of the art.
-    #
-    # Whole once, on the way in, and a line thereafter: this is right for an
-    # arrival and wrong for the fourth redraw of a menu.
+    # Binarised at full resolution and then area-averaged: sampling one
+    # point per cell of an antialiased image put a bleed line along the top
+    # bar and split the dot across two rows. F is a full cell, T an upper
+    # half, B a lower half - letters, so this file stays pure ASCII while
+    # the output is not, and so the fallback for a console that cannot draw
+    # blocks is one map rather than a second copy of the art.
     if ($Compact) {
         if ($script:UseVT) { Write-Host (Paint '  Pragma' 'accent') -NoNewline }
         else { Write-Host '  Pragma' -ForegroundColor Magenta -NoNewline }
@@ -232,19 +232,14 @@ function script:Show-Logo([switch]$Compact) {
         @{ 'F' = '#'; 'T' = '#'; 'B' = '#' }
     }
     $art = @(
-        ' BFFFFFFFFFFFFFFFFFFBB',
-        ' FFFFFFFFFFFFFFFFFFFFFFFB',
-        '                 TTFFFFFFF',
-        '                    TFFFFFF',
-        '            BFFB     FFFFFF',
-        '       BB           BFFFFFT',
-        '    BFFFF        BBFFFFFFT',
-        '  BFFFFFFFFFFFFFFFFFFFFTT',
-        ' FFFFFFFFFFFFFFFFFFTTT',
-        ' FFFFFFT   _ _ __ _ __ _ _ __  __ _',
-        ' FFFFT    | ''_/ _` / _` | ''  \/ _` |',
-        ' FT       |_| \__,_\__, |_|_|_\__,_|',
-        '                    |___/'
+        ' BFFFFFFFFFBB',
+        ' TTTTTTTTTTFFF',
+        '       BB   FFF',
+        '    B  TT   FFF',
+        '  BFFBBBBBBFFF   _ _ __ _ __ _ _ __  __ _',
+        ' FFFFFFFFFFTT   | ''_/ _` / _` | ''  \/ _` |',
+        ' FFFT           |_| \__,_\__, |_|_|_\__,_|',
+        ' FT                       |___/'
     )
     foreach ($row in $art) {
         $out = ''
