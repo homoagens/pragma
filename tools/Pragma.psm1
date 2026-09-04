@@ -1249,15 +1249,25 @@ function script:Invoke-DeleteProject($entry) {
 
 
 function script:Invoke-MenuLoop($entry) {
+    # The briefing, then the conversation - and the conversation IS the
+    # interface. A menu between the two was one screen of navigation standing
+    # in front of the thing everyone came for, and every command it held is
+    # reachable from inside the talk with a slash.
+    #
+    # settings, backups and the project lifecycle stay here because they are
+    # about the window rather than the conversation, and because they are
+    # written in PowerShell while the chat is Python. The chat asks for them
+    # through a request file and steps out - consolidating its turns on the way
+    # - this runs the page, and then puts the operator back in the chat.
     $active = $null
+    $req = Join-Path ([IO.Path]::GetTempPath()) ("pragma-request-" + $PID + ".json")
+    $env:PRAGMA_REQUEST = $req
+
     while ($true) {
-        # No project is a state to offer something from, not a reason to print
-        # instructions and leave. Landing here used to be a dead end: the one
-        # thing to do next was described rather than offered.
         if (-not $entry) {
             New-Page
             Write-Host ""
-            Write-Accent "  Pragma"
+            Show-Logo
             Write-Host ""
             Write-Host "  No projects yet." -ForegroundColor DarkGray
             Write-Host ""
@@ -1267,8 +1277,6 @@ function script:Invoke-MenuLoop($entry) {
             )
             $c = Show-Menu $first "enter select . esc quit"
             Write-Host ""
-            # Leaving from here cleared nothing, so the one menu someone with no
-            # projects ever sees was the one left on their screen.
             if (-not $c -or $c.action -eq 'quit') { New-Page; return }
             $entry = Invoke-NewProject
             continue
@@ -1280,50 +1288,29 @@ function script:Invoke-MenuLoop($entry) {
         }
 
         New-Page
-        $brief = Get-Brief $entry
-        Show-Brief $entry $brief
+        Show-Brief $entry (Get-Brief $entry)
+        Remove-Item -LiteralPath $req -Force -ErrorAction SilentlyContinue
 
-        $items = @(
-            [pscustomobject]@{ key = 'c'; label = "chat            many turns, one conversation"; action = 'chat' }
-            [pscustomobject]@{ key = 't'; label = "task            one task, then back here";     action = 'task' }
-            [pscustomobject]@{ key = 'a'; label = "ask             a question, no file changes";  action = 'ask' }
-            [pscustomobject]@{ key = 'm'; label = "memory          map, beliefs, oblivion, last"; action = 'memory' }
-            [pscustomobject]@{ key = 's'; label = "settings        what this project overrides";  action = 'settings' }
-            [pscustomobject]@{ key = 'b'; label = "backups         snapshot or restore";              action = 'backups' }
-            [pscustomobject]@{ key = 'p'; label = "switch project";                               action = 'switch' }
-            [pscustomobject]@{ key = 'n'; label = "new project";                                  action = 'new' }
-            [pscustomobject]@{ key = 'd'; label = "delete project";                               action = 'delete' }
-            [pscustomobject]@{ key = 'q'; label = "quit";                                         action = 'quit' }
-        )
-        $choice = Show-Menu $items "enter select . up/down move . esc quit"
-        Write-Host ""
-        if (-not $choice -or $choice.action -eq 'quit') {
+        # global: is not decoration. Inside this module `pragma` is the
+        # launcher's own function, which has no -Chat; the session script's is
+        # the one dot-sourced into the global scope.
+        global:pragma -Chat
+
+        $want = ""
+        if (Test-Path $req) {
+            try { $want = "$((Get-Content -Raw $req | ConvertFrom-Json).action)" } catch { }
+            Remove-Item -LiteralPath $req -Force -ErrorAction SilentlyContinue
+        }
+        if (-not $want) {
+            # /exit, or Ctrl+C: the conversation ended on its own terms.
             New-Page
             Write-Host ""
-            Write-Host "  the window stays on '$($entry.name)' - pragma -Info for the commands" -ForegroundColor DarkGray
+            Write-Host "  the window stays on '$($entry.name)' - pragma to come back" -ForegroundColor DarkGray
             Write-Host ""
             return
         }
 
-        switch ($choice.action) {
-            'chat' {
-                # global: is not decoration. Inside this module `pragma` resolves
-                # to the module's own function, which has no -Chat; the session
-                # script's is the one dot-sourced into the global scope, and only
-                # the qualifier reaches it.
-                New-Page
-                global:pragma -Chat
-                Wait-Key
-            }
-            'task' {
-                $task = Read-Host "  task"
-                if ($task) { New-Page; global:pragma $task; Wait-Key }
-            }
-            'ask' {
-                $q = Read-Host "  ask memory"
-                if ($q) { New-Page; global:pragma -Ask $q; Wait-Key }
-            }
-            'memory'   { Invoke-MemoryMenu }
+        switch ($want) {
             'settings' { $entry = Invoke-SettingsMenu $entry }
             'backups'  { Invoke-BackupMenu $entry }
             'new' {
@@ -1337,15 +1324,15 @@ function script:Invoke-MenuLoop($entry) {
                 }
             }
             'switch' {
+                New-Page
+                Write-Host ""
+                Write-Host "  Which project" -ForegroundColor DarkGray
                 $picks = @()
                 foreach ($e in @(Read-Registry)) {
                     $picks += [pscustomobject]@{ key = ''
                                                  label = ("{0,-18} {1}" -f $e.name, $e.workspace)
                                                  entry = $e }
                 }
-                New-Page
-                Write-Host ""
-                Write-Host "  Which project" -ForegroundColor DarkGray
                 $p = Show-Menu $picks "enter select . esc cancel"
                 Write-Host ""
                 if ($p) { $entry = $p.entry }
@@ -1353,6 +1340,7 @@ function script:Invoke-MenuLoop($entry) {
         }
     }
 }
+
 
 function script:Wait-Key {
     Write-Host "  any key to go back" -ForegroundColor DarkGray

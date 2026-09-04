@@ -84,10 +84,47 @@ _SLASH = {
     "/oblio":    ("oblio",   "what has faded"),
     "/last":     ("last",    "the newest episode, in full"),
     "/sizes":    ("sizes",   "how wordy the store is"),
-    "/backup":   ("backup",  "snapshot the memory now"),
     "/clear":    ("clear",   "clear the screen, keep the conversation"),
     "/exit":     ("exit",    "close the session and consolidate"),
+    # Handed back to the launcher: these are about the window, not the talk.
+    "/settings": ("ask:settings", "model, budgets, sampling for this project"),
+    "/backups":  ("ask:backups",  "snapshot or restore"),
+    "/switch":   ("ask:switch",   "another project"),
+    "/new":      ("ask:new",      "start a project"),
+    "/delete":   ("ask:delete",   "remove a project"),
 }
+
+
+def _accent() -> str:
+    """The launcher's accent as an ANSI foreground, or nothing.
+
+    PRAGMA_ACCENT is set by whoever started this; matching it here keeps the
+    prompt the same colour as the page it appeared under, which is the whole
+    point of having chosen a colour.
+    """
+    raw = (os.environ.get("PRAGMA_ACCENT") or "178;132;255").strip()
+    parts = raw.split(";")
+    if len(parts) != 3 or not all(p.isdigit() and int(p) < 256 for p in parts):
+        raw = "178;132;255"
+    if not sys.stdout.isatty():
+        return ""
+    return "\033[38;2;" + raw + "m"
+
+
+def _prompt() -> str:
+    a = _accent()
+    if not a:
+        return "you > "
+    return a + "you" + "\033[0m" + " " + a + ">" + "\033[0m" + " "
+
+
+def _slash_banner() -> None:
+    a, r = _accent(), ("\033[0m" if _accent() else "")
+    names = " ".join(n for n in _SLASH if n != "/info")
+    print()
+    print(f"  {a}{names}{r}")
+    print("  anything else is a message.")
+    print()
 
 
 def _slash_help() -> None:
@@ -102,54 +139,6 @@ def _slash_help() -> None:
     print()
     print("  anything else is a message to the agent.")
     print()
-
-
-def _snapshot_memory(store_dir: str) -> None:
-    """Zip the store, right now, from inside the conversation.
-
-    The moment anyone realises they want a snapshot is the moment before doing
-    something to the memory - which is mid-conversation, not after walking out
-    to a menu. Memory only: the workspace is the launcher's business, and it
-    knows where the project's files are while this does not.
-
-    The manifest matches the launcher's so its restore can read what this
-    writes. Two writers of one format is a thing to watch; the alternative was
-    a backup you cannot reach when you want it.
-    """
-    import zipfile
-    store = Path(store_dir)
-    if store.name == "episodes":
-        store = store.parent
-    if not store.is_dir():
-        print("  no store to snapshot")
-        return
-    home = Path(os.environ.get("USERPROFILE") or Path.home())
-    out = home / ".pragma" / "backups" / (os.environ.get("PRAGMA_PROJECT") or store.name)
-    out.mkdir(parents=True, exist_ok=True)
-    stamp = datetime.now().strftime("%Y-%m-%d_%H%M%S")
-    zpath = out / f"memory_{stamp}.zip"
-    n = 0
-    try:
-        with zipfile.ZipFile(zpath, "w", zipfile.ZIP_DEFLATED) as z:
-            for f in store.rglob("*"):
-                if f.is_file():
-                    z.write(f, "memory/" + f.relative_to(store).as_posix())
-                    if f.name.startswith("ep_") and f.suffix == ".json":
-                        n += 1
-            z.writestr("pragma-backup.json", json.dumps({
-                "pragma_backup": 1,
-                "project": os.environ.get("PRAGMA_PROJECT") or store.name,
-                "kind": "memory",
-                "created": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
-                "memory_from": str(store),
-                "workspace_from": os.environ.get("PRAGMA_WORKSPACE", ""),
-                "episodes": n,
-            }, indent=2))
-        kb = zpath.stat().st_size / 1024
-        print(f"  saved {zpath.name}  ({kb:.1f} KB, {n} episodes)")
-        print(f"  {out}")
-    except Exception as e:
-        print(f"  could not write the snapshot: {type(e).__name__}: {str(e)[:100]}")
 
 
 def _run_slash(cmd: str, store_dir: str) -> bool:
@@ -173,6 +162,21 @@ def _run_slash(cmd: str, store_dir: str) -> bool:
         return True
     if action == "exit":
         return False                      # handled by the caller's exit path
+    if action.startswith("ask:"):
+        want = action.split(":", 1)[1]
+        path = os.environ.get("PRAGMA_REQUEST")
+        if not path:
+            print("  that one needs the launcher: start with `pragma`.")
+            return True
+        try:
+            Path(path).write_text(json.dumps({"action": want}), encoding="utf-8")
+        except Exception as e:
+            print(f"  could not ask the launcher: {type(e).__name__}")
+            return True
+        # False ends the loop the same way /exit does, so the turns consolidate
+        # before the launcher takes over. Leaving without that would drop the
+        # conversation on the floor to look at a settings page.
+        return False
 
     # The inspection commands are mem_map's, which is the tool that already
     # knows how to render a store. Called rather than reimplemented: two
@@ -183,9 +187,6 @@ def _run_slash(cmd: str, store_dir: str) -> bool:
         print("  repository - see the note in the README.")
         return True
     args = [sys.executable, str(tool), store_dir]
-    if action == "backup":
-        _snapshot_memory(store_dir)
-        return True
     if action != "map":
         args.append("--" + action)
     try:
@@ -555,8 +556,10 @@ If the turn needed no tools at all, the conclusion is simply your reply.
     print(f"  Pragma live session · {served} · {cwd}")
     print(f"  memory: {'recall on + consolidation on exit' if args.memory else 'off'}"
           f" · max {max_steps} steps per turn")
-    print("  /exit to close the session (Ctrl+C also consolidates)")
-    print()
+    # The commands, on the way in. A menu made them discoverable by existing;
+    # a bare prompt hides them behind knowing to ask, which is the one thing
+    # the menu did better.
+    _slash_banner()
 
     cfg = AgentConfig(
         name="Pragma",
@@ -591,7 +594,7 @@ If the turn needed no tools at all, the conclusion is simply your reply.
     try:
         while True:
             try:
-                text = input("you > ").strip()
+                text = input(_prompt()).strip()
             except (EOFError, KeyboardInterrupt):
                 print()
                 break
@@ -603,8 +606,9 @@ If the turn needed no tools at all, the conclusion is simply your reply.
             # else so it never reaches the model, never becomes a Turn, and
             # never lands in an episode as though it had been said.
             if text.startswith("/"):
-                _run_slash(text.split()[0].lower(),
-                           str(baseline_config.EPISODES_DIR))
+                if not _run_slash(text.split()[0].lower(),
+                                  str(baseline_config.EPISODES_DIR)):
+                    break        # /exit, or a page the launcher owns
                 continue
 
             # The Turn — and so the raw log, and so what the segmenter reads
