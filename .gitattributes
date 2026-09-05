@@ -1,0 +1,25 @@
+# Line endings, decided here rather than by whoever cloned.
+#
+# core.autocrlf is on by default on Windows, which rewrites every checked-out
+# text file to CRLF. For a shell script that is fatal: Linux reads the trailing
+# carriage return as part of the interpreter path and answers "bad interpreter:
+# /usr/bin/env bash^M". The scripts are the documented way in on Linux and
+# macOS, so they must arrive with LF whatever the machine that checked them out
+# prefers.
+*.sh    text eol=lf
+
+# The batch files are the mirror image: cmd.exe wants CRLF, and a .bat with
+# bare LF can mis-execute a multi-line command.
+*.bat   text eol=crlf
+*.ps1   text eol=crlf
+*.psm1  text eol=crlf
+*.psd1  text eol=crlf
+
+# Everything else follows the working tree, normalised in the repository.
+*       text=auto
+
+# Binary, never touched.
+*.png   binary
+*.gif   binary
+*.zip   binary
+*.gguf  binary

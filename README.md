@@ -5,130 +5,246 @@
 <h2 align="center">Pragma</h2>
 
 <p align="center">
-  <em>A local-first autonomous agent you can actually understand.</em>
+  <em>A local agent with a memory that forgets.</em>
 </p>
 
 <p align="center">
-  Open-source models  ·  Visible reasoning loop  ·  No black boxes  ·  No API key required
+  Your machine  ·  Open models  ·  No API key  ·  A terminal you can live in
 </p>
 
 <p align="center">
   <a href="./LICENSE"><img src="https://img.shields.io/badge/license-AGPL--3.0-5c6bc0?style=flat-square" alt="License"></a>
   <img src="https://img.shields.io/badge/python-3.10%2B-3776ab?style=flat-square" alt="Python 3.10+">
-  <img src="https://img.shields.io/badge/frontend-vanilla%20JS%2C%20no%20build-43a047?style=flat-square" alt="No build step">
   <img src="https://img.shields.io/badge/runs%20on-llama.cpp-f97316?style=flat-square" alt="llama.cpp">
+  <a href="https://doi.org/10.5281/zenodo.21474333"><img src="https://img.shields.io/badge/DOI-10.5281%2Fzenodo.21474333-blue?style=flat-square" alt="DOI"></a>
 </p>
 
 <p align="center">
-  <img src="pragma.gif" alt="Pragma demo" width="800">
+  <img src="pragma.gif" alt="Pragma" width="800">
 </p>
 
 ---
 
-Most AI agents are cloud-dependent black boxes. **Pragma runs** entirely **on your machine**, uses **open-source models** served by **llama.cpp**, and streams every reasoning step live in the UI as it happens. You see the thinking, the tools, the observations — nothing hidden.
+Pragma runs on your machine, against a model you serve yourself, and **remembers
+between sessions** — not by keeping a transcript, but by writing down what
+happened, distilling what recurs, and letting the rest fade. Come back after a
+month and it tells you what it still holds and what has gone quiet.
 
 *From the Greek pragma — something accomplished through action.*
 
 ---
 
-## ✦ What makes it different
+## Quickstart
 
-**🏠 Everything runs locally.**
-llama.cpp, your models, your files. No data leaves your machine. No account, no API key, no vendor.
+**1. Get it and install it.**
 
-**🔍 The reasoning loop is visible.**
-Every thought, action, and observation streams live in the UI. Watch the agent plan, execute, and react — step by step, in real time.
-
-**🧠 One model, different jobs.**
-The same local model wears a different hat for each job — planning, choosing what to
-remember, consolidating a session, distilling knowledge — each with its own system
-prompt. Nothing is hardcoded to a vendor. (You *can* route the `code` skill to a
-dedicated model with `CODING_MODEL`; by default it uses the same one.)
-
-**⏳ A memory with a sense of time.**
-Sessions become episodes, what recurs becomes knowledge, and what stops being recalled
-fades — then resurfaces when it becomes relevant again. Later experience can change what
-an old episode *means*, without rewriting what happened.
-
-**📐 Plain, readable stack.**
-FastAPI · Vanilla JS · WebSocket. No framework magic. Every file is understandable in isolation.
-
----
-
-## ⚡ Quickstart
-
-Two terminals: one serves the model, one runs Pragma.
-
-### 1. Install
-
-```bash
-git clone https://github.com/homoagens/pragma
+```bat
+git clone https://github.com/homoagens/pragma.git
 cd pragma
+.\install.ps1
 ```
 
-Three twin scripts, in order — `install` → `configure` → `start`:
+Builds the environment and adds one line to your PowerShell profile, so
+`pragma` exists in every window. `install.bat` does the same from a
+double-click; on Linux and macOS, `./install.sh`.
+
+**2. Serve a model.** Any OpenAI-compatible endpoint. The short path is
+[llama.cpp](https://github.com/ggml-org/llama.cpp/releases): grab a prebuilt
+binary, serve a GGUF with `llama-server`, leave that terminal open. Two flags
+matter — `-np 2` so a background consolidation does not block your turn, and
+`--jinja` for chat templates on Qwen-family models.
+
+*Never launched llama.cpp?* [There is a prompt below](#dont-know-llamacpp) that
+writes the command for your hardware.
+
+**3. Point Pragma at it.**
 
 ```bat
-install.bat          :: Windows — venv + deps, and `pragma` in every window
-configure.bat        :: interactive: writes .env (backend URL, model, key)
-start.bat            :: launch Pragma (opens the UI)
+.\configure.bat
 ```
 
-```bash
-chmod +x install.sh configure.sh start.sh
-./install.sh         # Linux / macOS — create venv + install deps
-./configure.sh       # interactive: writes .env (backend URL, model, key)
-./start.sh           # launch Pragma (opens the UI)
-```
+Asks for the endpoint URL. Leave the model name **empty** — Pragma asks the
+endpoint what it is serving, so it cannot go stale when you load another one.
 
-On Windows `install` also adds one line to your PowerShell profile, so `pragma`
-exists in every terminal with no paths to type. It is written between markers
-and rewritten in place on a re-run, so installing twice — or after moving the
-repository — updates the path rather than leaving a stale import behind, and a
-line you had added by hand is adopted rather than duplicated. `.\install.ps1
--NoProfile` skips it; `.\install.ps1 -Uninstall` removes it and touches nothing
-else.
-
-`configure` asks for your **OpenAI-compatible backend URL** (must end in `/v1`), the
-model name, and an optional API key, then checks the endpoint answers. Re-run it any time
-to change them — there is no config file to hand-edit.
-
-### 2. Serve a model
-
-Pragma talks to any OpenAI-compatible endpoint; you bring your own. The path of least
-resistance is `llama.cpp` — grab a prebuilt binary from
-[github.com/ggml-org/llama.cpp/releases](https://github.com/ggml-org/llama.cpp/releases)
-(CUDA for NVIDIA, Vulkan for AMD/Intel, AVX2 for CPU-only) and serve a GGUF with
-`llama-server`.
-
-| | Model | Notes |
-| --- | --- | --- |
-| 🐉 **Reference** | **Qwen3.6 27B · Q5** | **The daily driver.** Everything here is developed and tested against it — if you want Pragma to behave as described, run this. 24 GB VRAM class. |
-| 🐦 Starter | Qwen3.6 35B-A3B · Q5 | Mixture-of-experts, ~3B active parameters: fast even with experts offloaded to CPU, so it tolerates less VRAM than its size suggests. |
-| ⚡ Ultra-light | Qwen3.6 9B · Q6 | For modest GPUs. It works; expect rougher reasoning on long tasks. |
-
-Two flags matter regardless of model: **`-np 2`** (so a background consolidation can run
-without blocking the foreground task) and **`--jinja`** (chat templates on Qwen-family
-models). Leave the server terminal open.
-
-Not sure how to launch it on your hardware? The next section has a prompt that writes the
-command for you.
-
-### 3. Start
+**4. Open a new terminal and go.**
 
 ```bat
-start.bat       :: Windows
-./start.sh      # Linux / macOS
+pragma
 ```
-
-Opens at **http://localhost:8006**. The settings panel shows the active `.env` entries and
-the knowledge store, and reloads config without a restart.
 
 ---
 
-## 🤖 Don't know llama.cpp?
+## What you get
 
-You don't actually need to learn the flags from scratch. Paste this prompt into any LLM (Claude, ChatGPT, Gemini, even a local model) and it produces **OS- and hardware-specific install commands + a tuned `llama-server` invocation + the matching `.env`**.
+<!-- TODO: a short recording of the harness goes here -->
+
+```
+ ████████████
+ █████████████
+       ██   ███
+    █  ██   ███
+  ████████████   _ _ __ _ __ _ _ __  __ _
+ ████████████   | '_/ _` / _` | '  \/ _` |
+ ████           |_| \__,_\__, |_|_|_\__,_|
+ ██                       |___/
+
+   Saturday 5 September, 09:35
+
+  project   notes
+  memory    65 episodes active, 4 dormant, 36 beliefs
+  away for  19 days                       tau 0.63
+  serving   Qwen3.6-27B
+
+  Since you left
+    4 episodes went dormant
+    1 belief revised - "fixed-price contracts, this client"
+    last time you were on: the deployment that went wrong on a Friday
+
+  /chat to talk   ·   /help for everything else
+
+  you >
+```
+
+**That screen is the point.** Opening a session used to tell you nothing;
+here the store says how long you have been away in half-lives of its own
+forgetting, what slipped below the surface while you were gone, and what it
+last saw you doing.
+
+`/chat` opens a conversation. `/exit` or `Ctrl+D` comes back here; again, and
+you are out.
+
+---
+
+## The commands
+
+Type `/` and they appear, narrowed by what you type next.
+
+| | |
+| --- | --- |
+| `/chat` | talk to it — many turns, one conversation |
+| `/map` | everything in memory, with what has faded |
+| `/beliefs` | what it has concluded from what recurred |
+| `/diff` | meanings it has revised, before and after |
+| `/oblio` | the dormant zone |
+| `/last` | the newest episode, in full |
+| `/settings` | model, budgets, sampling for this project |
+| `/backups` | snapshot or restore |
+| `/switch` `/new` `/delete` | projects |
+| `/help` | all of it |
+
+Anything that is not a command is a message.
+
+---
+
+## Projects
+
+A project is **one folder you work in** plus **a memory of its own**.
+
+```bat
+cd D:\notes
+pragma -Register -Name notes
+```
+
+The folder is the workspace: the agent reads and writes there. The memory
+lives apart, under `~/.pragma/projects/notes` — never inside your folder,
+because a workspace is often a git repository and personal episodes have no
+business in one.
+
+One folder, one project, nesting included. So `pragma` from anywhere inside a
+registered folder never has to ask which memory you mean.
+
+**`PRAGMA.md`** in the workspace is the other half. Memory is what the agent
+*learns*; that file is what you *decide*, and a rule in it always applies:
+
+```markdown
+## Conventions
+- journal.md holds dated reflections; notebook.md holds course notes.
+```
+
+---
+
+## The memory
+
+Every session that was worth keeping becomes an **episode** — what you were
+doing, what happened, what it seems to mean. What recurs across episodes is
+distilled into **beliefs**, each carrying the episodes it rests on.
+
+**It forgets on purpose.** An episode's salience decays with the time since it
+was last recalled; below a threshold it goes dormant — out of the way, not
+deleted — and comes back when a question matches it again. Nothing is
+destroyed by default.
+
+**And it changes its mind.** Later experience can rewrite what an old episode
+*means* while the record of what happened stays frozen. A belief that
+accumulates contradictions is reformulated rather than merely dropped.
+
+That is the subject of the paper below, and the numbers there come from 229
+recorded executions rather than from this paragraph.
+
+---
+
+## Backups
+
+`/backups` takes a snapshot of the memory, the workspace, or both, and
+restores one. Restoring names what it will replace, asks you to type the
+project's name, and **takes a snapshot of the current state first** — so a
+restore is itself undoable.
+
+The workspace is never deleted by a restore, only overwritten file by file:
+that folder is yours, and Pragma removes only what Pragma made.
+
+---
+
+## Configuration
+
+`.env` holds the endpoint. **The endpoint decides the model** — llama.cpp
+serves whatever is loaded and ignores the name in the request — so leaving
+`DEFAULT_MODEL` empty is the right answer for a single-model server. Set it
+only when the endpoint hosts several and the field actually selects one.
+
+Sampling has three states, in `/settings`:
+
+- **the server's** — nothing is sent, the endpoint decides all four
+- **by hand** — you set temperature, top_k, top_p, min_p
+- **greedy** — temperature 0, deterministic
+
+The memory faculties run at temperature 0 regardless, so the store stays
+reproducible whatever the conversation is doing.
+
+---
+
+## Other ways in
+
+**The browser interface** — the older way, with threads and panes:
+
+```bat
+.\pragma-gui.bat        :: Windows
+./pragma-gui.sh         # Linux / macOS
+```
+
+Opens at `http://localhost:8006`.
+
+**One task, no conversation** — for scripts and long jobs:
+
+```bat
+venv\Scripts\python.exe -m agent.batch "read my notes and list what I left unfinished" --cwd D:\notes --memory
+```
+
+Stateless without `--memory`. Each faculty tags its own output (`[CURATOR]`,
+`[CONSOLIDATOR]`, `[ABSTRACTOR]`, `[FORGETTING]`, `[RECONSOLIDATOR]`) so you
+can watch what memory did.
+
+**On Linux and macOS** the project launcher — the briefing, the registry,
+switching between memories — is a PowerShell module and does not run yet.
+`./start.sh` opens the conversation directly against `~/.pragma` and the
+folder you are standing in; everything inside the conversation works.
+
+---
+
+## Don't know llama.cpp?
+
+Paste this into any LLM and it produces install commands, a tuned
+`llama-server` invocation, and the matching `.env` for your hardware.
 
 <details>
 <summary>Show the prompt</summary>
@@ -146,7 +262,7 @@ Tell me, step by step:
 
 2. Which GGUF model to download for my hardware. Recommend a sensible
    default from bartowski's collection on Hugging Face for my VRAM/RAM budget,
-   and give me the direct download link. Prefer Qwen3 MoE for ≥16 GB VRAM,
+   and give me the direct download link. Prefer Qwen3 MoE for >=16 GB VRAM,
    smaller dense models otherwise.
 
 3. The full `llama-server` command to launch it, with appropriate flags for:
@@ -156,8 +272,8 @@ Tell me, step by step:
      - KV cache quantization (-ctk / -ctv) if memory is tight
      - flash attention (--flash-attn on)
      - **MANDATORY: -np 2** so the foreground task and the background
-       consolidation worker (session_reflect) run in parallel. Without this
-       Pragma's UI blocks waiting for the worker to finish serially.
+       consolidation worker run in parallel. Without this Pragma blocks
+       waiting for the worker to finish serially.
      - threads (-t) = my CPU physical core count
      - --jinja for chat template handling on Qwen-family models
    The server must listen on port 11434.
@@ -166,7 +282,7 @@ Tell me, step by step:
 
 5. The .env values I should put in Pragma:
      LLM_BASE_URL=http://127.0.0.1:11434/v1
-     DEFAULT_MODEL=<the name llama-server reports for the loaded model>
+     DEFAULT_MODEL=            (leave empty: Pragma asks the endpoint)
      CONTEXT_WINDOW=<same value used with -c in the server>
      MAX_TOKENS=<sensible output cap, typically context/4>
 
@@ -181,280 +297,88 @@ Be concrete: filenames, full commands, expected output. No prose, no theory.
 
 </details>
 
-Fill in the four hardware lines, run what comes back, you're done.
+Which model? Everything here is developed against **Qwen3.6 27B · Q5** (24 GB
+VRAM class). **Qwen3.6 35B-A3B · Q5** is a mixture-of-experts with ~3B active
+parameters — fast even with experts on the CPU, so it tolerates less VRAM than
+its size suggests.
 
 ---
 
-## 🖥 Batch mode — Pragma without the UI
-
-`agent.batch` runs **one task start to finish** from the terminal: no browser, no
-interaction, every reasoning step streamed to stdout. It is what you reach for in a
-script, a scheduled job or a CI step — and it is where Pragma's memory work happens.
-
-```bat
-venv\Scripts\python.exe -m agent.batch --task "fix the failing test" --cwd C:\my\project
-```
-
-```bash
-./venv/bin/python -m agent.batch --task "fix the failing test" --cwd /my/project
-```
-
-**The output adapts to where it lands:**
-
-| Where it goes | Mode | What you get |
-| --- | --- | --- |
-| a terminal | pretty | live rendering: step rules, dim thoughts, cyan actions, the conclusion as real Markdown in a panel |
-| a redirect (`> run.md`) | markdown | a clean Markdown document — view it rendered with `glow run.md` (or `python -m rich.markdown run.md`) |
-| `--plain` | plain | flat `[HH:MM:SS] STEP n ...` lines, stable for grepping from scripts |
-
-Useful flags:
-
-- `--task-file task.txt` — or pipe the task on stdin
-- `--log run.json` — full structured step log (every observation, untruncated)
-- `--max-steps 25` · `--temperature 0.2` (default `0.0`, for reproducible runs)
-- `--memory` — persistent memory, see below
-
-**Where it works.** The workspace is `--cwd`, else `PRAGMA_WORKSPACE`, else the current
-directory — and Pragma's own source tree is **always refused**, so a stray run can't
-edit the agent that is running it. Point it at a dedicated folder.
-
-Exit codes: `0` clean conclusion · `2` step budget exhausted (forced verdict) · `1` failure.
-
-> [!NOTE]
-> **No user, no blocking.** In batch `ask_user` never waits: confirmation
-> requests for destructive actions fail safe to *no*, unless the operation is
-> explicitly authorized in the task text or in `PRAGMA.md` (below).
-
-### Memory (`--memory`) — experimental
-
-> [!WARNING]
-> **This is the newest and least settled part of Pragma.** It is under active
-> development: the faculties, the parameters and the on-disk format can change between
-> commits. Everything else in Pragma is stable; this is the moving edge. Point it at a
-> throwaway store (`PRAGMA_DATA_DIR`) before you rely on it.
-
-With `--memory` a run is no longer an isolated episode. Between sessions the memory has a
-life cycle of its own:
-
-- **at the start**, a curator picks only the *relevant* past episodes and learnings and puts them in context — not the whole history;
-- **at the end**, the session is consolidated into an episode — what was done, what surprised, how important it was — under `~/.pragma/episodes/` (override with `PRAGMA_DATA_DIR`);
-- what **recurs across episodes** is distilled into an assertion with sources and confidence — the store you see in **Settings → Knowledge** in the UI;
-- what stops being recalled **fades**: episodes decay with time into a dormant zone, and come back when a later session makes them relevant again;
-- new experience can **reinterpret** older episodes and reformulate a belief, keeping every previous version — the recorded facts are never rewritten.
-
-An episode is centred on what a session **yields**, not on what it was about: a
-fact about you stated in passing outranks the topic that took the most words, and
-a subject discussed and closed with nothing carried forward scores low however
-long it lasted.
-
-Each faculty tags its own line in the output (`[CURATOR]`, `[CONSOLIDATOR]`,
-`[ABSTRACTOR]`, `[FORGETTING]`, `[RECONSOLIDATOR]`), so you can watch what memory did.
-
-No `--memory`, no traces: batch runs are stateless by default.
-
-### Sessions — `new-session.ps1` (Windows)
-
-Running the above by hand means repeating `--memory --max-steps … --cwd …` and
-remembering which `PRAGMA_DATA_DIR` belongs to which project. A **session** wraps
-that up: one folder, one memory, one short command.
-
-```powershell
-.\new-session.ps1
-```
-
-It asks where the session should live and what to call it, then creates:
-
-```
-D:\pragma-notes\
-    pragma.ps1     enter the session:  . D:\pragma-notes\pragma.ps1
-    workspace\     the files the agent reads and writes
-    .memoria\      episodes and beliefs
-    backups\       written by `pragma -Backup`
-```
-
-From then on, one line puts you in that session:
-
-```powershell
-. D:\pragma-notes\pragma.ps1
-pragma "read my notes and tell me what I left unfinished"
-```
-
-| Command | |
-| --- | --- |
-| `pragma "task"` | run a task, memory on (`-NoMem` for stateless) |
-| `pragma -Chat` | a live session: many turns, one conversation — see below |
-| `pragma -Note "..."` | record an experience — journal entry plus episode |
-| `pragma -Ask "..."` | ask memory something, without touching files |
-| `pragma -Map` · `-Beliefs` · `-Diff` · `-Oblio` · `-Last` · `-Sizes` | inspect what memory holds, concluded, revised, forgot |
-| `pragma -Sampling` | what this session sends, what the server adds, what applies |
-| `pragma -Backup` | snapshot the store |
-| `pragma -Time <min> <months>` | age the memory — see below |
-| `pragma -Reset` · `-Off` · `-Info` | wipe (typed confirmation) · leave · list everything |
-
-Sessions are independent: one for your notes and one for a project remember
-different things and never mix. Create as many as you like.
-
-A `workspace\PRAGMA.md` is created with the session, commented out and therefore
-inert. Write a rule below the comment block and it is injected before **every**
-task — see [PRAGMA.md](#pragmamd--the-project-contract) below. Memory is what
-the agent *learns*; this file is what you *decide*, and unlike a memory it is
-never weighed against anything else.
-
-`pragma.ps1` holds only configuration — model profile, step budget, action
-channel, output budgets, sampling — and is meant to be edited. The commands
-themselves live in `tools/pragma-session.ps1`, so every session picks up
-improvements the next time you enter it.
-
-> [!NOTE]
-> **Sampling has two kinds of "empty".** `Temperature` empty means Pragma's own
-> `0.0`: Pragma *always* sends that field, so your server's `--temp` never
-> reaches it. `TopK` / `TopP` / `MinP` empty means they are not sent at all, so
-> the server's launch-time defaults decide. Which is usually what you want — a
-> model's recommended preset already lives there — but it makes "the server is
-> configured" and "the agent runs that way" two different statements.
-> `pragma -Sampling` prints both sides and what therefore applies.
->
-> The memory faculties always run at temperature 0 whatever a session sends, so
-> raising it loosens the conversation without making what reaches the store any
-> less reproducible.
-
-#### `pragma -Chat` — a live session
-
-> [!WARNING]
-> Days old, and the least settled thing here even by the standards of the memory
-> subsystem. `pragma "task"` remains the path that has run thousands of times.
-
-`pragma "task"` answers one request and consolidates it. `-Chat` keeps a
-conversation:
-
-- the context **stays alive between turns**, so "that table we discussed" works;
-- the curator **recalls once per turn**, on that turn's words. What it places
-  stays in front of the agent, so a memory is put on the desk — and reinforced —
-  once per conversation, not once per turn;
-- when the context fills up, the older turns are **consolidated into episodes
-  rather than summarised**: they leave the message list and what those episodes
-  say takes their place. A conversation that overflows is remembered, not
-  blurred. `CHAT_COMPACT_CHARS` and `CHAT_KEEP_TURNS` set when and how much;
-- on exit a **segmenter** decides where one experience ended and the next began —
-  grouping the turns that belong together, discarding what nothing would miss —
-  and one episode is written per kept segment.
-
-Two more faculty tags appear in a live session: `[SEGMENTER]` and `[COMPACTOR]`.
-
-> [!NOTE]
-> **A session shows the actions, not the thinking.** Batch prints the model's
-> per-step note, because there you are watching a task run. A conversation
-> hides it: the reply belongs in the closing message, and showing both made the
-> agent answer twice — once mid-turn, then again as a receipt. The tool calls
-> stay visible, so you still see what is being done to your files.
-> `pragma -Chat -Verbose` brings the notes back when what you want to see is
-> what the model told itself.
-
-The raw conversation is appended to `workspace\.pragma_session.jsonl` after
-every turn, before anything else can fail, so consolidation can be re-run after
-a crash: a memory may arrive late, it should not disappear.
-
-> [!TIP]
-> **`-Time` is the laboratory switch.** It ages every episode by *N* simulated
-> months so you can watch decay, dormancy and revival without waiting for them.
-> It rewrites when things happened, permanently — so it asks for confirmation
-> and reminds you to back up first.
-
-Windows only for now: it is PowerShell. On Linux and macOS, call `agent.batch`
-directly with `PRAGMA_DATA_DIR` set to your store.
-
-### PRAGMA.md — the project contract
-
-Drop a `PRAGMA.md` in the workspace root and every batch run injects it as user-authored project instructions: conventions, constraints, standing authorizations (*"deletions in this folder are pre-authorized"*). The file is **read-only for the agent** — it can follow it, never rewrite it.
-
-It goes in the workspace root — the folder the agent works in (`--cwd`, or `workspace\` inside a session). It is injected on every run, with no flag, and it does **not** compete with recalled memories for space: a rule here always applies.
-
-```markdown
-## Environment
-- Install every dependency in .\venv, never in system Python.
-
-## Standing authorizations
-- Deleting files under tmp\ is pre-authorized.
-```
-
-HTML comments (`<!-- … -->`) are stripped before injection, so you can keep notes to yourself in the file without them becoming instructions. A file containing nothing but comments counts as absent.
-
-> [!TIP]
-> Use it for what must **always** hold. Memory learns from what happened and the curator decides each time whether a past episode is relevant; a constraint you care about — *"never touch system Python"* — should not depend on that judgement.
-
----
-
-## 🗂 Architecture
+## Architecture
 
 ```
 pragma/
-  agent/          FastAPI server · batch runner · ReAct orchestration · skill wrappers
-  core/           LLM client · ReAct loop · persistent memory · skill palette
-  interface-web/  Vanilla JS + WebSocket UI — no build step
+  agent/          chat harness · batch runner · FastAPI server · ReAct orchestration
+  core/           LLM client · ReAct loop · the memory · skill palette
+  tools/          the launcher: PowerShell module, briefing, endpoint report
+  interface-web/  the browser UI - vanilla JS, no build step
 ```
 
-**`core/`** — provider-agnostic, reusable:
+**`core/`** — provider-agnostic:
 
-| File            | Role                                                   |
-| --------------- | ------------------------------------------------------ |
+| File | Role |
+| --- | --- |
 | `llm_client.py` | Calls the OpenAI-compatible `/chat/completions` endpoint |
-| `react.py`      | Generic ReAct loop with streaming `on_step` callback   |
-| `memory.py`     | Context compression *within* one conversation          |
-| `episodes.py`   | Persistent episodic store: salience, decay, dormant zone, revival |
-| `curator.py`    | Picks which past episodes and beliefs enter the next context |
-| `reconsolidate.py` | Rewrites what a past episode or belief *means* — recorded facts stay frozen |
-| `skills/`       | One folder per skill — filesystem, shell, web, LLM, code… |
+| `react.py` | Generic ReAct loop with a streaming `on_step` callback |
+| `clock.py` | The one place time comes from — injectable, so a run can be aged |
+| `episodes.py` | The episodic store: salience, decay, dormancy, revival |
+| `curator.py` | Chooses which episodes and beliefs enter the next context |
+| `reconsolidate.py` | Rewrites what an episode or belief *means*; facts stay frozen |
+| `memory.py` | Compression *within* one conversation — a different thing |
+| `skills/` | One folder per skill: filesystem, shell, web, code |
 
-Two different things are called memory here: `memory.py` compresses a single growing
-conversation, while `episodes.py` · `curator.py` · `reconsolidate.py` are the store that
-persists *between* sessions. Writing an episode and distilling knowledge from recurrence
-happen in the `episode_consolidate` skill, at the end of a session.
+Two different things are called memory: `memory.py` compresses a single
+growing conversation, while `episodes.py`, `curator.py` and `reconsolidate.py`
+are the store that persists *between* sessions.
 
-**`agent/`** — Pragma-specific behavior on top of core:
-
-- Per-thread working directory, concurrency-safe
-- Thread persistence on disk as JSON
-- WebSocket streaming with async/thread bridging
+Design notes live in [`docs/`](./docs).
 
 ---
 
-## 📄 Research artifacts
+## Research artifacts
 
-Pragma's memory subsystem is the subject of a paper in preparation, *"Giving Stateless
-Agents a Sense of Time: A Reconsolidating Episodic–Semantic Memory Architecture."*
+Pragma's memory subsystem is the subject of *"Giving Stateless Agents a Sense
+of Time: A Reconsolidating Episodic–Semantic Memory Architecture"*, under
+review.
 
-The evaluation corpus, the experimental stimuli, and the derived datasets are deposited
-separately from this repository, under a persistent identifier:
+The evaluation corpus, the stimuli and the derived datasets are deposited
+separately:
 
 **DOI:** [10.5281/zenodo.21474333](https://doi.org/10.5281/zenodo.21474333)
-*(concept DOI: it always resolves to the most recent version of the deposit)*
+*(concept DOI — always resolves to the most recent version)*
 
-The deposit holds the raw execution traces of every archived run — session transcripts,
-episodic and semantic stores with their revision histories, and metadata pinning the
-served model, code revision, and memory parameters — so that the reported results can be
-inspected independently of this codebase.
-
----
-
-## 🌱 Part of Homo Agens
-
-Pragma is the first public project under **[Homo Agens](https://github.com/homoagens)** — an open-source effort exploring autonomous agents, local inference, and a simple thesis:
-
-> The model matters less than the architecture around it.  
-> Memory, tools, transparency, and execution control are what turn an LLM into something that actually gets things done.
+The deposit holds the raw traces of every archived run: transcripts, episodic
+and semantic stores with their revision histories, and metadata pinning the
+served model, code revision and memory parameters — so the reported results
+can be checked without trusting this codebase.
 
 ---
 
-## 📬 Contact
+## Part of Homo Agens
 
-If you work on agents, local AI, open-source tooling, or developer experience — let's talk.
+Pragma is the first public project under
+**[Homo Agens](https://github.com/homoagens)**, an open-source effort on
+autonomous agents, local inference, and a simple thesis:
 
-[Email](mailto:homoagens1@gmail.com) &nbsp;·&nbsp; [X / Twitter](https://x.com/homoagens1)
+> The model matters less than the architecture around it.
+> Memory, tools, transparency and execution control are what turn an LLM into
+> something that gets things done.
+
+---
+
+## Contact
+
+If you work on agents, local AI, or developer experience — let's talk.
+
+[Email](mailto:homoagens1@gmail.com) &nbsp;·&nbsp; [X](https://x.com/homoagens1)
 
 ---
 
 ## License
 
-[AGPL-3.0-or-later](./LICENSE) — free to use, study, modify and share. If you distribute a modified Pragma, or offer it to others as a service, you must release your changes under the same license. That's the deal: take freely, give back freely.
+[AGPL-3.0-or-later](./LICENSE) — free to use, study, modify and share. If you
+distribute a modified Pragma, or offer it to others as a service, you must
+release your changes under the same license. Take freely, give back freely.
 
-Versions up to commit `12e94d8` (2026-07-12) were published under the MIT license.
+Versions up to commit `12e94d8` (2026-07-12) were published under the MIT
+license.
