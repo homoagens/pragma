@@ -26,6 +26,7 @@ from __future__ import annotations
 import argparse
 import os
 import sys
+import time
 import traceback
 from datetime import datetime, timezone
 from pathlib import Path
@@ -74,10 +75,15 @@ def run(path: Path) -> int:
     job = jobs.read(path)
     if not job:
         return 2
-    if job.get("status") not in ("pending", "abandoned"):
-        # Already running or finished. Re-running a job would consolidate the
-        # same turns twice; the store's own session_id guard would catch most
-        # of it, but "most" is not a thing to rely on for memory.
+    if job.get("status") not in ("pending", "abandoned", "failed"):
+        # Running, or finished successfully. Re-running one of those would
+        # consolidate the same turns twice; the store's own session_id guard
+        # would catch most of it, but "most" is not a thing to rely on for
+        # memory.
+        #
+        # A FAILED job is different, and is the case /jobs tells you to run by
+        # hand: nothing of it reached the store, the turns are still in it, and
+        # the whole reason the file was kept is that it can be tried again.
         return 0
 
     store = Path(path).parent.parent
@@ -93,6 +99,11 @@ def run(path: Path) -> int:
         job["status"] = "running"
         job["pid"] = os.getpid()
         job["started"] = _utc()
+        # A retry starts clean. Keeping the failed attempt's log would show
+        # two runs interleaved, and the older one is exactly the part that is
+        # no longer true.
+        job["log"] = []
+        job["error"] = ""
         jobs.write(path, job)
 
         # Imported here, not at the top: it pulls in the whole agent, and a
@@ -129,6 +140,13 @@ def run(path: Path) -> int:
         lock.release()
 
     try:
+        # A beat before clearing up. /jobs follows a running job by polling the
+        # file twice a second, and deleting it the instant the last line is
+        # written would take the last line with it - the consolidator's own
+        # result, which is the one worth reading. Two seconds is nothing to a
+        # process nobody is waiting for, and it makes the good path certain
+        # rather than likely.
+        time.sleep(2.0)
         jobs.prune(store)
     except Exception:
         pass

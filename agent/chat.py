@@ -570,7 +570,15 @@ def _watch_job(path, job: dict) -> None:
     except Exception:
         repaint = False
     while True:
-        job = jobs.read(path) or job
+        fresh = jobs.read(path)
+        if not fresh and shown:
+            # The worker finished and cleaned up after itself. A job file that
+            # has gone is the success case, and the log already on screen is
+            # the whole of what there was to see.
+            print()
+            print("  done.")
+            return
+        job = fresh or job
         log = job.get("log") or []
         for line in log[shown:-1] if len(log) > shown else []:
             print("\r" + " " * last_len + "\r  " + line[:100])
@@ -614,12 +622,15 @@ def _show_jobs() -> None:
         return
     print()
     if not items:
-        print("  nothing in the background, and nothing recently finished.")
+        print("  nothing in the background - the memory is up to date.")
         print()
         return
 
     live = next((j for j in items if j.get("status") in ("pending", "running")),
                 None)
+    # Everything else in the list is a failure: `listing` drops finished jobs,
+    # because a record of consolidations that worked is a worse copy of the
+    # episodes they produced. What is left is what still wants attention.
     if live:
         print(f"  {live.get('note', 'a session')}   "
               "ctrl+D to leave it to itself")
@@ -632,6 +643,9 @@ def _show_jobs() -> None:
         print()
         return
 
+    print("  these did not finish. The turns are still in them, so they can be")
+    print("  run again:  venv\\Scripts\\python.exe tools\\pragma_consolidate.py <file>")
+    print()
     for job in items:
         state = job.get("status", "?")
         when = (job.get("finished") or job.get("started")
@@ -639,10 +653,9 @@ def _show_jobs() -> None:
         print(f"  {state:<10}{when}   {job.get('note', '')}")
         if job.get("error"):
             print(f"    {job['error'][:100]}")
-        for line in (job.get("log") or [])[-8:]:
+        for line in (job.get("log") or [])[-4:]:
             print(f"    {line[:100]}")
-        if job.get("episodes"):
-            print(f"    wrote {len(job['episodes'])} episode(s)")
+        print(f"    {job.get('_path', '')}")
         print()
 
 

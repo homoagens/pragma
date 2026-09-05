@@ -18,9 +18,14 @@
 #
 #     <store>/jobs/job_<stamp>.json
 #
-# The job is also the recovery path. The turns are copied into it, so a worker
-# that dies leaves everything needed to run it again - and the next launch says
-# so rather than losing the session quietly.
+# A JOB IS NOT A RECORD. It exists while the work does, and a consolidation
+# that succeeded deletes its own file: the episode is the record, and a list of
+# every consolidation ever run is a second, worse copy of the store. What
+# survives is what still wants someone - work in flight, and work that failed.
+#
+# Failure is kept on purpose. The turns are copied into the job, so a worker
+# that dies leaves everything needed to run it again, and the briefing says so
+# rather than losing the session quietly.
 from __future__ import annotations
 
 import json
@@ -114,8 +119,15 @@ def _abandoned(job: dict) -> bool:
     return True
 
 
-def listing(store: Path | None = None, limit: int = 20) -> list[dict]:
+def listing(store: Path | None = None, limit: int = 20,
+            include_done: bool = False) -> list[dict]:
     """Newest first. Each job carries `_path`, and a dead one reads as failed.
+
+    A finished job is NOT history. Consolidation that worked has left its trace
+    where traces belong - in the episodes - and a list of everything the memory
+    has ever written down is a second, worse copy of the store. So `done` is
+    excluded by default and the file is deleted; what survives is what still
+    needs someone: work in flight, and work that failed.
 
     The status is corrected on the way out rather than in the file: a launcher
     that only ever reads must not have to write to tell the truth, and the
@@ -132,6 +144,8 @@ def listing(store: Path | None = None, limit: int = 20) -> list[dict]:
         job["_path"] = str(p)
         if _abandoned(job):
             job["status"] = "abandoned"
+        if job["status"] == "done" and not include_done:
+            continue
         out.append(job)
     return out
 
@@ -170,18 +184,35 @@ def create(turns: list[dict], workspace: str, note: str,
     return path
 
 
-def prune(store: Path | None = None, keep: int = 20) -> None:
-    """Keep the last few finished jobs and drop the rest.
+def prune(store: Path | None = None, keep_failed: int = 5) -> None:
+    """Delete every finished job, and cap the failed ones.
 
-    They are small, but they hold the text of your turns, so they are not the
-    kind of file to accumulate for ever without anyone deciding to.
+    Success leaves nothing: the episode is the record, and the job file holds
+    the text of your turns, which is not a thing to accumulate in a second
+    place for ever.
+
+    Failure is kept, because the turns in it are the only way to run it again -
+    but not without limit either, or one broken endpoint fills the folder with
+    copies of the same evening.
     """
     d = jobs_dir(store)
     if not d.is_dir():
         return
-    done = [p for p in sorted(d.glob("job_*.json"), reverse=True)
-            if read(p).get("status") in ("done", "failed")]
-    for p in done[keep:]:
+    failed = []
+    for p in sorted(d.glob("job_*.json"), reverse=True):
+        job = read(p)
+        if not job:
+            continue
+        job["_path"] = str(p)
+        status = "abandoned" if _abandoned(job) else job.get("status")
+        if status == "done":
+            try:
+                p.unlink()
+            except Exception:
+                pass
+        elif status in ("failed", "abandoned"):
+            failed.append(p)
+    for p in failed[keep_failed:]:
         try:
             p.unlink()
         except Exception:
