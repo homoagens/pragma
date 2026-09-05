@@ -107,6 +107,51 @@ def _ask_launcher(action: str) -> bool:
         return False
 
 
+class _SlashCompleter:
+    """Offers the commands, narrowed by what has been typed after the slash.
+
+    Only on a line that STARTS with a slash: a message that happens to contain
+    one is prose, and a menu popping up mid-sentence would be worse than no
+    menu at all.
+    """
+
+    def get_completions(self, document, complete_event):
+        from prompt_toolkit.completion import Completion
+        text = document.text_before_cursor
+        if not text.startswith("/") or " " in text:
+            return
+        for name, (_action, blurb) in _SLASH.items():
+            if name == "/info":                  # a synonym, not a second entry
+                continue
+            if name.startswith(text):
+                yield Completion(name, start_position=-len(text),
+                                 display=name, display_meta=blurb)
+
+
+def _make_session():
+    """A prompt with completion, or None to fall back to input().
+
+    Missing library, a console that cannot host it, output being captured: all
+    of them mean the same thing here - use the plain prompt and lose nothing
+    but the suggestions.
+    """
+    if not sys.stdout.isatty():
+        return None
+    try:
+        from prompt_toolkit import PromptSession
+        from prompt_toolkit.completion import Completer
+        from prompt_toolkit.history import InMemoryHistory
+
+        # The mixin first: with Completer leading, its abstract
+        # get_completions wins the lookup and the class cannot be built.
+        class _C(_SlashCompleter, Completer):
+            pass
+        return PromptSession(completer=_C(), history=InMemoryHistory(),
+                             complete_while_typing=True, reserve_space_for_menu=6)
+    except Exception:
+        return None
+
+
 def _accent() -> str:
     """The launcher's accent as an ANSI foreground, or nothing.
 
@@ -594,6 +639,7 @@ If the turn needed no tools at all, the conclusion is simply your reply.
     )
 
     history: list | None = None
+    session = _make_session()
     turns: list[Turn] = []
     # What the curator has already put in front of the agent, for the whole
     # conversation. It is not a cache: the desk IS the history, because the
@@ -616,7 +662,11 @@ If the turn needed no tools at all, the conclusion is simply your reply.
     try:
         while True:
             try:
-                text = input(_prompt()).strip()
+                if session is not None:
+                    from prompt_toolkit.formatted_text import ANSI
+                    text = session.prompt(ANSI(_prompt())).strip()
+                else:
+                    text = input(_prompt()).strip()
             except EOFError:
                 # Ctrl+D steps back to the briefing; pressed again with nothing
                 # typed since, it leaves. A single key that both retreats and

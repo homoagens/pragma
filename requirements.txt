@@ -2,6 +2,9 @@ fastapi
 uvicorn[standard]
 requests
 rich
+# The chat prompt: live completion of the / commands, plus line editing
+# and history. Pure Python, no build step.
+prompt_toolkit
 ddgs
 python-dotenv
 json-repair
