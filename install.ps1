@@ -255,11 +255,14 @@ if ($policy -in @('Restricted', 'AllSigned')) {
 }
 
 Write-Host ""
-Write-Step "Open a NEW terminal, then:"
-Write-Host "    pragma -Register -Name <short-name>   " -NoNewline
-Write-Host "register the folder you are in" -ForegroundColor DarkGray
-Write-Host "    pragma                                " -NoNewline
-Write-Host "the menu" -ForegroundColor DarkGray
+# A NEW terminal, and said in bold: the profile is read at startup, so in this
+# window `pragma` is still not a command - which reads exactly like a failed
+# install.
+Write-Step "Open a NEW terminal - this one has not read the profile yet - then:"
 Write-Host ""
-Write-Step "Not pointed at an LLM server yet? Type /configure once inside."
+Write-Host "    cd <the folder you want to work in>"
+Write-Host "    pragma"
+Write-Host ""
+Write-Step "Everything else is inside: it offers to make the project, and"
+Write-Step "/configure points it at your LLM server."
 Write-Host ""

@@ -174,7 +174,8 @@ is chosen.
 
 ## Migrating an existing session
 
-A folder created by `new-session.ps1`, in order:
+A folder created by `tools
+ew-session.ps1`, in order:
 
 1. Build and prove the launcher on a throwaway project.
 2. Only once `pragma` opens the migrated project correctly: copy its `.memoria`

@@ -2,6 +2,9 @@
 REM ===========================================================================
 REM build.bat - builds dist\pragma.exe from the current Pragma source.
 REM
+REM Lives in tools\ and works from the repository root, which is where
+REM pragma.spec expects to be run and where venv\ and dist\ belong.
+REM
 REM Run this every time you change Pragma and want a fresh executable.
 REM It cleans previous artifacts, ensures PyInstaller is installed, and
 REM rebuilds using pragma.spec.
@@ -12,7 +15,7 @@ REM the repo venv if present.
 REM ===========================================================================
 
 setlocal
-cd /d "%~dp0"
+cd /d "%~dp0.."
 
 REM --- pick the interpreter: prefer the repo venv -----------------------------
 set "PY=python"

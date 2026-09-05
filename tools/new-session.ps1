@@ -26,10 +26,10 @@
   the questions.
 
 .EXAMPLE
-  .\new-session.ps1
+  .\tools\new-session.ps1
 
 .EXAMPLE
-  .\new-session.ps1 -Path D:\pragma-notes -Name notes -Endpoint http://127.0.0.1:8096/v1
+  .\tools\new-session.ps1 -Path D:\pragma-notes -Name notes -Endpoint http://127.0.0.1:8096/v1
 #>
 
 [CmdletBinding()]
@@ -60,7 +60,10 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
-$Repo = $PSScriptRoot
+# The repository root, one level up: this script lives in tools\ and every
+# path it writes into a session file - the venv, tools\pragma-session.ps1 -
+# is relative to the root, not to this folder.
+$Repo = Split-Path -Parent $PSScriptRoot
 
 function Ask([string]$question, [string]$default) {
     $suffix = if ($default) { " [$default]" } else { "" }

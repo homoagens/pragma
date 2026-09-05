@@ -26,7 +26,7 @@ if (-not (Get-Variable -Name PragmaSession -Scope Global -ErrorAction SilentlyCo
     -not (Get-Variable -Name PragmaSession -Scope Script -ErrorAction SilentlyContinue) -and
     -not $PragmaSession) {
     Write-Host "pragma-session.ps1 is not meant to be dot-sourced directly." -ForegroundColor Red
-    Write-Host "Create a session first:   .\new-session.ps1"
+    Write-Host "Create a session first:   .\tools\new-session.ps1"
     Write-Host "Then enter it:            . <session folder>\pragma.ps1"
     return
 }

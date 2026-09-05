@@ -37,7 +37,7 @@ month and it tells you what it still holds and what has gone quiet.
 
 ## Quickstart
 
-**1. Get it and install it.**
+**1. Install it.**
 
 ```bat
 git clone https://github.com/homoagens/pragma.git
@@ -45,9 +45,8 @@ cd pragma
 .\install.ps1
 ```
 
-Builds the environment and adds one line to your PowerShell profile, so
-`pragma` exists in every window. `tools\install.bat` does the same from a
-double-click.
+Builds the Python environment and adds one line to your PowerShell profile.
+`tools\install.bat` does the same from a double-click.
 
 Windows only for now. The launcher is a PowerShell module and nothing else has
 been tested, so the rest is not offered rather than offered and broken.
@@ -61,21 +60,23 @@ matter — `-np 2` so a background consolidation does not block your turn, and
 *Never launched llama.cpp?* [There is a prompt below](#dont-know-llamacpp) that
 writes the command for your hardware.
 
-**3. Open a new terminal, go to the folder you want to work in, and start.**
+**3. Open a new terminal and go.**
 
 ```bat
 cd D:\notes
 pragma
 ```
 
-The first run has no projects yet and offers to make one; it proposes the
-folder you are standing in and its name, so it is two presses of Enter.
-After that, `pragma` on its own goes straight back to that project.
+A **new** terminal, or the profile line is not read yet and `pragma` is not a
+command. That is the only reason the old window will not do.
 
-**4. Point Pragma at your server.** Type `/configure` at the prompt. It asks
-for the endpoint URL; leave the model name **empty** — Pragma asks the
-endpoint what it is serving, so it cannot go stale the day you load another
-one.
+Everything else happens inside. The first run has no projects and offers to
+make one, proposing the folder you are standing in — two presses of Enter.
+Then `/configure` to point it at the server from step 2; leave the model name
+**empty**, so Pragma asks the endpoint what it is serving and cannot go stale
+the day you load another one.
+
+From then on, `pragma` on its own is the whole thing.
 
 ---
 
@@ -315,7 +316,8 @@ pragma/
   agent/          chat harness · batch runner · FastAPI server · ReAct orchestration
   core/           LLM client · ReAct loop · the memory · skill palette
   tools/          the launcher: PowerShell module, briefing, endpoint report,
-                  configuration, and mem_map.py behind /map and /beliefs
+                  configuration, mem_map.py behind /map and /beliefs, and the
+                  wrappers - install, build, batch sessions
   interface-web/  the browser UI - vanilla JS, no build step
 ```
 
