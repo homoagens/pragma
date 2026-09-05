@@ -11,7 +11,7 @@ async function quitApp() {
   try { await fetch("/api/quit", { method: "POST" }); } catch (_) {}
   // Try to close the tab. Browsers only allow this on tabs that were
   // opened via window.open() from JS — i.e. almost never for a tab the
-  // user typed in or that start.bat launched via `start http://...`.
+  // user typed in or that pragma-gui.bat launched via `start http://...`.
   // We attempt it anyway because it's free, and fall back to a static
   // "Server stopped" page when the browser refuses.
   try { window.close(); } catch (_) {}

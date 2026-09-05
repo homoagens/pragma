@@ -261,5 +261,5 @@ Write-Host "register the folder you are in" -ForegroundColor DarkGray
 Write-Host "    pragma                                " -NoNewline
 Write-Host "the menu" -ForegroundColor DarkGray
 Write-Host ""
-Write-Step "Configure the endpoint if you have not yet:  .\configure.bat"
+Write-Step "Not pointed at an LLM server yet? Type /configure once inside."
 Write-Host ""

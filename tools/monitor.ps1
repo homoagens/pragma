@@ -19,7 +19,7 @@ $py = Join-Path $repo "venv\Scripts\pythonw.exe"
 if (-not (Test-Path $py)) { $py = Join-Path $repo "venv\Scripts\python.exe" }
 if (-not (Test-Path $py)) {
     Write-Host "Python environment not found in $repo" -ForegroundColor Red
-    Write-Host "Run install.bat first."
+    Write-Host "Run .\install.ps1 in the Pragma repository first."
     exit 1
 }
 

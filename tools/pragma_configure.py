@@ -3,19 +3,27 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 # This file is part of Pragma <https://github.com/homoagens/pragma>.
 
-"""Interactive configuration for Pragma — writes the OpenAI-compatible
+r"""Interactive configuration for Pragma — writes the OpenAI-compatible
 endpoint settings into .env.
 
-Invoked by configure.sh / configure.bat. All the logic lives here (one
-implementation, every OS) so there is no fragile shell/batch text handling:
-reading current values, prompting, backing up, upserting and the health
+Reached as /configure inside the harness, which is the only place that asks
+now: the question is about the window you are sitting in, so it belongs where
+you are sitting. It also runs on its own, for a machine being set up by hand:
+
+    venv\Scripts\python.exe tools\pragma_configure.py
+
+All the logic is here rather than in the shell wrapper it used to have, so
+reading the current values, prompting, backing up, upserting and the health
 check are robust to any characters already present in .env.
 """
 
 from pathlib import Path
 import shutil
 
-ENV          = Path(__file__).resolve().parent / ".env"
+# The repository root, one level up from tools/. Not the current directory:
+# /configure runs with the project workspace as cwd, and writing a .env
+# there would create a second one that nothing reads.
+ENV          = Path(__file__).resolve().parent.parent / ".env"
 DEFAULT_URL  = "http://127.0.0.1:8080/v1"
 KEYS         = ("LLM_BASE_URL", "DEFAULT_MODEL", "LLM_API_KEY")
 
@@ -80,13 +88,20 @@ def main() -> None:
         headers = {"Authorization": f"Bearer {key}"} if key else {}
         r = requests.get(f"{base.rstrip('/')}/models", headers=headers, timeout=5)
         if r.status_code == 200:
-            print("OK - endpoint reachable. Run start to launch Pragma.")
+            print("OK - endpoint reachable.")
         else:
             print(f"WARNING - endpoint returned HTTP {r.status_code}. Is the server running?")
-            print("You can still launch Pragma and fix this later (Settings in the UI).")
+            print("Pragma runs either way; come back to /configure when the server is up.")
     except Exception as e:
-        print(f"WARNING - could not reach the endpoint ({e}).")
-        print("You can still launch Pragma and fix this later (Settings in the UI).")
+        # Said in one line. A urllib3 connection failure is five lines of
+        # nested exception text, and this now prints inside the harness,
+        # where it pushed the answer off the screen and then got truncated
+        # mid-word. The common case has a plain name, so it gets one.
+        why = " ".join(str(e).split())
+        if "Max retries exceeded" in why:
+            why = "nothing is listening at that address"
+        print(f"WARNING - could not reach the endpoint ({why[:110]}).")
+        print("Pragma runs either way; come back to /configure when the server is up.")
 
 
 if __name__ == "__main__":

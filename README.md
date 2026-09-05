@@ -15,6 +15,7 @@
 <p align="center">
   <a href="./LICENSE"><img src="https://img.shields.io/badge/license-AGPL--3.0-5c6bc0?style=flat-square" alt="License"></a>
   <img src="https://img.shields.io/badge/python-3.10%2B-3776ab?style=flat-square" alt="Python 3.10+">
+  <img src="https://img.shields.io/badge/platform-Windows-0078d4?style=flat-square" alt="Windows">
   <img src="https://img.shields.io/badge/runs%20on-llama.cpp-f97316?style=flat-square" alt="llama.cpp">
   <a href="https://doi.org/10.5281/zenodo.21474333"><img src="https://img.shields.io/badge/DOI-10.5281%2Fzenodo.21474333-blue?style=flat-square" alt="DOI"></a>
 </p>
@@ -45,8 +46,11 @@ cd pragma
 ```
 
 Builds the environment and adds one line to your PowerShell profile, so
-`pragma` exists in every window. `install.bat` does the same from a
-double-click; on Linux and macOS, `./install.sh`.
+`pragma` exists in every window. `tools\install.bat` does the same from a
+double-click.
+
+Windows only for now. The launcher is a PowerShell module and nothing else has
+been tested, so the rest is not offered rather than offered and broken.
 
 **2. Serve a model.** Any OpenAI-compatible endpoint. The short path is
 [llama.cpp](https://github.com/ggml-org/llama.cpp/releases): grab a prebuilt
@@ -57,20 +61,22 @@ matter — `-np 2` so a background consolidation does not block your turn, and
 *Never launched llama.cpp?* [There is a prompt below](#dont-know-llamacpp) that
 writes the command for your hardware.
 
-**3. Point Pragma at it.**
+**3. Open a new terminal, name a folder to work in, and go.**
 
 ```bat
-.\configure.bat
-```
-
-Asks for the endpoint URL. Leave the model name **empty** — Pragma asks the
-endpoint what it is serving, so it cannot go stale when you load another one.
-
-**4. Open a new terminal and go.**
-
-```bat
+cd D:\notes
+pragma -Register -Name notes
 pragma
 ```
+
+The folder is the workspace; the memory is kept apart, under
+`~/.pragma/projects/notes`. After the first time, `pragma` on its own is
+enough — [more below](#projects).
+
+**4. Point Pragma at your server.** Type `/configure` at the prompt. It asks
+for the endpoint URL; leave the model name **empty** — Pragma asks the
+endpoint what it is serving, so it cannot go stale the day you load another
+one.
 
 ---
 
@@ -127,6 +133,7 @@ Type `/` and they appear, narrowed by what you type next.
 | `/diff` | meanings it has revised, before and after |
 | `/oblio` | the dormant zone |
 | `/last` | the newest episode, in full |
+| `/configure` | point Pragma at an LLM endpoint |
 | `/settings` | model, budgets, sampling for this project |
 | `/backups` | snapshot or restore |
 | `/switch` `/new` `/delete` | projects |
@@ -197,7 +204,8 @@ that folder is yours, and Pragma removes only what Pragma made.
 
 ## Configuration
 
-`.env` holds the endpoint. **The endpoint decides the model** — llama.cpp
+`/configure` writes `.env`, which holds the endpoint. **The endpoint decides
+the model** — llama.cpp
 serves whatever is loaded and ignores the name in the request — so leaving
 `DEFAULT_MODEL` empty is the right answer for a single-model server. Set it
 only when the endpoint hosts several and the field actually selects one.
@@ -218,8 +226,7 @@ reproducible whatever the conversation is doing.
 **The browser interface** — the older way, with threads and panes:
 
 ```bat
-.\pragma-gui.bat        :: Windows
-./pragma-gui.sh         # Linux / macOS
+.\pragma-gui.bat
 ```
 
 Opens at `http://localhost:8006`.
@@ -233,11 +240,6 @@ venv\Scripts\python.exe -m agent.batch "read my notes and list what I left unfin
 Stateless without `--memory`. Each faculty tags its own output (`[CURATOR]`,
 `[CONSOLIDATOR]`, `[ABSTRACTOR]`, `[FORGETTING]`, `[RECONSOLIDATOR]`) so you
 can watch what memory did.
-
-**On Linux and macOS** the project launcher — the briefing, the registry,
-switching between memories — is a PowerShell module and does not run yet.
-`./start.sh` opens the conversation directly against `~/.pragma` and the
-folder you are standing in; everything inside the conversation works.
 
 ---
 
@@ -310,7 +312,8 @@ its size suggests.
 pragma/
   agent/          chat harness · batch runner · FastAPI server · ReAct orchestration
   core/           LLM client · ReAct loop · the memory · skill palette
-  tools/          the launcher: PowerShell module, briefing, endpoint report
+  tools/          the launcher: PowerShell module, briefing, endpoint report,
+                  configuration, and mem_map.py behind /map and /beliefs
   interface-web/  the browser UI - vanilla JS, no build step
 ```
 

@@ -85,6 +85,7 @@ _SLASH = {
     "/oblio":    ("oblio",   "what has faded"),
     "/last":     ("last",    "the newest episode, in full"),
     "/sizes":    ("sizes",   "how wordy the store is"),
+    "/configure": ("configure", "point Pragma at an LLM endpoint"),
     "/clear":    ("clear",   "clear the screen, keep the conversation"),
     "/exit":     ("exit",    "close the session and consolidate"),
     # Handed back to the launcher: these are about the window, not the talk.
@@ -219,8 +220,8 @@ def _prompt() -> str:
 # At the briefing there is no conversation to clear or leave halfway, and
 # /chat is the one thing that only makes sense there.
 _AT_HOME = {"/chat", "/help", "/info", "/map", "/beliefs", "/diff", "/oblio",
-            "/last", "/sizes", "/clear", "/settings", "/backups", "/switch",
-            "/new", "/delete", "/exit"}
+            "/last", "/sizes", "/clear", "/configure", "/settings", "/backups",
+            "/switch", "/new", "/delete", "/exit"}
 _IN_CHAT = {n for n in _SLASH if n != "/chat"}
 
 # Which level is being typed at. One place, read by the banner, the help
@@ -281,7 +282,7 @@ def _slash_help() -> None:
         if action in seen and action == "help":
             continue
         seen.add(action)
-        print(f"    {name:<10} {blurb}")
+        print(f"    {name:<11}{blurb}")
     print()
     print("  anything else is a message to the agent.")
     print()
@@ -313,6 +314,26 @@ def _run_slash(cmd: str) -> bool:
         _new_page()
         _show_chat_header()
         return True
+    if action == "configure":
+        # The endpoint question, asked where you are rather than at a shell
+        # you have to leave the program to reach. It edits .env, and .env is
+        # read once at import - so the change is announced as taking effect
+        # next time, which is the truth, instead of appearing to do nothing.
+        tool = Path(__file__).resolve().parent.parent / "tools" / "pragma_configure.py"
+        if not tool.is_file():
+            print(f"  this needs {tool}, which is missing from this copy of Pragma.")
+            return True
+        print()
+        try:
+            subprocess.run([sys.executable, str(tool)], check=False)
+        except Exception as e:
+            print(f"  {type(e).__name__}: {str(e)[:120]}")
+            return True
+        print()
+        print("  this window keeps the endpoint it started with -")
+        print("  leave Pragma and come back for the new one.")
+        print()
+        return True
     if action in ("exit", "chat"):
         return False                      # handled by the caller
     if action.startswith("ask:"):
@@ -328,10 +349,9 @@ def _run_slash(cmd: str) -> bool:
     # The inspection commands are mem_map's, which is the tool that already
     # knows how to render a store. Called rather than reimplemented: two
     # renderings of the same memory would disagree the first time one changed.
-    tool = Path(__file__).resolve().parent.parent / "research" / "tools" / "mem_map.py"
+    tool = Path(__file__).resolve().parent.parent / "tools" / "mem_map.py"
     if not tool.is_file():
-        print("  this needs research/tools/mem_map.py, which is not in the")
-        print("  repository - see the note in the README.")
+        print(f"  this needs {tool}, which is missing from this copy of Pragma.")
         return True
     # No store path: mem_map resolves it from PRAGMA_DATA_DIR itself, which is
     # the same source of truth the rest of the process uses. Passing one here
@@ -715,6 +735,7 @@ If the turn needed no tools at all, the conclusion is simply your reply.
     if not online:
         print(f"  backend down - {str(detail).split(chr(8212))[0].strip()[:70]}")
         print("  the memory still answers: /map /beliefs /oblio /last")
+        print("  /configure points Pragma at another endpoint")
 
     cfg = AgentConfig(
         name="Pragma",

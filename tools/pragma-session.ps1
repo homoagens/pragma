@@ -53,7 +53,7 @@ if (-not $script:SRoot -or -not $script:SRepo) {
 $script:PragmaPy = Join-Path $script:SRepo "venv\Scripts\python.exe"
 if (-not (Test-Path $script:PragmaPy)) {
     Write-Host "Python environment not found at $script:PragmaPy" -ForegroundColor Red
-    Write-Host "Run install.bat in the Pragma repository first."
+    Write-Host "Run .\install.ps1 in the Pragma repository first."
     return
 }
 
@@ -135,9 +135,9 @@ function script:Get-ContractLine {
 function script:Invoke-MemTool([string[]]$toolArgs) {
     Push-Location $script:SRepo
     if ($toolArgs -and $toolArgs[0]) {
-        & $script:PragmaPy research\tools\mem_map.py @toolArgs
+        & $script:PragmaPy tools\mem_map.py @toolArgs
     } else {
-        & $script:PragmaPy research\tools\mem_map.py
+        & $script:PragmaPy tools\mem_map.py
     }
     Pop-Location
 }

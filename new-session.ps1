@@ -78,7 +78,7 @@ $py = Join-Path $Repo "venv\Scripts\python.exe"
 if (-not (Test-Path $py)) {
     Write-Host ""
     Write-Host "Python environment not found at $py" -ForegroundColor Red
-    Write-Host "Run install.bat first, then come back."
+    Write-Host "Run .\install.ps1 first, then come back."
     exit 1
 }
 

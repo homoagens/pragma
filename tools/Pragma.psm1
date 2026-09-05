@@ -307,6 +307,10 @@ function script:Show-Brief($entry, $brief) {
             if ($why -and $why -ne "up") {
                 Write-Host ("            " + $why) -ForegroundColor DarkGray
             }
+            # The one thing to do about it, where it is being read. The
+            # endpoint lives in .env and used to be set by a batch file at a
+            # shell, which is a place you have to leave Pragma to reach.
+            Write-Host "            to point it elsewhere, type /configure" -ForegroundColor DarkGray
         }
         if ($lines.Count) {
             Write-Host ""
@@ -657,7 +661,7 @@ function script:Show-Endpoint($ep) {
             # because a stale label is confusing to read, with the one command
             # that ends the confusion.
             Write-Host ("    labelled  {0}  - stale .env label, harmless" -f $ep.configured_model) -ForegroundColor DarkGray
-            Write-Host "              pragma -Set Endpoint <url>, or fix DEFAULT_MODEL in .env" -ForegroundColor DarkGray
+            Write-Host "              pragma -Set Endpoint <url>, or /configure to fix DEFAULT_MODEL" -ForegroundColor DarkGray
         }
         if ($ep.PSObject.Properties.Name -contains 'build' -and $ep.build) {
             Write-Host ("    build     {0}" -f $ep.build) -ForegroundColor DarkGray
@@ -671,6 +675,7 @@ function script:Show-Endpoint($ep) {
         if ($ep.detail) {
             Write-Host ("              {0}" -f $ep.detail) -ForegroundColor DarkGray
         }
+        Write-Host "              to point it elsewhere, type /configure" -ForegroundColor DarkGray
     }
     Write-Host ""
 

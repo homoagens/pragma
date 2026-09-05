@@ -41,6 +41,7 @@ research/
 # IDE
 .vscode/
 .idea/
+.obsidian/
 
 # OS
 .DS_Store
@@ -55,3 +56,8 @@ README-zenodo-record.md
 # Undo snapshots written by the agent into a workspace (core/checkpoint.py)
 .pragma_checkpoints/
 sandbox/
+
+# Superseded entry points, kept on the machine that still has muscle memory
+# for them and out of the repository: configure.bat/.sh are now /configure in
+# the harness, and the logic they called lives in tools/pragma_configure.py.
+old_tools/
