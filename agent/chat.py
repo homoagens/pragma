@@ -209,12 +209,21 @@ def _allowed() -> set:
 
 
 def _slash_banner(at_home: bool = False) -> None:
+    """At home a pointer, inside the list.
+
+    Fifteen commands under a briefing is a wall to read before doing the one
+    thing anyone came for. Inside a conversation the list earns its place: it
+    is the only thing saying that a slash means something there at all.
+    """
     a, r = _accent(), ("\033[0m" if _accent() else "")
-    names = " ".join(n for n in _SLASH if n != "/info" and n in _allowed())
     print()
-    print(f"  {a}{names}{r}")
-    print("  /chat to start talking." if at_home
-          else "  anything else is a message.")
+    if at_home:
+        print(f"  {a}/chat{r} to talk"
+              f"   ·   {a}/help{r} for everything else")
+    else:
+        names = " ".join(n for n in _SLASH if n != "/info" and n in _allowed())
+        print(f"  {a}{names}{r}")
+        print("  anything else is a message.")
     print()
 
 
@@ -651,14 +660,13 @@ If the turn needed no tools at all, the conclusion is simply your reply.
     print()
     # With the endpoint down there is no served model to name, and an empty
     # slot between two separators reads as a bug rather than a state.
-    print(f"  Pragma live session · {served or 'offline'} · {cwd}")
-    print(f"  memory: {'recall on + consolidation on exit' if args.memory else 'off'}"
-          f" · max {max_steps} steps per turn")
+    # Only what the briefing cannot say for itself. The launcher has already
+    # drawn the logo, the project, the memory and the date above this; saying
+    # "Pragma live session" under it announced a conversation that had not
+    # started and made the briefing look like the chat.
     if not online:
         print(f"  backend down - {str(detail).split(chr(8212))[0].strip()[:70]}")
-        print("  the memory still answers: /map /beliefs /oblio /last /backups")
-    print("  /exit or ctrl+D leaves where you are"
-          "   |   ctrl+C leaves and consolidates")
+        print("  the memory still answers: /map /beliefs /oblio /last")
 
     cfg = AgentConfig(
         name="Pragma",
@@ -730,6 +738,11 @@ If the turn needed no tools at all, the conclusion is simply your reply.
 
     _set_level(session, False)
     print()
+    print(f"  talking to {served or 'nothing - the backend is down'}"
+          f" · memory {'on' if args.memory else 'off'}"
+          f" · max {max_steps} steps per turn")
+    print("  /exit or ctrl+D goes back"
+          "   ·   ctrl+C goes back and consolidates")
     _slash_banner()
 
     try:
