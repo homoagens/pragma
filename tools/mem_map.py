@@ -52,7 +52,11 @@
 # their months directly; between jumps the clock accrues real elapsed time at
 # the pace recorded in the ledger. The map view only READS the ledger.
 
-import json, glob, os, sys, datetime as D
+import datetime as D
+import glob
+import json
+import os
+import sys
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
 
