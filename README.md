@@ -70,11 +70,19 @@ A **new** terminal: the profile is read at startup, so in the window that ran
 the installer `pragma` is still not a command. That is the only reason the old
 one will not do.
 
-Everything else happens inside. The first run has no projects and offers to
-make one — it asks which folder, proposing the one you are standing in. Then
-`/configure` points it at the server from step 2; leave the model name
-**empty**, so Pragma asks the endpoint what it is serving and cannot go stale
-the day you load another one.
+Everything else happens inside. `pragma` always opens on the same three
+things:
+
+```
+    > open project
+      new project
+      quit
+```
+
+Choose **new** — it asks which folder to work in and proposes the one you are
+standing in. Then `/configure` points it at the server from step 2; leave the
+model name **empty**, so Pragma asks the endpoint what it is serving and
+cannot go stale the day you load another one.
 
 From then on, `pragma` on its own is the whole thing.
 
@@ -145,8 +153,9 @@ Anything that is not a command is a message.
 
 ## Projects
 
-A project is **one folder you work in** plus **a memory of its own**. `/new`
-makes one, or `pragma` does when there are none yet.
+A project is **one folder you work in** plus **a memory of its own**. `new
+project` on the home screen makes one, and `/new` does the same from inside a
+conversation.
 
 The folder is the workspace: the agent reads and writes there. The memory
 lives apart, under `~/.pragma/projects/notes` — never inside your folder,
@@ -160,8 +169,9 @@ cd D:\notes
 pragma -Register -Name notes
 ```
 
-One folder, one project, nesting included. So `pragma` from anywhere inside a
-registered folder never has to ask which memory you mean.
+One folder, one project, nesting included — so the folder you are standing in
+always names exactly one memory, and that is the one the open list opens on.
+`pragma` still asks; it just asks with the answer already under the cursor.
 
 **`PRAGMA.md`** in the workspace is the other half. Memory is what the agent
 *learns*; that file is what you *decide*, and a rule in it always applies:

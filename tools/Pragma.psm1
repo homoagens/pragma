@@ -331,7 +331,7 @@ function script:Show-Brief($entry, $brief) {
 # opened daily: enter does the frequent thing and typing a task skips the menu
 # entirely.
 
-function script:Show-Menu([object[]]$items, [string]$hint) {
+function script:Show-Menu([object[]]$items, [string]$hint, [int]$start = 0) {
     # Drawn once, then redrawn over itself. The first attempt recorded the
     # cursor BEFORE drawing and returned to it, which a console that scrolls
     # invalidates: every keypress appended a fresh copy of the menu instead of
@@ -341,7 +341,11 @@ function script:Show-Menu([object[]]$items, [string]$hint) {
     # [Console] rather than $Host.UI.RawUI: the .NET API drives the console
     # directly and does not depend on virtual-terminal sequences being enabled,
     # which on a classic PowerShell 5.1 window they may not be.
-    $sel   = 0
+    # $start is where the cursor begins. A list of projects opens on the one
+    # you are most likely to want - the folder you are standing in, or the last
+    # one you had open - so the common case is still a single Enter even though
+    # nothing is entered for you.
+    $sel   = [Math]::Max(0, [Math]::Min($start, $items.Count - 1))
     $lines = $items.Count + 2          # the rows, a blank, the hint
     # Never the last column: writing into it wraps, which silently adds a row
     # and puts the count the redraw depends on permanently out of step.
@@ -492,15 +496,28 @@ function script:Test-Workspace([string]$ws) {
     }
     # Pragma's own source tree. Not caught by the home/Desktop guard, and it
     # registers happily - then the conversation refuses to open, because
-    # agent.chat will not work inside the source tree. A terminal that starts
-    # in the repository is not a rare accident: it is what an editor's
-    # terminal does right after the clone.
-    if ($n -ieq $script:RepoRoot.TrimEnd([char]92, [char]47) -or
-        $n.StartsWith($script:RepoRoot.TrimEnd([char]92, [char]47) + [IO.Path]::DirectorySeparatorChar,
+    # self_modify_guard blocks every write inside the source tree. A terminal
+    # that starts in the repository is not a rare accident: it is what an
+    # editor's terminal does right after the clone.
+    #
+    # Refused rather than made impossible: developing Pragma with Pragma is a
+    # real case, and PRAGMA_ALLOW_SELF_MODIFY is the switch that already
+    # governs it in config.py. Naming it here means the refusal points at the
+    # one thing that lifts it, instead of looking like a wall.
+    $repoN = $script:RepoRoot.TrimEnd([char]92, [char]47)
+    if ($n -ieq $repoN -or
+        $n.StartsWith($repoN + [IO.Path]::DirectorySeparatorChar,
                       [StringComparison]::OrdinalIgnoreCase)) {
+        if ("$env:PRAGMA_ALLOW_SELF_MODIFY" -match '^(1|true|yes)$') {
+            Write-Host "pragma: inside Pragma's own source tree, allowed by" -ForegroundColor Yellow
+            Write-Host "        PRAGMA_ALLOW_SELF_MODIFY." -ForegroundColor Yellow
+            return $true
+        }
         Write-Host "pragma: that is inside Pragma's own source tree." -ForegroundColor Red
-        Write-Host "        The agent refuses to work there, and your memory has no" -ForegroundColor DarkGray
+        Write-Host "        The agent refuses to write there, and your memory has no" -ForegroundColor DarkGray
         Write-Host "        business in a folder you will git pull over." -ForegroundColor DarkGray
+        Write-Host "        To develop Pragma with Pragma, set PRAGMA_ALLOW_SELF_MODIFY=true" -ForegroundColor DarkGray
+        Write-Host "        first - it is the same switch config.py already reads." -ForegroundColor DarkGray
         Show-WhatAWorkspaceIs $env:USERPROFILE
         return $false
     }
@@ -1158,6 +1175,45 @@ function script:Invoke-BackupMenu($entry) {
 }
 
 
+function script:Invoke-OpenProject($preferred) {
+    # The project list, whether it was reached from the home screen or from
+    # /switch inside a conversation. One function because they are the same
+    # question, and two copies of it would have drifted the first time one grew
+    # a column.
+    $entries = @(Read-Registry)
+    New-Page
+    Write-Host ""
+    Write-Accent "  Open a project"
+    Write-Host ""
+    if ($entries.Count -eq 0) {
+        # An empty list rather than a different screen. The home menu offers
+        # the same three things on a machine that has never run Pragma and on
+        # one with ten projects, so there is one shape to learn.
+        Write-Host "  Nothing registered yet." -ForegroundColor DarkGray
+        Write-Host ""
+        Write-Host "  A project is one folder the agent works in, plus a memory of" -ForegroundColor DarkGray
+        Write-Host "  its own that Pragma keeps elsewhere. Go back and choose" -ForegroundColor DarkGray
+        Write-Host "  'new project'." -ForegroundColor DarkGray
+        Write-Host ""
+        Wait-Key
+        return $null
+    }
+    $picks = @()
+    $sel   = 0
+    for ($i = 0; $i -lt $entries.Count; $i++) {
+        $e = $entries[$i]
+        $picks += [pscustomobject]@{ key = ''
+                                     label = ("{0,-18} {1}" -f $e.name, $e.workspace)
+                                     entry = $e }
+        if ($preferred -and $preferred.name -and $e.name -eq $preferred.name) { $sel = $i }
+    }
+    $picks += [pscustomobject]@{ key = 'q'; label = "back"; entry = $null }
+    $p = Show-Menu $picks "enter select . esc back" $sel
+    Write-Host ""
+    if (-not $p) { return $null }
+    return $p.entry
+}
+
 function script:Invoke-NewProject {
     # A project IS a folder, so the folder is asked first and the name follows
     # from it. The first version asked for a name with no folder in sight, which
@@ -1264,7 +1320,7 @@ function script:Invoke-DeleteProject($entry) {
 }
 
 
-function script:Invoke-MenuLoop($entry) {
+function script:Invoke-MenuLoop($suggested) {
     # The briefing, then the conversation - and the conversation IS the
     # interface. A menu between the two was one screen of navigation standing
     # in front of the thing everyone came for, and every command it held is
@@ -1276,25 +1332,39 @@ function script:Invoke-MenuLoop($entry) {
     # through a request file and steps out - consolidating its turns on the way
     # - this runs the page, and then puts the operator back in the chat.
     $active = $null
+    $entry  = $null                    # nothing is open until it is chosen
     $req = Join-Path ([IO.Path]::GetTempPath()) ("pragma-request-" + $PID + ".json")
     $env:PRAGMA_REQUEST = $req
 
     while ($true) {
         if (-not $entry) {
+            # THE SAME THREE THINGS, ALWAYS. Opening straight into the last
+            # project was convenient exactly once per machine and wrong the
+            # rest of the time: the launcher behaved one way with projects and
+            # another without, so what a bare `pragma` did depended on state
+            # you could not see. It now asks, and the suggestion survives as
+            # where the cursor starts in the list.
             New-Page
             Write-Host ""
             Show-Logo
             Write-Host ""
-            Write-Host "  No projects yet." -ForegroundColor DarkGray
+            $n = @(Read-Registry).Count
+            if ($n -eq 0) { Write-Host "  No projects yet." -ForegroundColor DarkGray }
+            elseif ($n -eq 1) { Write-Host "  1 project" -ForegroundColor DarkGray }
+            else { Write-Host ("  {0} projects" -f $n) -ForegroundColor DarkGray }
             Write-Host ""
-            $first = @(
-                [pscustomobject]@{ key = 'n'; label = "new project"; action = 'new' }
-                [pscustomobject]@{ key = 'q'; label = "quit";        action = 'quit' }
+            # open before new: over the life of a project it is opened every
+            # day and created once.
+            $top = @(
+                [pscustomobject]@{ key = 'o'; label = "open project"; action = 'open' }
+                [pscustomobject]@{ key = 'n'; label = "new project";  action = 'new' }
+                [pscustomobject]@{ key = 'q'; label = "quit";         action = 'quit' }
             )
-            $c = Show-Menu $first "enter select . esc quit"
+            $c = Show-Menu $top "enter select . esc quit"
             Write-Host ""
             if (-not $c -or $c.action -eq 'quit') { New-Page; return }
-            $entry = Invoke-NewProject
+            if ($c.action -eq 'open') { $entry = Invoke-OpenProject $suggested }
+            else                      { $entry = Invoke-NewProject }
             continue
         }
         if (-not $active -or $active.name -ne $entry.name) {
@@ -1342,18 +1412,8 @@ function script:Invoke-MenuLoop($entry) {
                 }
             }
             'switch' {
-                New-Page
-                Write-Host ""
-                Write-Host "  Which project" -ForegroundColor DarkGray
-                $picks = @()
-                foreach ($e in @(Read-Registry)) {
-                    $picks += [pscustomobject]@{ key = ''
-                                                 label = ("{0,-18} {1}" -f $e.name, $e.workspace)
-                                                 entry = $e }
-                }
-                $p = Show-Menu $picks "enter select . esc cancel"
-                Write-Host ""
-                if ($p) { $entry = $p.entry }
+                $chosen = Invoke-OpenProject $entry
+                if ($chosen) { $entry = $chosen }
             }
         }
     }
