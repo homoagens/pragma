@@ -82,10 +82,18 @@ def main() -> int:
                 server[k] = params[k]
         if props and "build_info" in props:
             out["build"] = str(props["build_info"])[:40]
-        # n_ctx sits beside params, not inside it.
+        # n_ctx sits beside params, not inside it - and it is PER SLOT, which
+        # is the number that matters: it is what one request may use.
         gen = (props or {}).get("default_generation_settings") or {}
         if gen.get("n_ctx"):
             out["n_ctx"] = gen["n_ctx"]
+        # How many requests the server will work on at once: llama-server -np.
+        # Worth showing beside the window, because on llama.cpp the two are
+        # the same setting seen from two sides - -c is shared out among the
+        # slots, so raising -np without raising -c takes the window away from
+        # each one.
+        if props and props.get("total_slots"):
+            out["slots"] = int(props["total_slots"])
     out["server"] = server
     out["server_readable"] = bool(server)
 

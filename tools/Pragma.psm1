@@ -752,23 +752,45 @@ function script:Show-Endpoint($ep) {
         if ($ep.PSObject.Properties.Name -contains 'build' -and $ep.build) {
             Write-Host ("    build     {0}" -f $ep.build) -ForegroundColor DarkGray
         }
+        # THE WINDOW, IN THREE NUMBERS. They are asked for together because
+        # they are only meaningful together: how many requests the server
+        # works on at once, how much window each of those gets, and which
+        # figure Pragma is actually compacting against. On llama.cpp the
+        # first two are one setting seen from two sides - -c is shared out
+        # among the slots - so a window that halved without anyone touching
+        # it is a -np that changed.
+        $slots = 0
+        if ($ep.PSObject.Properties.Name -contains 'slots') { $slots = [int]$ep.slots }
+        if ($slots -gt 0) {
+            Write-Host ("    slots     {0}   (llama-server -np {0}: {1} at a time)" -f `
+                        $slots, $(if ($slots -eq 1) { "one request" } else { "$slots requests" })) -ForegroundColor DarkGray
+        }
         if ($ep.PSObject.Properties.Name -contains 'n_ctx' -and $ep.n_ctx) {
-            Write-Host ("    context   {0} tokens per slot" -f $ep.n_ctx) -ForegroundColor DarkGray
-            # Per slot, and said so: llama.cpp divides -c by --parallel, so
-            # adding -np 2 without doubling -c halves this without anything
-            # else changing. Pragma derives every compaction threshold from
-            # its own number, and the two have to be the same.
+            $per = [int]$ep.n_ctx
+            Write-Host ("    context   {0} tokens per slot - what one call may use" -f $per) -ForegroundColor DarkGray
+            if ($slots -gt 1) {
+                Write-Host ("              {0} slots x {1} = {2} of KV cache, unless the" -f `
+                            $slots, $per, ($slots * $per)) -ForegroundColor DarkGray
+                Write-Host "              server shares one cache between them" -ForegroundColor DarkGray
+            }
             $mine = 0
             if ($ep.PSObject.Properties.Name -contains 'context_window') { $mine = [int]$ep.context_window }
-            if ($mine -gt 0 -and $mine -ne [int]$ep.n_ctx) {
-                Write-Host ("              this project sends {0} - " -f $mine) -NoNewline -ForegroundColor Red
-                if ($mine -gt [int]$ep.n_ctx) {
-                    Write-Host "requests will be refused" -ForegroundColor Red
+            if ($mine -gt 0 -and $mine -ne $per) {
+                Write-Host ("    in force  {0} - " -f $mine) -NoNewline -ForegroundColor Red
+                if ($mine -gt $per) {
+                    Write-Host "more than a call gets: requests will be refused" -ForegroundColor Red
                 } else {
-                    Write-Host "less than the server offers" -ForegroundColor DarkYellow
+                    Write-Host "less than a call gets: window wasted" -ForegroundColor DarkYellow
                 }
                 Write-Host "              pragma -Set ContextWindow `"`" follows the server" -ForegroundColor DarkGray
+            } elseif ($mine -gt 0) {
+                $how = if ($ep.context_source -eq 'endpoint') { "from the server" }
+                       elseif ($ep.context_source -eq 'declared') { "declared, and it agrees" }
+                       else { "the built-in default" }
+                Write-Host ("    in force  {0}   ({1})" -f $mine, $how) -ForegroundColor DarkGray
             }
+        } elseif ($ep.PSObject.Properties.Name -contains 'context_window') {
+            Write-Host ("    in force  {0}   (the server did not say)" -f $ep.context_window) -ForegroundColor DarkGray
         }
     } else {
         Write-Host "    serving   " -NoNewline
