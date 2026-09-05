@@ -65,6 +65,11 @@ def main() -> int:
                       or config.DEFAULT_MODEL) if ok else ""
     out["detail"] = "" if ok else str(detail)[:120]
     out["configured_model"] = config.DEFAULT_MODEL
+    # What this project will actually compact against, so the page can
+    # compare it with the server's own n_ctx instead of showing one of
+    # the two and leaving the reader to remember the other.
+    out["context_window"] = config.CONTEXT_WINDOW
+    out["context_source"] = getattr(config, "CONTEXT_WINDOW_SOURCE", "")
 
     # What the server would apply if this window sent nothing.
     server = {}

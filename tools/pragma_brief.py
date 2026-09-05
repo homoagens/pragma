@@ -157,6 +157,14 @@ def brief(store: Path, since: str = "") -> dict:
         ok, detail = llm_client.ping_models(timeout=4)
         out["serving"] = (getattr(config, "SERVED_MODEL", "")
                           or config.DEFAULT_MODEL) if ok else ""
+        # The window the server will actually accept, per slot - llama.cpp has
+        # already divided by --parallel. The launcher hands this to the
+        # conversation, so a server restarted with a different -c or -np is
+        # picked up at the next briefing rather than discovered as a refused
+        # request halfway through an evening.
+        out["n_ctx"] = config._endpoint_context_window() if ok else 0
+        out["context_window"] = config.CONTEXT_WINDOW
+        out["context_source"] = getattr(config, "CONTEXT_WINDOW_SOURCE", "")
         # Trimmed to the first clause: the caller shows this under the
         # serving line, and a urllib traceback fragment is noise there.
         # The useful half is before the em dash; what follows it is the

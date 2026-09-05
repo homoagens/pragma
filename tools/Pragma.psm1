@@ -303,6 +303,32 @@ function script:Show-Brief($entry, $brief) {
         # backend state rather than on the model name, because a server that
         # answers without reporting a model is up - and colouring that red said
         # the opposite of what had just been measured.
+        # THE WINDOW IN FORCE, and whether the server agrees with it. Every
+        # compaction threshold is derived from this number, so a wrong one
+        # does not degrade gracefully: Pragma talks on until the server
+        # refuses the request, having compacted for a window it never had.
+        # llama.cpp divides -c by --parallel, so this is the one number that
+        # moves when you change -np without changing -c.
+        if ($brief.PSObject.Properties.Name -contains 'context_window' -and
+            [int]$brief.context_window -gt 0) {
+            $srvCtx = 0
+            if ($brief.PSObject.Properties.Name -contains 'n_ctx') { $srvCtx = [int]$brief.n_ctx }
+            $mine = [int]$brief.context_window
+            Write-Host "  context   " -ForegroundColor DarkGray -NoNewline
+            if ($brief.context_source -eq 'endpoint') {
+                Write-Host ("{0} tokens, from the server" -f $mine) -ForegroundColor DarkGray
+            } elseif ($srvCtx -gt 0 -and $srvCtx -ne $mine) {
+                Write-Host ("{0} tokens, but the server has {1}" -f $mine, $srvCtx) -ForegroundColor Red
+                if ($srvCtx -lt $mine) {
+                    Write-Host "            requests will be refused - clear ContextWindow" -ForegroundColor DarkGray
+                    Write-Host "            (pragma -Set ContextWindow `"`") to follow the server" -ForegroundColor DarkGray
+                } else {
+                    Write-Host "            you are using less than you have" -ForegroundColor DarkGray
+                }
+            } else {
+                Write-Host ("{0} tokens" -f $mine) -ForegroundColor DarkGray
+            }
+        }
         # WHAT THE MEMORY IS DOING WITHOUT YOU. Consolidation left the
         # foreground, so between one briefing and the next the store can
         # change on its own. A background worker nobody can see is the thing
@@ -727,7 +753,22 @@ function script:Show-Endpoint($ep) {
             Write-Host ("    build     {0}" -f $ep.build) -ForegroundColor DarkGray
         }
         if ($ep.PSObject.Properties.Name -contains 'n_ctx' -and $ep.n_ctx) {
-            Write-Host ("    context   {0} tokens" -f $ep.n_ctx) -ForegroundColor DarkGray
+            Write-Host ("    context   {0} tokens per slot" -f $ep.n_ctx) -ForegroundColor DarkGray
+            # Per slot, and said so: llama.cpp divides -c by --parallel, so
+            # adding -np 2 without doubling -c halves this without anything
+            # else changing. Pragma derives every compaction threshold from
+            # its own number, and the two have to be the same.
+            $mine = 0
+            if ($ep.PSObject.Properties.Name -contains 'context_window') { $mine = [int]$ep.context_window }
+            if ($mine -gt 0 -and $mine -ne [int]$ep.n_ctx) {
+                Write-Host ("              this project sends {0} - " -f $mine) -NoNewline -ForegroundColor Red
+                if ($mine -gt [int]$ep.n_ctx) {
+                    Write-Host "requests will be refused" -ForegroundColor Red
+                } else {
+                    Write-Host "less than the server offers" -ForegroundColor DarkYellow
+                }
+                Write-Host "              pragma -Set ContextWindow `"`" follows the server" -ForegroundColor DarkGray
+            }
         }
     } else {
         Write-Host "    serving   " -NoNewline

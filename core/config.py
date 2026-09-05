@@ -441,10 +441,61 @@ ERROR_RATE_THRESHOLD = float(os.environ.get("ERROR_RATE_THRESHOLD", "0.75"))
 # Maximum number of ReAct loop steps before a forced verdict is requested.
 MAX_STEPS = int(os.environ.get("MAX_STEPS", "15"))
 
-# Model context window (tokens). Compression thresholds are derived from this.
-# Override via .env if you run a model with a larger window (e.g. 131072 for
-# Qwen3 with 128k context, or 200000 for Claude 3.x).
-CONTEXT_WINDOW = int(os.environ.get("CONTEXT_WINDOW", "65536"))
+# Model context window (tokens). Compression thresholds are derived from this,
+# so a wrong value does not degrade gracefully: Pragma keeps talking until the
+# server refuses the request, having compacted for a window it never had.
+#
+# EMPTY MEANS ASK THE SERVER, the same convention DEFAULT_MODEL already uses.
+# The endpoint knows the answer exactly - llama.cpp reports n_ctx PER SLOT, so
+# it has already divided by --parallel and there is no arithmetic here to get
+# wrong. Restart the server with a different -c or -np and the next window
+# picks it up.
+#
+# The order is declared-beats-discovered: a project's ContextWindow, then
+# CONTEXT_WINDOW in .env, then the server, then this default. Someone who
+# writes a number means it.
+_CTX_DEFAULT = 65536
+
+
+def _endpoint_context_window() -> int:
+    """n_ctx from an OpenAI-compatible server's /props, or 0.
+
+    Deliberately a bare request rather than llm_client: that module imports
+    this one, and a config that needs the client to configure itself is a
+    circular import waiting to happen. Short timeout, because this runs at
+    import time in every process that reads config - including ones with no
+    interest in a context window at all.
+    """
+    base = (os.environ.get("LLM_BASE_URL") or LLM_BASE_URL or "").strip()
+    if not base:
+        return 0
+    root = base[:-3] if base.rstrip("/").endswith("/v1") else base
+    try:
+        import requests
+        key = os.environ.get("LLM_API_KEY") or LLM_API_KEY
+        headers = {"Authorization": f"Bearer {key}"} if key else {}
+        r = requests.get(root.rstrip("/") + "/props", headers=headers,
+                         timeout=1.5)
+        if r.status_code != 200:
+            return 0
+        gen = (r.json() or {}).get("default_generation_settings") or {}
+        return int(gen.get("n_ctx") or 0)
+    except Exception:
+        return 0
+
+
+_ctx_declared = os.environ.get("CONTEXT_WINDOW", "").strip()
+CONTEXT_WINDOW_SOURCE = "declared"
+if _ctx_declared:
+    CONTEXT_WINDOW = int(_ctx_declared)
+elif os.environ.get("PRAGMA_NO_ENDPOINT_PROBE", "").strip().lower() in (
+        "1", "true", "yes"):
+    CONTEXT_WINDOW = _CTX_DEFAULT
+    CONTEXT_WINDOW_SOURCE = "default"
+else:
+    _found = _endpoint_context_window()
+    CONTEXT_WINDOW = _found or _CTX_DEFAULT
+    CONTEXT_WINDOW_SOURCE = "endpoint" if _found else "default"
 
 # Memory compression thresholds (see memory.py).
 # Compression triggers when EITHER threshold is exceeded:
