@@ -490,6 +490,20 @@ function script:Test-Workspace([string]$ws) {
         Show-WhatAWorkspaceIs $n
         return $false
     }
+    # Pragma's own source tree. Not caught by the home/Desktop guard, and it
+    # registers happily - then the conversation refuses to open, because
+    # agent.chat will not work inside the source tree. A terminal that starts
+    # in the repository is not a rare accident: it is what an editor's
+    # terminal does right after the clone.
+    if ($n -ieq $script:RepoRoot.TrimEnd([char]92, [char]47) -or
+        $n.StartsWith($script:RepoRoot.TrimEnd([char]92, [char]47) + [IO.Path]::DirectorySeparatorChar,
+                      [StringComparison]::OrdinalIgnoreCase)) {
+        Write-Host "pragma: that is inside Pragma's own source tree." -ForegroundColor Red
+        Write-Host "        The agent refuses to work there, and your memory has no" -ForegroundColor DarkGray
+        Write-Host "        business in a folder you will git pull over." -ForegroundColor DarkGray
+        Show-WhatAWorkspaceIs $env:USERPROFILE
+        return $false
+    }
     $guarded = @{}
     if ($env:USERPROFILE) { $guarded[$env:USERPROFILE] = "home" }
     $desk = [Environment]::GetFolderPath('Desktop')

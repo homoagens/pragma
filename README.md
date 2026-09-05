@@ -63,16 +63,16 @@ writes the command for your hardware.
 **3. Open a new terminal and go.**
 
 ```bat
-cd D:\notes
 pragma
 ```
 
-A **new** terminal, or the profile line is not read yet and `pragma` is not a
-command. That is the only reason the old window will not do.
+A **new** terminal: the profile is read at startup, so in the window that ran
+the installer `pragma` is still not a command. That is the only reason the old
+one will not do.
 
 Everything else happens inside. The first run has no projects and offers to
-make one, proposing the folder you are standing in — two presses of Enter.
-Then `/configure` to point it at the server from step 2; leave the model name
+make one — it asks which folder, proposing the one you are standing in. Then
+`/configure` points it at the server from step 2; leave the model name
 **empty**, so Pragma asks the endpoint what it is serving and cannot go stale
 the day you load another one.
 
