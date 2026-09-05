@@ -139,9 +139,9 @@ autonomous agents, local inference, and a simple thesis:
 If you work on agents, local AI, or developer experience — let's talk.
 
 <p>
-  <a href="mailto:homoagens1@gmail.com"><img src="https://img.shields.io/badge/Email-homoagens1%40gmail.com-EA4335?style=flat-square&logo=gmail&logoColor=white" alt="Email"></a>
-  <a href="https://x.com/homoagens1"><img src="https://img.shields.io/badge/X-%40homoagens1-000000?style=flat-square&logo=x&logoColor=white" alt="X"></a>
-  <a href="https://www.reddit.com/user/HomoAgens1/"><img src="https://img.shields.io/badge/Reddit-u%2FHomoAgens1-FF4500?style=flat-square&logo=reddit&logoColor=white" alt="Reddit"></a>
+  <a href="mailto:homoagens1@gmail.com"><img src="https://img.shields.io/badge/Email-555555?style=flat-square&logo=gmail&logoColor=white" alt="Email"></a>
+  <a href="https://x.com/homoagens1"><img src="https://img.shields.io/badge/X-555555?style=flat-square&logo=x&logoColor=white" alt="X"></a>
+  <a href="https://www.reddit.com/user/HomoAgens1/"><img src="https://img.shields.io/badge/Reddit-555555?style=flat-square&logo=reddit&logoColor=white" alt="Reddit"></a>
 </p>
 
 ---
