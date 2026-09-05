@@ -156,6 +156,3 @@ If you work on agents, local AI, or developer experience — let's talk.
 [AGPL-3.0-or-later](./LICENSE) — free to use, study, modify and share. If you
 distribute a modified Pragma, or offer it to others as a service, you must
 release your changes under the same license. Take freely, give back freely.
-
-Versions up to commit `12e94d8` (2026-07-12) were published under the MIT
-license.
