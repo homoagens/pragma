@@ -61,17 +61,16 @@ matter — `-np 2` so a background consolidation does not block your turn, and
 *Never launched llama.cpp?* [There is a prompt below](#dont-know-llamacpp) that
 writes the command for your hardware.
 
-**3. Open a new terminal, name a folder to work in, and go.**
+**3. Open a new terminal, go to the folder you want to work in, and start.**
 
 ```bat
 cd D:\notes
-pragma -Register -Name notes
 pragma
 ```
 
-The folder is the workspace; the memory is kept apart, under
-`~/.pragma/projects/notes`. After the first time, `pragma` on its own is
-enough — [more below](#projects).
+The first run has no projects yet and offers to make one; it proposes the
+folder you are standing in and its name, so it is two presses of Enter.
+After that, `pragma` on its own goes straight back to that project.
 
 **4. Point Pragma at your server.** Type `/configure` at the prompt. It asks
 for the endpoint URL; leave the model name **empty** — Pragma asks the
@@ -145,17 +144,20 @@ Anything that is not a command is a message.
 
 ## Projects
 
-A project is **one folder you work in** plus **a memory of its own**.
-
-```bat
-cd D:\notes
-pragma -Register -Name notes
-```
+A project is **one folder you work in** plus **a memory of its own**. `/new`
+makes one, or `pragma` does when there are none yet.
 
 The folder is the workspace: the agent reads and writes there. The memory
 lives apart, under `~/.pragma/projects/notes` — never inside your folder,
 because a workspace is often a git repository and personal episodes have no
 business in one.
+
+Without the menu, for a script or a habit:
+
+```bat
+cd D:\notes
+pragma -Register -Name notes
+```
 
 One folder, one project, nesting included. So `pragma` from anywhere inside a
 registered folder never has to ask which memory you mean.
