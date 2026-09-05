@@ -76,6 +76,7 @@ _EXIT_WORDS = {"/exit", "/quit", "/bye", "exit", "quit"}
 # Each entry is (what it runs, one line of help). "memory" values name a
 # mem_map flag; "call" values name a python callable resolved at use.
 _SLASH = {
+    "/chat":     ("chat",    "talk to it - many turns, one conversation"),
     "/help":     ("help",    "this list"),
     "/info":     ("help",    "this list"),
     "/map":      ("map",     "what is in memory now"),
@@ -115,17 +116,32 @@ class _SlashCompleter:
     menu at all.
     """
 
+    at_home = False
+
     def get_completions(self, document, complete_event):
         from prompt_toolkit.completion import Completion
         text = document.text_before_cursor
         if not text.startswith("/") or " " in text:
             return
+        allowed = _allowed()
         for name, (_action, blurb) in _SLASH.items():
             if name == "/info":                  # a synonym, not a second entry
+                continue
+            if name not in allowed:
                 continue
             if name.startswith(text):
                 yield Completion(name, start_position=-len(text),
                                  display=name, display_meta=blurb)
+
+
+def _set_level(session, at_home: bool) -> None:
+    """Tell the completer which set of commands is on offer."""
+    global _AT_HOME_NOW
+    _AT_HOME_NOW = at_home
+    try:
+        session.completer.at_home = at_home
+    except Exception:
+        pass
 
 
 def _make_session():
@@ -175,12 +191,30 @@ def _prompt() -> str:
     return a + "you" + "\033[0m" + " " + a + ">" + "\033[0m" + " "
 
 
-def _slash_banner() -> None:
+# At the briefing there is no conversation to clear or leave halfway, and
+# /chat is the one thing that only makes sense there.
+_AT_HOME = {"/chat", "/help", "/info", "/map", "/beliefs", "/diff", "/oblio",
+            "/last", "/sizes", "/clear", "/settings", "/backups", "/switch",
+            "/new", "/delete", "/exit"}
+_IN_CHAT = {n for n in _SLASH if n != "/chat"}
+
+# Which level is being typed at. One place, read by the banner, the help
+# and the completer, so a command cannot be offered by one and refused by
+# another.
+_AT_HOME_NOW = True
+
+
+def _allowed() -> set:
+    return _AT_HOME if _AT_HOME_NOW else _IN_CHAT
+
+
+def _slash_banner(at_home: bool = False) -> None:
     a, r = _accent(), ("\033[0m" if _accent() else "")
-    names = " ".join(n for n in _SLASH if n != "/info")
+    names = " ".join(n for n in _SLASH if n != "/info" and n in _allowed())
     print()
     print(f"  {a}{names}{r}")
-    print("  anything else is a message.")
+    print("  /chat to start talking." if at_home
+          else "  anything else is a message.")
     print()
 
 
@@ -189,6 +223,8 @@ def _slash_help() -> None:
     print("  commands")
     seen = set()
     for name, (action, blurb) in _SLASH.items():
+        if name not in _allowed():
+            continue
         if action in seen and action == "help":
             continue
         seen.add(action)
@@ -220,8 +256,8 @@ def _run_slash(cmd: str) -> bool:
         # is the only thing that says what can be typed here.
         _slash_banner()
         return True
-    if action == "exit":
-        return False                      # handled by the caller's exit path
+    if action in ("exit", "chat"):
+        return False                      # handled by the caller
     if action.startswith("ask:"):
         want = action.split(":", 1)[1]
         if not _ask_launcher(want):
@@ -621,12 +657,8 @@ If the turn needed no tools at all, the conclusion is simply your reply.
     if not online:
         print(f"  backend down - {str(detail).split(chr(8212))[0].strip()[:70]}")
         print("  the memory still answers: /map /beliefs /oblio /last /backups")
-    print("  ctrl+D back to the briefing, twice to leave"
+    print("  /exit or ctrl+D leaves where you are"
           "   |   ctrl+C leaves and consolidates")
-    # The commands, on the way in. A menu made them discoverable by existing;
-    # a bare prompt hides them behind knowing to ask, which is the one thing
-    # the menu did better.
-    _slash_banner()
 
     cfg = AgentConfig(
         name="Pragma",
@@ -659,6 +691,47 @@ If the turn needed no tools at all, the conclusion is simply your reply.
     turn_msgs: list[int] = []
     consolidated_upto = 0
 
+    # THE BRIEFING IS A PLACE, NOT A SPLASH. Landing straight in the
+    # conversation meant every look at the memory, every settings change, was
+    # something you did on the way out of a talk you had just started. Here
+    # nothing is running: /chat begins one, and leaving one comes back here.
+    #
+    # /exit means the same at both levels - out of where you are - so it takes
+    # two to leave the program, and Ctrl+D is the same key by another name.
+    _set_level(session, True)
+    _slash_banner(at_home=True)
+    while True:
+        try:
+            if session is not None:
+                from prompt_toolkit.formatted_text import ANSI
+                text = session.prompt(ANSI(_prompt())).strip()
+            else:
+                text = input(_prompt()).strip()
+        except (EOFError, KeyboardInterrupt):
+            print()
+            return 0                              # nothing to consolidate yet
+        if not text:
+            continue
+        if text.lower() in _EXIT_WORDS:
+            return 0
+        if text.startswith("/"):
+            cmd = text.split()[0].lower()
+            if cmd not in _AT_HOME:
+                print(f"  {cmd} needs a conversation - /chat first")
+                continue
+            if (_SLASH.get(cmd) or ("", ""))[0] == "chat":
+                break                             # into the conversation
+            if not _run_slash(cmd):
+                return 0                          # a page the launcher owns
+            continue
+        # Prose here would vanish: there is no turn to put it in yet, and
+        # swallowing it silently is how a first message gets lost.
+        print("  /chat first, then say it.")
+
+    _set_level(session, False)
+    print()
+    _slash_banner()
+
     try:
         while True:
             try:
@@ -668,15 +741,11 @@ If the turn needed no tools at all, the conclusion is simply your reply.
                 else:
                     text = input(_prompt()).strip()
             except EOFError:
-                # Ctrl+D steps back to the briefing; pressed again with nothing
-                # typed since, it leaves. A single key that both retreats and
-                # quits depending on where you are is how every shell behaves,
-                # and doing it in two presses means neither is a surprise.
+                # The same as /exit: out of the conversation, back to the
+                # briefing. Two of them leave the program, because the second
+                # is given to a briefing that has nothing left to step back to.
                 print()
-                if not turns and os.environ.get("PRAGMA_CAME_BACK"):
-                    break                       # nothing said since the last one
-                if not _ask_launcher("refresh"):
-                    break                       # no launcher to go back to
+                _ask_launcher("refresh")
                 break
             except KeyboardInterrupt:
                 print()
@@ -684,6 +753,9 @@ If the turn needed no tools at all, the conclusion is simply your reply.
             if not text:
                 continue
             if text.lower() in _EXIT_WORDS:
+                # Back to the briefing, redrawn with whatever this
+                # conversation just added to the memory.
+                _ask_launcher("refresh")
                 break
             # A slash is a command, not a message. Checked before anything
             # else so it never reaches the model, never becomes a Turn, and
