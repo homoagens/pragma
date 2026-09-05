@@ -184,6 +184,31 @@ def _accent() -> str:
     return "\033[38;2;" + raw + "m"
 
 
+def _hint() -> str:
+    """What Ctrl+D does from here, which is not the same thing at both levels.
+
+    At the briefing it leaves the program; in a conversation it goes back to
+    the briefing. Writing "exit" in both places would be wrong in one of them,
+    and a hint that lies is worse than no hint.
+    """
+    return "ctrl+D to exit" if _AT_HOME_NOW else "ctrl+D to go back"
+
+
+def _ask(session):
+    """One line from the operator, with the hint while the line is empty."""
+    if session is None:
+        return input(_prompt()).strip()
+    from prompt_toolkit.formatted_text import ANSI
+    try:
+        return session.prompt(ANSI(_prompt()),
+                              placeholder=ANSI("\033[38;5;242m" + _hint()
+                                               + "\033[0m")).strip()
+    except TypeError:
+        # Older prompt_toolkit has no placeholder. The prompt is the point;
+        # the hint is not worth failing over.
+        return session.prompt(ANSI(_prompt())).strip()
+
+
 def _prompt() -> str:
     a = _accent()
     if not a:
@@ -733,11 +758,7 @@ If the turn needed no tools at all, the conclusion is simply your reply.
     _slash_banner(at_home=True)
     while True:
         try:
-            if session is not None:
-                from prompt_toolkit.formatted_text import ANSI
-                text = session.prompt(ANSI(_prompt())).strip()
-            else:
-                text = input(_prompt()).strip()
+            text = _ask(session)
         except (EOFError, KeyboardInterrupt):
             print()
             return 0                              # nothing to consolidate yet
@@ -777,11 +798,7 @@ If the turn needed no tools at all, the conclusion is simply your reply.
     try:
         while True:
             try:
-                if session is not None:
-                    from prompt_toolkit.formatted_text import ANSI
-                    text = session.prompt(ANSI(_prompt())).strip()
-                else:
-                    text = input(_prompt()).strip()
+                text = _ask(session)
             except EOFError:
                 # The same as /exit: out of the conversation, back to the
                 # briefing. Two of them leave the program, because the second
