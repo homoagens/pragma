@@ -16,6 +16,7 @@
 # target a different model server). Without override, values come from config,
 # which respect environment variables.
 
+import sys
 import threading
 import time
 from contextlib import contextmanager
@@ -26,6 +27,32 @@ from rich.console import Console
 import config
 
 _console = Console()
+
+# The frames of rich's "dots" spinner. Braille, so a stream that cannot encode
+# them is a stream the spinner must not be written to.
+_SPINNER_PROBE = "\u2839"
+
+
+def _can_spin() -> bool:
+    """Is there a stream that can actually render a spinner frame?
+
+    Not `isatty`, and not rich's `is_terminal`: on Windows both say yes for a
+    process whose stdout is DEVNULL, because NUL is a character device. What
+    decides it is the ENCODING. A console-less process opens stdout as cp1252,
+    rich falls back to its legacy Windows renderer, and writing U+2839 there
+    raises UnicodeEncodeError from inside the LLM call - which every faculty
+    catches as its own failure and reports as "unavailable", with no reason.
+    Asking the stream whether it can take the character is the honest test,
+    and it covers piping a run to a file as well as the background worker.
+    """
+    try:
+        enc = getattr(sys.stdout, "encoding", None)
+        if not enc:
+            return False
+        _SPINNER_PROBE.encode(enc)
+        return True
+    except Exception:
+        return False
 
 
 class LLMInterrupted(Exception):
@@ -294,17 +321,28 @@ def _post_with_retry(url, headers, payload, timeout, label, stop_event=None):
                 holder["exc"] = e
 
         who = _who(disp)
-        with _console.status(
-            f"[bold cyan]{who} is thinking...[/bold cyan]",
-            spinner="dots",
-        ) as status:
-            t = threading.Thread(target=_worker, daemon=True)
-            t.start()
-            while t.is_alive():
-                t.join(timeout=0.5)
-                status.update(
-                    f"[bold cyan]{who} is thinking... "
-                    f"{int(time.time() - start)}s[/bold cyan]")
+        # THE REQUEST FIRST, THE SPINNER AFTER. The two used to be one
+        # statement, with the thread started inside the status block - so a
+        # spinner that could not be drawn took the call down with it. The
+        # request now runs whatever the display does, and a rendering failure
+        # is swallowed where it belongs: nobody should lose a memory because
+        # a terminal could not draw braille.
+        t = threading.Thread(target=_worker, daemon=True)
+        t.start()
+        if _can_spin():
+            try:
+                with _console.status(
+                    f"[bold cyan]{who} is thinking...[/bold cyan]",
+                    spinner="dots",
+                ) as status:
+                    while t.is_alive():
+                        t.join(timeout=0.5)
+                        status.update(
+                            f"[bold cyan]{who} is thinking... "
+                            f"{int(time.time() - start)}s[/bold cyan]")
+            except Exception:
+                pass
+        t.join()
         if holder["exc"] is not None:
             exc = holder["exc"]
             # A dropped connection is not a failed request, it is a request

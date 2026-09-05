@@ -28,6 +28,7 @@
 from __future__ import annotations
 
 import json
+import os
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -116,9 +117,28 @@ def load(directory: Path) -> list[tuple[Path, dict]]:
     return out
 
 
+def write_json(path: Path, obj) -> None:
+    """Write JSON so a reader never sees a half-written file.
+
+    The store is no longer touched by one process at a time: consolidation
+    runs in its own process while a conversation may be open against the same
+    memory, and the curator reads learnings.json on every turn. A plain
+    write_text truncates the file and then fills it, so a reader arriving in
+    between gets a syntax error - which surfaces as a memory that briefly
+    knows nothing, and is indistinguishable from a store that was never
+    written.
+
+    Write beside the target, then rename. os.replace is atomic on Windows and
+    POSIX alike: the reader sees the old file or the new one, never neither.
+    """
+    tmp = path.with_name(path.name + ".tmp")
+    tmp.write_text(json.dumps(obj, indent=2, ensure_ascii=False),
+                   encoding="utf-8")
+    os.replace(tmp, path)
+
+
 def save(path: Path, ep: dict) -> None:
-    path.write_text(json.dumps(ep, indent=2, ensure_ascii=False),
-                    encoding="utf-8")
+    write_json(path, ep)
 
 
 def to_dormant(path: Path, ep: dict, store=None) -> Path:

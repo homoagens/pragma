@@ -180,7 +180,17 @@ function script:Get-Brief($entry) {
         $since = $entry.last_opened
     }
     try {
-        $json = & $script:Python $script:BriefScript $store --since $since 2>$null
+        # --since only when there is one. PowerShell drops an empty string
+        # when it builds a native command line, so `--since ""` reached
+        # argparse as a bare `--since` and the whole briefing failed with a
+        # usage error - on a project that had never been opened, which is
+        # exactly the first one anyone sees. It looked like a memory with
+        # nothing in it.
+        if ($since) {
+            $json = & $script:Python $script:BriefScript $store --since $since 2>$null
+        } else {
+            $json = & $script:Python $script:BriefScript $store 2>$null
+        }
         if (-not $json) { return $null }
         return ($json | ConvertFrom-Json)
     } catch { return $null }
@@ -293,6 +303,25 @@ function script:Show-Brief($entry, $brief) {
         # backend state rather than on the model name, because a server that
         # answers without reporting a model is up - and colouring that red said
         # the opposite of what had just been measured.
+        # WHAT THE MEMORY IS DOING WITHOUT YOU. Consolidation left the
+        # foreground, so between one briefing and the next the store can
+        # change on its own. A background worker nobody can see is the thing
+        # that makes a memory feel unreliable, and this is the line that stops
+        # it: the counts above are as of now, and this says whether more is
+        # coming.
+        if ($brief.PSObject.Properties.Name -contains 'working' -and
+            [int]$brief.working -gt 0) {
+            Write-Host "  writing   " -ForegroundColor DarkGray -NoNewline
+            $what = if ($brief.working_note) { $brief.working_note } else { "a session" }
+            Write-Host ("consolidating {0} - the counts above will move" -f $what) -ForegroundColor Cyan
+        }
+        if ($brief.PSObject.Properties.Name -contains 'jobs_failed' -and
+            [int]$brief.jobs_failed -gt 0) {
+            # Never silent. The turns are still in the job file, so this is
+            # recoverable - but only if it is said.
+            Write-Host "  writing   " -ForegroundColor DarkGray -NoNewline
+            Write-Host ("{0} consolidation(s) did not finish - /jobs" -f $brief.jobs_failed) -ForegroundColor DarkYellow
+        }
         $isUp = ($brief.backend -eq "up")
         Write-Host "  serving   " -ForegroundColor DarkGray -NoNewline
         if ($isUp) {

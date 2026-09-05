@@ -126,6 +126,28 @@ def brief(store: Path, since: str = "") -> dict:
             fading.append(round(s, 3))
     out["fading"] = len(fading)
 
+    # What the memory is writing on its own right now, and what it wrote since
+    # you were last here. Consolidation left the foreground, so without this
+    # line the store simply changes under you between one briefing and the
+    # next - which is the failure mode a background worker has to avoid.
+    try:
+        sys.path.insert(0, str(_ROOT / "tools"))
+        import pragma_jobs as jobs
+        # `store` here is the EPISODES directory - that is what the launcher
+        # passes and what _beliefs already walks up from. Jobs live beside it,
+        # in the project's store root.
+        root = store.parent if store.name == "episodes" else store
+        items = jobs.listing(root, limit=5)
+        live = [j for j in items if j.get("status") in ("pending", "running")]
+        out["working"] = len(live)
+        out["working_note"] = (live[0].get("note") or "") if live else ""
+        out["jobs_failed"] = sum(
+            1 for j in items if j.get("status") in ("failed", "abandoned"))
+    except Exception:
+        out["working"] = 0
+        out["working_note"] = ""
+        out["jobs_failed"] = 0
+
     # The backend, asked here so the entry page can say whether it is up. It is
     # the thing worth knowing BEFORE choosing "chat", and the launcher clears
     # the screen, so the session banner that used to carry it is gone by the

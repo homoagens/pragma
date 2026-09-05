@@ -633,8 +633,7 @@ def episode_consolidate_detailed(transcript: str = "", workspace: str = "",
     }
     try:
         store.mkdir(parents=True, exist_ok=True)
-        (store / f"{ep['id']}.json").write_text(
-            json.dumps(ep, indent=2, ensure_ascii=False), encoding="utf-8")
+        estore.write_json(store / f"{ep['id']}.json", ep)
     except Exception as e:
         return {"status": "error",
                 "summary": f"ERROR writing episode: {e}", **empty}
@@ -911,8 +910,7 @@ def episode_consolidate_detailed(transcript: str = "", workspace: str = "",
 
     try:
         learnings_path.parent.mkdir(parents=True, exist_ok=True)
-        learnings_path.write_text(
-            json.dumps(learnings, indent=2, ensure_ascii=False), encoding="utf-8")
+        estore.write_json(learnings_path, learnings)
     except Exception as e:
         result["summary"] = (
             f"OK: episode {ep['id']} saved; ERROR writing learnings — {e}")

@@ -5,6 +5,7 @@
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 
 import config
@@ -55,7 +56,11 @@ def _load_store(path: Path) -> dict:
 
 def _save_store(path: Path, data: dict) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
+    # Beside, then rename: the reflection worker writes this from its own
+    # thread while the foreground may be reading it.
+    tmp = path.with_name(path.name + ".tmp")
+    tmp.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
+    os.replace(tmp, path)
 
 
 def session_reflect_detailed(transcript: str = "",

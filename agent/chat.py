@@ -49,7 +49,8 @@ from pathlib import Path
 _HERE = Path(__file__).resolve().parent
 _ROOT = _HERE.parent
 _CORE = _ROOT / "core"
-for p in (str(_ROOT), str(_CORE)):
+_TOOLS = _ROOT / "tools"
+for p in (str(_ROOT), str(_CORE), str(_TOOLS)):
     if p not in sys.path:
         sys.path.insert(0, p)
 
@@ -85,6 +86,7 @@ _SLASH = {
     "/oblio":    ("oblio",   "what has faded"),
     "/last":     ("last",    "the newest episode, in full"),
     "/sizes":    ("sizes",   "how wordy the store is"),
+    "/jobs":     ("jobs",    "what the memory is writing in the background"),
     "/configure": ("configure", "point Pragma at an LLM endpoint"),
     "/clear":    ("clear",   "clear the screen, keep the conversation"),
     "/exit":     ("exit",    "close the session and consolidate"),
@@ -220,8 +222,8 @@ def _prompt() -> str:
 # At the briefing there is no conversation to clear or leave halfway, and
 # /chat is the one thing that only makes sense there.
 _AT_HOME = {"/chat", "/help", "/info", "/map", "/beliefs", "/diff", "/oblio",
-            "/last", "/sizes", "/clear", "/configure", "/settings", "/backups",
-            "/switch", "/new", "/delete", "/exit"}
+            "/last", "/sizes", "/jobs", "/clear", "/configure", "/settings",
+            "/backups", "/switch", "/new", "/delete", "/exit"}
 _IN_CHAT = {n for n in _SLASH if n != "/chat"}
 
 # Which level is being typed at. One place, read by the banner, the help
@@ -313,6 +315,9 @@ def _run_slash(cmd: str) -> bool:
             return True
         _new_page()
         _show_chat_header()
+        return True
+    if action == "jobs":
+        _show_jobs()
         return True
     if action == "configure":
         # The endpoint question, asked where you are rather than at a shell
@@ -453,6 +458,90 @@ def _consolidate(turns: list[Turn], cwd: Path, renderer,
         except Exception as e:
             renderer.error(None, f"episode {i} failed: {e}")
     return written
+
+
+def _spool(turns: list[Turn]) -> list[dict]:
+    """The turns as plain data, for a worker in another process."""
+    return [{"text": t.text,
+             "transcript": list(t.transcript),
+             "started": t.started.strftime("%Y-%m-%dT%H:%M:%SZ")}
+            for t in turns]
+
+
+def _consolidate_later(turns: list[Turn], cwd: Path,
+                       note: str = "this session") -> bool:
+    """Hand the turns to a detached worker. False means do it here instead.
+
+    LEAVING SHOULD NOT TAKE LONGER THAN STAYING. Consolidation is four LLM
+    calls and about a minute on a 27B, and it used to run between `/exit` and
+    the prompt coming back - so the last thing a conversation did was hold you
+    there while it wrote itself down. The work is the same; only who waits for
+    it changes.
+
+    A thread would not do: the launcher redraws its briefing when this process
+    returns, so anything keeping the interpreter alive also keeps the menu
+    away. Detached, the conversation ends now and the job outlives it.
+    """
+    if not turns:
+        return True                       # nothing to do counts as handled
+    if os.environ.get("PRAGMA_CONSOLIDATE_SYNC", "").strip().lower() in (
+            "1", "true", "yes"):
+        return False
+    try:
+        import pragma_jobs as jobs
+        job_path = jobs.create(_spool(turns), str(cwd), note)
+        worker = _ROOT / "tools" / "pragma_consolidate.py"
+        kwargs: dict = {}
+        if os.name == "nt":
+            # DETACHED_PROCESS so it survives this console closing, and its own
+            # process group so a Ctrl+C aimed at the shell does not reach it
+            # halfway through writing an episode.
+            kwargs["creationflags"] = (subprocess.DETACHED_PROCESS
+                                       | subprocess.CREATE_NEW_PROCESS_GROUP)
+        else:
+            kwargs["start_new_session"] = True
+        subprocess.Popen(
+            [sys.executable, str(worker), str(job_path)],
+            cwd=str(_ROOT), stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+            close_fds=True, **kwargs)
+    except Exception as e:
+        print(f"  could not start the consolidation worker: "
+              f"{type(e).__name__}: {str(e)[:90]}")
+        return False
+    print()
+    print(f"  {len(turns)} turn(s) handed to the memory - it writes them while")
+    print("  you carry on.  /jobs to watch, or just look at the next briefing.")
+    return True
+
+
+def _show_jobs() -> None:
+    """What the memory has been doing on its own, newest first."""
+    try:
+        import pragma_jobs as jobs
+        items = jobs.listing(limit=6)
+    except Exception as e:
+        print(f"  {type(e).__name__}: {str(e)[:120]}")
+        return
+    print()
+    if not items:
+        print("  nothing in the background, and nothing recently finished.")
+        print()
+        return
+    for job in items:
+        state = job.get("status", "?")
+        when = (job.get("finished") or job.get("started")
+                or job.get("created") or "")
+        print(f"  {state:<10}{when}   {job.get('note', '')}")
+        if job.get("error"):
+            print(f"    {job['error'][:100]}")
+        for line in (job.get("log") or [])[-8:]:
+            print(f"    {line[:100]}")
+        if state in ("pending", "running"):
+            print("    still working")
+        elif job.get("episodes"):
+            print(f"    wrote {len(job['episodes'])} episode(s)")
+        print()
 
 
 def _load_episode(episode_id: str) -> dict | None:
@@ -924,7 +1013,9 @@ If the turn needed no tools at all, the conclusion is simply your reply.
         # Only what compaction has not already remembered. Without the
         # watermark a long session would write every early turn twice: once
         # when the context filled up, once again on the way out.
-        _consolidate(turns[consolidated_upto:], cwd, renderer)
+        pending = turns[consolidated_upto:]
+        if not _consolidate_later(pending, cwd):
+            _consolidate(pending, cwd, renderer)
     elif turns:
         print(f"\n  {len(turns)} turn(s) recorded in {log_path.name} "
               f"(no --memory: nothing was consolidated)")

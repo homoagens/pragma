@@ -100,6 +100,11 @@ by default.
 *means* while the record of what happened stays frozen. A belief that
 accumulates contradictions is reformulated rather than merely dropped.
 
+**It writes while you carry on.** Turning a conversation into episodes takes a
+minute of thinking, so it happens in the background: `/exit` gives you the
+terminal back at once and the memory finishes on its own. `/jobs` shows what it
+is doing, and the next briefing says whether anything is still being written.
+
 ---
 
 ## GUI
