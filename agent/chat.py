@@ -491,17 +491,30 @@ def _consolidate_later(turns: list[Turn], cwd: Path,
         import pragma_jobs as jobs
         job_path = jobs.create(_spool(turns), str(cwd), note)
         worker = _ROOT / "tools" / "pragma_consolidate.py"
+        exe = sys.executable
         kwargs: dict = {}
         if os.name == "nt":
-            # DETACHED_PROCESS so it survives this console closing, and its own
-            # process group so a Ctrl+C aimed at the shell does not reach it
-            # halfway through writing an episode.
-            kwargs["creationflags"] = (subprocess.DETACHED_PROCESS
+            # NO WINDOW. The first version used DETACHED_PROCESS, which detaches
+            # the console but lets Windows give a console application one of its
+            # own - so a black window appeared for the length of the
+            # consolidation, which is a strange thing for "it happens quietly in
+            # the background" to look like.
+            #
+            # Two belts. pythonw.exe is the GUI-subsystem interpreter and never
+            # allocates a console at all; CREATE_NO_WINDOW says the same thing
+            # to Windows for the case where it is missing. The child outlives
+            # this process either way - that was never what DETACHED_PROCESS
+            # was for - and its own process group keeps a Ctrl+C aimed at the
+            # shell from reaching it halfway through writing an episode.
+            pyw = Path(exe).with_name("pythonw.exe")
+            if pyw.is_file():
+                exe = str(pyw)
+            kwargs["creationflags"] = (subprocess.CREATE_NO_WINDOW
                                        | subprocess.CREATE_NEW_PROCESS_GROUP)
         else:
             kwargs["start_new_session"] = True
         subprocess.Popen(
-            [sys.executable, str(worker), str(job_path)],
+            [exe, str(worker), str(job_path)],
             cwd=str(_ROOT), stdin=subprocess.DEVNULL,
             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
             close_fds=True, **kwargs)
@@ -515,8 +528,84 @@ def _consolidate_later(turns: list[Turn], cwd: Path,
     return True
 
 
+def _stop_key() -> bool:
+    """Has someone asked to stop watching? Ctrl+D, Escape or q.
+
+    Read without waiting, because the caller is in a display loop and must not
+    block on a keypress that may never come. Ctrl+C arrives as an exception
+    instead and is handled where the loop is.
+    """
+    if os.name != "nt":
+        return False
+    try:
+        import msvcrt
+        while msvcrt.kbhit():
+            ch = msvcrt.getch()
+            if ch in (b"\x04", b"\x03", b"\x1b", b"q", b"Q"):
+                return True
+    except Exception:
+        return False
+    return False
+
+
+def _watch_job(path, job: dict) -> None:
+    """Follow one running job the way the foreground used to read.
+
+    The faculties are the same and they take the same minute; what changed is
+    that you are no longer held there. So the log is FOLLOWED rather than
+    dumped: each line appears as its faculty finishes, and the one in flight
+    carries a second count, because forty seconds of nothing moving is
+    indistinguishable from a worker that has died.
+    """
+    import time
+    import pragma_jobs as jobs
+    shown = 0
+    started = time.time()
+    last_len = 0
+    # Repainting one line needs a terminal to repaint it on. Piped to a file,
+    # a carriage return is just a character, and the second counter would write
+    # four hundred copies of the same sentence into the log.
+    try:
+        repaint = sys.stdout.isatty()
+    except Exception:
+        repaint = False
+    while True:
+        job = jobs.read(path) or job
+        log = job.get("log") or []
+        for line in log[shown:-1] if len(log) > shown else []:
+            print("\r" + " " * last_len + "\r  " + line[:100])
+            last_len = 0
+        shown = max(shown, len(log) - 1)
+        done = job.get("status") not in ("pending", "running")
+        tail = log[-1] if log else "starting"
+        if done:
+            if log:
+                print("\r" + " " * last_len + "\r  " + log[-1][:100])
+            break
+        if repaint:
+            row = f"  {tail[:88]}  {int(time.time() - started)}s"
+            print("\r" + row.ljust(last_len), end="", flush=True)
+            last_len = len(row)
+        if _stop_key():
+            print("\r" + " " * last_len + "\r"
+                  "  still working - it carries on without you.")
+            return
+        time.sleep(0.5)
+
+    state = job.get("status")
+    if state == "done":
+        n = len(job.get("episodes") or [])
+        print(f"  done - {n} episode(s) written.")
+    else:
+        print(f"  {state} - {str(job.get('error', ''))[:100]}")
+
+
 def _show_jobs() -> None:
-    """What the memory has been doing on its own, newest first."""
+    """What the memory has been doing on its own, newest first.
+
+    A job still running is FOLLOWED rather than listed: the reason to type
+    /jobs while something is working is to watch it work.
+    """
     try:
         import pragma_jobs as jobs
         items = jobs.listing(limit=6)
@@ -528,6 +617,21 @@ def _show_jobs() -> None:
         print("  nothing in the background, and nothing recently finished.")
         print()
         return
+
+    live = next((j for j in items if j.get("status") in ("pending", "running")),
+                None)
+    if live:
+        print(f"  {live.get('note', 'a session')}   "
+              "ctrl+D to leave it to itself")
+        print()
+        try:
+            _watch_job(Path(live["_path"]), live)
+        except KeyboardInterrupt:
+            print()
+            print("  still working - it carries on without you.")
+        print()
+        return
+
     for job in items:
         state = job.get("status", "?")
         when = (job.get("finished") or job.get("started")
@@ -537,9 +641,7 @@ def _show_jobs() -> None:
             print(f"    {job['error'][:100]}")
         for line in (job.get("log") or [])[-8:]:
             print(f"    {line[:100]}")
-        if state in ("pending", "running"):
-            print("    still working")
-        elif job.get("episodes"):
+        if job.get("episodes"):
             print(f"    wrote {len(job['episodes'])} episode(s)")
         print()
 
