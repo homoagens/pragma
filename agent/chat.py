@@ -208,6 +208,25 @@ def _allowed() -> set:
     return _AT_HOME if _AT_HOME_NOW else _IN_CHAT
 
 
+# What the conversation's page says at the top, kept so that clearing can put
+# it back. A cleared screen with nothing on it is not the same page any more.
+_CHAT_HEADER: list = []
+
+
+def _new_page() -> None:
+    try:
+        os.system("cls" if os.name == "nt" else "clear")
+    except Exception:
+        pass
+
+
+def _show_chat_header() -> None:
+    print()
+    for line in _CHAT_HEADER:
+        print(line)
+    print()
+
+
 def _slash_banner(at_home: bool = False) -> None:
     """At home a pointer, inside the list.
 
@@ -257,13 +276,17 @@ def _run_slash(cmd: str) -> bool:
         _slash_help()
         return True
     if action == "clear":
-        try:
-            os.system("cls" if os.name == "nt" else "clear")
-        except Exception:
-            pass
-        # An empty screen is not an interface. The banner costs three lines and
-        # is the only thing that says what can be typed here.
-        _slash_banner()
+        # Clearing redraws the page rather than emptying the screen. At the
+        # briefing the page belongs to the launcher - the logo, the counts,
+        # what faded - so the only honest way to redraw it is to ask.
+        if _AT_HOME_NOW:
+            if _ask_launcher("refresh"):
+                return False
+            _new_page()
+            _slash_banner(at_home=True)
+            return True
+        _new_page()
+        _show_chat_header()
         return True
     if action in ("exit", "chat"):
         return False                      # handled by the caller
@@ -736,14 +759,20 @@ If the turn needed no tools at all, the conclusion is simply your reply.
         # swallowing it silently is how a first message gets lost.
         print("  /chat first, then say it.")
 
+    # A conversation gets a page. Printed under the briefing it read as more
+    # of the same screen; cleared, it is somewhere you went. The commands are
+    # not repeated here - /help still lists them, and the slash still offers
+    # them as you type.
     _set_level(session, False)
-    print()
-    print(f"  talking to {served or 'nothing - the backend is down'}"
-          f" · memory {'on' if args.memory else 'off'}"
-          f" · max {max_steps} steps per turn")
-    print("  /exit or ctrl+D goes back"
-          "   ·   ctrl+C goes back and consolidates")
-    _slash_banner()
+    _CHAT_HEADER[:] = [
+        f"  talking to {served or 'nothing - the backend is down'}"
+        f" · memory {'on' if args.memory else 'off'}"
+        f" · max {max_steps} steps per turn",
+        "  /exit or ctrl+D goes back"
+        "   ·   ctrl+C goes back and consolidates",
+    ]
+    _new_page()
+    _show_chat_header()
 
     try:
         while True:
