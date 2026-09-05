@@ -1260,6 +1260,11 @@ function script:Invoke-MenuLoop($entry) {
     # through a request file and steps out - consolidating its turns on the way
     # - this runs the page, and then puts the operator back in the chat.
     $active = $null
+    # Whole logo once per launch. The flag lives in the module, and the module
+    # outlives the program: without this, the first `pragma` of a window got
+    # the mark and every one after it got the word, which reads as the logo
+    # having gone missing.
+    $script:LogoShown = $false
     $req = Join-Path ([IO.Path]::GetTempPath()) ("pragma-request-" + $PID + ".json")
     $env:PRAGMA_REQUEST = $req
 

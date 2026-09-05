@@ -496,10 +496,12 @@ def main() -> int:
               file=sys.stderr)
         return 1
 
-    ok, detail = llm_client.ping_models()
-    if not ok:
-        print(f"ERROR: LLM endpoint unreachable — {detail}", file=sys.stderr)
-        return 1
+    # An unreachable endpoint used to end the program here. It should not:
+    # most of what a memory is for still works with the model gone - the map,
+    # the beliefs, what faded, a backup - and a tunnel that drops for a minute
+    # should not throw you out of the room. So it opens offline and says so,
+    # and every turn re-checks, so it heals the moment the server answers.
+    online, detail = llm_client.ping_models()
 
     skills = skills_palette()
     skills["ask_user"] = batch_ask_user
@@ -566,9 +568,14 @@ If the turn needed no tools at all, the conclusion is simply your reply.
 
     log_path = cwd / ".pragma_session.jsonl"
     print()
-    print(f"  Pragma live session · {served} · {cwd}")
+    # With the endpoint down there is no served model to name, and an empty
+    # slot between two separators reads as a bug rather than a state.
+    print(f"  Pragma live session · {served or 'offline'} · {cwd}")
     print(f"  memory: {'recall on + consolidation on exit' if args.memory else 'off'}"
           f" · max {max_steps} steps per turn")
+    if not online:
+        print(f"  backend down - {str(detail).split(chr(8212))[0].strip()[:70]}")
+        print("  the memory still answers: /map /beliefs /oblio /last /backups")
     print("  ctrl+D back to the briefing, twice to leave"
           "   |   ctrl+C leaves and consolidates")
     # The commands, on the way in. A menu made them discoverable by existing;
@@ -635,6 +642,19 @@ If the turn needed no tools at all, the conclusion is simply your reply.
                 if not _run_slash(text.split()[0].lower()):
                     break        # /exit, or a page the launcher owns
                 continue
+
+            # Only a real turn needs the model. Asked again rather than
+            # remembered: the point of opening offline is that it stops being
+            # true without anyone restarting anything - and the slash commands
+            # above must keep working while it is.
+            if not online:
+                online, detail = llm_client.ping_models(timeout=4)
+                if not online:
+                    print("  backend still down - "
+                          + str(detail).split(chr(8212))[0].strip()[:70])
+                    print("  the memory commands still work; /help lists them.")
+                    continue
+                print("  backend is back.")
 
             # The Turn — and so the raw log, and so what the segmenter reads
             # on exit — keeps the user's words alone. Only the prompt carries
