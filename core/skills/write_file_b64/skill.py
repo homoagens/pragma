@@ -88,7 +88,6 @@ def write_file_b64(path: str,
             f"  - replace_in_file_b64(path, old_b64, new_b64)  exact replace, JSON-safe\n"
             f"  - replace_in_file(path, old, new)              exact replace\n"
             f"  - insert_after / insert_before / append_file\n"
-            f"  - edit_file(path, instruction)                 interpret-and-patch\n"
             f"If you truly need to rewrite the whole file from scratch, "
             f"call write_file_b64 again with overwrite=true."
         )
@@ -119,7 +118,7 @@ def write_file_b64(path: str,
         return f"ERROR writing {path}: {e}"
 
     # Soft size warning — informs the agent that a large write happened
-    # so on subsequent edits it prefers edit_file / insert_* / replace_in_file.
+    # so on subsequent edits it prefers insert_* / replace_in_file / apply_patch.
     try:
         import config as _cfg2
         soft = getattr(_cfg2, "WRITE_FILE_SOFT_LIMIT", 0)

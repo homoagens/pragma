@@ -18,4 +18,4 @@ Response body as a string, or `"HTTP ERROR <code>: ..."`, `"CONNECTION ERROR: ..
 
 - Uses a fixed `User-Agent: homo-agens/agent-baseline` header.
 - HTTP errors (4xx/5xx) return an error string rather than raising.
-- No HTML parsing or extraction: pipe the result through `parse_document` if structured extraction is needed.
+- No HTML parsing or extraction: the body is returned as raw text.

@@ -79,7 +79,6 @@ Set-SessionEnv "LLM_BASE_URL"      (Cfg "Endpoint" "")
 Set-SessionEnv "LLM_TOOL_PROTOCOL" $script:SProto
 Set-SessionEnv "CONTEXT_WINDOW"    (Cfg "ContextWindow"  "")
 Set-SessionEnv "MAX_TOKENS"        (Cfg "MaxTokens"      "")
-Set-SessionEnv "CODING_MAX_TOKENS" (Cfg "MaxTokens"      "")
 Set-SessionEnv "SKILL_MAX_TOKENS"  (Cfg "SkillMaxTokens" "")
 # The memory faculties, separately. Empty follows SkillMaxTokens, as it always
 # did; set it when the model reasons its way through a three-line verdict and
@@ -455,7 +454,7 @@ function global:pragma {
     if ($Off) {
         Remove-Item Env:PRAGMA_WORKSPACE, Env:PRAGMA_DATA_DIR -ErrorAction SilentlyContinue
         Remove-Item Env:LLM_BASE_URL, Env:LLM_TOOL_PROTOCOL -ErrorAction SilentlyContinue
-        Remove-Item Env:CONTEXT_WINDOW, Env:MAX_TOKENS, Env:CODING_MAX_TOKENS -ErrorAction SilentlyContinue
+        Remove-Item Env:CONTEXT_WINDOW, Env:MAX_TOKENS -ErrorAction SilentlyContinue
         Remove-Item Env:SKILL_MAX_TOKENS, Env:MEMORY_MAX_TOKENS, Env:MEMORY_NO_THINK, Env:LLM_TIMEOUT -ErrorAction SilentlyContinue
         Remove-Item Env:CURATOR_CANDIDATES_EPISODES, Env:CURATOR_CANDIDATES_RECENT -ErrorAction SilentlyContinue
         Remove-Item Env:CURATOR_CANDIDATES_LEARNINGS, Env:CURATOR_MAX_FRAGMENTS -ErrorAction SilentlyContinue

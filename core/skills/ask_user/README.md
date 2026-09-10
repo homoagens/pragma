@@ -30,7 +30,7 @@ User's answer as a string; `"yes"` or `"no"` in `confirm` mode.
 
 ## Do not
 
-- Ask for information you can infer or discover with a skill (`list_dir`, `read_file`, `understand_cwd`)
+- Ask for information you can infer or discover with a skill (`list_dir`, `read_file`, `file_outline`)
 - Ask multiple questions in one call — one topic per call
 - Use `ask_user` for destructive operations without `mode: "confirm"` — always ask for confirmation before deleting or overwriting
 - Ask trivial questions the user should not need to answer (e.g. "should I read the file?" — just read it)

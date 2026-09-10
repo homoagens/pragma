@@ -19,7 +19,7 @@ Deterministic find-and-replace in a file. No LLM involved — equivalent to Pyth
 ## Notes
 
 - Pure str.replace. Cannot hit the LLM token limit.
-- Prefer this over `edit_file` when you already know the exact text to change.
+- Use this when you already know the exact text to change.
 - For a renaming pass across all occurrences, pass `count=-1`.
 
 ## Examples

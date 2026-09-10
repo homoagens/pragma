@@ -40,4 +40,4 @@ A multi-line summary with:
 
 - Any file > 100 lines: outline first, then targeted read.
 - Unknown codebase: outline a few files to map the project quickly.
-- Before `edit_file`: pick the right anchor by looking at the symbol table.
+- Before `insert_after` / `insert_before`: pick the right anchor by looking at the symbol table.

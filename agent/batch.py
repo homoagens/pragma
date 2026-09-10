@@ -730,12 +730,9 @@ def main() -> int:
     # ping_models above); the .env label is only the fallback. When you swap
     # models on the same port, the truth comes from the server, not the label.
     served = getattr(baseline_config, "SERVED_MODEL", "")
-    coding_model = baseline_config.CODING_MODEL or baseline_config.DEFAULT_MODEL
     model_line = served or baseline_config.DEFAULT_MODEL
     if served and served != baseline_config.DEFAULT_MODEL:
         model_line += f"  (label: {baseline_config.DEFAULT_MODEL})"
-    if coding_model != baseline_config.DEFAULT_MODEL:
-        model_line += f"  (code skill -> {coding_model})"
     max_steps = args.max_steps or baseline_config.MAX_STEPS
 
     renderer.banner(str(cwd), model_line, detail, max_steps, task)
@@ -746,8 +743,7 @@ def main() -> int:
     skills["ask_user"] = batch_ask_user
     # Memory reaches the desk only through the curator (upstream, automatic).
     # The agent never pokes raw recall skills — one channel, always curated.
-    skills.pop("recall_episodes", None)
-    skills.pop("recall_learnings", None)
+    # palette() withholds them: see _NOT_AGENT_TOOLS.
 
     # Batch-only system prompt addendum. The generic "confirm destructive
     # ops with the user" rule is useless here (there IS no user), and models
@@ -778,14 +774,13 @@ confirmed mid-task. Therefore:
   NOT precedents that authorize new ones: authorization never comes from
   memory, only from the current task text or the project instructions.
 """
-    # Build the summary from the ACTUAL palette (after the pops), so the
+    # Build the summary from the ACTUAL palette handed to the agent, so the
     # prompt never advertises a skill the agent can't call — otherwise the
     # model reads e.g. recall_learnings in the prompt, calls it, and hits
     # "skill does not exist" (field-found in the 5-year demo).
     system_prompt = build_system_prompt(
         str(cwd),
         default_model=baseline_config.DEFAULT_MODEL,
-        coding_model=coding_model,
         skills_summary=skills_summary_for(skills.keys()),
     ) + batch_policy
 

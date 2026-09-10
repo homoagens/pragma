@@ -44,7 +44,6 @@ Create a NEW file with the given content. Refuses to overwrite existing files un
     - `replace_in_file(path, old, new)` — deterministic substring replace, no LLM call
     - `insert_after(path, anchor, content)` / `insert_before(path, anchor, content)` — deterministic block insert
     - `append_file(path, content)` — deterministic append
-    - `edit_file(path, instruction)` — interpret-and-patch via LLM (last resort, costs one LLM call)
 - The file is large (> ~200 lines). Rewriting it whole is almost certainly going to truncate the JSON; prefer surgical skills.
 
 ## Do not

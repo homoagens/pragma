@@ -18,4 +18,4 @@ Numbered list of results with title, URL, and snippet, or `"NO RESULTS"`, or `"E
 
 - DuckDuckGo requires the `ddgs` or `duckduckgo_search` library (`pip install ddgs`).
 - Serper requires a valid API key in `config.SERPER_API_KEY`.
-- Query formulation quality affects result relevance; consider using `llm_invoke` upstream to refine the query.
+- Query formulation quality affects result relevance; phrase the query carefully.

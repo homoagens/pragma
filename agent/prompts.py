@@ -158,12 +158,11 @@ def _os_environment(cwd: str) -> str:
 - Environment variables: use `$VAR` syntax in shell commands."""
 
 
-def build_system_prompt(cwd: str, default_model: str = "", coding_model: str = "",
+def build_system_prompt(cwd: str, default_model: str = "",
                         skills_summary: str = "", protocol: str = "") -> str:
     model_line = ""
     if default_model:
-        coding_info = f", `code` skill → {coding_model}" if coding_model and coding_model != default_model else ""
-        model_line = f"\nActive models: default → {default_model}{coding_info}"
+        model_line = f"\nActive model: {default_model}"
     os_env = _os_environment(cwd)
     now_block = _now_block()
     if not protocol:
@@ -250,28 +249,27 @@ embedded inside a JSON string. Follow these rules to avoid syntax errors:
 - **Greetings, simple questions, conversational messages, brainstorming and suggestions**
   (e.g. "hello", "what can you do?", "suggest some ideas", "what are good Python projects?",
   "explain X", "what is Y"): respond IMMEDIATELY with a `conclusion` using your own knowledge —
-  no tools, no `llm_invoke`, no `understand_cwd`. You already know the answer. One step, done.
-- **Coding/file tasks**: use tools. Before modifying an unknown project, run `understand_cwd`
-  or `list_dir` once to orient yourself. Do NOT re-orient after every step.
+  no tools. You already know the answer. One step, done.
+- **Coding/file tasks**: use tools. Before modifying an unknown project, run `list_dir`
+  once to orient yourself. Do NOT re-orient after every step.
 - **Complex multi-step tasks** (creating a small project, multi-file refactor, pipeline):
-  call `todo_create` ONCE at the very beginning to plan. Then execute tasks one-by-one
-  using the appropriate skill — do NOT call `todo_execute`, and do NOT recreate the todo list.
+  work through them one small step at a time, each with the appropriate skill.
 - **Before reading any unknown file, run `file_outline(path)` first.**
   It returns the line count, top-level symbols (functions, classes, headings)
   and the last few lines — all without putting the full content in context.
   Use the outline to decide whether to `read_file` fully, `read_file` with
   `start_line`/`end_line`, or skip straight to an `insert_after` / `replace_in_file`.
 - **Never guess file contents.** Always `file_outline` (and possibly `read_file`)
-  before `edit_file`.
+  before changing a file.
 - **`write_file`** is for NEW files only. It refuses to overwrite an existing file
   unless you pass `overwrite=true`. Rewriting the whole content is expensive and
   is the #1 cause of `finish_reason=length` truncation — only opt in when no
   surgical skill fits and the file is small.
 - **`overwrite` is a parameter of `write_file` ONLY.** Do NOT pass it to
   `append_file`, `insert_after`, `insert_before`, `replace_in_file`,
-  `replace_in_file_b64`, or `edit_file` — they always modify the target
-  by their semantic (appending, inserting at an anchor, substring replace,
-  LLM-patch) and the parameter is rejected. If you find yourself writing
+  or `replace_in_file_b64` — they always modify the target
+  by their semantic (appending, inserting at an anchor, substring replace)
+  and the parameter is rejected. If you find yourself writing
   `overwrite=true` on any skill other than `write_file`, you have the
   wrong skill — pick the deterministic one that matches your intent.
 - **`write_file_b64(path, content_b64, overwrite=False)`** — same semantics
@@ -294,8 +292,6 @@ embedded inside a JSON string. Follow these rules to avoid syntax errors:
     - `insert_after(path, anchor, content)` / `insert_before(path, anchor, content)` —
       to add a block at a known location. Deterministic, no LLM call.
     - `append_file(path, content)` — to add at the end. Deterministic, no LLM call.
-    - `edit_file(path, instruction)` — only when the change requires interpretation
-      and the previous deterministic skills don't fit. This one DOES make an internal LLM call.
 - **Keep `thought` SHORT — one sentence.** Long thoughts compete with action args
   for the token budget and risk truncating the JSON.
 - **On large files (>200 lines): never call `write_file` to update them.**
@@ -341,7 +337,7 @@ embedded inside a JSON string. Follow these rules to avoid syntax errors:
   or pipe the input: `echo test_value | python script.py`. Always test with non-interactive
   execution.
 - If `write_file` produces invalid Python (syntax error at runtime), re-read the file and
-  use `edit_file` to fix it — don't rewrite the whole file blindly.
+  use `replace_in_file` to fix it — don't rewrite the whole file blindly.
 - **If a skill call fails with an argument error** (unexpected keyword, missing argument,
   wrong type): do NOT retry with guessed parameters. Call `get_skill_details("skill_name")`
   FIRST, read the parameter list, then retry with the correct arguments.
@@ -350,13 +346,12 @@ embedded inside a JSON string. Follow these rules to avoid syntax errors:
 - **If you see "Response truncated (finish_reason=length)"**: your output was cut off
   because it was too long. Next turn: (1) shorten `thought` to one sentence, (2) avoid
   `write_file` on existing files — use `replace_in_file` / `insert_after` / `insert_before`
-  / `append_file` instead, (3) if the task is large, call `todo_create` once and execute
-  one small step per turn.
+  / `append_file` instead, (3) if the task is large, do one small step per turn.
 - **JSON-escape trap (literal `\\n`, `\\t` etc. inside files).** If a file contains a
   LITERAL escape sequence — for example the two characters `\\` and `n` instead of a real
   newline (you can see them in a `read_file` as `\\\\n` in the displayed bytes, or as a JS
   SyntaxError when the file is loaded in a browser) — DO NOT try to fix it with
-  `replace_in_file` / `edit_file`. The JSON-arg layer makes the escape level ambiguous and
+  `replace_in_file`. The JSON-arg layer makes the escape level ambiguous and
   the model (you) routinely picks the wrong number of backslashes, fails, retries, fails
   again. Use `replace_in_file_b64` instead: base64-encode both `old` and `new` payloads
   so the bytes cross the wire unambiguously. Same skill, no escape ambiguity.
@@ -373,9 +368,6 @@ embedded inside a JSON string. Follow these rules to avoid syntax errors:
 {skills_summary}
 
 - **get_skill_details**: Load the full parameter documentation for any skill listed above.
-- **code**: Delegate code generation or review to a specialized coding model.
-  `code(task, language="", context="", mode="generate")` — mode: "generate" | "review" | "explain" | "refactor" | "fix".
-  Use for non-trivial code blocks, then `write_file` the result.
 
 Call `get_skill_details(name)` before using a skill when you need the exact parameter names or want to check available options.
 """

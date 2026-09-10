@@ -108,8 +108,8 @@ def extract_json(text):
     """
     # When a response is cut by finish_reason=length, llm_client returns the
     # partial text prefixed with a truncation marker. react.py strips it
-    # itself, but skills that call call_llm directly (edit_file,
-    # episode_consolidate, ...) pass the raw text here —
+    # itself, but code that calls call_llm directly (the curator,
+    # episode_consolidate, ...) passes the raw text here —
     # strip it centrally so every consumer can still salvage the partial.
     # Kept as a literal to avoid importing llm_client from this
     # dependency-free module; must match llm_client.TRUNCATION_PARTIAL_MARKER.

@@ -193,22 +193,6 @@ def sampling_line():
 SERVED_MODEL = ""
 
 # ─────────────────────────────────────────────
-# CODING MODEL (optional)
-# ─────────────────────────────────────────────
-# If set, the `code` skill uses this model instead of DEFAULT_MODEL.
-# Useful to route code generation to a specialized model.
-#
-# Examples:
-#   CODING_MODEL=qwen2.5-coder:14b   CODING_BASE_URL=http://localhost:11434/v1
-#   CODING_MODEL=gpt-4o              CODING_BASE_URL=https://api.openai.com/v1  CODING_API_KEY=sk-...
-
-CODING_MODEL       = os.environ.get("CODING_MODEL", "")       # empty = use DEFAULT_MODEL
-CODING_BASE_URL    = os.environ.get("CODING_BASE_URL", "")    # empty = use LLM_BASE_URL
-CODING_API_KEY     = os.environ.get("CODING_API_KEY", "")     # empty = use LLM_API_KEY
-CODING_TEMPERATURE = float(os.environ.get("CODING_TEMPERATURE", "0.1"))
-CODING_MAX_TOKENS  = int(os.environ.get("CODING_MAX_TOKENS",  "16384"))  # see MAX_TOKENS
-
-# ─────────────────────────────────────────────
 # GENERAL PARAMETERS
 # ─────────────────────────────────────────────
 
@@ -265,7 +249,7 @@ LLM_TOOL_PROTOCOL = os.environ.get("LLM_TOOL_PROTOCOL", "text").strip().lower()
 # costs more than one that waits.
 TIMEOUT        = int(os.environ.get("LLM_TIMEOUT", "900"))
 
-# Budget for LLM calls made INSIDE a skill (edit_file, code, llm_invoke) and
+# Budget for LLM calls made INSIDE a skill (vision_interpret) and
 # by the memory faculties (consolidator, curator, reconsolidator). Skills
 # should never hardcode their own budget — they read it from config.
 #
@@ -429,7 +413,7 @@ ACTION_LOOP_ENABLED   = os.environ.get(
 
 # Error-rate watchdog: complements the strict action-loop above. Fires when
 # the agent has been thrashing across DIFFERENT skills, all returning ERROR
-# (e.g. tried replace_in_file, then edit_file, then insert_after, then
+# (e.g. tried replace_in_file, then apply_patch, then insert_after, then
 # write_file — all failed with arg / path errors). The strict watchdog
 # misses this because no single (action,args) pair repeats. This one looks
 # at the error RATE over a sliding window of recent steps.
@@ -569,9 +553,6 @@ DATA_DIR = Path(os.environ.get("PRAGMA_DATA_DIR", str(Path.home() / ".pragma")))
 
 # Conversation threads (one JSON file per conversation).
 THREADS_DIR = DATA_DIR / "threads"
-
-# Application log (JSON Lines, written by the log_event skill).
-LOG_PATH = DATA_DIR / "pragma.log"
 
 # Global learnings store (cross-thread semantic memory). Lives inside
 # DATA_DIR; LEARNINGS_PATH can still be overridden on its own if needed.
@@ -790,7 +771,7 @@ EPISODE_DELETE_AFTER_DAYS = int(
 # SELF-INTEGRITY GUARD
 # ─────────────────────────────────────────────
 # Pragma must never modify its own files during a session. The
-# file-mutating skills (write_file, edit_file, append_file, insert_*,
+# file-mutating skills (write_file, append_file, insert_*,
 # replace_in_file*, ...) call self_modify_guard() before touching a path
 # and refuse any write anywhere inside Pragma's own repository.
 #

@@ -84,7 +84,7 @@ _CONTENT_ARGS = ("content", "new", "old", "instruction")
 # touch several files named only inside the diff, and it snapshots its own
 # targets before applying.
 _MUTATING_SKILLS = {
-    "write_file", "write_file_b64", "append_file", "edit_file",
+    "write_file", "write_file_b64", "append_file",
     "replace_in_file", "replace_in_file_b64", "insert_after", "insert_before",
 }
 
@@ -95,13 +95,12 @@ _MUTATING_SKILLS = {
 #
 # This is an explicit allow-list, NOT the complement of _MUTATING_SKILLS: most
 # non-writing skills are still unsafe to batch. execute_command runs code;
-# web_fetch and web_search reach outside; call_agent, code and llm_invoke spend
-# model calls; todo_* and log_event write; and recall_* reinforce salience,
-# which is a memory write even though it reads. Anything not listed here keeps
-# the one-action-per-step contract.
+# web_fetch and web_search reach outside; vision_interpret spends a model call;
+# and recall_* reinforce salience, which is a memory write even though it
+# reads. Anything not listed here keeps the one-action-per-step contract.
 _READ_ONLY_SKILLS = frozenset({
     "read_file", "list_dir", "file_outline", "grep_search", "glob_match",
-    "git_status", "git_diff", "understand_cwd", "get_skill_details",
+    "git_status", "git_diff", "get_skill_details",
 })
 
 
@@ -663,11 +662,10 @@ def run_agent(cfg: AgentConfig, user_task: str, log_path: Optional[Path] = None,
                         "[SYSTEM]: Your previous response was TRUNCATED "
                         "because it exceeded the token limit. To recover:\n"
                         "1. Drastically shorten the `thought` field (one sentence max).\n"
-                        "2. Do NOT rewrite entire files. Use `edit_file`, "
-                        "`insert_after`, `insert_before`, `append_file`, or "
-                        "`replace_in_file` for incremental changes.\n"
-                        "3. If the task is large, call `todo_create` ONCE to "
-                        "split it into small steps, then execute one step per turn.\n"
+                        "2. Do NOT rewrite entire files. Use `insert_after`, "
+                        "`insert_before`, `append_file`, or `replace_in_file` "
+                        "for incremental changes.\n"
+                        "3. If the task is large, execute one small step per turn.\n"
                         "Reply now with a SINGLE concise JSON action."
                     ),
                 })

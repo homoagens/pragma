@@ -9,7 +9,7 @@
 #   - Each thread has its own cwd, conversation_history, and message list
 #   - REST API for creating/listing/loading/deleting/updating threads
 #   - WebSocket /ws?thread_id=XXX: activates a thread and works on it
-#   - Skills that use cwd (execute_command, understand_cwd) are wrapped
+#   - Skills that use cwd (execute_command) are wrapped
 #     to point to the thread's cwd, without ever doing a global os.chdir.
 
 from __future__ import annotations
@@ -45,7 +45,7 @@ from react import AgentConfig, run_agent
 
 import config as baseline_config
 import memory as baseline_memory
-from skills import ALL_SKILLS, SKILLS_SUMMARY  # noqa: F401  (ALL_SKILLS: public re-export)
+from skills import ALL_SKILLS, skills_summary_for  # noqa: F401  (ALL_SKILLS: public re-export)
 from skills import palette as skills_palette
 from agent.prompts import build_system_prompt
 
@@ -321,8 +321,6 @@ async def browse_folder():
 
 @app.get("/api/config")
 async def get_config():
-    coding_model    = baseline_config.CODING_MODEL    or baseline_config.DEFAULT_MODEL
-    coding_base_url = baseline_config.CODING_BASE_URL or baseline_config.LLM_BASE_URL
     return {
         "default_cwd": os.getcwd(),
         "data_dir":    str(DATA_DIR),
@@ -331,10 +329,6 @@ async def get_config():
             "provider":        "openai",
             "base_url":        baseline_config.LLM_BASE_URL,
             "default_model":   baseline_config.DEFAULT_MODEL,
-            "coding_model":    coding_model,
-            "coding_provider": "openai",
-            "coding_base_url": coding_base_url,
-            "coding_distinct": bool(baseline_config.CODING_MODEL),
         },
     }
 
@@ -718,7 +712,7 @@ async def api_delete_thread(thread_id: str):
 
 
 # ── Per-thread skill wrapping ─────────────────────────────────────────────────
-# Some skills (execute_command, understand_cwd) depend on cwd.
+# Some skills (execute_command) depend on cwd.
 # We wrap them to use the thread's cwd, without doing a global os.chdir
 # (which would break concurrency across different WebSocket connections).
 
@@ -746,25 +740,11 @@ def _build_thread_skills(thread_cwd: str,
                                  stop_event=stop_event)
         skills["execute_command"] = exec_wrapped
 
-    # ── understand_cwd: temporary chdir so Path.cwd() returns thread_cwd ──────
-    original_uc = GEMMA_SKILLS.get("understand_cwd")
-    if original_uc:
-        def uc_wrapped(max_depth: int = 3):
-            with _chdir_lock:
-                saved = os.getcwd()
-                try:
-                    if Path(thread_cwd).is_dir():
-                        os.chdir(thread_cwd)
-                    return original_uc(max_depth=max_depth)
-                finally:
-                    os.chdir(saved)
-        skills["understand_cwd"] = uc_wrapped
-
     # ── Filesystem skills: resolve relative / empty paths against thread_cwd ──
     #
     # list_dir, glob_match, grep_search default to "." which would resolve
     # against os.getcwd() (the Pragma process root), NOT the user's project.
-    # read_file / write_file / edit_file require explicit paths, but the model
+    # read_file / write_file require explicit paths, but the model
     # sometimes passes relative names — anchor them too.
 
     orig_ld = GEMMA_SKILLS.get("list_dir")
@@ -794,7 +774,7 @@ def _build_thread_skills(thread_cwd: str,
         skills["grep_search"] = grep_search_wrapped
 
     for _name in ("read_file", "write_file", "write_file_b64",
-                  "edit_file", "insert_after", "insert_before",
+                  "insert_after", "insert_before",
                   "append_file", "replace_in_file", "replace_in_file_b64",
                   "file_outline"):
         _orig = GEMMA_SKILLS.get(_name)
@@ -1088,12 +1068,10 @@ async def websocket_endpoint(ws: WebSocket):
 
                         full_text = build_task_with_history(raw_text)
                         thread_cwd = thread_data.get("cwd") or os.getcwd()
-                        coding_model = baseline_config.CODING_MODEL or baseline_config.DEFAULT_MODEL
                         system_prompt = build_system_prompt(
                             thread_cwd,
                             default_model  = baseline_config.DEFAULT_MODEL,
-                            coding_model   = coding_model,
-                            skills_summary = SKILLS_SUMMARY,
+                            skills_summary = skills_summary_for(GEMMA_SKILLS.keys()),
                         )
                         def on_token(chunk: str):
                             loop.call_soon_threadsafe(

@@ -16,7 +16,6 @@ def vision_interpret(image_path: str, question: str,
                      model: str = "", detail: str = "auto") -> str:
     """
     [G] Multimodal LLM call: image → textual interpretation.
-    Distinct signature from llm_invoke because the payload differs (base64 image).
 
     image_path : local path of the image (PNG/JPG/WEBP/GIF)
     question   : what to interpret or extract from the image

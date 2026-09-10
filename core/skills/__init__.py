@@ -54,6 +54,8 @@ def _load_skills():
     # skills_summary_for(). Insertion order follows the sorted folder scan.
     summary_lines = {}
     for folder in sorted(SKILLS_DIR.iterdir()):
+        # _template, _legacy and _future stay in the tree and are never
+        # offered: a leading underscore is how a skill is retired.
         if not folder.is_dir() or folder.name.startswith("_"):
             continue
         skill_file = folder / "skill.py"
@@ -95,8 +97,8 @@ SKILLS_SUMMARY = "\n".join(_SUMMARY_LINES.values())
 def skills_summary_for(names) -> str:
     """Build the skills-summary block for a SUBSET of skills, in the canonical
     order. Use this to keep the system prompt in sync with the ACTUAL palette
-    when a runner hides skills from the agent (e.g. batch removes the raw
-    recall_* skills): otherwise the prompt would advertise skills the agent
+    when a runner hides skills from the agent (e.g. the base64 skills on the
+    native channel): otherwise the prompt would advertise skills the agent
     cannot call, and the model wastes turns calling them ('skill does not
     exist'). Names without a summary line (e.g. get_skill_details) are
     skipped, exactly as in SKILLS_SUMMARY."""
@@ -133,6 +135,16 @@ ALL_SKILLS["get_skill_details"] = get_skill_details
 # backslashes — used to break the JSON the model had to write by hand.
 _TEXT_PROTOCOL_ONLY = ("write_file_b64", "replace_in_file_b64")
 
+# Memory machinery that lives in skills/ for its imports, not for the agent.
+# The raw recall skills reinforce and revive on keyword overlap alone, with no
+# judgement between the prefilter and the write, so an agent free to call them
+# would turn salience into a count of how often a word recurred: memory reaches
+# the agent only through the curator. Consolidation and reflection run after a
+# task, never as a step inside one. Chat and batch each used to pop the recall
+# skills on their own and the browser server did not, so the rule lives here.
+_NOT_AGENT_TOOLS = ("recall_episodes", "recall_learnings",
+                    "episode_consolidate", "session_reflect")
+
 
 def palette(base: dict | None = None) -> dict:
     """The skills to offer on the protocol this process is running.
@@ -150,6 +162,8 @@ def palette(base: dict | None = None) -> dict:
     """
     import config
     out = dict(ALL_SKILLS if base is None else base)
+    for name in _NOT_AGENT_TOOLS:
+        out.pop(name, None)
     if getattr(config, "LLM_TOOL_PROTOCOL", "text") == "native":
         for name in _TEXT_PROTOCOL_ONLY:
             out.pop(name, None)

@@ -13,8 +13,8 @@ def web_search(query: str, num_results: int = 10,
     [G] Query a search engine. Returns ranked snippets and URLs.
     engine : "duckduckgo" (default, no API key required) | "serper" | "brave"
 
-    Note: optimal query formulation may require an upstream llm_invoke()
-    by the calling agent (judgment [H]).
+    Note: the quality of the query decides the quality of the results;
+    phrasing it well is the calling agent's job.
     """
     if engine == "duckduckgo":
         try:

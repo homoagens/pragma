@@ -16,7 +16,7 @@ def write_file(path: str, content: str, encoding: str = "utf-8",
     is expensive (the entire content travels through the JSON args of the
     LLM response) and a frequent cause of finish_reason=length truncation.
     Use the surgical skills for existing files:
-        replace_in_file / insert_after / insert_before / append_file / edit_file
+        replace_in_file / insert_after / insert_before / append_file / apply_patch
 
     Parameters
     ----------
@@ -58,7 +58,6 @@ def write_file(path: str, content: str, encoding: str = "utf-8",
             f"  - insert_after(path, anchor, content)   add a block after a known line\n"
             f"  - insert_before(path, anchor, content)  add a block before a known line\n"
             f"  - append_file(path, content)        add at the end\n"
-            f"  - edit_file(path, instruction)      interpret-and-patch via LLM (last resort)\n"
             f"If you truly need to rewrite the whole file from scratch, "
             f"call write_file again with overwrite=True."
         )
@@ -97,7 +96,7 @@ def write_file(path: str, content: str, encoding: str = "utf-8",
         n_bytes = len(content.encode(encoding))
 
         # Soft size warning — informs the agent that a large write happened
-        # so on subsequent edits it prefers edit_file / insert_* / replace_in_file.
+        # so on subsequent edits it prefers insert_* / replace_in_file / apply_patch.
         try:
             import config
             soft = getattr(config, "WRITE_FILE_SOFT_LIMIT", 0)
@@ -108,7 +107,7 @@ def write_file(path: str, content: str, encoding: str = "utf-8",
             return (
                 f"OK: written {n_bytes} bytes to {path}\n"
                 f"NOTE: large write ({n_bytes} bytes > soft limit {soft}). "
-                f"For future changes on this file prefer edit_file, "
+                f"For future changes on this file prefer "
                 f"insert_after, insert_before, append_file or replace_in_file "
                 f"so you don't risk hitting the token limit."
             )

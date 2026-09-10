@@ -872,10 +872,7 @@ def main() -> int:
     # revive on keyword overlap alone, with no judgment between the prefilter
     # and the write, so an agent free to call them turns salience into a count
     # of how often a word recurred. The curator reinforces only what it chose.
-    skills.pop("recall_episodes", None)
-    skills.pop("recall_learnings", None)
-
-    coding_model = baseline_config.CODING_MODEL or baseline_config.DEFAULT_MODEL
+    # palette() withholds them: see _NOT_AGENT_TOOLS.
     # Chat-only addendum. The base prompt was written for one headless task,
     # and two of its rules invert in a conversation - which is not the model
     # misbehaving but the model obeying: told that `conclusion` is where recaps
@@ -919,7 +916,6 @@ If the turn needed no tools at all, the conclusion is simply your reply.
     system_prompt = build_system_prompt(
         str(cwd),
         default_model=baseline_config.DEFAULT_MODEL,
-        coding_model=coding_model,
         skills_summary=skills_summary_for(skills.keys()),
         protocol=getattr(baseline_config, "LLM_TOOL_PROTOCOL", "text"),
     ) + chat_policy + project_contract(cwd)
