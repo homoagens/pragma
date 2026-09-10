@@ -42,12 +42,17 @@ jobs:
       - name: Skill loader
         run: |
           PYTHONPATH=core:. python -c "
-          from skills import ALL_SKILLS, SKILLS_SUMMARY
-          assert 'code' in ALL_SKILLS, 'code skill missing'
-          assert 'execute_command' in ALL_SKILLS, 'execute_command missing'
-          assert 'read_file' in ALL_SKILLS, 'read_file missing'
-          print(f'OK: {len(ALL_SKILLS)} skills loaded')
-          print(ALL_SKILLS.keys())
+          from skills import ALL_SKILLS, palette
+          for name in ('execute_command', 'read_file', 'write_file', 'ask_user'):
+              assert name in ALL_SKILLS, name + ' missing'
+          # Retired skills live in core/skills/_legacy and _future: never loaded.
+          for name in ('code', 'edit_file', 'llm_invoke', 'critic_validate'):
+              assert name not in ALL_SKILLS, name + ' is retired but was loaded'
+          # Memory machinery is kept importable, never offered to the agent.
+          offered = palette()
+          for name in ('episode_consolidate', 'session_reflect', 'recall_episodes', 'recall_learnings'):
+              assert name not in offered, name + ' is offered to the agent'
+          print(f'OK: {len(ALL_SKILLS)} skills loaded, {len(offered)} offered')
           "
 
       - name: No .env in repo
