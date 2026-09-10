@@ -151,9 +151,17 @@ DISTILL general truths about the domain and the user's work:
 
 NEVER DISTILL, however often it recurs:
 - rules about using your own editing tools or formatting files;
-- rules about keeping the record itself ("the user maintains a journal", "the
-  user logs lessons in markdown"). They feel true because they recur every
-  session, but they describe the note-taking, not the user's world.
+- anything about keeping the record, or a summary of what the episodes were
+  about ("the user maintains a journal", "the user logs lessons in markdown").
+  It feels true because it recurs every session, but it describes the
+  note-taking, not the world the notes are about.
+
+TEST EVERY ASSERTION BEFORE YOU EMIT IT: could a future episode contradict it
+by turning out differently, with a different result, a different choice, or
+someone reacting differently? "Deploying on Friday leads to weekend incidents"
+passes: one uneventful Friday deploy would contradict it. If the only way an
+assertion could stop being true is that the user stops doing something, or
+stops writing about it, it is not knowledge. Drop it.
 
 Rules:
 - A new assertion REQUIRES at least two distinct episodes as sources, cited by
