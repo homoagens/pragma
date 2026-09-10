@@ -54,49 +54,36 @@ Respond with ONLY a JSON object:
 Every turn must appear in exactly one segment, and segments must be
 consecutive: [1,2] then [3,4], never [1,3].
 
-WHEN TO PUT TURNS TOGETHER. One segment is one experience. Turns belong
-together when they are the same piece of work carried forward — a request and
-its refinement, a question and the correction that reframes it, an attempt and
-its outcome. Kept together, the memory holds what happened AND how it turned
-out.
+ONE SEGMENT IS ONE EXPERIENCE. Put turns together when they carry the same
+piece of work forward: a request and its refinement, a question and the
+correction that reframes it, an attempt and its outcome. Separate them at a new
+subject, a new task, or a return to something unrelated; turns that are only
+adjacent in time belong apart. Merging too much is as damaging as merging too
+little: a session folded into one segment gets the average importance of
+everything said in it, and that average hides a consequential moment among
+routine ones.
 
-WHEN TO SEPARATE. A new subject, a new task, a return to something unrelated.
-Be careful here: merging too much is as damaging as merging too little. A
-session folded into one segment produces a memory whose importance is the
-average of everything said in it, and an average is exactly what hides a
-consequential moment among routine ones. When two turns are only adjacent in
-time, separate them.
-
-KEEP a segment when it carries something a future session would be worse off
-without:
+KEEP a segment when a future session would be worse off without it:
 - work done, decided, or attempted, and how it went
 - a fact about the user, their projects, their constraints or preferences
-- a correction or a change of mind — including one that reframes an earlier
-  turn, which is exactly what later reinterpretation needs
+- a correction or a change of mind, including one that reframes an earlier turn
 - a problem encountered, a lesson, anything surprising
 
-DROP a segment when nothing would be lost:
+DROP it when nothing would be lost:
 - greetings, thanks, acknowledgements, small talk
-- questions about the environment whose answer is already knowable
-  ("which folder are you in?", "what can you do?")
+- questions whose answer is already knowable ("which folder are you in?",
+  "what can you do?")
 - a request the agent could not act on, that led nowhere
 
-A SEGMENT IS WORTH WHAT ITS BEST PART IS WORTH, not what its tone is. Judge it
-by the most valuable thing in it, never by the register of the exchange around
-that thing. "Hi! I'm Mario, what's your name?" reads as a greeting and is one,
-but it also states who the user is — and a name is among the most reusable
-facts there are. Keep the segment. The same applies to anything durable
-mentioned in passing: a deadline, a tool they use, a constraint they work
-under, a preference. Pleasantries around a fact do not make the fact
-forgettable.
+A segment is worth what its best part is worth, not what its tone is. "Hi! I'm
+Mario, what's your name?" is a greeting, and it also says who the user is: keep
+it. The same holds for a deadline, a tool, a constraint or a preference
+mentioned in passing. Otherwise be stingy: most of a conversation is not
+memorable, and dropping every segment of an evening of small talk is a correct
+answer.
 
-BE STINGY OTHERWISE. Most of a conversation is not memorable, and a session
-where every segment is dropped is a perfectly good answer for an evening of
-small talk. A store where everything is a memory is one where nothing is
-salient.
-
-Judge each segment on its own worth, not on its position: the last is not
-automatically important, and the first is not automatically context."""
+Judge each segment on its own worth, not its position: the last is not
+automatically important, the first not automatically context."""
 
 _SCHEMA = {
     "__name__": "segmentation",

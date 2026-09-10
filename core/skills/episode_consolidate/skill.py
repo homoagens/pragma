@@ -56,62 +56,46 @@ Respond with ONLY a JSON object of this exact shape:
 }
 
 Rules:
-- Center the episode on the SUBSTANCE of the session — what the work was
-  about and what was learned about the user's world — NOT on the mechanics
-  of how you carried it out. Prefer "Recorded a production outage caused by
-  a Friday deploy; lesson: never release on Friday" over "Appended an entry
-  to diario.md". The file you edited is not the point; what it SAYS is.
-- AN EPISODE IS WORTH WHAT ITS BEST PART IS WORTH, and `goal` must name that
-  part. The most reusable thing in a session is not always the subject that
-  took the most words. When the user says who they are, what they work under,
-  or what they prefer — while the conversation is nominally about something
-  else — THAT is the episode's substance. "Mario, 57, asks what the agent can
-  remember" is a memory; "User onboarding: explores AI capabilities" buries
-  the one durable fact inside a narrative about the agent itself. A future
-  self looking for the user's name must find it in the goal, not only in a
-  sentence halfway through the narrative.
+- SUBSTANCE, NOT MECHANICS. Record what the work was about and what was
+  learned about the user's world, not how you carried it out. Prefer
+  "Recorded a production outage caused by a Friday deploy; lesson: never
+  release on Friday" over "Appended an entry to diario.md". Mention a tool or
+  a file format only when it taught a reusable lesson.
+- `goal` names the most valuable part of the session, which is not always the
+  subject that took the most words. When the user says who they are, what they
+  work under or what they prefer while talking about something else, that is
+  the substance: "Mario, 57, asks what the agent can remember" is a memory;
+  "User onboarding: explores AI capabilities" buries the one durable fact. A
+  later search for the user's name must find it in the goal.
 - Facts go in narrative, meaning goes in interpretation. Never mix them.
-- The length limits are real, not decoration. When this episode is recalled,
-  only the first NAR_CHARS chars of narrative and the first INT_CHARS of
-  interpretation are shown — past that it is cut mid-sentence and your future
-  self never reads it. Do not write to fill the space: write the pill. Put the
-  part that matters FIRST, drop the throat-clearing, and prefer one exact
-  sentence to three approximate ones. A memory is a note to yourself, not a
-  report to a supervisor.
-- surprises are departures from expectation, in the WORK (an unexpected
-  outcome, a conflict, a belief challenged by facts, a costly mistake) or in
-  the TOOLS (something behaved unexpectedly). Empty array if nothing was
-  surprising — which is common and fine.
-- importance = how much this session matters for the FUTURE, on 0.0-1.0.
-  This is SEPARATE from surprise. A thing can be unsurprising yet very
-  important: a student's persistent weak spot flagged "to review next time",
-  a decision that will shape later work, a hard-won rule, a client's stated
-  preference. Score those HIGH (0.7-0.9) even with zero surprises. Score
-  truly routine, one-off busywork LOW (0.1-0.3). A painful mistake or crisis
-  is both surprising AND important (~0.9). When in doubt, ask: "will the
-  agent's future self be worse off if this is forgotten?"
-- Judge importance by what the session YIELDS, never by its register. Who the
-  user is — name, age, role, the constraints they work under, their stated
-  preferences — is among the most reusable knowledge a session can produce:
-  score it 0.6-0.8 even when it was said in passing, even in a conversation
-  where no work was done. Conversely score LOW (0.1-0.3) a subject that was
-  discussed and closed with nothing carried forward: trivia, a lookup whose
-  answer goes stale, chat with no fact in it. A pleasant tone does not make a
-  fact forgettable, and an earnest one does not make small talk matter.
-- Score what this session ADDS, not what it mentions. A fact the user states
-  HERE is a yield; the same fact merely referred to again later is not — the
-  episode that first recorded it already holds it, and scoring the echo as
-  highly as the original makes every later session look equally important. If
-  you would write the same `goal` for two sessions, one of them is wrong: the
-  second one's goal is whatever was new in it, however slight.
-- Mention tool mechanics (which skill, how you formatted a file) ONLY when
-  they carried a real, reusable lesson. Never frame a routine "I wrote or
-  edited a file" as the point of the episode.
-- keywords: the SUBJECT of the work — people, decisions, problems, domains —
-  not your tools or file names. In the session's dominant language. Include
-  the user's own name whenever they state it: it is how a later session finds
-  everything else about them.
-- Keep each surprise under 200 characters.""" \
+- The length limits are real. On recall only the first NAR_CHARS chars of
+  narrative and INT_CHARS of interpretation are shown; the rest is cut
+  mid-sentence and never read. Put what matters first, drop the
+  throat-clearing, prefer one exact sentence to three approximate ones: a
+  memory is a note to yourself, not a report to a supervisor.
+- surprises: departures from expectation in the WORK (an unexpected outcome, a
+  conflict, a belief challenged by facts, a costly mistake) or in the TOOLS
+  (something behaved unexpectedly). An empty array is common and fine. Keep
+  each under 200 characters.
+- importance: how much this session matters for the FUTURE, on 0.0-1.0, and
+  separate from surprise. Ask: "will the agent's future self be worse off if
+  this is forgotten?"
+    - 0.7-0.9 even with no surprise: a decision that shapes later work, a
+      hard-won rule, a client's stated preference, a weak spot flagged "to
+      review next time".
+    - 0.6-0.8 for who the user is (name, age, role, constraints, preferences),
+      even said in passing, even when no work was done.
+    - ~0.9 for a crisis or a painful mistake: surprising AND important.
+    - 0.1-0.3 for routine one-off busywork, trivia, a lookup whose answer goes
+      stale, chat with no fact in it.
+  Judge by what the session yields, never by its tone.
+- Score what this session ADDS, not what it mentions. A fact first stated here
+  is a yield; the same fact referred to again later is an echo, and the
+  episode that recorded it already holds it. If you would write the same
+  `goal` for two sessions, the second one's goal is whatever was new in it.
+- keywords: the SUBJECT of the work (people, decisions, problems, domains),
+  not tools or file names, in the session's dominant language. Include the
+  user's name whenever they state it.""" \
     .replace("NAR_CHARS", str(config.MEMORY_NARRATIVE_CHARS)) \
     .replace("INT_CHARS", str(config.MEMORY_INTERPRETATION_CHARS))
 
@@ -155,39 +139,33 @@ Respond with ONLY a JSON object:
   "contradicts":    [ "exact text of an existing assertion this episode contradicts", ... ]
 }
 
-WHAT to distill — general truths about the domain and the user's work:
+DISTILL general truths about the domain and the user's work:
 - recurring situations and their outcomes ("clients with vague requirements
   on a fixed price → cost overruns");
 - practices that reliably help or hurt ("deploying on Friday → weekend
   incidents");
 - the user's preferences and beliefs, INCLUDING tentative ones ("the user
-  believes fixed-price contracts are safer"). Capturing a belief even at low
-  confidence is valuable: it can later be confirmed or CONTRADICTED, which is
-  how the agent changes its mind.
+  believes fixed-price contracts are safer"): a belief held at low confidence
+  can later be confirmed or contradicted, which is how the agent changes its
+  mind.
 
-WHAT NOT to distill (skip these entirely — they are noise, not knowledge):
-- rules about how to use your own editing tools, or how to format files;
-- rules about the ACTIVITY of keeping the record itself. "The user maintains
-  a journal", "the user logs lessons in markdown", "the user documents cases
-  chronologically" — these describe the note-taking, not the user's WORLD.
-  They feel true because they recur every session, but they teach the agent
-  NOTHING about the domain. Never distill them, however often they recur.
+NEVER DISTILL, however often it recurs:
+- rules about using your own editing tools or formatting files;
+- rules about keeping the record itself ("the user maintains a journal", "the
+  user logs lessons in markdown"). They feel true because they recur every
+  session, but they describe the note-taking, not the user's world.
 
 Rules:
-- A new assertion REQUIRES at least two distinct episodes as sources — cite
-  their ids from the payload. One episode alone is an anecdote: propose
-  NOTHING for it; it gets its chance when it recurs.
+- A new assertion REQUIRES at least two distinct episodes as sources, cited by
+  their ids from the payload. One episode is an anecdote: propose nothing for
+  it until it recurs.
 - CONTRADICTION IS NOT OPTIONAL. When the new episode's facts run against an
-  existing assertion, you MUST put that assertion's exact text in
-  "contradicts". Do NOT dodge it by adding a fresh opposite rule and leaving
-  the old one standing — that leaves the memory believing two opposite things.
-  Example: the store holds "fixed-price contracts are safer" and the new
-  episode is a fixed-price project that lost money → put "fixed-price
-  contracts are safer" in contradicts (you may ALSO add the refined rule,
-  but the contradiction is mandatory). Changing your mind means retiring the
-  old belief, not hoarding both.
-- confirms/contradicts must copy the existing assertion text EXACTLY.
-- Quality over quantity: 0-2 new assertions is the norm. Empty arrays are fine."""
+  existing assertion, put that assertion's exact text in "contradicts". Do not
+  dodge it by adding the opposite rule and leaving the old one standing: a
+  fixed-price project that lost money contradicts "fixed-price contracts are
+  safer". You may also add the refined rule; the contradiction is mandatory.
+- confirms and contradicts must copy the existing assertion text EXACTLY.
+- Quality over quantity: 0-2 new assertions is the norm; empty arrays are fine."""
 
 
 # The `kind` enum is the part worth enforcing: the admission code below drops
