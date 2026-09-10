@@ -50,7 +50,7 @@ from skills import palette as skills_palette
 from agent.prompts import build_system_prompt
 
 # Same palette rule as batch: no base64 variants on the native channel.
-GEMMA_SKILLS: dict = skills_palette()
+AGENT_SKILLS: dict = skills_palette()
 
 
 # ── Storage ───────────────────────────────────────────────────────────────────
@@ -335,14 +335,8 @@ async def get_config():
 
 # ── Settings — manage .env from the UI ───────────────────────────────────────
 
-# Active .env path. In a source checkout it is the repo .env (dev behavior
-# unchanged). In a frozen build (PyInstaller exe) _ROOT points into the temp
-# extraction dir, which is wiped each run — so the persistent DATA_DIR is used
-# instead, letting an uploaded .env survive across launches.
-if getattr(sys, "frozen", False):
-    _ENV_PATH = DATA_DIR / ".env"
-else:
-    _ENV_PATH = _ROOT / ".env"
+# The .env the settings panel reads and writes: the repository's own.
+_ENV_PATH = _ROOT / ".env"
 
 def _upsert_env(env_path: Path, updates: dict) -> None:
     """Update or insert env vars in .env, preserving comments and order.
@@ -375,13 +369,6 @@ def _reload_config() -> None:
     except ImportError:
         pass
     importlib.reload(baseline_config)
-
-
-# On a frozen build the bundled config.py cannot see a .env (it would look in
-# the temp extraction dir). If the user has previously uploaded one to the
-# persistent location, load it now so the exe starts already configured.
-if getattr(sys, "frozen", False) and _ENV_PATH.exists():
-    _reload_config()
 
 
 def _mask(value: str) -> str:
@@ -725,11 +712,11 @@ def _abs_path(path: str, base: str) -> str:
 def _build_thread_skills(thread_cwd: str,
                          ws_ask_user,
                          stop_event=None) -> dict:
-    skills = dict(GEMMA_SKILLS)
+    skills = dict(AGENT_SKILLS)
     skills["ask_user"] = ws_ask_user
 
     # ── execute_command: default cwd = thread_cwd + stop_event ───────────────
-    original_exec = GEMMA_SKILLS.get("execute_command")
+    original_exec = AGENT_SKILLS.get("execute_command")
     if original_exec:
         def exec_wrapped(command: str, cwd: str = "", timeout: int = 60,
                          capture_stderr: bool = True, max_output_chars: int = 10_000):
@@ -747,7 +734,7 @@ def _build_thread_skills(thread_cwd: str,
     # read_file / write_file require explicit paths, but the model
     # sometimes passes relative names — anchor them too.
 
-    orig_ld = GEMMA_SKILLS.get("list_dir")
+    orig_ld = AGENT_SKILLS.get("list_dir")
     if orig_ld:
         def list_dir_wrapped(path: str = "", show_hidden: bool = False,
                              max_entries: int = 200):
@@ -755,14 +742,14 @@ def _build_thread_skills(thread_cwd: str,
                            show_hidden=show_hidden, max_entries=max_entries)
         skills["list_dir"] = list_dir_wrapped
 
-    orig_gm = GEMMA_SKILLS.get("glob_match")
+    orig_gm = AGENT_SKILLS.get("glob_match")
     if orig_gm:
         def glob_match_wrapped(pattern: str, base_path: str = ""):
             return orig_gm(pattern=pattern,
                            base_path=_abs_path(base_path, thread_cwd) if base_path else thread_cwd)
         skills["glob_match"] = glob_match_wrapped
 
-    orig_gs = GEMMA_SKILLS.get("grep_search")
+    orig_gs = AGENT_SKILLS.get("grep_search")
     if orig_gs:
         def grep_search_wrapped(pattern: str, path: str = "",
                                 file_glob: str = "*", ignore_case: bool = False,
@@ -777,7 +764,7 @@ def _build_thread_skills(thread_cwd: str,
                   "insert_after", "insert_before",
                   "append_file", "replace_in_file", "replace_in_file_b64",
                   "file_outline"):
-        _orig = GEMMA_SKILLS.get(_name)
+        _orig = AGENT_SKILLS.get(_name)
         if _orig:
             def _make_wrapped(fn):
                 def wrapped(path: str, **kwargs):
@@ -785,35 +772,6 @@ def _build_thread_skills(thread_cwd: str,
                 wrapped.__name__ = fn.__name__
                 return wrapped
             skills[_name] = _make_wrapped(_orig)
-
-    # ── slide_plan: anchor output_path to thread_cwd ─────────────────────────
-    orig_sp = GEMMA_SKILLS.get("slide_plan")
-    if orig_sp:
-        def slide_plan_wrapped(topic: str, output_path: str = "slide_plan.json"):
-            return orig_sp(topic=topic,
-                           output_path=_abs_path(output_path, thread_cwd))
-        slide_plan_wrapped.__name__ = "slide_plan"
-        skills["slide_plan"] = slide_plan_wrapped
-
-    # ── slide_plan_revise: anchor plan_path to thread_cwd ────────────────────
-    orig_spr = GEMMA_SKILLS.get("slide_plan_revise")
-    if orig_spr:
-        def slide_plan_revise_wrapped(plan_path: str, feedback: str):
-            return orig_spr(plan_path=_abs_path(plan_path, thread_cwd),
-                            feedback=feedback)
-        slide_plan_revise_wrapped.__name__ = "slide_plan_revise"
-        skills["slide_plan_revise"] = slide_plan_revise_wrapped
-
-    # ── slide_gen: anchor plan_path and output_dir to thread_cwd ─────────────
-    orig_sg = GEMMA_SKILLS.get("slide_gen")
-    if orig_sg:
-        def slide_gen_wrapped(plan_path: str, output_dir: str = ".",
-                              filename: str = ""):
-            return orig_sg(plan_path=_abs_path(plan_path, thread_cwd),
-                           output_dir=_abs_path(output_dir, thread_cwd),
-                           filename=filename)
-        slide_gen_wrapped.__name__ = "slide_gen"
-        skills["slide_gen"] = slide_gen_wrapped
 
     return skills
 
@@ -1071,7 +1029,7 @@ async def websocket_endpoint(ws: WebSocket):
                         system_prompt = build_system_prompt(
                             thread_cwd,
                             default_model  = baseline_config.DEFAULT_MODEL,
-                            skills_summary = skills_summary_for(GEMMA_SKILLS.keys()),
+                            skills_summary = skills_summary_for(AGENT_SKILLS.keys()),
                         )
                         def on_token(chunk: str):
                             loop.call_soon_threadsafe(

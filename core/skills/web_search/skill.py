@@ -4,59 +4,30 @@
 
 from __future__ import annotations
 
-import config
 
-
-def web_search(query: str, num_results: int = 10,
-               engine: str = "duckduckgo") -> str:
+def web_search(query: str, num_results: int = 10) -> str:
     """
-    [G] Query a search engine. Returns ranked snippets and URLs.
-    engine : "duckduckgo" (default, no API key required) | "serper" | "brave"
+    [G] Query DuckDuckGo. Returns ranked snippets and URLs.
+
+    DuckDuckGo is the only engine: it needs no API key, and the library is in
+    requirements.txt. A Serper branch used to sit here, reading a key that
+    config never defined, so choosing it could only ever return an error.
 
     Note: the quality of the query decides the quality of the results;
     phrasing it well is the calling agent's job.
     """
-    if engine == "duckduckgo":
+    try:
+        from ddgs import DDGS
+    except ImportError:
         try:
-            from ddgs import DDGS
+            from duckduckgo_search import DDGS
         except ImportError:
-            try:
-                from duckduckgo_search import DDGS
-            except ImportError:
-                return (
-                    "ERROR: DDGS library not installed. "
-                    "Run: pip install ddgs"
-                )
-        try:
-            with DDGS() as ddgs:
-                results = list(ddgs.text(query, max_results=num_results))
-        except Exception as e:
-            return f"ERROR: DuckDuckGo search failed — {e}"
-
-    elif engine == "serper":
-        api_key = getattr(config, "SERPER_API_KEY", "")
-        if not api_key:
-            return "ERROR: SERPER_API_KEY not configured in config.py"
-        try:
-            import requests
-            resp = requests.post(
-                "https://google.serper.dev/search",
-                headers={"X-API-KEY": api_key, "Content-Type": "application/json"},
-                json={"q": query, "num": num_results},
-                timeout=15,
-            )
-            resp.raise_for_status()
-            organic = resp.json().get("organic", [])
-            results = [
-                {"title": r.get("title", ""), "href": r.get("link", ""),
-                 "body": r.get("snippet", "")}
-                for r in organic
-            ]
-        except Exception as e:
-            return f"ERROR: Serper search failed — {e}"
-
-    else:
-        return f"ERROR: engine '{engine}' not supported. Use 'duckduckgo' or 'serper'."
+            return "ERROR: DDGS library not installed. Run: pip install ddgs"
+    try:
+        with DDGS() as ddgs:
+            results = list(ddgs.text(query, max_results=num_results))
+    except Exception as e:
+        return f"ERROR: DuckDuckGo search failed — {e}"
 
     if not results:
         return "NO RESULTS"

@@ -1,36 +1,26 @@
 # ask_user
 
-Pause execution, formulate a clear question via LLM, and collect a response from the user via stdin.
+Ask the user a question. In a live conversation, you ask by ending the turn.
 
 ---
 
 ## Parameters
 
-- `topic` (str): Subject to ask about.
-- `context` (str, optional, default ""): Additional context to help the LLM formulate the question.
-- `mode` (str, optional, default "input"): `"input"` (free text), `"confirm"` (y/n), or `"choice"` (option list).
+- `topic` (str): The question, or what you need to know.
+- `context` (str, optional, default ""): Why you are asking, in one sentence.
+- `mode` (str, optional, default "input"): `"input"` for a free answer, `"confirm"` for yes or no.
 
 ## Returns
 
-User's answer as a string; `"yes"` or `"no"` in `confirm` mode.
+It depends on where Pragma is running:
 
-## Notes
-
-- If the LLM call fails, the topic is used directly as the question (fallback).
-- In `confirm` mode, answers `y`, `yes`, or `1` map to `"yes"`; anything else maps to `"no"`.
-- This skill blocks until the user provides input; do not call it in non-interactive pipelines.
-
-## Examples
-
-```json
-{ "action": "ask_user", "args": { "topic": "output file path", "context": "The script needs to save results somewhere", "mode": "input" } }
-{ "action": "ask_user", "args": { "topic": "overwrite existing file", "context": "C:\\project\\output.csv already exists", "mode": "confirm" } }
-{ "action": "ask_user", "args": { "topic": "output format", "context": "Available: json, csv, plain text", "mode": "choice" } }
-```
+- **Live conversation.** `confirm` asks the person at the terminal and returns `"yes"` or `"no"`. Any other mode returns an instruction to end the turn with your question as the reply: the answer arrives as their next message.
+- **Batch run.** Nobody is there. `confirm` returns `"no"`; any other mode returns a notice to proceed on your best judgment or conclude with what is missing. Neither is ever an authorization.
+- **Browser interface.** The question appears in the page and the typed answer is returned; `"(no response)"` after ten minutes, `"(stopped)"` if the task is stopped.
 
 ## Do not
 
-- Ask for information you can infer or discover with a skill (`list_dir`, `read_file`, `file_outline`)
-- Ask multiple questions in one call — one topic per call
-- Use `ask_user` for destructive operations without `mode: "confirm"` — always ask for confirmation before deleting or overwriting
-- Ask trivial questions the user should not need to answer (e.g. "should I read the file?" — just read it)
+- Ask for what a skill can find out (`list_dir`, `read_file`, `file_outline`).
+- Ask several questions in one call: one topic per call.
+- Ask trivial questions the user should not need to answer ("should I read the file?" — just read it).
+- Treat a `"no"`, a notice, or silence as permission for a destructive action.

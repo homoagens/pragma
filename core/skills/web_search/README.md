@@ -1,6 +1,6 @@
 # web_search
 
-Query a search engine and return ranked snippets with URLs.
+Query DuckDuckGo and return ranked snippets with URLs.
 
 ---
 
@@ -8,7 +8,6 @@ Query a search engine and return ranked snippets with URLs.
 
 - `query` (str): Search query string.
 - `num_results` (int, optional, default 10): Number of results to return.
-- `engine` (str, optional, default "duckduckgo"): Search engine: `"duckduckgo"` (no API key) or `"serper"` (requires `config.SERPER_API_KEY`).
 
 ## Returns
 
@@ -16,6 +15,5 @@ Numbered list of results with title, URL, and snippet, or `"NO RESULTS"`, or `"E
 
 ## Notes
 
-- DuckDuckGo requires the `ddgs` or `duckduckgo_search` library (`pip install ddgs`).
-- Serper requires a valid API key in `config.SERPER_API_KEY`.
+- Uses the `ddgs` library, already in requirements.txt. No API key.
 - Query formulation quality affects result relevance; phrase the query carefully.

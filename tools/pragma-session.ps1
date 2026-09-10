@@ -1,10 +1,7 @@
 # pragma-session.ps1 - the batch session commands, shared by every session.
 #
-# You do not run this file directly. `new-session.ps1` creates a small
-# pragma.ps1 inside a session folder; that file sets $PragmaSession and then
-# dot-sources this one:
-#
-#     . D:\my-notes\pragma.ps1
+# You do not run this file directly. The launcher (`pragma`, tools/Pragma.psm1)
+# builds $PragmaSession for the project you open and dot-sources this file.
 #
 # WHY IT LIVES HERE AND NOT IN THE SESSION FILE. The logic is written once, in
 # the repository, so improvements reach every session the next time it is
@@ -26,8 +23,7 @@ if (-not (Get-Variable -Name PragmaSession -Scope Global -ErrorAction SilentlyCo
     -not (Get-Variable -Name PragmaSession -Scope Script -ErrorAction SilentlyContinue) -and
     -not $PragmaSession) {
     Write-Host "pragma-session.ps1 is not meant to be dot-sourced directly." -ForegroundColor Red
-    Write-Host "Create a session first:   .\tools\new-session.ps1"
-    Write-Host "Then enter it:            . <session folder>\pragma.ps1"
+    Write-Host "Start Pragma with:   pragma   (install.ps1 puts it in every new window)"
     return
 }
 

@@ -64,7 +64,6 @@ from agent.batch import (                  # noqa: E402
     _PrettyRenderer,
     _pool_line,
     _make_on_step,
-    batch_ask_user,
 )
 from agent.prompts import build_system_prompt, project_contract  # noqa: E402
 
@@ -145,6 +144,38 @@ def _set_level(session, at_home: bool) -> None:
         session.completer.at_home = at_home
     except Exception:
         pass
+
+
+def _chat_ask_user(topic: str = "", context: str = "", mode: str = "input",
+                   prompt: str = "", question: str = "", **_ignored) -> str:
+    """ask_user for a live conversation, where the person is right here.
+
+    The batch version was wired in, so a person sitting at the terminal was
+    reported as absent: every question got \"no user is available\" and the
+    step limit always answered no.
+
+    A confirmation is now asked for real: the loop needs a yes or no before
+    it can go on (another round of steps, an overwrite), and the person can
+    give one. Anything else ends the turn instead. A free answer typed in the
+    middle of the steps would sit buried among them; asked in the reply, the
+    question is the last thing on the screen and the answer comes back as the
+    next message, with the conversation still in view.
+    """
+    q = (topic or prompt or question or "").strip()
+    if mode == "confirm":
+        print()
+        print(f"  ? {q}")
+        if context:
+            print(f"    {context}")
+        try:
+            answer = input("  y/n > ").strip().lower()
+        except (EOFError, KeyboardInterrupt):
+            answer = ""
+        return "yes" if answer in ("y", "yes", "s", "si") else "no"
+    return ("The person is in this conversation but cannot answer in the "
+            "middle of your turn. Stop here: end the turn now with your "
+            "question as the reply, saying what you need and why in one or "
+            "two sentences. Their answer will arrive as their next message.")
 
 
 def _make_session():
@@ -866,7 +897,7 @@ def main() -> int:
     online, detail = llm_client.ping_models()
 
     skills = skills_palette()
-    skills["ask_user"] = batch_ask_user
+    skills["ask_user"] = _chat_ask_user
     # One channel, always curated — the same rule as `agent.batch`. The raw
     # recall skills would be a second, uncurated way in: they reinforce and
     # revive on keyword overlap alone, with no judgment between the prefilter
@@ -909,6 +940,11 @@ thought and then summarise at the end - answer once, at the end.
 you were asked for IS the work, say what came of it, not which files it went
 through. Nobody wants the receipt for an operation they asked for and just
 watched happen.
+
+**To ask the person something, end the turn.** Put the question in your
+reply and stop; the answer arrives as their next message. Calling
+`ask_user` tells you the same, except for a yes-or-no confirmation, which
+it asks them directly.
 
 If the turn needed no tools at all, the conclusion is simply your reply.
 """
@@ -1006,6 +1042,14 @@ If the turn needed no tools at all, the conclusion is simply your reply.
     # not repeated here - /help still lists them, and the slash still offers
     # them as you type.
     _set_level(session, False)
+    # The undo net for this conversation. Batch opens one per run; the
+    # conversation never did, so `revert` was offered with nothing behind it
+    # and answered that no file had changed, whatever had.
+    try:
+        import checkpoint
+        checkpoint.begin_session(str(cwd))
+    except Exception:
+        pass
     _CHAT_HEADER[:] = [
         f"  talking to {served or 'nothing - the backend is down'}"
         f" · memory {'on' if args.memory else 'off'}"

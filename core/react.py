@@ -641,7 +641,7 @@ def run_agent(cfg: AgentConfig, user_task: str, log_path: Optional[Path] = None,
                     "call `ask_user` to request clarification or a runtime "
                     "log from the user (e.g. browser console output).\n"
                     "3. Keep the next `thought` to one sentence.\n"
-                    "Reply now with a SINGLE concise JSON action."
+                    "Reply now with a SINGLE concise action."
                 ),
             })
             step += 1
@@ -666,7 +666,7 @@ def run_agent(cfg: AgentConfig, user_task: str, log_path: Optional[Path] = None,
                         "`insert_before`, `append_file`, or `replace_in_file` "
                         "for incremental changes.\n"
                         "3. If the task is large, execute one small step per turn.\n"
-                        "Reply now with a SINGLE concise JSON action."
+                        "Reply now with a SINGLE concise action."
                     ),
                 })
             step += 1
@@ -1033,7 +1033,7 @@ def run_agent(cfg: AgentConfig, user_task: str, log_path: Optional[Path] = None,
                             "  c) If the task is too ambiguous to proceed, "
                             "produce a `conclusion` explaining what you tried, "
                             "why it failed, and what info you'd need to retry.\n\n"
-                            "Do NOT try a 6th different skill blindly."
+                            "Do NOT try yet another skill blindly."
                         ),
                     })
                     # Clear so we don't re-fire every step
