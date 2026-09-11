@@ -400,6 +400,8 @@ def do_jump(months):
     if r["deleted"]:
         print(f"{len(r['deleted'])} episode(s) hard-deleted: "
               + ", ".join(r["deleted"]))
+    if r.get("delete_blocked"):
+        print(f"hard deletion skipped: {r['delete_blocked']}")
 
     # story clock: settle pending real time, then add the jump
     os.makedirs(d, exist_ok=True)
@@ -426,6 +428,8 @@ def show_sweep():
     store = os.path.join(d, "episodes")
     lp = os.path.join(d, "learnings.json")
     r = estore.sweep(store=store, learnings_path=lp)
+    if r.get("delete_blocked"):
+        print(f"hard deletion skipped: {r['delete_blocked']}")
     if not r["dormant"] and not r["deleted"]:
         print("(nothing crossed the dormancy threshold — nothing to sweep)")
         return

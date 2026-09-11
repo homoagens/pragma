@@ -166,19 +166,40 @@ def revive(path: Path, ep: dict, store=None) -> Path:
     return new_path
 
 
-def _protected_ids(store=None, learnings_path=None) -> set[str]:
+def _protected_ids(store=None, learnings_path=None) -> set[str] | None:
     """Episode ids that must never be hard-deleted: linked by an active
-    episode, or cited as a source by any semantic assertion (provenance)."""
+    episode, or cited as a source by any semantic assertion (provenance).
+
+    None means the answer is unknown, and the caller must delete nothing.
+    An empty set is a claim that nothing is referenced; a learnings file
+    that could not be read, or an active episode that could not be parsed,
+    does not support that claim. Returning an empty set there used to turn
+    a read error into permission to delete every source of every belief.
+    A missing learnings file is treated the same way: from here it cannot
+    be told apart from a wrong path.
+
+    Retired assertions still protect their sources. Nothing ever removes an
+    entry from learnings.json, so an episode cited by a retired belief is
+    kept for good: provenance by design, and a cost to what forgetting can
+    reclaim over a long run.
+    """
     protected: set[str] = set()
-    for _p, ep in load(active_dir(store)):
+    adir = active_dir(store)
+    loaded = load(adir)
+    if adir.is_dir() and len(loaded) != len(list(adir.glob("ep_*.json"))):
+        return None
+    for _p, ep in loaded:
         protected.update(str(x) for x in ep.get("links", []) or [])
     lp = Path(learnings_path) if learnings_path else Path(config.LEARNINGS_PATH)
     try:
         data = json.loads(lp.read_text(encoding="utf-8"))
-        for e in data.get("entries", []):
+        entries = data.get("entries")
+        if not isinstance(entries, list):
+            return None
+        for e in entries:
             protected.update(str(x) for x in e.get("sources", []) or [])
     except Exception:
-        pass
+        return None
     return protected
 
 
@@ -190,8 +211,10 @@ def sweep(store=None, learnings_path=None) -> dict:
     2. If EPISODE_DELETE_AFTER_DAYS > 0, dormant episodes older than that
        (and referenced by nothing) are deleted for good.
 
-    Returns {"dormant": [ids...], "deleted": [ids...]}. Never raises —
-    forgetting must not break remembering.
+    Returns {"dormant": [ids...], "deleted": [ids...]}, plus
+    "delete_blocked" when deletion was due but skipped because what the
+    store references could not be established. Never raises — forgetting
+    must not break remembering.
     """
     result = {"dormant": [], "deleted": []}
     try:
@@ -205,6 +228,10 @@ def sweep(store=None, learnings_path=None) -> dict:
         delete_after = getattr(config, "EPISODE_DELETE_AFTER_DAYS", 0)
         if delete_after > 0:
             protected = _protected_ids(store, learnings_path)
+            if protected is None:
+                result["delete_blocked"] = ("references unreadable: learnings "
+                                            "or an active episode")
+                return result
             for p, ep in load(dormant_dir(store)):
                 if ep.get("id") in protected:
                     continue
