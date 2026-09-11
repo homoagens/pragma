@@ -834,7 +834,6 @@ confirmed mid-task. Therefore:
         system_prompt=system_prompt,
         skills=skills,
         final_keys=("conclusion",),
-        model=baseline_config.DEFAULT_MODEL,
         temperature=args.temperature,
         max_steps=args.max_steps,
     )

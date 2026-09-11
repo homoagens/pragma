@@ -1054,7 +1054,6 @@ async def websocket_endpoint(ws: WebSocket):
                             system_prompt = system_prompt,
                             skills        = _build_thread_skills(thread_cwd, ws_ask_user, _stop),
                             final_keys    = ("conclusion",),
-                            model         = baseline_config.DEFAULT_MODEL,
                             temperature   = 0.2,
                             max_steps     = _max_steps,
                             stop_event    = _stop,

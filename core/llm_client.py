@@ -208,6 +208,24 @@ def resolved_model(model=None) -> str:
     return known.served_model or ""
 
 
+def served_model(role: str) -> str:
+    """The model serving `role`, as its endpoint reports it. For provenance.
+
+    With every role on one server this is the same name for all three. Once
+    they are split it is the only way to say which model wrote what: the
+    agent's model is not the one that consolidated its session. Falls back to
+    the name the catalogue declares, and to "" when neither is known.
+    """
+    try:
+        ep = endpoints.for_role(role)
+    except endpoints.EndpointError:
+        return ""
+    known = endpoints.state(ep.base_url)
+    if not known.served_model:
+        ping_models(ep.base_url, ep.api_key, timeout=5)
+    return known.served_model or ep.model
+
+
 def _resolved_endpoint(base_url, api_key):
     """Resolve (base_url, api_key): an explicit value wins, then the endpoint
     of the calling role.
@@ -232,7 +250,10 @@ def ping_models(base_url=None, api_key=None, timeout=5):
     config.SERVED_MODEL, so banners and provenance can show the truth instead
     of trusting the DEFAULT_MODEL label — which lies as soon as you swap
     models on the same port."""
-    url, key = _resolved_endpoint(base_url, api_key)
+    try:
+        url, key = _resolved_endpoint(base_url, api_key)
+    except endpoints.EndpointError as e:
+        return False, f"endpoint catalogue - {e}"
     # The quick test first: with nothing listening, a plain GET waits out the
     # operating system's connect retries before failing, and every menu that
     # asks would wait with it.
@@ -258,10 +279,14 @@ def ping_models(base_url=None, api_key=None, timeout=5):
                     served = served[: -len(ext)]
             if served:
                 endpoints.state(url).served_model = served
-                # Still mirrored into config for the banners and for the
-                # model recorded in episodes, which read it from there until
-                # provenance is kept per role.
-                config.SERVED_MODEL = served
+                # config.SERVED_MODEL is what the banners show as "talking
+                # to", so it names the AGENT's model only. Written for any
+                # endpoint, it would say whichever server was pinged last.
+                try:
+                    if url == endpoints.for_role("agent").base_url:
+                        config.SERVED_MODEL = served
+                except endpoints.EndpointError:
+                    pass
     except Exception:
         pass
     return True, f"{url} reachable" + (f" · serving {served}" if served else "")

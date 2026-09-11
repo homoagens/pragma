@@ -980,7 +980,6 @@ If the turn needed no tools at all, the conclusion is simply your reply.
         system_prompt=system_prompt,
         skills=skills,
         final_keys=("conclusion",),
-        model=baseline_config.DEFAULT_MODEL,
         temperature=args.temperature,
         max_steps=max_steps,
     )

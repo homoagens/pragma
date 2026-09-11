@@ -492,8 +492,26 @@ def _endpoint_context_window() -> int:
     circular import waiting to happen. Short timeout, because this runs at
     import time in every process that reads config - including ones with no
     interest in a context window at all.
+
+    The window is the AGENT's: compaction bounds the agent's history, and the
+    faculties send prompts far smaller than any window. With an endpoint
+    catalogue that is the endpoint assigned to `agent`; a catalogue that
+    cannot be read gives 0 here, and the error surfaces on the first call.
     """
     base = (os.environ.get("LLM_BASE_URL") or LLM_BASE_URL or "").strip()
+    key = os.environ.get("LLM_API_KEY") or LLM_API_KEY
+    try:
+        # Imported here, not at the top: endpoints imports this module, and
+        # by the time this runs everything it reads from config is defined.
+        import endpoints
+        catalogue, error = endpoints.load_catalogue()
+        if error:
+            return 0
+        if catalogue is not None:
+            agent = endpoints.for_role("agent")
+            base, key = agent.base_url, agent.api_key
+    except ImportError:
+        pass
     if not base:
         return 0
     if not endpoint_reachable(base):
@@ -501,7 +519,6 @@ def _endpoint_context_window() -> int:
     root = base[:-3] if base.rstrip("/").endswith("/v1") else base
     try:
         import requests
-        key = os.environ.get("LLM_API_KEY") or LLM_API_KEY
         headers = {"Authorization": f"Bearer {key}"} if key else {}
         r = requests.get(root.rstrip("/") + "/props", headers=headers,
                          timeout=1.5)

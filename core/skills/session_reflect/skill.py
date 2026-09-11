@@ -129,6 +129,7 @@ def session_reflect_detailed(transcript: str = "",
 
     store = _load_store(target)
     ts    = _now()
+    written_by = llm_client.served_model("memory")
     added: list[dict] = []
     for kind, items in buckets.items():
         for it in items:
@@ -138,7 +139,8 @@ def session_reflect_detailed(transcript: str = "",
             # Cheap dedup: skip if an entry with the same text already exists.
             if any(e.get("text") == text for e in store["entries"]):
                 continue
-            entry = {"kind": kind, "text": text, "label": label or "", "ts": ts}
+            entry = {"kind": kind, "text": text, "label": label or "", "ts": ts,
+                     "written_by": written_by}
             store["entries"].append(entry)
             added.append(entry)
 

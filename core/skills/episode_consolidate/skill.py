@@ -597,6 +597,10 @@ def episode_consolidate_detailed(transcript: str = "", workspace: str = "",
         + getattr(config, "SALIENCE_IMPORTANCE_WEIGHT", 0.40) * importance,
     )
 
+    # Every record this consolidation writes - the episode, reinterpretations,
+    # new and reformulated beliefs - is written by the memory role's model.
+    memory_model = llm_client.served_model("memory")
+
     ep = {
         "id":  f"ep_{clock.now().strftime('%Y%m%d_%H%M%S')}_{uuid.uuid4().hex[:4]}",
         "ts":  _now(),
@@ -605,7 +609,11 @@ def episode_consolidate_detailed(transcript: str = "", workspace: str = "",
         "source":    source or "",
         # Provenance: the model that actually produced this session — resolved
         # from the endpoint when available, else the configured label.
-        "model": getattr(config, "SERVED_MODEL", "") or config.DEFAULT_MODEL,
+        "model": llm_client.served_model("agent") or config.DEFAULT_MODEL,
+        # And the model that wrote this record of it. The same one while
+        # every role shares an endpoint; once memory runs elsewhere, "model"
+        # alone would file a 4B's episode under the 27B that held the talk.
+        "written_by": memory_model,
         "goal":      goal[:200],
         "narrative": narrative,          # facts — immutable
         "surprises": surprises,
@@ -687,7 +695,8 @@ def episode_consolidate_detailed(transcript: str = "", workspace: str = "",
                 hist.append({"ts": _now(),
                              "text": tgt.get("interpretation", ""),
                              "trigger": ep["id"],
-                             "reason": rw.get("reason", "")})
+                             "reason": rw.get("reason", ""),
+                             "by": memory_model})
                 tgt["interpretation_history"] = hist
                 tgt["interpretation"] = rw["interpretation"]  # facts untouched
                 tl = set(tgt.get("links") or [])
@@ -781,7 +790,8 @@ def episode_consolidate_detailed(transcript: str = "", workspace: str = "",
             continue
         entry = {"kind": kind, "text": text, "label": workspace or "", "ts": ts,
                  "sources": sources, "confidence": 0.6,
-                 "confirmations": 0, "contradictions": 0, "status": "active"}
+                 "confirmations": 0, "contradictions": 0, "status": "active",
+                 "written_by": memory_model}
         entries.append(entry)
         result["new_assertions"].append(entry)
 
@@ -833,7 +843,8 @@ def episode_consolidate_detailed(transcript: str = "", workspace: str = "",
                     if reformed:
                         hist = e.get("text_history") or []
                         hist.append({"ts": ts, "text": e.get("text", ""),
-                                     "reason": reformed.get("reason", "")})
+                                     "reason": reformed.get("reason", ""),
+                                     "by": memory_model})
                         e["text_history"] = hist
                         old_text = e["text"]
                         e["text"] = reformed["text"]
@@ -879,7 +890,8 @@ def episode_consolidate_detailed(transcript: str = "", workspace: str = "",
                 continue  # no defensible rewrite → leave the belief as-is
             hist = e.get("text_history") or []
             hist.append({"ts": ts, "text": text,
-                         "reason": reformed.get("reason", ""), "via": "bridge"})
+                         "reason": reformed.get("reason", ""), "via": "bridge",
+                         "by": memory_model})
             e["text_history"] = hist
             e["text"] = reformed["text"]
             e["reformulations"] = e.get("reformulations", 0) + 1

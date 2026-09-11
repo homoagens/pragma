@@ -471,7 +471,9 @@ def run_agent(cfg: AgentConfig, user_task: str, log_path: Optional[Path] = None,
             except Exception:
                 pass  # the callback must never break the loop
 
-    model       = cfg.model       or config.DEFAULT_MODEL
+    # None, not DEFAULT_MODEL: an unset model is resolved by llm_client from
+    # the agent's endpoint, which may name its own model in the catalogue.
+    model       = cfg.model       or None
     temperature = cfg.temperature if cfg.temperature is not None else config.DEFAULT_TEMPERATURE
     max_steps   = cfg.max_steps   or config.MAX_STEPS
 
