@@ -51,8 +51,9 @@ profile yet — and type:
 pragma
 ```
 
-That is the whole interface. It opens on **open project · new project · quit**;
-make one, and `/configure` points it at your model. `/help` lists the rest.
+That is the whole interface. It opens on a prompt that suggests `/open`,
+`/new`, `/configure` and `/exit`: `/configure` points it at your model, `/new`
+makes a project. Inside a conversation `/help` lists the rest.
 
 ---
 

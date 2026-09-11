@@ -361,11 +361,13 @@ def _run_slash(cmd: str) -> bool:
             return True
         print()
         try:
-            subprocess.run([sys.executable, str(tool)], check=False)
+            done = subprocess.run([sys.executable, str(tool)], check=False)
         except Exception as e:
             print(f"  {type(e).__name__}: {str(e)[:120]}")
             return True
         print()
+        if done.returncode == 3:              # ctrl+D: went back, nothing saved
+            return True
         print("  this window keeps the endpoint it started with -")
         print("  leave Pragma and come back for the new one.")
         print()

@@ -9,9 +9,9 @@
 #
 #     Import-Module <repo>\tools\Pragma.psd1
 #
-# WHAT THIS IS. `pragma` opens a menu and stays there: an action runs and
-# returns to it, and quitting the menu leaves the program, the way a terminal
-# harness behaves. The window keeps the project's environment afterwards, so
+# WHAT THIS IS. `pragma` opens a home prompt (/open, /new, /configure, /exit)
+# and stays there: an action runs and returns to it, and /exit leaves the
+# program, the way a terminal harness behaves. The window keeps the project's environment afterwards, so
 # `pragma -Chat` and the rest still work at the prompt.
 #
 # This reverses the first design, which set the window up and got out of the
@@ -431,6 +431,9 @@ function script:Show-Menu([object[]]$items, [string]$hint, [int]$start = 0) {
         $first = $false
 
         $key = [Console]::ReadKey($true)
+        # Ctrl+D goes back here as it does everywhere else in Pragma: in the
+        # conversation, in /configure, at the home prompt. Esc and q still work.
+        if (Test-CtrlD $key) { return $null }
         switch ($key.Key) {
             'UpArrow'   { $sel = ($sel - 1 + $items.Count) % $items.Count }
             'DownArrow' { $sel = ($sel + 1) % $items.Count }
@@ -857,6 +860,7 @@ function script:Set-Sampling($entry, [string]$mode) {
         'manual' {
             Write-Host ""
             Write-Host "  Blank leaves that one to the server." -ForegroundColor DarkGray
+            Write-Host "  ctrl+D goes back; values already entered stay." -ForegroundColor DarkGray
             foreach ($k in 'Temperature', 'TopK', 'TopP', 'MinP') {
                 $cur = ""
                 if ($entry.settings -and
@@ -864,7 +868,8 @@ function script:Set-Sampling($entry, [string]$mode) {
                     $cur = $entry.settings.$k
                 }
                 $shown = if ($cur -ne "") { " [$cur]" } else { " [server]" }
-                $v = Read-Host ("  " + $k.PadRight(12) + $shown)
+                $v = Read-Line ("  " + $k.PadRight(12) + $shown + ": ")
+                if ($null -eq $v) { break }
                 # Enter keeps what is there; "-" is how you clear one, since an
                 # empty answer cannot mean both "keep" and "clear".
                 if ($v -eq '-') { Set-ProjectSetting $entry $k '' | Out-Null }
@@ -884,7 +889,7 @@ function script:Invoke-SettingsMenu($entry) {
         [pscustomobject]@{ key = 'g'; label = "sampling: greedy            temperature 0, deterministic";           action = 'greedy' }
         [pscustomobject]@{ key = 'q'; label = "back";                                                               action = '' }
     )
-    $c = Show-Menu $items "enter select . esc back"
+    $c = Show-Menu $items "enter select . ctrl+D back"
     Write-Host ""
     if (-not $c -or -not $c.action) { return $entry }
     Set-Sampling $entry $c.action
@@ -1153,7 +1158,7 @@ function script:Invoke-Restore($entry) {
             file = $f; info = $i }
     }
     $picks += [pscustomobject]@{ key = 'q'; label = "back"; file = $null }
-    $p = Show-Menu $picks "enter select . esc back"
+    $p = Show-Menu $picks "enter select . ctrl+D back"
     Write-Host ""
     if (-not $p -or -not $p.file) { return }
 
@@ -1179,7 +1184,8 @@ function script:Invoke-Restore($entry) {
     Write-Host "  A snapshot of the current state is taken first, so this is" -ForegroundColor DarkGray
     Write-Host "  undoable." -ForegroundColor DarkGray
     Write-Host ""
-    $typed = Read-Host "  Type the project name to confirm"
+    Write-Host "  ctrl+D goes back" -ForegroundColor DarkGray
+    $typed = Read-Line "  Type the project name to confirm: "
     if ($typed -ne $entry.name) {
         Write-Host ""
         Write-Host "  nothing restored" -ForegroundColor Green
@@ -1251,7 +1257,7 @@ function script:Invoke-BackupMenu($entry) {
             [pscustomobject]@{ key = 'r'; label = "restore a snapshot";                                action = 'restore' }
             [pscustomobject]@{ key = 'q'; label = "back";                                              action = '' }
         )
-        $c = Show-Menu $items "enter select . esc back"
+        $c = Show-Menu $items "enter select . ctrl+D back"
         Write-Host ""
         if (-not $c -or -not $c.action) { return }
         if ($c.action -eq 'restore') { Invoke-Restore $entry; continue }
@@ -1284,8 +1290,8 @@ function script:Invoke-OpenProject($preferred) {
         Write-Host "  Nothing registered yet." -ForegroundColor DarkGray
         Write-Host ""
         Write-Host "  A project is one folder the agent works in, plus a memory of" -ForegroundColor DarkGray
-        Write-Host "  its own that Pragma keeps elsewhere. Go back and choose" -ForegroundColor DarkGray
-        Write-Host "  'new project'." -ForegroundColor DarkGray
+        Write-Host "  its own that Pragma keeps elsewhere. Go back and type" -ForegroundColor DarkGray
+        Write-Host "  /new." -ForegroundColor DarkGray
         Write-Host ""
         Wait-Key
         return $null
@@ -1300,7 +1306,7 @@ function script:Invoke-OpenProject($preferred) {
         if ($preferred -and $preferred.name -and $e.name -eq $preferred.name) { $sel = $i }
     }
     $picks += [pscustomobject]@{ key = 'q'; label = "back"; entry = $null }
-    $p = Show-Menu $picks "enter select . esc back" $sel
+    $p = Show-Menu $picks "enter select . ctrl+D back" $sel
     Write-Host ""
     if (-not $p) { return $null }
     return $p.entry
@@ -1316,15 +1322,17 @@ function script:Invoke-NewProject {
     Write-Host ""
     Write-Host "  A project is one folder the agent works in, plus a memory of" -ForegroundColor DarkGray
     Write-Host "  its own that Pragma keeps elsewhere." -ForegroundColor DarkGray
+    Write-Host "  ctrl+D goes back" -ForegroundColor DarkGray
     Write-Host ""
 
     $here = (Get-Location).Path
-    $ws = Read-Host "  folder  [$here]"
+    $ws = Read-Line "  folder  [$here]: "
+    if ($null -eq $ws) { return $null }
     if (-not $ws) { $ws = $here }
     $ws = $ws.Trim('"').Trim()
     if (-not (Test-Path $ws)) {
         Write-Host ""
-        $mk = Read-Host "  '$ws' does not exist. Create it? [y/N]"
+        $mk = Read-Line "  '$ws' does not exist. Create it? [y/N]: "
         if ($mk -notmatch '^[yYsS]') { Write-Host ""; return $null }
         try { New-Item -ItemType Directory -Force -Path $ws -ErrorAction Stop | Out-Null }
         catch {
@@ -1334,7 +1342,8 @@ function script:Invoke-NewProject {
     }
 
     $leaf = Split-Path -Leaf ($ws.TrimEnd('\','/'))
-    $name = Read-Host "  name    [$leaf]"
+    $name = Read-Line "  name    [$leaf]: "
+    if ($null -eq $name) { return $null }
     if (-not $name) { $name = $leaf }
 
     Write-Host ""
@@ -1356,7 +1365,7 @@ function script:Invoke-DeleteProject($entry) {
                                      entry = $e }
     }
     $picks += [pscustomobject]@{ key = 'q'; label = "back"; entry = $null }
-    $p = Show-Menu $picks "enter select . esc back"
+    $p = Show-Menu $picks "enter select . ctrl+D back"
     Write-Host ""
     if (-not $p -or -not $p.entry) { return $entry }
     $doomed = $p.entry
@@ -1386,7 +1395,8 @@ function script:Invoke-DeleteProject($entry) {
     Write-Host ""
     Write-Host "  There is no undo." -ForegroundColor Red
     Write-Host ""
-    $typed = Read-Host "  Type the project name to confirm"
+    Write-Host "  ctrl+D goes back" -ForegroundColor DarkGray
+    $typed = Read-Line "  Type the project name to confirm: "
     if ($typed -ne $doomed.name) {
         Write-Host ""
         Write-Host "  not deleted" -ForegroundColor Green
@@ -1425,17 +1435,22 @@ function script:Invoke-MenuLoop($suggested) {
     # - this runs the page, and then puts the operator back in the chat.
     $active = $null
     $entry  = $null                    # nothing is open until it is chosen
+    $notice = ""
     $req = Join-Path ([IO.Path]::GetTempPath()) ("pragma-request-" + $PID + ".json")
     $env:PRAGMA_REQUEST = $req
 
     while ($true) {
         if (-not $entry) {
-            # THE SAME THREE THINGS, ALWAYS. Opening straight into the last
-            # project was convenient exactly once per machine and wrong the
-            # rest of the time: the launcher behaved one way with projects and
-            # another without, so what a bare `pragma` did depended on state
-            # you could not see. It now asks, and the suggestion survives as
-            # where the cursor starts in the list.
+            # THE SAME COMMANDS, ALWAYS, typed rather than picked. Opening
+            # straight into the last project was convenient exactly once per
+            # machine and wrong the rest of the time, so the launcher asks.
+            #
+            # A prompt instead of a menu, for two reasons. The system has things
+            # to set up that belong to no project - the endpoints first of all -
+            # and a menu grows a row for each of them. And the conversation
+            # already speaks in slash commands, so the screen before it now
+            # speaks the same language: /configure means the same thing here
+            # and inside a chat.
             New-Page
             Write-Host ""
             Show-Logo
@@ -1447,16 +1462,47 @@ function script:Invoke-MenuLoop($suggested) {
             Write-Host ""
             # open before new: over the life of a project it is opened every
             # day and created once.
-            $top = @(
-                [pscustomobject]@{ key = 'o'; label = "open project"; action = 'open' }
-                [pscustomobject]@{ key = 'n'; label = "new project";  action = 'new' }
-                [pscustomobject]@{ key = 'q'; label = "quit";         action = 'quit' }
-            )
-            $c = Show-Menu $top "enter select . esc quit"
+            foreach ($row in @(@("/open",      "open a project"),
+                               @("/new",       "start a project"),
+                               @("/configure", "set up the endpoint"),
+                               @("/help",      "what each command does"),
+                               @("/exit",      "leave"))) {
+                Write-Host ("  " + (Paint ("{0,-12}" -f $row[0]) 'accent') + (Paint $row[1] 'dim'))
+            }
             Write-Host ""
-            if (-not $c -or $c.action -eq 'quit') { New-Page; return }
-            if ($c.action -eq 'open') { $entry = Invoke-OpenProject $suggested }
-            else                      { $entry = Invoke-NewProject }
+            if ($notice) { Write-Host "  $notice" -ForegroundColor Yellow; Write-Host "" }
+            $notice = ""
+
+            # Called as a statement and read back from a variable, never as
+            # `$choice = Read-HomeCommand`: assigning a function's result
+            # captures everything it emits, including the stdout of the
+            # Python it runs. The prompt then went into the variable instead of
+            # onto the screen, and the page sat there looking like it waited.
+            $script:HomeChoice = $null
+            Read-HomeCommand
+            $choice = $script:HomeChoice
+            if (-not $choice) { continue }
+            $cmd = $choice.action
+            $arg = $choice.arg
+
+            # An if-chain, not a switch: inside a PowerShell switch, continue
+            # and break act on the switch, not on this loop.
+            if (-not $cmd) { continue }
+            if ($cmd -eq 'exit') { New-Page; return }
+            if ($cmd -in @('open', 'o')) {
+                if ($arg) {
+                    $entry = Get-EntryByName $arg
+                    if (-not $entry) { $notice = "No project named '$arg'." }
+                } else {
+                    $entry = Invoke-OpenProject $suggested
+                }
+            } elseif ($cmd -in @('new', 'n')) {
+                $entry = Invoke-NewProject
+            } elseif ($cmd -eq 'configure') {
+                Invoke-Configure
+            } elseif ($cmd -notin @('help', '?')) {
+                $notice = "'/$cmd' is not a command here. Try /open, /new, /configure or /exit."
+            }
             continue
         }
         if (-not $active -or $active.name -ne $entry.name) {
@@ -1512,6 +1558,94 @@ function script:Invoke-MenuLoop($suggested) {
 }
 
 
+function script:Test-CtrlD($key) {
+    # Ctrl+D as ReadKey reports it: the D key with Control held, or the raw
+    # end-of-transmission character some hosts deliver instead.
+    if ($null -eq $key) { return $false }
+    if ($key.Key -eq [ConsoleKey]::D -and ($key.Modifiers -band [ConsoleModifiers]::Control)) { return $true }
+    return ([int]$key.KeyChar -eq 4)
+}
+
+function script:Read-Line([string]$prompt) {
+    # Read-Host, except that Ctrl+D (or Esc) goes back and returns $null.
+    # Read-Host cannot: on Windows Ctrl+D is just one more character in the
+    # line, so a question asked with it was the one place in Pragma where the
+    # key that goes back everywhere else did nothing.
+    Write-Host $prompt -NoNewline
+    if ([Console]::IsInputRedirected) { return [Console]::ReadLine() }
+    $buf = New-Object System.Text.StringBuilder
+    while ($true) {
+        $k = [Console]::ReadKey($true)
+        if ((Test-CtrlD $k) -or $k.Key -eq [ConsoleKey]::Escape) { Write-Host ""; return $null }
+        if ($k.Key -eq [ConsoleKey]::Enter) { Write-Host ""; return $buf.ToString() }
+        if ($k.Key -eq [ConsoleKey]::Backspace) {
+            if ($buf.Length -gt 0) {
+                $buf.Length = $buf.Length - 1
+                Write-Host "`b `b" -NoNewline
+            }
+            continue
+        }
+        if (-not [char]::IsControl($k.KeyChar)) {
+            [void]$buf.Append($k.KeyChar)
+            Write-Host $k.KeyChar -NoNewline
+        }
+    }
+}
+
+function script:Invoke-Configure {
+    # The same tool /configure runs inside a conversation, reachable before any
+    # project is open: which model Pragma talks to is a property of the machine,
+    # not of a project. Nothing here has loaded .env yet, so the next chat
+    # started from this window picks the change up.
+    New-Page
+    Write-Host ""
+    Write-Accent "  Configure"
+    Write-Host ""
+    $tool = Join-Path $PSScriptRoot "pragma_configure.py"
+    if (-not (Test-Path $script:Python)) {
+        Write-Host "  The Python environment is missing: $($script:Python)" -ForegroundColor Red
+        Write-Host "  Run install.ps1 again." -ForegroundColor DarkGray
+    } elseif (-not (Test-Path $tool)) {
+        Write-Host "  This needs $tool, which is missing from this copy of Pragma." -ForegroundColor Red
+    } else {
+        & $script:Python $tool
+        # 3 is Ctrl+D: nothing was saved and there is nothing to read, so
+        # asking for a key before going back would be one key too many.
+        if ($LASTEXITCODE -eq 3) { return }
+    }
+    Write-Host ""
+    Wait-Key
+}
+
+function script:Read-HomeCommand {
+    # The line is read by pragma_home.py, which gives it what the chat prompt
+    # has and PowerShell lacks: commands completed as they are typed, and a
+    # grey hint on the empty line. /help and mistakes are handled there.
+    # If Python cannot run, a plain line read keeps the launcher usable.
+    $out = Join-Path ([IO.Path]::GetTempPath()) ("pragma-home-" + $PID + ".json")
+    Remove-Item -LiteralPath $out -Force -ErrorAction SilentlyContinue
+    $tool = Join-Path $PSScriptRoot "pragma_home.py"
+    if ((Test-Path $script:Python) -and (Test-Path $tool)) {
+        & $script:Python $tool --out $out
+        if (Test-Path $out) {
+            try {
+                $r = Get-Content -Raw $out | ConvertFrom-Json
+                Remove-Item -LiteralPath $out -Force -ErrorAction SilentlyContinue
+                $script:HomeChoice = [pscustomobject]@{ action = "$($r.action)"; arg = "$($r.arg)" }
+                return
+            } catch { }
+        }
+    }
+    Write-Host "  > " -NoNewline
+    $line = [Console]::ReadLine()
+    if ($null -eq $line) { $script:HomeChoice = [pscustomobject]@{ action = 'exit'; arg = '' }; return }
+    $parts = @($line.Trim() -split '\s+', 2)
+    $cmd = $parts[0].TrimStart('/').ToLowerInvariant()
+    if ($cmd -in @('quit', 'q')) { $cmd = 'exit' }
+    $arg = if ($parts.Count -gt 1) { $parts[1].Trim() } else { "" }
+    $script:HomeChoice = [pscustomobject]@{ action = $cmd; arg = $arg }
+}
+
 function script:Wait-Key {
     Write-Host "  any key to go back" -ForegroundColor DarkGray
     [Console]::ReadKey($true) | Out-Null
@@ -1531,7 +1665,7 @@ function script:Invoke-MemoryMenu {
         [pscustomobject]@{ key = 'l'; label = "last        the newest episode, in full";  action = 'Last' }
         [pscustomobject]@{ key = 'q'; label = "back";                                     action = '' }
     )
-    $c = Show-Menu $items "enter select . esc back"
+    $c = Show-Menu $items "enter select . ctrl+D back"
     Write-Host ""
     if (-not $c -or -not $c.action) { return }
     # Splatting needs a variable, not an inline hashtable: the session command
