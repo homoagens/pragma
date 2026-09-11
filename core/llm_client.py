@@ -25,6 +25,7 @@ import requests
 from rich.console import Console
 
 import config
+import endpoints
 
 _console = Console()
 
@@ -167,10 +168,15 @@ def _make_loop_guard():
 
 # Default base URL when none is configured: llama.cpp server's default port,
 # with the /v1 suffix the OpenAI-compatible API requires.
-DEFAULT_BASE_URL = "http://127.0.0.1:8080/v1"
+DEFAULT_BASE_URL = endpoints.DEFAULT_BASE_URL
 
 
 # ── Endpoint resolution ────────────────────────────────────────────────────────
+
+def current_endpoint() -> "endpoints.Endpoint":
+    """The endpoint for whoever is calling: the faculty named on this thread."""
+    return endpoints.for_role(endpoints.role_of(current_faculty()))
+
 
 def resolved_model(model=None) -> str:
     """The model name to put in a request.
@@ -188,28 +194,30 @@ def resolved_model(model=None) -> str:
     """
     if model:
         return model
-    if config.DEFAULT_MODEL:
-        return config.DEFAULT_MODEL
-    served = getattr(config, "SERVED_MODEL", "")
-    if not served:
+    ep = current_endpoint()
+    if ep.model:
+        return ep.model
+    known = endpoints.state(ep.base_url)
+    if not known.served_model:
         try:
-            ping_models(timeout=5)            # fills config.SERVED_MODEL
+            ping_models(ep.base_url, ep.api_key, timeout=5)   # fills served_model
         except Exception:
             pass
-        served = getattr(config, "SERVED_MODEL", "")
     # Empty is a legitimate answer: a server that cannot be reached gets the
     # field omitted rather than a guess, and reports its own error.
-    return served or ""
+    return known.served_model or ""
 
 
 def _resolved_endpoint(base_url, api_key):
-    """Resolve (base_url, api_key) applying fallback from config.
+    """Resolve (base_url, api_key): an explicit value wins, then the endpoint
+    of the calling role.
 
     base_url is the OpenAI-compatible base that ends in /v1; the caller code
     appends /chat/completions or /models. api_key is optional (local servers
     usually need none)."""
-    url = (base_url or config.LLM_BASE_URL or DEFAULT_BASE_URL).rstrip("/")
-    key = api_key or config.LLM_API_KEY
+    ep = current_endpoint()
+    url = (base_url or ep.base_url).rstrip("/")
+    key = api_key or ep.api_key
     return url, key
 
 
@@ -249,6 +257,10 @@ def ping_models(base_url=None, api_key=None, timeout=5):
                 if served.lower().endswith(ext):
                     served = served[: -len(ext)]
             if served:
+                endpoints.state(url).served_model = served
+                # Still mirrored into config for the banners and for the
+                # model recorded in episodes, which read it from there until
+                # provenance is kept per role.
                 config.SERVED_MODEL = served
     except Exception:
         pass
@@ -308,7 +320,7 @@ def _post_with_retry(url, headers, payload, timeout, label, stop_event=None):
 
     The waiting spinner shows the model the endpoint actually serves (when
     known) and a live elapsed counter, so a long call is visibly alive."""
-    disp = getattr(config, "SERVED_MODEL", "") or label
+    disp = endpoints.state(url.rsplit("/chat/completions", 1)[0]).served_model or label
     last = None
     attempt = 0            # 502: the backend is loading, wait long
     transport = 0          # dropped connection: retry fast or fail fast
@@ -402,38 +414,45 @@ def _post_with_retry(url, headers, payload, timeout, label, stop_event=None):
 # speed and context usage. Best-effort — empty when the backend sends no usage.
 LAST_STATS: dict = {}
 
-# Set once if the endpoint rejects a json_schema response_format, so a server
-# without structured output costs one failed request per process instead of
-# one per faculty call. Mirrors _TOOLS_UNSUPPORTED on the action channel.
-_SCHEMA_UNSUPPORTED = [False]
-
-
 # ── Who is calling ────────────────────────────────────────────────────────────
 # The spinner used to show the model and nothing else, so every faculty looked
 # alike: on a slow endpoint that is minutes of watching a model name with no
 # way to tell the curator from the consolidator, or a faculty at work from one
-# that is stuck.
+# that is stuck. The same name now also decides where the call goes: see
+# endpoints.role_of.
 #
-# The label is module state set around the call rather than an argument
-# threaded through call_llm, deliberately. An argument would have to be added
-# at every call site, and the site added next year would be the one that
-# forgets it - which is precisely the silent-faculty problem again, reappearing
-# as a missing parameter. Set here, an unlabelled call simply falls back to the
-# old text, and any faculty added later inherits the behaviour by using the
-# context manager.
-_FACULTY: list[str] = [""]
-_STEP: list[str] = [""]
+# The label is state set around the call rather than an argument threaded
+# through call_llm, deliberately. An argument would have to be added at every
+# call site, and the site added next year would be the one that forgets it -
+# which is precisely the silent-faculty problem again, reappearing as a missing
+# parameter. Set here, an unlabelled call falls back to the agent, and any
+# faculty added later inherits the behaviour by using the context manager.
+#
+# Per thread, not per module. Once the name picks an endpoint, a label set on
+# one thread must not reach another: the browser interface runs session_reflect
+# on a worker thread while the agent works on the request thread, and a shared
+# label would send the agent's steps to the memory endpoint for as long as the
+# reflection lasted.
+_LOCAL = threading.local()
+
+
+def current_faculty() -> str:
+    return getattr(_LOCAL, "faculty", "")
+
+
+def _current_step() -> str:
+    return getattr(_LOCAL, "step", "")
 
 
 @contextmanager
 def faculty(name: str):
     """Name the faculty making the calls inside this block."""
-    prev = _FACULTY[0]
-    _FACULTY[0] = name or ""
+    prev = current_faculty()
+    _LOCAL.faculty = name or ""
     try:
         yield
     finally:
-        _FACULTY[0] = prev
+        _LOCAL.faculty = prev
 
 
 @contextmanager
@@ -444,17 +463,17 @@ def step(text: str):
     faculty names itself, while only the orchestrator above it knows which of
     how many items is in flight.
     """
-    prev = _STEP[0]
-    _STEP[0] = text or ""
+    prev = _current_step()
+    _LOCAL.step = text or ""
     try:
         yield
     finally:
-        _STEP[0] = prev
+        _LOCAL.step = prev
 
 
 def _who(disp: str) -> str:
     """"[CONSOLIDATOR 2/3] model" — or just the model when nothing is set."""
-    tag = " ".join(p for p in (_FACULTY[0], _STEP[0]) if p)
+    tag = " ".join(p for p in (current_faculty(), _current_step()) if p)
     return f"[{tag}] {disp}" if tag else disp
 
 
@@ -528,7 +547,7 @@ def _call_openai_compatible(messages, model, temperature, max_tokens, timeout, b
         "completion": usage.get("completion_tokens", 0) or 0,
         "total":      usage.get("total_tokens", 0) or 0,
         "seconds":    dt,
-        "model":      getattr(config, "SERVED_MODEL", "") or model,
+        "model":      endpoints.state(base_url).served_model or model,
     }
     choice = data["choices"][0]
     msg    = choice.get("message", {})
@@ -697,7 +716,7 @@ def call_llm_tools(messages, tools, model=None, temperature=None,
         "completion": usage.get("completion_tokens", 0) or 0,
         "total":      usage.get("total_tokens", 0) or 0,
         "seconds":    dt,
-        "model":      getattr(config, "SERVED_MODEL", "") or model,
+        "model":      endpoints.state(base_url).served_model or model,
     }
 
     choice = (data.get("choices") or [{}])[0]
@@ -759,17 +778,23 @@ def call_llm(messages, model=None, temperature=None, max_tokens=None, timeout=No
     if max_tokens  is None: max_tokens  = config.MAX_TOKENS
     if timeout     is None: timeout     = config.TIMEOUT
 
+    url, key = _resolved_endpoint(base_url, api_key)
+    known = endpoints.state(url)
+
     # The schema rides the same switch as the action channel: one flag decides
     # whether this run is constrained end to end or reproduces the old one.
     # MEMORY_SCHEMA=0 additionally ablates the schema while LEAVING the action
     # channel native, which is the only way to attribute a difference in what
     # memory holds to the constraint rather than to the channel.
+    #
+    # An endpoint that rejected a json_schema once is remembered, so a server
+    # without structured output costs one failed request per process instead
+    # of one per faculty call - remembered for that endpoint only.
     if (getattr(config, "LLM_TOOL_PROTOCOL", "text") != "native"
             or not getattr(config, "MEMORY_SCHEMA", True)
-            or _SCHEMA_UNSUPPORTED[0]):
+            or known.schema_unsupported):
         response_schema = None
 
-    url, key = _resolved_endpoint(base_url, api_key)
     try:
         text, finish = _call_openai_compatible(
             messages, model, temperature, max_tokens, timeout, url, key,
@@ -786,7 +811,7 @@ def call_llm(messages, model=None, temperature=None, max_tokens=None, timeout=No
         if response_schema and any(s in msg for s in (
                 "400", "422", "response_format", "json_schema", "schema",
                 "unknown field", "unsupported")):
-            _SCHEMA_UNSUPPORTED[0] = True
+            known.schema_unsupported = True
             if config.DEBUG:
                 print(f"[llm] endpoint rejected response_format ({str(e)[:120]}); "
                       f"continuing without schemas.")

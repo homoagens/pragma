@@ -30,6 +30,7 @@ from rich.console import Console
 from rich.panel import Panel
 
 import config
+import endpoints
 import llm_client
 import memory
 from json_parser import extract_json
@@ -149,9 +150,10 @@ def _malformed_args_hint(action: str, kwargs: dict) -> str:
     )
 
 
-# Set once per process when an endpoint turns out not to implement tools, so
-# the run degrades to the text protocol instead of retrying on every step.
-_TOOLS_UNSUPPORTED = [False]
+# When an endpoint turns out not to implement tools, the run degrades to the
+# text protocol instead of retrying on every step. Remembered per endpoint
+# (endpoints.State.tools_unsupported), so a server without tools does not
+# switch the channel off for another one.
 
 # On the native protocol a reply with no tool call is how a task ends, and it
 # is taken as the answer immediately.
@@ -266,7 +268,8 @@ def _native_action_text(cfg: AgentConfig, messages, model, temperature,
     """
     if getattr(config, "LLM_TOOL_PROTOCOL", "text") != "native":
         return None
-    if _TOOLS_UNSUPPORTED[0]:
+    known = endpoints.state(llm_client.current_endpoint().base_url)
+    if known.tools_unsupported:
         return None
 
     import json as _json
@@ -285,7 +288,7 @@ def _native_action_text(cfg: AgentConfig, messages, model, temperature,
             stop_event=cfg.stop_event,
         )
     except llm_client.ToolsUnsupported as e:
-        _TOOLS_UNSUPPORTED[0] = True
+        known.tools_unsupported = True
         # Not DEBUG-gated: the banner announced `native`, and from here on the
         # run is a text run. A log that keeps that quiet is a log that lies
         # about what it measured.
