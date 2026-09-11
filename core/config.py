@@ -440,6 +440,49 @@ MAX_STEPS = int(os.environ.get("MAX_STEPS", "15"))
 # writes a number means it.
 _CTX_DEFAULT = 65536
 
+# How long a connection may take to be accepted before an endpoint counts as
+# not connected. Measured, not guessed: on Windows a closed port does not
+# refuse at once, the connect is retried for about two seconds, and every
+# startup path used to pay that once per question - the context probe at
+# import, then the ping, in the briefing and again in the conversation. With
+# the endpoint down the launcher sat on a blank screen long enough to look
+# stuck. A second is plenty for anything on the same machine or LAN.
+ENDPOINT_PROBE_TIMEOUT = float(os.environ.get("ENDPOINT_PROBE_TIMEOUT", "1.0"))
+_REACHABLE: dict = {}
+
+
+def endpoint_reachable(base_url: str, timeout: float | None = None) -> bool:
+    """Does anything accept a connection at this endpoint? A bare TCP connect.
+
+    The one quick test every caller asks before a real request, so that "not
+    connected" costs at most ENDPOINT_PROBE_TIMEOUT. The answer is kept for a
+    few seconds, because one process routinely asks twice in a row. It says
+    nothing about whether the server works; the request that follows does.
+    """
+    import socket
+    import time
+    from urllib.parse import urlsplit
+    try:
+        parts = urlsplit((base_url or "").strip())
+        host = parts.hostname
+        port = parts.port or (443 if parts.scheme == "https" else 80)
+    except Exception:
+        return False
+    if not host:
+        return False
+    now = time.monotonic()
+    hit = _REACHABLE.get((host, port))
+    if hit and now - hit[0] < 5.0:
+        return hit[1]
+    try:
+        socket.create_connection(
+            (host, port), timeout=timeout or ENDPOINT_PROBE_TIMEOUT).close()
+        ok = True
+    except OSError:
+        ok = False
+    _REACHABLE[(host, port)] = (now, ok)
+    return ok
+
 
 def _endpoint_context_window() -> int:
     """n_ctx from an OpenAI-compatible server's /props, or 0.
@@ -452,6 +495,8 @@ def _endpoint_context_window() -> int:
     """
     base = (os.environ.get("LLM_BASE_URL") or LLM_BASE_URL or "").strip()
     if not base:
+        return 0
+    if not endpoint_reachable(base):
         return 0
     root = base[:-3] if base.rstrip("/").endswith("/v1") else base
     try:

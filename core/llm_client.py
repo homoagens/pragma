@@ -225,6 +225,11 @@ def ping_models(base_url=None, api_key=None, timeout=5):
     of trusting the DEFAULT_MODEL label — which lies as soon as you swap
     models on the same port."""
     url, key = _resolved_endpoint(base_url, api_key)
+    # The quick test first: with nothing listening, a plain GET waits out the
+    # operating system's connect retries before failing, and every menu that
+    # asks would wait with it.
+    if not config.endpoint_reachable(url):
+        return False, f"cannot reach {url} - not connected"
     headers = {}
     if key:
         headers["Authorization"] = f"Bearer {key}"
