@@ -100,8 +100,8 @@ def read_line(session) -> str:
         placeholder=ANSI(f"{GREY}/help for the commands · ctrl+D to exit{RESET}"))
 
 
-def endpoint_line() -> str:
-    """One line on the endpoint: connected and what it serves, or not connected.
+def endpoint_lines() -> list[tuple[str, str, bool]]:
+    """(label, text, up) for the endpoint, or one per role when they differ.
 
     A bare connection test first, so a missing server costs a second and the
     prompt appears anyway; only a server that answers is asked what it serves.
@@ -111,40 +111,23 @@ def endpoint_line() -> str:
     os.environ.setdefault("PRAGMA_NO_ENDPOINT_PROBE", "1")
     root = Path(__file__).resolve().parent.parent
     sys.path[:0] = [str(root), str(root / "core")]
-    import urllib.request
-    import config
-    url = (config.LLM_BASE_URL or "http://127.0.0.1:8080/v1").rstrip("/")
-    if not config.endpoint_reachable(url):
-        return f"not connected - {url} · /configure to set it up"
-
-    def get(path):
-        req = urllib.request.Request(path)
-        if config.LLM_API_KEY:
-            req.add_header("Authorization", f"Bearer {config.LLM_API_KEY}")
-        with urllib.request.urlopen(req, timeout=3) as r:
-            return json.loads(r.read().decode("utf-8", "replace"))
-
-    parts = [url]
+    import endpoints
     try:
-        data = get(url + "/models").get("data") or []
-        model = str(data[0].get("id", "")) if data else ""
-        model = model.replace("\\", "/").split("/")[-1]
-        for ext in (".gguf", ".bin"):
-            if model.lower().endswith(ext):
-                model = model[:-len(ext)]
-        if model:
-            parts.append(model)
-    except Exception:
-        return f"{url} answers, but not as an OpenAI-compatible endpoint · /configure"
-    try:
-        props = get((url[:-3] if url.endswith("/v1") else url).rstrip("/") + "/props")
-        n_ctx = (props.get("default_generation_settings") or {}).get("n_ctx")
-        slots = props.get("total_slots")
-        if n_ctx:
-            parts.append(f"{slots} slot(s) x {n_ctx} tokens" if slots else f"{n_ctx} tokens")
-    except Exception:
-        pass                            # not llama.cpp: /props is optional
-    return "connected - " + " · ".join(parts)
+        roles = endpoints.assignments()
+    except endpoints.EndpointError as e:
+        return [("endpoints", f"catalogue unusable - {e} · /configure", False)]
+    found = endpoints.probe_all(list(roles.values()))
+
+    def text(ep):
+        p = found[ep.base_url]
+        body = f"{ep.base_url} · {endpoints.status_text(p)}"
+        return body if p.get("up") else f"{body} · /configure"
+
+    if len({ep.base_url for ep in roles.values()}) == 1:
+        ep = roles["agent"]
+        return [("endpoint", text(ep), found[ep.base_url].get("up", False))]
+    return [(role, f"{ep.name} · {text(ep)}", found[ep.base_url].get("up", False))
+            for role, ep in roles.items()]
 
 
 def show_help() -> None:
@@ -172,14 +155,15 @@ def main() -> int:
         return 0
 
     try:
-        status = endpoint_line()
+        lines = endpoint_lines()
     except Exception as e:
-        status = f"unknown - {type(e).__name__}"
+        lines = [("endpoint", f"unknown - {type(e).__name__}", False)]
     a = accent()
     grey = GREY if a else ""
     reset = RESET if a else ""
-    colour = "\033[32m" if status.startswith("connected") else "\033[33m"
-    print(f"  {grey}endpoint{reset}    {colour if a else ''}{status}{reset}")
+    for label, status, up in lines:
+        colour = ("\033[32m" if up else "\033[33m") if a else ""
+        print(f"  {grey}{label:<12}{reset}{colour}{status}{reset}")
     print()
 
     session = make_session()

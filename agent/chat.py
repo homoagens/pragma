@@ -352,9 +352,10 @@ def _run_slash(cmd: str) -> bool:
         return True
     if action == "configure":
         # The endpoint question, asked where you are rather than at a shell
-        # you have to leave the program to reach. It edits .env, and .env is
-        # read once at import - so the change is announced as taking effect
-        # next time, which is the truth, instead of appearing to do nothing.
+        # you have to leave the program to reach. What it changed decides what
+        # is true afterwards: the catalogue is re-read on every call, so new
+        # roles apply here from the next turn; .env is read once at import, so
+        # that change is announced as taking effect next time.
         tool = Path(__file__).resolve().parent.parent / "tools" / "pragma_configure.py"
         if not tool.is_file():
             print(f"  this needs {tool}, which is missing from this copy of Pragma.")
@@ -366,9 +367,13 @@ def _run_slash(cmd: str) -> bool:
             print(f"  {type(e).__name__}: {str(e)[:120]}")
             return True
         print()
-        if done.returncode == 3:              # ctrl+D: went back, nothing saved
+        if done.returncode == 3:              # nothing changed
             return True
-        print("  this window keeps the endpoint it started with -")
+        if done.returncode == 0:              # the catalogue: live
+            print("  endpoints and roles apply from the next turn.")
+            print()
+            return True
+        print("  this window keeps the .env endpoint it started with -")
         print("  leave Pragma and come back for the new one.")
         print()
         return True

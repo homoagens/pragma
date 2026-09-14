@@ -176,6 +176,24 @@ def brief(store: Path, since: str = "") -> dict:
     except Exception as e:
         out["serving"] = ""
         out["backend"] = f"unknown - {type(e).__name__}"
+
+    # The other roles, only when the endpoint catalogue puts them on another
+    # server than the agent: with everything on one server, the line above
+    # already says all there is.
+    try:
+        import endpoints
+        roles = endpoints.assignments()
+        agent_url = roles["agent"].base_url
+        others = [(r, ep) for r, ep in roles.items()
+                  if r != "agent" and ep.base_url != agent_url]
+        if others:
+            found = endpoints.probe_all([ep for _r, ep in others])
+            out["roles"] = [{"role": r, "name": ep.name,
+                             "status": endpoints.status_text(found[ep.base_url]),
+                             "up": bool(found[ep.base_url].get("up"))}
+                            for r, ep in others]
+    except Exception:
+        pass                    # a broken catalogue is already on the serving line
     return out
 
 

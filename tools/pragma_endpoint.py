@@ -58,6 +58,17 @@ def main() -> int:
     except Exception:
         base_url, api_key = config.LLM_BASE_URL, ""
     out["endpoint"] = base_url
+    # This page is the agent's endpoint. With a catalogue, say where the other
+    # roles went, or why the catalogue cannot be followed.
+    try:
+        import endpoints
+        catalogue, error = endpoints.load_catalogue()
+        if error:
+            out["catalogue_error"] = error[:160]
+        elif catalogue is not None:
+            out["roles"] = {r: ep.name for r, ep in endpoints.assignments().items()}
+    except Exception:
+        pass
 
     ok, detail = llm_client.ping_models(timeout=4)
     out["up"] = bool(ok)

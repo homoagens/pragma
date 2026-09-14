@@ -3,58 +3,84 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 # This file is part of Pragma <https://github.com/homoagens/pragma>.
 
-r"""Interactive configuration for Pragma — writes the OpenAI-compatible
-endpoint settings into .env.
+r"""/configure: the endpoints Pragma can talk to, and which one serves each role.
 
-Reached as /configure, from the launcher's home prompt or inside a
+Reached as /configure from the launcher's home prompt or inside a
 conversation. It also runs on its own, for a machine being set up by hand:
 
     venv\Scripts\python.exe tools\pragma_configure.py
 
-Ctrl+D goes back from any question, at any point of the line, and nothing is
-written: the three answers are only saved once all three are given. The exit
-code says which happened, 0 saved and 3 went back, so the caller knows whether
-there is a result worth pausing on.
+An endpoint is a server Pragma can talk to, kept under a name the operator
+chooses. The page lists them with what each answers right now, and the three
+roles: agent (the conversation), recall (the CURATOR, before each turn) and
+memory (the faculties that write episodes and beliefs).
 
-All the logic is here rather than in the shell wrapper it used to have, so
-reading the current values, prompting, backing up, upserting and the health
-check are robust to any characters already present in .env.
+    /add                        a server: its address, then a name
+    /edit [name]                model name or API key, or a new address
+    /rename [name] [new]        call one something else
+    /remove [name]              remove one no role uses
+    /role <role|all> <name>     put a role, or all three, on an endpoint
+    /test                       ask every endpoint again
+
+Everything is kept in ~/.pragma/endpoints.json (core/endpoints.py reads it).
+The page starts empty: until the first /add, Pragma goes on using the endpoint
+written in .env, and says so. The first endpoint added takes every role, so
+one /add is a complete setup; .env is never written from here.
+
+Ctrl+D goes back, always: from the command line it leaves the page, and from
+inside a question it abandons that command with nothing written. The exit code
+says whether anything changed, 0 yes and 3 no; a change applies from the next
+call, even in a conversation already running.
 """
 
-from pathlib import Path
-import shutil
+import os
+import re
 import sys
+from pathlib import Path
 
-# The repository root, one level up from tools/. Not the current directory:
-# /configure runs with the project workspace as cwd, and writing a .env
-# there would create a second one that nothing reads.
-ENV          = Path(__file__).resolve().parent.parent / ".env"
-DEFAULT_URL  = "http://127.0.0.1:8080/v1"
-KEYS         = ("LLM_BASE_URL", "DEFAULT_MODEL", "LLM_API_KEY")
-WENT_BACK    = 3
-GREY, RESET  = "\033[38;5;242m", "\033[0m"
+ROOT = Path(__file__).resolve().parent.parent
+sys.path[:0] = [str(ROOT), str(ROOT / "core")]
+# This page probes endpoints itself, with the answers it shows; config's
+# import-time probe would only add a wait before the page appears.
+os.environ.setdefault("PRAGMA_NO_ENDPOINT_PROBE", "1")
+
+import endpoints  # noqa: E402
+
+CHANGED, UNCHANGED = 0, 3
+GREY, RESET = "\033[38;5;242m", "\033[0m"
+NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,31}$")
+CLEAR = "none"
+
+COMMANDS = {
+    "/add":    "add a server: its address, then a name",
+    "/edit":   "model name, API key or address of one - /edit <name>",
+    "/rename": "call one something else - /rename <name> <new name>",
+    "/remove": "remove one no role uses - /remove <name>",
+    "/role":   "put a role on an endpoint - /role <agent|recall|memory|all> <name>",
+    "/test":   "ask every endpoint again",
+    "/help":   "this list",
+    "/done":   "go back (ctrl+D does the same)",
+}
+ROLE_BLURB = {
+    "agent":  "the conversation",
+    "recall": "the CURATOR, before each turn",
+    "memory": "episodes and beliefs, in the background",
+}
 
 
-def read_current() -> dict:
-    """Current values of the managed keys (for prompt defaults)."""
-    cur = {}
-    if ENV.exists():
-        for line in ENV.read_text(encoding="utf-8").splitlines():
-            s = line.strip()
-            if not s or s.startswith("#") or "=" not in s:
-                continue
-            k, _, v = s.partition("=")
-            if k.strip() in KEYS:
-                cur[k.strip()] = v
-    return cur
+def colour(code: str) -> str:
+    return code if sys.stdout.isatty() else ""
 
 
-def make_session():
-    """A prompt where Ctrl+D always goes back, or None for plain input()."""
+# ── the prompt ────────────────────────────────────────────────────────────────
+
+def make_session(state: dict):
+    """A prompt where Ctrl+D always goes back, with completion, or None."""
     if not (sys.stdin.isatty() and sys.stdout.isatty()):
         return None
     try:
         from prompt_toolkit import PromptSession
+        from prompt_toolkit.completion import Completer, Completion
         from prompt_toolkit.key_binding import KeyBindings
     except Exception:
         return None
@@ -68,30 +94,276 @@ def make_session():
     def _back(event):
         event.app.exit(exception=EOFError)
 
-    return PromptSession(key_bindings=kb)
+    class ConfigureCompleter(Completer):
+        def get_completions(self, document, complete_event):
+            text = document.text_before_cursor
+            if not text.startswith("/"):
+                return
+            words = text.split(" ")
+            names = sorted(state["cat"]["endpoints"])
+            if len(words) == 1:
+                options = list(COMMANDS.items())
+            elif words[0] in ("/edit", "/remove", "/rename") and len(words) == 2:
+                options = [(n, "") for n in names]
+            elif words[0] == "/role" and len(words) == 2:
+                options = [(r, ROLE_BLURB[r]) for r in endpoints.ROLES] + [("all", "all three roles")]
+            elif words[0] == "/role" and len(words) == 3:
+                options = [(n, "") for n in names]
+            else:
+                return
+            typed = words[-1]
+            for value, meta in options:
+                if value.startswith(typed):
+                    yield Completion(value, start_position=-len(typed), display_meta=meta)
+
+    return PromptSession(key_bindings=kb, completer=ConfigureCompleter(),
+                         complete_while_typing=True, reserve_space_for_menu=6)
 
 
-def ask(session, prompt: str, default: str, secret: bool = False) -> str:
-    """One answer; Enter keeps the current value. Raises EOFError to go back.
+def ask(session, prompt: str, current: str = "", secret: bool = False,
+        clearable: bool = False, hint: str = "") -> str:
+    """One answer. Enter keeps `current`; "none" clears it when `clearable`.
 
-    The current value and the way out are shown in grey on the empty line,
-    where the answer is about to go, rather than in brackets before it: the
-    hint is visible while there is nothing typed, and gone once there is.
+    Raises EOFError on Ctrl+D. The current value (or a hint) and the way out
+    are shown in grey where the answer goes, visible while nothing is typed.
     """
     if session is None:
-        shown = ("set" if default else "") if secret else default
-        suffix = f" [{shown}]" if shown else ""
-        reply = input(f"  {prompt}{suffix}: ").strip()
-        return reply or default
-    from prompt_toolkit.formatted_text import ANSI
-    if secret:
-        current = "a key is set" if default else "empty"
+        shown = ("set" if current else "") if secret else current
+        reply = input(f"  {prompt}{f' [{shown}]' if shown else ''}: ").strip()
     else:
-        current = default or "empty"
-    placeholder = ANSI(f"{GREY}{current} · enter keeps it · ctrl+D to go back{RESET}")
-    reply = session.prompt(ANSI(f"  {prompt}: "), placeholder=placeholder,
-                           is_password=secret).strip()
-    return reply or default
+        from prompt_toolkit.formatted_text import ANSI
+        if current:
+            grey = ("a key is set" if secret else current) + " · enter keeps it"
+            if clearable:
+                grey += f" · {CLEAR} clears it"
+        else:
+            grey = hint or "empty"
+        placeholder = ANSI(f"{GREY}{grey} · ctrl+D to go back{RESET}")
+        reply = session.prompt(ANSI(f"  {prompt}: "), placeholder=placeholder,
+                               is_password=secret).strip()
+    if clearable and reply.lower() == CLEAR:
+        return ""
+    return reply or current
+
+
+def command_line(session) -> str:
+    if session is None:
+        return input("  configure > ")
+    from prompt_toolkit.formatted_text import ANSI
+    a = colour("\033[38;2;178;132;255m")
+    return session.prompt(
+        ANSI(f"  {a}configure >{RESET if a else ''} "),
+        placeholder=ANSI(f"{GREY}/add /edit /role /test · /help · ctrl+D to go back{RESET}"))
+
+
+# ── the page ──────────────────────────────────────────────────────────────────
+
+def role_target(cat: dict, role: str) -> tuple[str, bool]:
+    """(endpoint name, explicitly assigned?) for a role."""
+    roles = cat.get("roles") or {}
+    if roles.get(role):
+        return roles[role], True
+    if roles.get("agent"):
+        return roles["agent"], False
+    names = list(cat.get("endpoints") or {})
+    return (names[0] if names else ""), False
+
+
+def show(state: dict) -> None:
+    g, r = colour(GREY), colour(RESET)
+    ok, bad = colour("\033[32m"), colour("\033[33m")
+    cat = state["cat"]
+    print()
+    print(f"  {g}An endpoint is a server Pragma can talk to, under a name you choose.{r}")
+    print(f"  {g}Each of the three roles below uses one of them.{r}")
+    print()
+    print(f"  {g}endpoints{r}")
+    if not cat["endpoints"]:
+        env = endpoints.env_endpoint()
+        p = endpoints.probe(env)
+        print("    none yet - /add one")
+        print()
+        print(f"  {g}Until you do, Pragma uses the endpoint written in .env:{r}")
+        print(f"    {env.base_url}  {ok if p.get('up') else bad}{endpoints.status_text(p)}{r}")
+        print()
+        return
+    eps = [endpoints.from_entry(n, e) for n, e in cat["endpoints"].items()]
+    found = endpoints.probe_all(eps)
+    width = max(len(ep.name) for ep in eps) + 2
+    for ep in eps:
+        p = found.get(ep.base_url, {})
+        entry = cat["endpoints"][ep.name]
+        note = []
+        if entry.get("key_env"):
+            note.append(f"key from ${entry['key_env']}")
+        elif ep.api_key:
+            note.append("key set")
+        if ep.model:
+            note.append(f"asks for {ep.model}")
+        tail = f"  ({', '.join(note)})" if note else ""
+        # The name on the line that says what it is, the address under it:
+        # "connected" alone on its own line read as a status without an owner.
+        print(f"    {ep.name:<{width}}{ok if p.get('up') else bad}{endpoints.status_text(p)}{r}")
+        print(f"    {'':<{width}}{g}{ep.base_url}{tail}{r}")
+    print()
+    print(f"  {g}roles{r}")
+    for role in endpoints.ROLES:
+        name, explicit = role_target(cat, role)
+        how = "" if explicit or role == "agent" else f"  {g}(follows agent){r}"
+        print(f"    {role:<8}{name:<{width}}{g}{ROLE_BLURB[role]}{r}{how}")
+    print()
+
+
+# ── commands ──────────────────────────────────────────────────────────────────
+
+def normalise_url(url: str) -> str:
+    url = url.strip()
+    if not re.match(r"^https?://", url):
+        url = "http://" + url
+    after_host = url.split("://", 1)[1]
+    if "/" not in after_host.rstrip("/"):
+        url = url.rstrip("/") + "/v1"
+    return url.rstrip("/")
+
+
+def name_from_model(served: str) -> str:
+    """"Qwen3.5-4B-GGUF:Q4_K_M" -> "qwen3.5-4b"; "" when nothing usable is served."""
+    name = re.sub(r"[-_.]?gguf$", "", (served or "").split(":")[0], flags=re.I).lower()
+    name = re.sub(r"[^a-z0-9._-]", "-", name).strip("-._")[:32]
+    return name if NAME_RE.match(name or "") else ""
+
+
+def check_name(cat: dict, name: str) -> str:
+    if not NAME_RE.match(name or ""):
+        raise ValueError(f"'{name}' is not a usable name: letters, digits, '.', '-' and '_'")
+    if name in cat["endpoints"]:
+        raise ValueError(f"there is already an endpoint called '{name}'")
+    return name
+
+
+def which(session, cat, arg, verb):
+    """The endpoint a command is about: the argument, the only one, or a question naming them."""
+    names = sorted(cat["endpoints"])
+    if not names:
+        raise ValueError("there are no endpoints yet - /add one first")
+    if arg:
+        name = arg
+    elif len(names) == 1:
+        name = names[0]
+    else:
+        name = ask(session, f"Which endpoint to {verb} ({', '.join(names)})")
+    if name not in cat["endpoints"]:
+        raise ValueError(f"no endpoint called '{name}' - the names are {', '.join(names)}")
+    return name
+
+
+def cmd_add(session, state, arg):
+    """Address first, so the server can be asked what it serves; the name follows from that."""
+    cat = state["cat"]
+    if arg:
+        check_name(cat, arg)
+    url = ask(session, "Address of the server", hint="e.g. 127.0.0.1:8100 - /v1 is added if missing")
+    if not url:
+        raise ValueError("a server needs an address")
+    url = normalise_url(url)
+    p = endpoints.probe(endpoints.Endpoint("new", url))
+    print(f"  {url}  {colour(chr(27) + ('[32m' if p.get('up') else '[33m'))}"
+          f"{endpoints.status_text(p)}{colour(RESET)}")
+    name = arg
+    if not name:
+        suggestion = name_from_model(p.get("served", "")) or "main"
+        while suggestion in cat["endpoints"]:
+            suggestion += "-2"
+        name = ask(session, "Name", hint=f"enter for {suggestion}") or suggestion
+        check_name(cat, name)
+    cat["endpoints"][name] = {"url": url}
+    if not cat["roles"].get("agent"):
+        cat["roles"]["agent"] = name
+        state["note"] = f"{name} is the first endpoint, so all three roles use it"
+    else:
+        state["note"] = f"{name} added - /role <role> {name} to use it"
+    return CHANGED
+
+
+def cmd_edit(session, state, arg):
+    cat = state["cat"]
+    name = which(session, cat, arg, "edit")
+    entry = cat["endpoints"][name]
+    print(f"  {colour(GREY)}editing {name}{colour(RESET)}")
+    url = ask(session, "Address", entry.get("url", ""))
+    model = ask(session, "Model name", entry.get("model", ""), clearable=True,
+                hint="empty: whatever the server serves")
+    key_env = ask(session, "API key from an environment variable", entry.get("key_env", ""),
+                  clearable=True, hint="its name, or empty")
+    key = ""
+    if not key_env:
+        key = ask(session, "API key", entry.get("key", ""), secret=True, clearable=True,
+                  hint="empty for local servers")
+    new = {"url": normalise_url(url)}
+    if model:
+        new["model"] = model
+    if key_env:
+        new["key_env"] = key_env.lstrip("$")
+    elif key:
+        new["key"] = key
+    cat["endpoints"][name] = new
+    return CHANGED
+
+
+def cmd_rename(session, state, arg):
+    cat = state["cat"]
+    parts = arg.split()
+    old = which(session, cat, parts[0] if parts else "", "rename")
+    new = check_name(cat, parts[1] if len(parts) > 1 else ask(session, f"New name for {old}"))
+    cat["endpoints"] = {(new if n == old else n): e for n, e in cat["endpoints"].items()}
+    cat["roles"] = {r: (new if n == old else n) for r, n in cat["roles"].items()}
+    return CHANGED
+
+
+def cmd_remove(session, state, arg):
+    cat = state["cat"]
+    name = which(session, cat, arg, "remove")
+    users = [role for role, n in cat["roles"].items() if n == name]
+    if users and len(cat["endpoints"]) > 1:
+        raise ValueError(f"'{name}' serves {', '.join(users)} - move "
+                         f"{'it' if len(users) == 1 else 'them'} first, e.g. /role all <other>")
+    if ask(session, f"Remove '{name}'? y/N", hint="y to remove").lower() not in ("y", "yes", "s", "si"):
+        return UNCHANGED
+    del cat["endpoints"][name]
+    cat["roles"] = {r: n for r, n in cat["roles"].items() if n != name}
+    if not cat["endpoints"]:
+        state["note"] = "no endpoints left: Pragma goes back to the one in .env"
+    return CHANGED
+
+
+def cmd_role(session, state, arg):
+    cat = state["cat"]
+    if not cat["endpoints"]:
+        raise ValueError("there are no endpoints yet - /add one first")
+    parts = arg.split()
+    role = parts[0] if parts else ask(session, "Which role (agent, recall, memory, or all)")
+    if role not in endpoints.ROLES and role != "all":
+        raise ValueError(f"'{role}' is not a role: agent, recall, memory, or all")
+    name = parts[1] if len(parts) > 1 else which(session, cat, "", f"use for {role}")
+    if name not in cat["endpoints"]:
+        raise ValueError(f"no endpoint called '{name}' - /add it first")
+    for each in (endpoints.ROLES if role == "all" else (role,)):
+        cat["roles"][each] = name
+    return CHANGED
+
+
+HANDLERS = {"/add": cmd_add, "/edit": cmd_edit, "/rename": cmd_rename,
+            "/remove": cmd_remove, "/role": cmd_role}
+
+
+def save(state: dict) -> None:
+    """The file, or no file: an empty catalogue means "use .env", so it is removed."""
+    cat = state["cat"]
+    path = endpoints.catalogue_path()
+    if cat["endpoints"]:
+        endpoints.save_catalogue(cat)
+    elif path.exists():
+        path.unlink()
 
 
 def main() -> int:
@@ -100,60 +372,79 @@ def main() -> int:
             stream.reconfigure(encoding="utf-8", errors="replace")
         except Exception:
             pass
-    print("  Pragma talks to ONE OpenAI-compatible endpoint: POST {URL}/chat/completions")
-    print("  The base URL must end in /v1. Examples:")
-    print("    llama.cpp http://127.0.0.1:8080/v1   LM Studio http://127.0.0.1:1234/v1")
-    print("    Ollama    http://127.0.0.1:11434/v1  vLLM      http://127.0.0.1:8000/v1")
-    print()
 
-    cur = read_current()
-    session = make_session()
-    try:
-        base = ask(session, "Backend URL (ends in /v1)", cur.get("LLM_BASE_URL") or DEFAULT_URL)
-        # Empty is the good answer for a single-model server: the request field
-        # is then filled from whatever the endpoint reports, so it cannot go
-        # stale the day another model is loaded on the same port. Name one only
-        # when the endpoint hosts several and the field selects between them.
-        model = ask(session, "Model name (empty = ask the endpoint)", cur.get("DEFAULT_MODEL", ""))
-        key = ask(session, "API key (empty for local servers)", cur.get("LLM_API_KEY", ""), secret=True)
-    except (EOFError, KeyboardInterrupt):
+    data, error = endpoints.load_catalogue()
+    if error:
+        print(f"  {colour(chr(27) + '[33m')}the endpoint file cannot be read:{colour(RESET)}")
+        print(f"    {error}")
+        print("  Fix it by hand, or type /reset to set it aside and start again.")
         print()
-        print("  back - nothing changed.")
-        return WENT_BACK
-    new_vals = {"LLM_BASE_URL": base, "DEFAULT_MODEL": model, "LLM_API_KEY": key}
+    cat = {"endpoints": dict((data or {}).get("endpoints") or {}),
+           "roles": dict((data or {}).get("roles") or {})}
+    state = {"cat": cat, "broken": bool(error)}
+    session = make_session(state)
+    if not error:
+        show(state)
 
-    # Back up, then upsert the three keys preserving every other line verbatim.
-    lines = ENV.read_text(encoding="utf-8").splitlines() if ENV.exists() else []
-    if ENV.exists():
-        shutil.copyfile(ENV, ENV.parent / (ENV.name + ".bak"))
-        print("  Backed up existing .env -> .env.bak")
-    kept = [ln for ln in lines
-            if not any(ln.lstrip().startswith(k + "=") for k in KEYS)]
-    out  = kept + [f"{k}={new_vals[k]}" for k in KEYS]
-    ENV.write_text("\n".join(out).rstrip("\n") + "\n", encoding="utf-8")
-    print(f"  Wrote {ENV}")
+    changed = False
+    while True:
+        try:
+            line = command_line(session).strip()
+        except (EOFError, KeyboardInterrupt):
+            break
+        if not line:
+            continue
+        head, _, rest = line.partition(" ")
+        cmd = head.lower() if head.startswith("/") else "/" + head.lower()
+        if cmd in ("/done", "/exit", "/back", "/q"):
+            break
+        if cmd == "/help":
+            print()
+            for name, blurb in COMMANDS.items():
+                print(f"    {name:<9}{blurb}")
+            print()
+            continue
+        if cmd == "/reset" and state["broken"]:
+            path = endpoints.catalogue_path()
+            aside = path.with_name(path.name + ".broken")
+            os.replace(path, aside)
+            print(f"  set aside as {aside}")
+            state["broken"] = False
+            show(state)
+            continue
+        if state["broken"]:
+            print("  the endpoint file cannot be read - fix it, or /reset")
+            continue
+        if cmd == "/test":
+            show(state)
+            continue
+        handler = HANDLERS.get(cmd)
+        if handler is None:
+            print(f"  {head} is not a command here. /help lists them.")
+            continue
+        before = {"endpoints": dict(cat["endpoints"]), "roles": dict(cat["roles"])}
+        state.pop("note", None)
+        try:
+            what = handler(session, state, rest.strip())
+            if what == CHANGED:
+                save(state)
+                changed = True
+        except (EOFError, KeyboardInterrupt):
+            cat.update(before)
+            print()
+            print("  back - nothing changed.")
+            continue
+        except (ValueError, endpoints.EndpointError) as e:
+            cat.update(before)
+            print(f"  {e}")
+            continue
+        if what == CHANGED:
+            show(state)
+            if state.get("note"):
+                print(f"  {state['note']}")
+                print()
 
-    # Health check: GET {base}/models on the OpenAI-compatible endpoint.
-    print(f"\n  Checking {base}/models ...")
-    try:
-        import requests
-        headers = {"Authorization": f"Bearer {key}"} if key else {}
-        r = requests.get(f"{base.rstrip('/')}/models", headers=headers, timeout=5)
-        if r.status_code == 200:
-            print("  OK - endpoint reachable.")
-        else:
-            print(f"  WARNING - endpoint returned HTTP {r.status_code}. Is the server running?")
-            print("  Pragma runs either way; come back to /configure when the server is up.")
-    except Exception as e:
-        # Said in one line. A urllib3 connection failure is five lines of
-        # nested exception text, and this prints inside the harness, where it
-        # pushed the answer off the screen and then got truncated mid-word.
-        why = " ".join(str(e).split())
-        if "Max retries exceeded" in why:
-            why = "nothing is listening at that address"
-        print(f"  WARNING - could not reach the endpoint ({why[:110]}).")
-        print("  Pragma runs either way; come back to /configure when the server is up.")
-    return 0
+    return CHANGED if changed else UNCHANGED
 
 
 if __name__ == "__main__":

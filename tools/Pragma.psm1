@@ -367,6 +367,15 @@ function script:Show-Brief($entry, $brief) {
             # shell, which is a place you have to leave Pragma to reach.
             Write-Host "            to point it elsewhere, type /configure" -ForegroundColor DarkGray
         }
+        # The other roles, when the endpoint catalogue puts them on another
+        # server than the agent. The serving line above is the agent's.
+        if ($brief.PSObject.Properties.Name -contains 'roles' -and $brief.roles) {
+            foreach ($r in @($brief.roles)) {
+                Write-Host ("  {0,-10}" -f $r.role) -ForegroundColor DarkGray -NoNewline
+                $c = if ($r.up) { 'Green' } else { 'Red' }
+                Write-Host ("{0} - {1}" -f $r.name, $r.status) -ForegroundColor $c
+            }
+        }
         if ($lines.Count) {
             Write-Host ""
             Write-Host "  Since you left" -ForegroundColor DarkGray
@@ -735,6 +744,17 @@ function script:Show-Endpoint($ep) {
         return
     }
     Write-Host ("    url       {0}" -f $ep.endpoint)
+    # With an endpoint catalogue this page is the agent's endpoint; the roles
+    # say where the other two are, and /configure is where they change.
+    if ($ep.PSObject.Properties.Name -contains 'roles' -and $ep.roles) {
+        $parts = @()
+        foreach ($role in @('agent', 'recall', 'memory')) { $parts += ("{0} {1}" -f $role, $ep.roles.$role) }
+        Write-Host ("    roles     {0}" -f ($parts -join ' . ')) -ForegroundColor DarkGray
+        Write-Host "              this page shows the agent's endpoint; /configure changes the roles" -ForegroundColor DarkGray
+    }
+    if ($ep.PSObject.Properties.Name -contains 'catalogue_error' -and $ep.catalogue_error) {
+        Write-Host ("    catalogue {0}" -f $ep.catalogue_error) -ForegroundColor Red
+    }
     if ($ep.up) {
         # The one line worth finding at a glance: whether there is anything to
         # talk to. Green for yes, red for no - the rest of the panel is detail.
@@ -1608,10 +1628,10 @@ function script:Invoke-Configure {
     } elseif (-not (Test-Path $tool)) {
         Write-Host "  This needs $tool, which is missing from this copy of Pragma." -ForegroundColor Red
     } else {
+        # The page is its own loop and ends when you leave it, with ctrl+D or
+        # /done, so there is nothing left to pause on afterwards.
         & $script:Python $tool
-        # 3 is Ctrl+D: nothing was saved and there is nothing to read, so
-        # asking for a key before going back would be one key too many.
-        if ($LASTEXITCODE -eq 3) { return }
+        return
     }
     Write-Host ""
     Wait-Key
