@@ -1573,6 +1573,13 @@ function script:Invoke-MenuLoop($suggested) {
                 $chosen = Invoke-OpenProject $entry
                 if ($chosen) { $entry = $chosen }
             }
+            'close' {
+                # Back to the home prompt: /open, /new, /configure, /exit.
+                # The project stays the suggestion in the /open list.
+                $suggested = $entry
+                $entry = $null
+                $active = $null
+            }
         }
     }
 }

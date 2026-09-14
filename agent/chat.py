@@ -92,6 +92,7 @@ _SLASH = {
     # Handed back to the launcher: these are about the window, not the talk.
     "/settings": ("ask:settings", "model, budgets, sampling for this project"),
     "/backups":  ("ask:backups",  "snapshot or restore"),
+    "/close":    ("ask:close",    "close this project, back to /open /new /configure"),
     "/switch":   ("ask:switch",   "another project"),
     "/new":      ("ask:new",      "start a project"),
     "/delete":   ("ask:delete",   "remove a project"),
@@ -221,11 +222,12 @@ def _accent() -> str:
 def _hint() -> str:
     """What Ctrl+D does from here, which is not the same thing at both levels.
 
-    At the briefing it leaves the program; in a conversation it goes back to
-    the briefing. Writing "exit" in both places would be wrong in one of them,
-    and a hint that lies is worse than no hint.
+    At the briefing it closes the project and goes back to the home prompt;
+    in a conversation it goes back to the briefing. One level up each time,
+    as everywhere else in the launcher, and a hint that lies is worse than no
+    hint.
     """
-    return "ctrl+D to exit" if _AT_HOME_NOW else "ctrl+D to go back"
+    return "ctrl+D to close the project" if _AT_HOME_NOW else "ctrl+D to go back"
 
 
 def _ask(session):
@@ -254,7 +256,7 @@ def _prompt() -> str:
 # /chat is the one thing that only makes sense there.
 _AT_HOME = {"/chat", "/help", "/info", "/map", "/beliefs", "/diff", "/oblio",
             "/last", "/sizes", "/jobs", "/clear", "/configure", "/settings",
-            "/backups", "/switch", "/new", "/delete", "/exit"}
+            "/backups", "/close", "/switch", "/new", "/delete", "/exit"}
 _IN_CHAT = {n for n in _SLASH if n != "/chat"}
 
 # Which level is being typed at. One place, read by the banner, the help
@@ -297,6 +299,7 @@ def _slash_banner(at_home: bool = False) -> None:
     print()
     if at_home:
         print(f"  {a}/chat{r} to talk"
+              f"   ·   {a}/close{r} for another project"
               f"   ·   {a}/help{r} for everything else")
     else:
         names = " ".join(n for n in _SLASH if n != "/info" and n in _allowed())
@@ -1022,9 +1025,17 @@ If the turn needed no tools at all, the conclusion is simply your reply.
     while True:
         try:
             text = _ask(session)
-        except (EOFError, KeyboardInterrupt):
+        except EOFError:
+            # Ctrl+D goes back one level: from a project's briefing that is
+            # the home prompt, where another project can be opened. It used to
+            # leave the program, so changing project meant quitting and
+            # starting again. /exit still leaves.
             print()
+            _ask_launcher("close")
             return 0                              # nothing to consolidate yet
+        except KeyboardInterrupt:
+            print()
+            return 0
         if not text:
             continue
         if text.lower() in _EXIT_WORDS:
