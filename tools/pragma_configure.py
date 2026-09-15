@@ -58,6 +58,7 @@ COMMANDS = {
     "/remove": "remove one no role uses - /remove <name>",
     "/role":   "put a role on an endpoint - /role <agent|recall|memory|all> <name>",
     "/test":   "ask every endpoint again",
+    "/clear":  "clear the screen and show the page again",
     "/help":   "this list",
     "/done":   "go back (ctrl+D does the same)",
 }
@@ -403,6 +404,11 @@ def main() -> int:
             for name, blurb in COMMANDS.items():
                 print(f"    {name:<9}{blurb}")
             print()
+            continue
+        if cmd == "/clear":
+            os.system("cls" if os.name == "nt" else "clear")
+            if not state["broken"]:
+                show(state)
             continue
         if cmd == "/reset" and state["broken"]:
             path = endpoints.catalogue_path()

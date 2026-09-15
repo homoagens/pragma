@@ -1520,6 +1520,8 @@ function script:Invoke-MenuLoop($suggested) {
                 $entry = Invoke-NewProject
             } elseif ($cmd -eq 'configure') {
                 Invoke-Configure
+            } elseif ($cmd -eq 'clear') {
+                # Nothing to do here: the loop draws the page again on a clean screen.
             } elseif ($cmd -notin @('help', '?')) {
                 $notice = "'/$cmd' is not a command here. Try /open, /new, /configure or /exit."
             }

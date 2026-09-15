@@ -53,6 +53,7 @@ COMMANDS = {
     "/open":      "open a project; /open <name> goes straight in",
     "/new":       "start a project",
     "/configure": "set up the endpoint",
+    "/clear":     "clear the screen",
     "/help":      "this list",
     "/exit":      "leave",
 }
