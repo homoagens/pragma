@@ -664,7 +664,10 @@ function script:New-Project([string]$name, [string]$workspace) {
         # The endpoint decides unless told otherwise. The alternative default,
         # an empty set, is not neutral: it means the repository's 0.0, which is
         # greedy - a deliberate-looking choice nobody made.
-        settings    = [pscustomobject]@{ Temperature = "server" }
+        # MemoryNoThink select: recall and segmenting are choices from a short
+        # list, and on a model that reasons they spent minutes thinking about
+        # them. Writing memory keeps its reasoning. /settings changes it.
+        settings    = [pscustomobject]@{ Temperature = "server"; MemoryNoThink = "select" }
     }
     Write-Registry ($entries + $entry)
     Write-Host "pragma: registered '$name'" -ForegroundColor Green
@@ -899,11 +902,88 @@ function script:Set-Sampling($entry, [string]$mode) {
     }
 }
 
+function script:Get-ProjectValue($entry, [string]$key) {
+    if ($entry.settings -and ($entry.settings.PSObject.Properties.Name -contains $key)) {
+        return "$($entry.settings.$key)"
+    }
+    return ""
+}
+
+function script:Invoke-ProjectChoices($entry) {
+    # The decisions that change how a project feels, asked one at a time with
+    # the options spelled out, so nobody has to know a setting's name or its
+    # values. Enter keeps what is in brackets - going through without typing
+    # changes nothing - and ctrl+D stops, keeping what was already answered.
+    Write-Host ""
+    Write-Accent "  choices for '$($entry.name)'"
+    Write-Host "  enter keeps the value in brackets . ctrl+D stops" -ForegroundColor DarkGray
+
+    # 1. Whether the memory calls reason before they answer.
+    $cur = Get-ProjectValue $entry 'MemoryNoThink'
+    $shown = if ($cur -in @('select', 'all', 'write')) { $cur } else { 'on' }
+    Write-Host ""
+    Write-Host "  memory thinking - do the memory calls reason before answering?"
+    Write-Host "    select  recall and segmenting answer at once, writing memory reasons (recommended)" -ForegroundColor DarkGray
+    Write-Host "    all     no memory call reasons: fastest, plainer episodes and beliefs" -ForegroundColor DarkGray
+    Write-Host "    on      every memory call reasons: slowest on a model that thinks" -ForegroundColor DarkGray
+    while ($true) {
+        $v = Read-Line "  memory thinking [$shown]: "
+        if ($null -eq $v) { return }
+        $v = $v.Trim().ToLowerInvariant()
+        if (-not $v -or $v -eq $shown) { break }
+        if ($v -in @('select', 'all', 'on')) {
+            Set-ProjectSetting $entry 'MemoryNoThink' $(if ($v -eq 'on') { '' } else { $v }) | Out-Null
+            break
+        }
+        Write-Host "    select, all or on" -ForegroundColor Yellow
+    }
+
+    # 2. Sampling, as the settings menu has always offered it.
+    $t = Get-ProjectValue $entry 'Temperature'
+    $shown = if ($t -eq 'server' -or $t -eq '') { if ($t) { 'server' } else { 'greedy' } }
+             elseif ($t -in @('0', '0.0') -and -not (Get-ProjectValue $entry 'TopK')) { 'greedy' }
+             else { 'manual' }
+    Write-Host ""
+    Write-Host "  sampling - who picks temperature, top_k, top_p and min_p?"
+    Write-Host "    server  the endpoint decides all four (recommended)" -ForegroundColor DarkGray
+    Write-Host "    greedy  temperature 0: the most likely word, every time" -ForegroundColor DarkGray
+    Write-Host "    manual  enter the four yourself" -ForegroundColor DarkGray
+    while ($true) {
+        $v = Read-Line "  sampling [$shown]: "
+        if ($null -eq $v) { return }
+        $v = $v.Trim().ToLowerInvariant()
+        if (-not $v -or ($v -eq $shown -and $v -ne 'manual')) { break }
+        if ($v -in @('server', 'greedy', 'manual')) { Set-Sampling $entry $v; break }
+        Write-Host "    server, greedy or manual" -ForegroundColor Yellow
+    }
+
+    # 3. How far one turn may go before the agent has to answer.
+    $cur = Get-ProjectValue $entry 'MaxSteps'
+    $shown = if ($cur) { $cur } else { '50' }
+    Write-Host ""
+    Write-Host "  steps per turn - how many actions the agent may take before it must answer"
+    Write-Host "    50 suits a conversation; long tasks on files may need more" -ForegroundColor DarkGray
+    while ($true) {
+        $v = Read-Line "  steps per turn [$shown]: "
+        if ($null -eq $v) { return }
+        $v = $v.Trim()
+        if (-not $v -or $v -eq $shown) { break }
+        $n = 0
+        if ([int]::TryParse($v, [ref]$n) -and $n -ge 1 -and $n -le 1000) {
+            Set-ProjectSetting $entry 'MaxSteps' "$n" | Out-Null
+            break
+        }
+        Write-Host "    a number from 1 to 1000" -ForegroundColor Yellow
+    }
+    Write-Host ""
+}
+
 function script:Invoke-SettingsMenu($entry) {
     New-Page
     Show-Settings $entry
     Show-Endpoint (Get-Endpoint)
     $items = @(
+        [pscustomobject]@{ key = 'c'; label = "choices                     memory thinking, sampling, steps - enter keeps each"; action = 'choices' }
         [pscustomobject]@{ key = 's'; label = "sampling: the server's      all four omitted, the endpoint decides"; action = 'server' }
         [pscustomobject]@{ key = 'm'; label = "sampling: by hand           enter the four yourself";                action = 'manual' }
         [pscustomobject]@{ key = 'g'; label = "sampling: greedy            temperature 0, deterministic";           action = 'greedy' }
@@ -912,7 +992,8 @@ function script:Invoke-SettingsMenu($entry) {
     $c = Show-Menu $items "enter select . ctrl+D back"
     Write-Host ""
     if (-not $c -or -not $c.action) { return $entry }
-    Set-Sampling $entry $c.action
+    if ($c.action -eq 'choices') { Invoke-ProjectChoices $entry }
+    else { Set-Sampling $entry $c.action }
     $fresh = Get-EntryByName $entry.name
     if ($fresh) { Enable-Project $fresh | Out-Null; return $fresh }
     return $entry
@@ -1368,7 +1449,12 @@ function script:Invoke-NewProject {
 
     Write-Host ""
     $entry = New-Project $name $ws
-    if (-not $entry) { Wait-Key }
+    if (-not $entry) { Wait-Key; return $null }
+    # The same choices /settings offers, while the project is new: enter takes
+    # the recommended one each time, so creating a project stays three Enters.
+    Invoke-ProjectChoices $entry
+    $fresh = Get-EntryByName $entry.name
+    if ($fresh) { return $fresh }
     return $entry
 }
 
