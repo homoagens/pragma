@@ -1634,7 +1634,15 @@ function script:Invoke-MenuLoop($suggested) {
             Remove-Item -LiteralPath $req -Force -ErrorAction SilentlyContinue
         }
         if (-not $want) {
-            # /exit, or Ctrl+C: the conversation ended on its own terms.
+            # /exit, or Ctrl+C: the conversation ended on its own terms. This
+            # is the launcher's other exit, and the one people actually use:
+            # it does not pass the home prompt, so the reminder lives here too.
+            if (-not (Confirm-LeaveWhileWriting)) {
+                $suggested = $entry
+                $entry = $null
+                $active = $null
+                continue
+            }
             New-Page
             Write-Host ""
             Write-Host "  the window stays on '$($entry.name)' - pragma to come back" -ForegroundColor DarkGray
@@ -1730,6 +1738,44 @@ function script:Invoke-Configure {
     }
     Write-Host ""
     Wait-Key
+}
+
+function script:Get-MemoryBusy {
+    # What the memory is still writing, in any project: asked of the same
+    # Python that knows where each project keeps its jobs. Nothing at all if
+    # it cannot be asked - a launcher that cannot check must not become a
+    # launcher that cannot be left.
+    $tool = Join-Path $PSScriptRoot "pragma_home.py"
+    if (-not ((Test-Path $script:Python) -and (Test-Path $tool))) { return @() }
+    try {
+        $raw = & $script:Python $tool --jobs
+        if (-not $raw) { return @() }
+        $data = ($raw -join "") | ConvertFrom-Json
+        if ($null -eq $data) { return @() }
+        return @($data)
+    } catch { return @() }
+}
+
+function script:Confirm-LeaveWhileWriting {
+    # Leaving costs nothing - the consolidation is its own process and carries
+    # on - but leaving without knowing the memory is mid-sentence is exactly
+    # what makes a memory feel unreliable. So the last step out is held once.
+    # Ctrl+D twice in a row goes anyway; anything else goes back.
+    $busy = @(Get-MemoryBusy)
+    if ($busy.Count -eq 0) { return $true }
+    Write-Host ""
+    foreach ($job in $busy) {
+        Write-Host ("  the memory is still writing - " + $job.project) -ForegroundColor Yellow -NoNewline
+        Write-Host ("   " + $job.step) -ForegroundColor DarkGray
+    }
+    Write-Host "  it finishes on its own. ctrl+D twice, quickly, to leave anyway;" -ForegroundColor DarkGray
+    Write-Host "  any other key goes back to the home screen." -ForegroundColor DarkGray
+    Write-Host ""
+    if ([Console]::IsInputRedirected) { return $true }
+    if (-not (Test-CtrlD ([Console]::ReadKey($true)))) { return $false }
+    $watch = [Diagnostics.Stopwatch]::StartNew()
+    $again = [Console]::ReadKey($true)
+    return ((Test-CtrlD $again) -and ($watch.ElapsedMilliseconds -le 1500))
 }
 
 function script:Read-HomeCommand {

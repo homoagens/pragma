@@ -288,8 +288,18 @@ def show_help(extra: dict | None = None) -> None:
 
 def main() -> int:
     ap = argparse.ArgumentParser(prog="pragma_home")
-    ap.add_argument("--out", required=True, help="where to write the chosen action")
+    ap.add_argument("--out", help="where to write the chosen action")
+    # The launcher leaves for good from two places, and only one of them is
+    # this prompt. --jobs answers the other one: what the memory is writing,
+    # as JSON, without a page or a prompt.
+    ap.add_argument("--jobs", action="store_true",
+                    help="print the memory work in flight as JSON and stop")
     args = ap.parse_args()
+    if args.jobs:
+        print(json.dumps([{"project": p, "step": s} for p, s in memory_jobs()]))
+        return 0
+    if not args.out:
+        ap.error("--out is required")
     for stream in (sys.stdout, sys.stderr):
         try:
             stream.reconfigure(encoding="utf-8", errors="replace")
