@@ -73,30 +73,75 @@ _EXIT_WORDS = {"/exit", "/quit", "/bye", "exit", "quit"}
 # quitting the chat, walking a menu and coming back, which is the cost that
 # stopped anyone looking at their own memory mid-thought.
 #
-# Each entry is (what it runs, one line of help). "memory" values name a
-# mem_map flag; "call" values name a python callable resolved at use.
-_SLASH = {
-    "/chat":     ("chat",    "talk to it - many turns, one conversation"),
-    "/help":     ("help",    "this list"),
-    "/info":     ("help",    "this list"),
-    "/map":      ("map",     "what is in memory now"),
-    "/beliefs":  ("beliefs", "what it has concluded"),
-    "/diff":     ("diff",    "meanings it has revised"),
-    "/oblio":    ("oblio",   "what has faded"),
-    "/last":     ("last",    "the newest episode, in full"),
-    "/sizes":    ("sizes",   "how wordy the store is"),
-    "/jobs":     ("jobs",    "what the memory is writing in the background"),
+# TWO FAMILIES, NOT TWENTY COMMANDS. Flat, the list was twenty lines in which
+# the thing done daily and the thing done twice a year weighed the same, and
+# the help was a wall. Everything about the store is now /memory <view> and
+# everything about the project and the window is /project <action>, which makes
+# the list someone reads seven lines long and the views discoverable from the
+# family that owns them. Every old name still works - see _ALIASES - because
+# fingers that learned /map should not have to relearn anything.
+#
+# Each entry is (what it runs, one line of help).
+_COMMANDS = {
+    "/chat":      ("chat",      "talk to it - many turns, one conversation"),
+    "/memory":    ("memory",    ""),      # the views fill the blurb in
+    "/project":   ("project",   ""),      # so do the actions
+    "/status":    ("status",    "how this project is set up right now"),
+    "/jobs":      ("jobs",      "what the memory is writing in the background"),
     "/configure": ("configure", "point Pragma at an LLM endpoint"),
-    "/clear":    ("clear",   "clear the screen, keep the conversation"),
-    "/exit":     ("exit",    "close the session and consolidate"),
-    # Handed back to the launcher: these are about the window, not the talk.
-    "/settings": ("ask:settings", "model, budgets, sampling for this project"),
-    "/backups":  ("ask:backups",  "snapshot or restore"),
-    "/close":    ("ask:close",    "close this project, back to /open /new /configure"),
-    "/switch":   ("ask:switch",   "another project"),
-    "/new":      ("ask:new",      "start a project"),
-    "/delete":   ("ask:delete",   "remove a project"),
+    "/clear":     ("clear",     "clear the screen, keep the conversation"),
+    "/help":      ("help",      "this list"),
+    "/exit":      ("exit",      "close the session and consolidate"),
 }
+
+# The views of the store. The name is the flag mem_map already takes, so the
+# two never disagree about what "beliefs" means.
+_MEMORY_VIEWS = {
+    "map":     "what is in memory now",
+    "beliefs": "what it has concluded",
+    "diff":    "meanings it has revised",
+    "oblio":   "what has faded",
+    "last":    "the newest episode, in full",
+    "sizes":   "how wordy the store is",
+}
+
+# Handed back to the launcher: these are about the window, not the talk.
+_PROJECT_ACTIONS = {
+    "settings": ("ask:settings", "model, budgets, sampling for this project"),
+    "backups":  ("ask:backups",  "snapshot or restore"),
+    "switch":   ("ask:switch",   "another project"),
+    "new":      ("ask:new",      "start a project"),
+    "delete":   ("ask:delete",   "remove a project"),
+    "close":    ("ask:close",    "close this project, back to /open /new /configure"),
+}
+
+# Old names, and the odd synonym. They work exactly as they did and are offered
+# by nothing: the list stays short, the habits keep working.
+_ALIASES = {"/info": "/help"}
+_ALIASES.update({f"/{view}": f"/memory {view}" for view in _MEMORY_VIEWS})
+_ALIASES.update({f"/{action}": f"/project {action}" for action in _PROJECT_ACTIONS})
+
+
+def _blurb(name: str) -> str:
+    """The help line for a command; a family lists what it takes."""
+    if name == "/memory":
+        return " . ".join(_MEMORY_VIEWS)
+    if name == "/project":
+        return " . ".join(_PROJECT_ACTIONS)
+    return _COMMANDS[name][1]
+
+
+def _normalise(line: str) -> tuple[str, str]:
+    """A typed line as (command, argument), old names expanded to the new ones."""
+    head, _, arg = line.strip().partition(" ")
+    head = head.lower()
+    arg = arg.strip().lower()
+    if head in _ALIASES:
+        parts = _ALIASES[head].split()
+        head = parts[0]
+        if len(parts) > 1:
+            arg = parts[1]
+    return head, arg
 
 
 def _ask_launcher(action: str) -> bool:
@@ -124,17 +169,34 @@ class _SlashCompleter:
     def get_completions(self, document, complete_event):
         from prompt_toolkit.completion import Completion
         text = document.text_before_cursor
-        if not text.startswith("/") or " " in text:
+        if not text.startswith("/"):
             return
         allowed = _allowed()
-        for name, (_action, blurb) in _SLASH.items():
-            if name == "/info":                  # a synonym, not a second entry
-                continue
+        if " " in text:
+            # Inside a family: the views and actions it takes, which is where
+            # they are discovered now that they are not top-level commands.
+            head, _, typed = text.partition(" ")
+            head = head.lower()
+            if head in _ALIASES:
+                return
+            options = {}
+            if head == "/memory":
+                options = dict(_MEMORY_VIEWS)
+            elif head == "/project":
+                options = {name: blurb for name, (_a, blurb) in _PROJECT_ACTIONS.items()}
+            if head not in allowed or " " in typed.strip():
+                return
+            for name, blurb in options.items():
+                if name.startswith(typed.strip().lower()):
+                    yield Completion(name, start_position=-len(typed),
+                                     display=name, display_meta=blurb)
+            return
+        for name in _COMMANDS:
             if name not in allowed:
                 continue
             if name.startswith(text):
                 yield Completion(name, start_position=-len(text),
-                                 display=name, display_meta=blurb)
+                                 display=name, display_meta=_blurb(name))
 
 
 def _set_level(session, at_home: bool) -> None:
@@ -252,12 +314,10 @@ def _prompt() -> str:
     return a + "you" + "\033[0m" + " " + a + ">" + "\033[0m" + " "
 
 
-# At the briefing there is no conversation to clear or leave halfway, and
-# /chat is the one thing that only makes sense there.
-_AT_HOME = {"/chat", "/help", "/info", "/map", "/beliefs", "/diff", "/oblio",
-            "/last", "/sizes", "/jobs", "/clear", "/configure", "/settings",
-            "/backups", "/close", "/switch", "/new", "/delete", "/exit"}
-_IN_CHAT = {n for n in _SLASH if n != "/chat"}
+# At the briefing there is no conversation to leave halfway, and /chat is the
+# one thing that only makes sense there.
+_AT_HOME = set(_COMMANDS)
+_IN_CHAT = set(_COMMANDS) - {"/chat"}
 
 # Which level is being typed at. One place, read by the banner, the help
 # and the completer, so a command cannot be offered by one and refused by
@@ -291,49 +351,191 @@ def _show_chat_header() -> None:
 def _slash_banner(at_home: bool = False) -> None:
     """At home a pointer, inside the list.
 
-    Fifteen commands under a briefing is a wall to read before doing the one
-    thing anyone came for. Inside a conversation the list earns its place: it
-    is the only thing saying that a slash means something there at all.
+    A wall of commands under a briefing is something to read before doing the
+    one thing anyone came for. Inside a conversation the list earns its place:
+    it is the only thing saying that a slash means something there at all.
     """
     a, r = _accent(), ("\033[0m" if _accent() else "")
     print()
     if at_home:
         print(f"  {a}/chat{r} to talk"
-              f"   ·   {a}/close{r} for another project"
+              f"   ·   {a}/memory{r} to look at the store"
               f"   ·   {a}/help{r} for everything else")
     else:
-        names = " ".join(n for n in _SLASH if n != "/info" and n in _allowed())
+        names = " ".join(n for n in _COMMANDS if n in _allowed())
         print(f"  {a}{names}{r}")
         print("  anything else is a message.")
     print()
 
 
 def _slash_help() -> None:
+    """One format, the same one the home prompt and /configure use."""
+    a, r = _accent(), ("\033[0m" if _accent() else "")
     print()
     print("  commands")
-    seen = set()
-    for name, (action, blurb) in _SLASH.items():
-        if name not in _allowed():
-            continue
-        if action in seen and action == "help":
-            continue
-        seen.add(action)
-        print(f"    {name:<11}{blurb}")
+    for name in _COMMANDS:
+        if name in _allowed():
+            print(f"    {a}{name:<12}{r}{_blurb(name)}")
     print()
-    print("  anything else is a message to the agent.")
+    print("  /memory and /project take one of the words above, /memory alone")
+    print("  shows the map. Anything without a slash is a message to the agent.")
     print()
 
 
-def _run_slash(cmd: str) -> bool:
+def _show_memory(view: str) -> bool:
+    """One view of the store, rendered by mem_map.
+
+    Called rather than reimplemented: two renderings of the same memory would
+    disagree the first time one of them changed.
+    """
+    tool = Path(__file__).resolve().parent.parent / "tools" / "mem_map.py"
+    if not tool.is_file():
+        print(f"  this needs {tool}, which is missing from this copy of Pragma.")
+        return True
+    # No store path: mem_map resolves it from PRAGMA_DATA_DIR itself, which is
+    # the same source of truth the rest of the process uses. Passing one here
+    # meant passing EPISODES_DIR - one level too deep - and it dutifully looked
+    # for episodes/episodes and found an empty store.
+    args = [sys.executable, str(tool)]
+    if view != "map":
+        args.append("--" + view)
+    try:
+        subprocess.run(args, check=False)
+    except Exception as e:
+        print(f"  {type(e).__name__}: {str(e)[:120]}")
+    return True
+
+
+def _status_lines() -> list[tuple[str, str]]:
+    """(label, value) for /status: what is set, where, and what answers.
+
+    The briefing answers "can I start and what changed"; this answers "how is
+    this thing configured", which used to be spread over the briefing, the
+    settings panel and /configure, with nobody holding all of it.
+    """
+    out: list[tuple[str, str]] = []
+    cfg = baseline_config
+    out.append(("project", os.environ.get("PRAGMA_PROJECT", "") or "(none named)"))
+    out.append(("workspace", os.environ.get("PRAGMA_WORKSPACE", "") or str(Path.cwd())))
+    out.append(("store", str(getattr(cfg, "DATA_DIR", ""))))
+    out.append(("", ""))
+    try:
+        import endpoints
+        roles = endpoints.assignments()
+        found = endpoints.probe_all(list(roles.values()))
+        agent = roles["agent"]
+        for role, ep in roles.items():
+            p = found.get(ep.base_url, {})
+            same = role != "agent" and ep.base_url == agent.base_url
+            out.append((role, f"{ep.name} . {ep.base_url} . {endpoints.status_text(p)}"
+                        if not same else f"{ep.name} . the same endpoint as the agent"))
+    except Exception as e:
+        out.append(("endpoint", f"{type(e).__name__}: {str(e)[:90]} . /configure"))
+    window = int(getattr(cfg, "CONTEXT_WINDOW", 0) or 0)
+    source = getattr(cfg, "CONTEXT_WINDOW_SOURCE", "") or "this project"
+    context = f"{window} tokens, from {source}" if window else "unknown"
+    # What the server says it has, when that is not where the number came
+    # from. Every compaction threshold is derived from the window in force, so
+    # the two disagreeing is worth seeing before a request is refused.
+    try:
+        served = int(cfg._endpoint_context_window() or 0)
+    except Exception:
+        served = 0
+    if served and window and served != window:
+        context += f"   (the agent endpoint reports {served})"
+    out.append(("context", context))
+    out.append(("", ""))
+    out.append(("steps", f"{getattr(cfg, 'MAX_STEPS', 0)} per turn"))
+    think = getattr(cfg, "MEMORY_NO_THINK", "")
+    # The value as well as its meaning: the sentence is what it does, the word
+    # in brackets is what to type to change it.
+    out.append(("thinking", {
+        "": "every memory call reasons before it answers  (on)",
+        "select": "recall and segmenting answer at once, writing memory reasons  (select)",
+        "write": "writing memory answers at once, the rest reasons  (write)",
+        "all": "no memory call reasons  (all)",
+    }.get(think, think)))
+    temp = getattr(cfg, "DEFAULT_TEMPERATURE", None)
+    extra = [f"{name} {value}" for name, value in
+             (("top_k", getattr(cfg, "TOP_K", None)), ("top_p", getattr(cfg, "TOP_P", None)),
+              ("min_p", getattr(cfg, "MIN_P", None))) if value is not None]
+    out.append(("sampling", "the endpoint decides" if temp is None and not extra
+                else " . ".join([f"temperature {temp}" if temp is not None else "temperature: the endpoint"] + extra)))
+
+    # The store as it stands, from the same summary the briefing is built from.
+    tool = Path(__file__).resolve().parent.parent / "tools" / "pragma_brief.py"
+    try:
+        done = subprocess.run([sys.executable, str(tool), str(cfg.EPISODES_DIR)],
+                              capture_output=True, text=True, timeout=60)
+        brief = json.loads(done.stdout or "{}")
+    except Exception:
+        brief = {}
+    if brief.get("ok"):
+        out.append(("", ""))
+        out.append(("episodes", f"{brief['episodes_active']} active, "
+                                f"{brief['episodes_dormant']} dormant, "
+                                f"{brief['beliefs']} beliefs"))
+        away, tau = brief.get("away_days"), brief.get("tau")
+        half = getattr(cfg, "EPISODE_DECAY_HALF_LIFE_DAYS", 0)
+        if away is not None:
+            out.append(("away", f"{away} day(s)" + (f", tau {tau}" if tau is not None else "")
+                        + f", half-life {half:g} days"))
+    return out
+
+
+def _show_status() -> bool:
+    a, r = _accent(), ("\033[0m" if _accent() else "")
+    grey = "\033[38;5;242m" if a else ""
+    print()
+    print(f"  {a}status{r}")
+    print()
+    for label, value in _status_lines():
+        if not label and not value:
+            print()
+            continue
+        print(f"    {grey}{label:<11}{r}{value}")
+    print()
+    print(f"  {grey}/configure changes the endpoints . /project settings the rest{r}")
+    print()
+    return True
+
+
+def _run_slash(line: str) -> bool:
     """True when the input was a command and has been dealt with.
 
     Never raises: a broken command must not end a conversation that has
     unconsolidated turns in it.
     """
-    action = (_SLASH.get(cmd) or (None, None))[0]
-    if action is None:
+    cmd, arg = _normalise(line)
+    if cmd not in _COMMANDS:
         print(f"  no such command: {cmd}   (/help for the list)")
         return True
+    if cmd not in _allowed():
+        # Only /chat is level-bound, and only one way round.
+        print("  you are already in a conversation." if cmd == "/chat"
+              else f"  {cmd} needs a conversation - /chat first")
+        return True
+    action = _COMMANDS[cmd][0]
+    if action == "memory":
+        # Bare /memory is the map: the view anyone means when they do not say.
+        view = arg or "map"
+        if view not in _MEMORY_VIEWS:
+            print(f"  /memory takes one of: {', '.join(_MEMORY_VIEWS)}")
+            return True
+        return _show_memory(view)
+    if action == "project":
+        if not arg or arg not in _PROJECT_ACTIONS:
+            if arg:
+                print(f"  /project takes one of: {', '.join(_PROJECT_ACTIONS)}")
+            else:
+                print()
+                for name, (_a, blurb) in _PROJECT_ACTIONS.items():
+                    print(f"    /project {name:<10}{blurb}")
+                print()
+            return True
+        action = _PROJECT_ACTIONS[arg][0]
+    if action == "status":
+        return _show_status()
     if action == "help":
         _slash_help()
         return True
@@ -392,24 +594,7 @@ def _run_slash(cmd: str) -> bool:
         # conversation on the floor to look at a settings page.
         return False
 
-    # The inspection commands are mem_map's, which is the tool that already
-    # knows how to render a store. Called rather than reimplemented: two
-    # renderings of the same memory would disagree the first time one changed.
-    tool = Path(__file__).resolve().parent.parent / "tools" / "mem_map.py"
-    if not tool.is_file():
-        print(f"  this needs {tool}, which is missing from this copy of Pragma.")
-        return True
-    # No store path: mem_map resolves it from PRAGMA_DATA_DIR itself, which is
-    # the same source of truth the rest of the process uses. Passing one here
-    # meant passing EPISODES_DIR - one level too deep - and it dutifully looked
-    # for episodes/episodes and found an empty store.
-    args = [sys.executable, str(tool)]
-    if action != "map":
-        args.append("--" + action)
-    try:
-        subprocess.run(args, check=False)
-    except Exception as e:
-        print(f"  {type(e).__name__}: {str(e)[:120]}")
+    print(f"  {cmd} is not wired up in this copy of Pragma.")
     return True
 
 
@@ -1041,13 +1226,9 @@ If the turn needed no tools at all, the conclusion is simply your reply.
         if text.lower() in _EXIT_WORDS:
             return 0
         if text.startswith("/"):
-            cmd = text.split()[0].lower()
-            if cmd not in _AT_HOME:
-                print(f"  {cmd} needs a conversation - /chat first")
-                continue
-            if (_SLASH.get(cmd) or ("", ""))[0] == "chat":
+            if _normalise(text)[0] == "/chat":
                 break                             # into the conversation
-            if not _run_slash(cmd):
+            if not _run_slash(text):
                 return 0                          # a page the launcher owns
             continue
         # Prose here would vanish: there is no turn to put it in yet, and
@@ -1102,7 +1283,7 @@ If the turn needed no tools at all, the conclusion is simply your reply.
             # else so it never reaches the model, never becomes a Turn, and
             # never lands in an episode as though it had been said.
             if text.startswith("/"):
-                if not _run_slash(text.split()[0].lower()):
+                if not _run_slash(text):
                     break        # /exit, or a page the launcher owns
                 continue
 
