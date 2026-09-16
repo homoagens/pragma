@@ -18,6 +18,13 @@ launcher has to do is written to --out as
 {"action": "open" | "new" | "configure" | "exit", "arg": "..."}
 and the process ends.
 
+MEMORY AT WORK. A consolidation runs in its own process and outlives the
+conversation that started it, so this screen says when one is going: a `memory`
+line naming the project and the faculty in flight, the detail being /jobs
+inside the project. While it lasts, /exit and ctrl+D say so instead of leaving;
+a second ctrl+D straight after goes anyway. The work is never interrupted - the
+worker is not this process - so this is a reminder, not a lock.
+
 PLUGINS. A plugin adds commands to this prompt without Pragma knowing what it
 is: ~/.pragma/plugins/<name>/plugin.json (PRAGMA_PLUGINS names another folder)
 declares them.
@@ -42,6 +49,7 @@ import os
 import re
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 REGISTRY = Path.home() / ".pragma" / "registry.json"
@@ -129,15 +137,61 @@ def accent() -> str:
     return "\033[38;2;" + raw + "m" if sys.stdout.isatty() else ""
 
 
-def project_names() -> list[str]:
-    """Registered project names, for completing /open <name>."""
+def registry_entries() -> list[dict]:
+    """The registered projects, or nothing at all when the file cannot be read."""
     try:
         data = json.loads(REGISTRY.read_text(encoding="utf-8-sig"))
     except Exception:
         return []
     if isinstance(data, dict):
         data = [data]
-    return [str(e["name"]) for e in data if isinstance(e, dict) and e.get("name")]
+    return [e for e in data if isinstance(e, dict) and e.get("name")]
+
+
+def project_names() -> list[str]:
+    """Registered project names, for completing /open <name>."""
+    return [str(e["name"]) for e in registry_entries()]
+
+
+def memory_jobs() -> list[tuple[str, str]]:
+    """(project, what it is doing) for every consolidation in flight, any project.
+
+    The work runs in its own process and outlives the conversation that started
+    it, so from here - with no project open - it is invisible: the screen that
+    looks idlest is exactly the one where an episode may still be being
+    written. Each job's last log line names the faculty at work.
+    """
+    os.environ.setdefault("PRAGMA_NO_ENDPOINT_PROBE", "1")
+    sys.path[:0] = [str(ROOT), str(ROOT / "core"), str(ROOT / "tools")]
+    try:
+        import pragma_jobs as jobs
+    except Exception:
+        return []
+    out = []
+    for entry in registry_entries():
+        store = str(entry.get("memory") or "").strip()
+        if not store:
+            continue
+        try:
+            found = jobs.listing(Path(store), limit=8)
+        except Exception:
+            continue
+        for job in found:
+            if job.get("status") not in ("pending", "running"):
+                continue
+            log = job.get("log") or []
+            out.append((str(entry["name"]), (log[-1] if log else "starting")[:60]))
+    return out
+
+
+def memory_line(jobs_running: list[tuple[str, str]], grey: str, reset: str) -> None:
+    for project, step in jobs_running:
+        busy = "\033[33m" if grey else ""
+        print(f"  {grey}{'memory':<12}{reset}{busy}{project} - writing{reset}"
+              f"  {grey}{step}{reset}")
+    if jobs_running:
+        print(f"  {grey}{'':<12}/open the project and /jobs to watch it{reset}")
+        print()
 
 
 def make_session(extra: dict | None = None):
@@ -259,6 +313,11 @@ def main() -> int:
         print(f"  {grey}{label:<12}{reset}{colour}{status}{reset}")
     print()
 
+    try:
+        memory_line(memory_jobs(), grey, reset)
+    except Exception:
+        pass
+
     extra, problems = plugin_commands()
     if extra:
         print(f"  {grey}{'plugins':<12}{reset}{' · '.join(extra)}  {grey}/help says what they do{reset}")
@@ -268,13 +327,39 @@ def main() -> int:
     if problems:
         print()
     session = make_session(extra)
+    # Leaving while a faculty is mid-sentence loses nothing - the worker is its
+    # own process and carries on - but the operator who quits without knowing
+    # the memory is still being written has no way to learn it happened. So the
+    # way out is held once, and a second ctrl+D straight after it goes anyway:
+    # a reminder, not a lock.
+    insisted = 0.0
+
+    def held_back() -> bool:
+        nonlocal insisted
+        busy = []
+        try:
+            busy = memory_jobs()
+        except Exception:
+            return False
+        if not busy:
+            return False
+        print()
+        for project, step in busy:
+            print(f"  the memory is still writing - {project}  {GREY if a else ''}{step}{reset}")
+        print("  it finishes on its own. ctrl+D twice, quickly, to leave anyway.")
+        print()
+        insisted = time.time()
+        return True
+
     while True:
         try:
             # A byte-order mark is what a pipe from PowerShell puts in front of
             # the first line; typed or piped, the command is the same.
             line = read_line(session).lstrip("﻿").strip()
         except (EOFError, KeyboardInterrupt):
-            return choose("exit")
+            if time.time() - insisted <= 2.0 or not held_back():
+                return choose("exit")
+            continue
         except Exception:
             # A console prompt_toolkit cannot drive is not a reason to lose the
             # home screen: the plain prompt still takes the same commands.
@@ -289,6 +374,10 @@ def main() -> int:
         cmd = ALIASES.get(cmd, cmd)
         if cmd == "/help":
             show_help(extra)
+        elif cmd == "/exit":
+            # Typed, not a keystroke: it says what is happening and stays.
+            if not held_back():
+                return choose("exit")
         elif cmd in COMMANDS:
             return choose(cmd[1:], rest.strip())
         elif cmd in extra:
