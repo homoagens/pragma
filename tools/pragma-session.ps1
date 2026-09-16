@@ -17,7 +17,7 @@
 # Bump on every change to this file. The banner and -Info print it, so a
 # window that dot-sourced an older copy shows a stale number and the mismatch
 # is visible at a glance instead of surfacing as a missing command.
-$script:PragmaSessionVersion = "v6 (live session, sampling)"
+$script:PragmaSessionVersion = "v7 (memory family, status)"
 
 if (-not (Get-Variable -Name PragmaSession -Scope Global -ErrorAction SilentlyContinue) -and
     -not (Get-Variable -Name PragmaSession -Scope Script -ErrorAction SilentlyContinue) -and
@@ -135,6 +135,39 @@ function script:Invoke-MemTool([string[]]$toolArgs) {
         & $script:PragmaPy tools\mem_map.py
     }
     Pop-Location
+}
+
+# ONE FAMILY FOR THE STORE, same idea as /memory in a live conversation: the
+# view is a word, not a flag of its own, so the list stays short and the words
+# are exactly the ones mem_map.py already takes. -Map, -Beliefs, -Diff, -Oblio,
+# -Last, -Sizes and -Mem still work below - each is a one-line alias into this
+# - but only -Memory is on the list, so learning the family teaches every view
+# at once instead of one flag at a time.
+$script:MemoryViews = [ordered]@{
+    map      = "what is in memory now"
+    beliefs  = "what it has concluded"
+    diff     = "meanings it has revised, before/after"
+    oblio    = "what has faded"
+    last     = "the newest episode, in full"
+    sizes    = "how wordy the store is vs what recall shows"
+    raw      = "learnings.json, unrendered"
+}
+
+function script:Invoke-Memory([string]$view) {
+    $view = if ($view) { $view.Trim().ToLowerInvariant() } else { "map" }
+    if ($view -eq "mem") { $view = "raw" }               # -Mem's old name
+    if (-not $script:MemoryViews.Contains($view)) {
+        Write-Host ""
+        Write-Host "  pragma -Memory takes one of: $($script:MemoryViews.Keys -join ', ')" -ForegroundColor Yellow
+        Write-Host ""
+        return
+    }
+    if ($view -eq "raw") {
+        $path = Join-Path $env:PRAGMA_DATA_DIR "learnings.json"
+        if (Test-Path $path) { Get-Content $path } else { Write-Host "(nothing learned yet)" }
+        return
+    }
+    Invoke-MemTool $(if ($view -eq "map") { "" } else { "--$view" })
 }
 
 # A live session: many turns in one conversation, consolidated on exit.
@@ -279,6 +312,31 @@ function script:Invoke-TimeMachine([double]$Minutes, [double]$Months) {
     Write-Host "Check with pragma -Map / pragma -Oblio." -ForegroundColor DarkGray
 }
 
+function script:Show-Status {
+    # WHAT -INFO USED TO PRINT AT THE BOTTOM, pulled out on its own: how this
+    # session is configured is a question worth asking without the command
+    # list in the way, the same split a live conversation's /status made from
+    # its briefing. -Sampling is the deeper, network-probing version of the
+    # one line about sampling here; this page says so rather than repeating
+    # its table.
+    Write-Host ""
+    Write-Host "  status" -ForegroundColor DarkGray
+    Write-Host ""
+    Write-Host "    session    $script:SName"
+    Write-Host "    memory     $env:PRAGMA_DATA_DIR"
+    Write-Host "    workspace  $env:PRAGMA_WORKSPACE"
+    Write-Host "    endpoint   $(if ($env:LLM_BASE_URL) { $env:LLM_BASE_URL } else { '(from .env)' })"
+    Write-Host "    max steps  $script:SSteps per session"
+    Write-Host "    protocol   $(if ($env:LLM_TOOL_PROTOCOL) { $env:LLM_TOOL_PROTOCOL } else { 'text (repo default)' })"
+    Write-Host "    budgets    $(Get-BudgetLine)"
+    Write-Host "    sampling   $(Get-SamplingLine)   (-Sampling for the full picture)" -ForegroundColor DarkGray
+    Write-Host "    rules      $(Get-ContractLine)"
+    $rl = Get-RecallLine
+    if ($rl) { Write-Host "    recall     $rl" }
+    Write-Host "    half-life  30 days (real time)"
+    Write-Host ""
+}
+
 function script:Show-PragmaInfo {
     Write-Host ""
     Write-Host "pragma session '$script:SName'   [$script:PragmaSessionVersion]" -ForegroundColor DarkGray
@@ -288,14 +346,9 @@ function script:Show-PragmaInfo {
     Write-Host '  pragma -Ask "..."       ask memory something, no file changes'
     Write-Host "  pragma -Chat            live session: many turns, one conversation" -ForegroundColor DarkGray
     Write-Host "  pragma -Chat -Verbose   the same, showing the model's per-step notes" -ForegroundColor DarkGray
-    Write-Host "  pragma -Map             what is in memory now"
-    Write-Host "  pragma -Beliefs         what it has concluded"
-    Write-Host "  pragma -Diff            meanings it has revised, before/after"
-    Write-Host "  pragma -Oblio           what has faded"
-    Write-Host "  pragma -Last            the newest episode, in full"
-    Write-Host "  pragma -Sizes           how wordy the store is vs what recall shows"
+    Write-Host "  pragma -Memory <view>   map . beliefs . diff . oblio . last . sizes . raw"
     Write-Host "  pragma -Sampling        what is sent, what the server adds, what applies"
-    Write-Host "  pragma -Mem             raw learnings.json"
+    Write-Host "  pragma -Status          how this session is set up right now"
     Write-Host "  pragma -Backup          snapshot the store (do this often)"
     Write-Host "  pragma -Time <min> <mo> age the memory by <mo> months (asks first)" -ForegroundColor DarkGray
     Write-Host "  pragma -Info            this list"
@@ -309,18 +362,7 @@ function script:Show-PragmaInfo {
     Write-Host "  pragma -Projects        the project menu (switch, new, list)" -ForegroundColor DarkGray
     Write-Host "  pragma -Reset           WIPE this memory (typed confirmation)" -ForegroundColor DarkGray
     Write-Host ""
-    Write-Host "  session   : $script:SName"
-    Write-Host "  memory    : $env:PRAGMA_DATA_DIR"
-    Write-Host "  workspace : $env:PRAGMA_WORKSPACE"
-    Write-Host "  endpoint  : $(if ($env:LLM_BASE_URL) { $env:LLM_BASE_URL } else { '(from .env)' })"
-    Write-Host "  max steps : $script:SSteps per session"
-    Write-Host "  protocol  : $(if ($env:LLM_TOOL_PROTOCOL) { $env:LLM_TOOL_PROTOCOL } else { 'text (repo default)' })"
-    Write-Host "  budgets   : $(Get-BudgetLine)"
-    Write-Host "  sampling  : $(Get-SamplingLine)"
-    Write-Host "  rules     : $(Get-ContractLine)"
-    $rl = Get-RecallLine
-    if ($rl) { Write-Host "  recall    : $rl" }
-    Write-Host "  half-life : 30 days (real time)"
+    Show-Status
 }
 
 # global: so the command survives being dot-sourced from inside a module
@@ -332,6 +374,7 @@ function global:pragma {
         [Parameter(Position = 1)]$B,
         [switch]$NoMem,
         [switch]$Note, [switch]$Ask, [switch]$Time, [switch]$Chat,
+        [switch]$Memory, [switch]$Status,
         [switch]$Map, [switch]$Beliefs, [switch]$Diff, [switch]$Oblio,
         [switch]$Last, [switch]$Mem, [switch]$Sizes, [switch]$Sampling,
         [switch]$Backup, [switch]$Reset, [switch]$Off, [switch]$Info,
@@ -362,24 +405,27 @@ function global:pragma {
     }
 
     if ($Info)    { Show-PragmaInfo;            return }
+    if ($Status)  { Show-Status;                return }
     # -Verbose is NOT declared above: an attribute like [Parameter(Position=0)]
     # already makes this an advanced function, so PowerShell supplies -Verbose
     # itself and declaring it again is a duplicate-parameter error. Reading the
     # common one gives the same spelling without fighting the shell.
     if ($Chat)    { Invoke-Chat ($PSBoundParameters.ContainsKey('Verbose')); return }
-    if ($Map)     { Invoke-MemTool "";          return }
-    if ($Beliefs) { Invoke-MemTool "--beliefs"; return }
-    if ($Diff)    { Invoke-MemTool "--diff";    return }
-    if ($Oblio)   { Invoke-MemTool "--oblio";   return }
-    if ($Last)    { Invoke-MemTool "--last";    return }
-    if ($Sizes)   { Invoke-MemTool "--sizes";   return }
+    # ONE FAMILY: -Memory [view], $A carrying the view the same way -Time
+    # carries its two numbers. -Map, -Beliefs, -Diff, -Oblio, -Last, -Sizes
+    # and -Mem below are the pre-family names, kept working and not listed -
+    # each is a one-line call into the function the family also calls, so a
+    # habit from before this and a word typed after -Memory can never disagree
+    # about what a view shows.
+    if ($Memory)  { Invoke-Memory "$A";          return }
+    if ($Map)     { Invoke-Memory "map";        return }
+    if ($Beliefs) { Invoke-Memory "beliefs";    return }
+    if ($Diff)    { Invoke-Memory "diff";       return }
+    if ($Oblio)   { Invoke-Memory "oblio";      return }
+    if ($Last)    { Invoke-Memory "last";       return }
+    if ($Sizes)   { Invoke-Memory "sizes";      return }
+    if ($Mem)     { Invoke-Memory "raw";        return }
     if ($Sampling) { Show-Sampling;            return }
-
-    if ($Mem) {
-        $p = Join-Path $env:PRAGMA_DATA_DIR "learnings.json"
-        if (Test-Path $p) { Get-Content $p } else { Write-Host "(nothing learned yet)" }
-        return
-    }
 
     if ($Backup) {
         $stamp = Get-Date -Format "yyyy-MM-dd_HHmmss"
