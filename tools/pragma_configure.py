@@ -16,7 +16,7 @@ roles: agent (the conversation), recall (the CURATOR, before each turn) and
 memory (the faculties that write episodes and beliefs).
 
     /add                        a server: its address, then a name
-    /edit [name]                model name or API key, or a new address
+    /edit [name]                everything about one: its name, address, model, key
     /rename [name] [new]        call one something else
     /remove [name]              remove one no role uses
     /role <role|all> <name>     put a role, or all three, on an endpoint
@@ -53,7 +53,7 @@ CLEAR = "none"
 
 COMMANDS = {
     "/add":    "add a server: its address, then a name",
-    "/edit":   "model name, API key or address of one - /edit <name>",
+    "/edit":   "name, address, model or API key of one - /edit <name>",
     "/rename": "call one something else - /rename <name> <new name>",
     "/remove": "remove one no role uses - /remove <name>",
     "/role":   "put a role on an endpoint - /role <agent|recall|memory|all> <name>",
@@ -242,6 +242,15 @@ def check_name(cat: dict, name: str) -> str:
     return name
 
 
+def rename(cat: dict, old: str, new: str) -> None:
+    """Called something else, in the catalogue and in every role that uses it."""
+    if new == old:
+        return
+    check_name(cat, new)
+    cat["endpoints"] = {(new if n == old else n): e for n, e in cat["endpoints"].items()}
+    cat["roles"] = {r: (new if n == old else n) for r, n in cat["roles"].items()}
+
+
 def which(session, cat, arg, verb):
     """The endpoint a command is about: the argument, the only one, or a question naming them."""
     names = sorted(cat["endpoints"])
@@ -291,6 +300,13 @@ def cmd_edit(session, state, arg):
     name = which(session, cat, arg, "edit")
     entry = cat["endpoints"][name]
     print(f"  {colour(GREY)}editing {name}{colour(RESET)}")
+    # The name is asked first. Someone who opened /edit to call an endpoint
+    # something else would otherwise find no name here at all, and typing the
+    # new one into "Model name" quietly asks the server for a model it does
+    # not serve. /rename stays, for doing it in one line.
+    new_name = ask(session, "Name", name)
+    if new_name != name:
+        check_name(cat, new_name)
     url = ask(session, "Address", entry.get("url", ""))
     model = ask(session, "Model name", entry.get("model", ""), clearable=True,
                 hint="empty: whatever the server serves")
@@ -308,6 +324,7 @@ def cmd_edit(session, state, arg):
     elif key:
         new["key"] = key
     cat["endpoints"][name] = new
+    rename(cat, name, new_name)
     return CHANGED
 
 
@@ -315,9 +332,7 @@ def cmd_rename(session, state, arg):
     cat = state["cat"]
     parts = arg.split()
     old = which(session, cat, parts[0] if parts else "", "rename")
-    new = check_name(cat, parts[1] if len(parts) > 1 else ask(session, f"New name for {old}"))
-    cat["endpoints"] = {(new if n == old else n): e for n, e in cat["endpoints"].items()}
-    cat["roles"] = {r: (new if n == old else n) for r, n in cat["roles"].items()}
+    rename(cat, old, parts[1] if len(parts) > 1 else ask(session, f"New name for {old}"))
     return CHANGED
 
 
