@@ -152,8 +152,11 @@ def command_line(session) -> str:
         return input("  configure > ")
     from prompt_toolkit.formatted_text import ANSI
     a = colour("\033[38;2;178;132;255m")
+    # is_password is said every time: a PromptSession keeps what it was last
+    # given, so the API key question would leave every line after it, here and
+    # in every later command, typing in asterisks.
     return session.prompt(
-        ANSI(f"  {a}configure >{RESET if a else ''} "),
+        ANSI(f"  {a}configure >{RESET if a else ''} "), is_password=False,
         placeholder=ANSI(f"{GREY}/add /edit /role /test · /help · ctrl+D to go back{RESET}"))
 
 
