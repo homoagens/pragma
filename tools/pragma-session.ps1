@@ -276,12 +276,12 @@ function script:Invoke-TimeMachine([double]$Minutes, [double]$Months) {
 
     Invoke-MemTool @("--jump", "$Months")
     Write-Host ""
-    Write-Host "Check with pragma -Map / pragma -Oblio." -ForegroundColor Cyan
+    Write-Host "Check with pragma -Map / pragma -Oblio." -ForegroundColor DarkGray
 }
 
 function script:Show-PragmaInfo {
     Write-Host ""
-    Write-Host "pragma session '$script:SName'   [$script:PragmaSessionVersion]" -ForegroundColor Cyan
+    Write-Host "pragma session '$script:SName'   [$script:PragmaSessionVersion]" -ForegroundColor DarkGray
     Write-Host '  pragma "task"           run a session, memory on'
     Write-Host '  pragma "task" -NoMem    run a session with NO memory (stateless)'
     Write-Host '  pragma -Note "..."      record an experience (journal + episode)'
@@ -544,7 +544,7 @@ print(json.dumps(out))
     }
 
     Write-Host ""
-    Write-Host "sampling for session '$script:SName'" -ForegroundColor Cyan
+    Write-Host "sampling for session '$script:SName'" -ForegroundColor DarkGray
     Write-Host "  endpoint : $($info.base_url)"
     if ($info.server_error) {
         Write-Host "  server   : unreachable - $($info.server_error)" -ForegroundColor Yellow
@@ -609,7 +609,7 @@ Invoke-MemTool "--clock-set" | Out-Null
 
 # --- banner and preflight -----------------------------------------------------
 Write-Host ""
-Write-Host "pragma session '$script:SName'   [$script:PragmaSessionVersion]" -ForegroundColor Cyan
+Write-Host "pragma session '$script:SName'   [$script:PragmaSessionVersion]" -ForegroundColor DarkGray
 Write-Host "  memory    : $env:PRAGMA_DATA_DIR"
 Write-Host "  workspace : $env:PRAGMA_WORKSPACE"
 Write-Host "  protocol  : $(if ($env:LLM_TOOL_PROTOCOL) { $env:LLM_TOOL_PROTOCOL } else { 'text (repo default)' })"

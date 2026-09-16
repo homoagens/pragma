@@ -418,9 +418,11 @@ def main() -> int:
         if cmd in ("/done", "/exit", "/back", "/q"):
             break
         if cmd == "/help":
+            a = colour("[38;2;178;132;255m")
+            r = RESET if a else ""
             print()
             for name, blurb in COMMANDS.items():
-                print(f"    {name:<9}{blurb}")
+                print(f"    {a}{name:<12}{r}{blurb}")
             print()
             continue
         if cmd == "/clear":

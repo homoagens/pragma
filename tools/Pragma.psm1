@@ -264,29 +264,93 @@ function script:Show-Logo([switch]$Compact) {
 
 
 function script:Show-Brief($entry, $brief) {
-    # Every time, not once. The briefing is a page that replaces the screen,
-    # and a page's header is not repetition - showing the word instead read as
-    # the logo having gone missing on the way back from a conversation.
+    # A BRIEFING ANSWERS TWO QUESTIONS: can I start, and what changed while I
+    # was away. It used to answer eight - window, tau, roles, sampling - and a
+    # page that says everything says nothing, because the one line that needed
+    # reading sat in the middle of seven that did not. What is configured is
+    # /status now, a page asked for rather than one walked past every day.
+    #
+    # Colour carries meaning here and nowhere else: grey labels, green for a
+    # server that answers, yellow for what wants you, red for what is broken.
     Write-Host ""
     Show-Logo
     Write-Host ""
     Write-Host ("   " + (Get-Date -Format "dddd d MMMM, HH:mm")) -ForegroundColor DarkGray
     Write-Host ""
     Write-Host "  project   " -ForegroundColor DarkGray -NoNewline
-    Write-Host $entry.name -ForegroundColor White
+    Write-Host $entry.name
     if ($brief -and $brief.ok) {
         $mem = "{0} episodes active, {1} dormant, {2} beliefs" -f `
                $brief.episodes_active, $brief.episodes_dormant, $brief.beliefs
-        Write-Host "  memory    " -ForegroundColor DarkGray -NoNewline
-        Write-Host $mem
         if ($null -ne $brief.away_days) {
             $away = if ($brief.away_days -lt 1) { "today" }
                     elseif ($brief.away_days -lt 2) { "1 day" }
                     else { "{0:N0} days" -f $brief.away_days }
-            Write-Host "  away for  " -ForegroundColor DarkGray -NoNewline
-            Write-Host $away -NoNewline
-            Write-Host ("    tau {0}" -f $brief.tau) -ForegroundColor DarkGray
+            $mem = $mem + ("   last here " + $away)
         }
+        Write-Host "  memory    " -ForegroundColor DarkGray -NoNewline
+        Write-Host $mem
+
+        # Whether there is anything to talk to is the one thing worth finding
+        # without reading. Keyed on the backend state rather than on the model
+        # name: a server that answers without reporting a model is up.
+        $isUp = ($brief.backend -eq "up")
+        Write-Host "  serving   " -ForegroundColor DarkGray -NoNewline
+        if ($isUp) {
+            $what = if ($brief.serving) { $brief.serving } else { "up (model not reported)" }
+            Write-Host $what -ForegroundColor Green
+        } else {
+            Write-Host "backend down" -ForegroundColor Red
+            $why = "$($brief.backend)" -replace '^down - ', ''
+            if ($why -and $why -ne "up") {
+                Write-Host ("            " + $why) -ForegroundColor DarkGray
+            }
+            Write-Host "            /configure to point it elsewhere" -ForegroundColor DarkGray
+        }
+
+        # WHAT WANTS YOU. Nothing here on an ordinary day; one line each when
+        # there is something, and every line says what to type about it.
+        $attention = @()
+        if ($brief.PSObject.Properties.Name -contains 'working' -and [int]$brief.working -gt 0) {
+            $what = if ($brief.working_note) { $brief.working_note } else { "a session" }
+            $attention += ("the memory is writing " + $what + " - the counts above will move")
+        }
+        if ($brief.PSObject.Properties.Name -contains 'jobs_failed' -and [int]$brief.jobs_failed -gt 0) {
+            # Never silent. The turns are still in the job file, so this is
+            # recoverable - but only if it is said.
+            $attention += ("{0} consolidation(s) did not finish - /jobs" -f $brief.jobs_failed)
+        }
+        # THE WINDOW IN FORCE, when the server disagrees with it. Every
+        # compaction threshold is derived from that number, so a wrong one does
+        # not degrade gracefully: Pragma talks on until the server refuses the
+        # request, having compacted for a window it never had. When the two
+        # agree there is nothing to say, and the number lives in /status.
+        if ($brief.PSObject.Properties.Name -contains 'context_window' -and
+            [int]$brief.context_window -gt 0 -and $brief.context_source -ne 'endpoint') {
+            $srvCtx = 0
+            if ($brief.PSObject.Properties.Name -contains 'n_ctx') { $srvCtx = [int]$brief.n_ctx }
+            $mine = [int]$brief.context_window
+            if ($srvCtx -gt 0 -and $srvCtx -lt $mine) {
+                $attention += ("context {0} tokens, but the server has {1} - requests will be refused" -f $mine, $srvCtx)
+                $attention += ("clear it with pragma -Set ContextWindow `"`" to follow the server")
+            } elseif ($srvCtx -gt $mine) {
+                $attention += ("context {0} tokens of the server's {1} - /status" -f $mine, $srvCtx)
+            }
+        }
+        # A role on an endpoint that does not answer: the conversation may work
+        # and the memory still fail, which is the confusing kind of broken.
+        if ($brief.PSObject.Properties.Name -contains 'roles' -and $brief.roles) {
+            foreach ($r in @($brief.roles)) {
+                if (-not $r.up) { $attention += ("{0} endpoint {1} - {2} - /configure" -f $r.role, $r.name, $r.status) }
+            }
+        }
+        foreach ($line in $attention) {
+            Write-Host "            " -NoNewline
+            Write-Host $line -ForegroundColor Yellow
+        }
+
+        # SINCE YOU LEFT. The memory's own news, which is the other half of
+        # what a briefing is for.
         $lines = @()
         if ($brief.went_dormant_n -gt 0) {
             $lines += "{0} episode(s) went dormant" -f $brief.went_dormant_n
@@ -298,84 +362,6 @@ function script:Show-Brief($entry, $brief) {
             $lines += "{0} episode(s) close to fading" -f $brief.fading
         }
         if ($brief.last_goal) { $lines += "last time you were on: " + $brief.last_goal }
-        # Same colours as the settings panel: whether there is anything to talk
-        # to is the one thing worth finding without reading. Keyed on the
-        # backend state rather than on the model name, because a server that
-        # answers without reporting a model is up - and colouring that red said
-        # the opposite of what had just been measured.
-        # THE WINDOW IN FORCE, and whether the server agrees with it. Every
-        # compaction threshold is derived from this number, so a wrong one
-        # does not degrade gracefully: Pragma talks on until the server
-        # refuses the request, having compacted for a window it never had.
-        # llama.cpp divides -c by --parallel, so this is the one number that
-        # moves when you change -np without changing -c.
-        if ($brief.PSObject.Properties.Name -contains 'context_window' -and
-            [int]$brief.context_window -gt 0) {
-            $srvCtx = 0
-            if ($brief.PSObject.Properties.Name -contains 'n_ctx') { $srvCtx = [int]$brief.n_ctx }
-            $mine = [int]$brief.context_window
-            Write-Host "  context   " -ForegroundColor DarkGray -NoNewline
-            if ($brief.context_source -eq 'endpoint') {
-                Write-Host ("{0} tokens, from the server" -f $mine) -ForegroundColor DarkGray
-            } elseif ($srvCtx -gt 0 -and $srvCtx -ne $mine) {
-                Write-Host ("{0} tokens, but the server has {1}" -f $mine, $srvCtx) -ForegroundColor Red
-                if ($srvCtx -lt $mine) {
-                    Write-Host "            requests will be refused - clear ContextWindow" -ForegroundColor DarkGray
-                    Write-Host "            (pragma -Set ContextWindow `"`") to follow the server" -ForegroundColor DarkGray
-                } else {
-                    Write-Host "            you are using less than you have" -ForegroundColor DarkGray
-                }
-            } else {
-                Write-Host ("{0} tokens" -f $mine) -ForegroundColor DarkGray
-            }
-        }
-        # WHAT THE MEMORY IS DOING WITHOUT YOU. Consolidation left the
-        # foreground, so between one briefing and the next the store can
-        # change on its own. A background worker nobody can see is the thing
-        # that makes a memory feel unreliable, and this is the line that stops
-        # it: the counts above are as of now, and this says whether more is
-        # coming.
-        if ($brief.PSObject.Properties.Name -contains 'working' -and
-            [int]$brief.working -gt 0) {
-            Write-Host "  writing   " -ForegroundColor DarkGray -NoNewline
-            $what = if ($brief.working_note) { $brief.working_note } else { "a session" }
-            Write-Host ("consolidating {0} - the counts above will move" -f $what) -ForegroundColor Cyan
-        }
-        if ($brief.PSObject.Properties.Name -contains 'jobs_failed' -and
-            [int]$brief.jobs_failed -gt 0) {
-            # Never silent. The turns are still in the job file, so this is
-            # recoverable - but only if it is said.
-            Write-Host "  writing   " -ForegroundColor DarkGray -NoNewline
-            Write-Host ("{0} consolidation(s) did not finish - /jobs" -f $brief.jobs_failed) -ForegroundColor DarkYellow
-        }
-        $isUp = ($brief.backend -eq "up")
-        Write-Host "  serving   " -ForegroundColor DarkGray -NoNewline
-        if ($isUp) {
-            $what = if ($brief.serving) { $brief.serving } else { "up (model not reported)" }
-            Write-Host $what -ForegroundColor Green
-        } else {
-            # Two lines, as in the settings panel: the state belongs on the
-            # serving line, the reason underneath. Inline it was truncated
-            # mid-word and pushed the line past the width of the page.
-            Write-Host "backend down" -ForegroundColor Red
-            $why = "$($brief.backend)" -replace '^down - ', ''
-            if ($why -and $why -ne "up") {
-                Write-Host ("            " + $why) -ForegroundColor DarkGray
-            }
-            # The one thing to do about it, where it is being read. The
-            # endpoint lives in .env and used to be set by a batch file at a
-            # shell, which is a place you have to leave Pragma to reach.
-            Write-Host "            to point it elsewhere, type /configure" -ForegroundColor DarkGray
-        }
-        # The other roles, when the endpoint catalogue puts them on another
-        # server than the agent. The serving line above is the agent's.
-        if ($brief.PSObject.Properties.Name -contains 'roles' -and $brief.roles) {
-            foreach ($r in @($brief.roles)) {
-                Write-Host ("  {0,-10}" -f $r.role) -ForegroundColor DarkGray -NoNewline
-                $c = if ($r.up) { 'Green' } else { 'Red' }
-                Write-Host ("{0} - {1}" -f $r.name, $r.status) -ForegroundColor $c
-            }
-        }
         if ($lines.Count) {
             Write-Host ""
             Write-Host "  Since you left" -ForegroundColor DarkGray
@@ -383,7 +369,7 @@ function script:Show-Brief($entry, $brief) {
         }
     } elseif ($brief -and -not $brief.ok) {
         Write-Host "  memory    " -ForegroundColor DarkGray -NoNewline
-        Write-Host $brief.error -ForegroundColor DarkYellow
+        Write-Host $brief.error -ForegroundColor Yellow
     }
     Write-Host ""
 }
@@ -742,7 +728,7 @@ function script:Show-Endpoint($ep) {
     # it - the server's own defaults and what this project sends over them.
     Write-Accent "  endpoint"
     if (-not $ep) {
-        Write-Host "    could not be read" -ForegroundColor DarkYellow
+        Write-Host "    could not be read" -ForegroundColor Yellow
         Write-Host ""
         return
     }
@@ -806,7 +792,7 @@ function script:Show-Endpoint($ep) {
                 if ($mine -gt $per) {
                     Write-Host "more than a call gets: requests will be refused" -ForegroundColor Red
                 } else {
-                    Write-Host "less than a call gets: window wasted" -ForegroundColor DarkYellow
+                    Write-Host "less than a call gets: window wasted" -ForegroundColor Yellow
                 }
                 Write-Host "              pragma -Set ContextWindow `"`" follows the server" -ForegroundColor DarkGray
             } elseif ($mine -gt 0) {
@@ -979,23 +965,17 @@ function script:Invoke-ProjectChoices($entry) {
 }
 
 function script:Invoke-SettingsMenu($entry) {
+    # NO MENU HERE. The three sampling rows asked, in a second idiom, exactly
+    # what the choices page asks in words - and a page that can be walked with
+    # arrows next to a page that is typed at is most of what made this feel
+    # like two programs. What is set, then the questions, then back.
     New-Page
     Show-Settings $entry
     Show-Endpoint (Get-Endpoint)
-    $items = @(
-        [pscustomobject]@{ key = 'c'; label = "choices                     memory thinking, sampling, steps - enter keeps each"; action = 'choices' }
-        [pscustomobject]@{ key = 's'; label = "sampling: the server's      all four omitted, the endpoint decides"; action = 'server' }
-        [pscustomobject]@{ key = 'm'; label = "sampling: by hand           enter the four yourself";                action = 'manual' }
-        [pscustomobject]@{ key = 'g'; label = "sampling: greedy            temperature 0, deterministic";           action = 'greedy' }
-        [pscustomobject]@{ key = 'q'; label = "back";                                                               action = '' }
-    )
-    $c = Show-Menu $items "enter select . ctrl+D back"
-    Write-Host ""
-    if (-not $c -or -not $c.action) { return $entry }
-    if ($c.action -eq 'choices') { Invoke-ProjectChoices $entry }
-    else { Set-Sampling $entry $c.action }
+    Invoke-ProjectChoices $entry
     $fresh = Get-EntryByName $entry.name
-    if ($fresh) { Enable-Project $fresh | Out-Null; return $fresh }
+    if ($fresh) { Enable-Project $fresh | Out-Null; $entry = $fresh }
+    Wait-Key
     return $entry
 }
 
@@ -1813,29 +1793,9 @@ function script:Wait-Key {
     Write-Host ""
 }
 
-function script:Invoke-MemoryMenu {
-    New-Page
-    Write-Host ""
-    Write-Accent "  Memory"
-    Write-Host ""
-    $items = @(
-        [pscustomobject]@{ key = 'm'; label = "map         what is in memory now";        action = 'Map' }
-        [pscustomobject]@{ key = 'b'; label = "beliefs     what it has concluded";        action = 'Beliefs' }
-        [pscustomobject]@{ key = 'd'; label = "diff        meanings it has revised";      action = 'Diff' }
-        [pscustomobject]@{ key = 'o'; label = "oblivion    what has faded";               action = 'Oblio' }
-        [pscustomobject]@{ key = 'l'; label = "last        the newest episode, in full";  action = 'Last' }
-        [pscustomobject]@{ key = 'q'; label = "back";                                     action = '' }
-    )
-    $c = Show-Menu $items "enter select . ctrl+D back"
-    Write-Host ""
-    if (-not $c -or -not $c.action) { return }
-    # Splatting needs a variable, not an inline hashtable: the session command
-    # takes these as separate switches, not as a value.
-    New-Page
-    $splat = @{ $c.action = $true }
-    global:pragma @splat
-    Wait-Key
-}
+# The memory menu that used to be here is gone: map, beliefs, diff, oblivion
+# and last are /memory <view> in the conversation, where looking at the store
+# does not mean leaving what you were doing. Nothing called this.
 
 
 # `pragma` is a FUNCTION and deliberately not an alias. PowerShell resolves an
