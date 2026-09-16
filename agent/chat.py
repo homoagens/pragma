@@ -61,11 +61,18 @@ from skills import palette as skills_palette   # noqa: E402
 from skills import skills_summary_for      # noqa: E402
 
 from agent.batch import (                  # noqa: E402
-    _PrettyRenderer,
     _pool_line,
     _make_on_step,
 )
 from agent.prompts import build_system_prompt, project_contract  # noqa: E402
+from agent import harness as _harness       # noqa: E402
+
+# The renderer of the conversation in progress, for the one caller that is
+# not handed it: ask_user, which needs the screen for a question.
+_RENDERER = None
+# What the toolbar under the prompt shows. Read on every redraw, so it holds
+# values, never work: the loop refreshes it between turns.
+_STATE: dict = {}
 
 _EXIT_WORDS = {"/exit", "/quit", "/bye", "exit", "quit"}
 
@@ -226,6 +233,10 @@ def _chat_ask_user(topic: str = "", context: str = "", mode: str = "input",
     """
     q = (topic or prompt or question or "").strip()
     if mode == "confirm":
+        # The status line is on the screen: it steps aside for the question
+        # and comes back with the answer.
+        if _RENDERER is not None:
+            _RENDERER.pause()
         print()
         print(f"  ? {q}")
         if context:
@@ -234,6 +245,8 @@ def _chat_ask_user(topic: str = "", context: str = "", mode: str = "input",
             answer = input("  y/n > ").strip().lower()
         except (EOFError, KeyboardInterrupt):
             answer = ""
+        if _RENDERER is not None:
+            _RENDERER.resume()
         return "yes" if answer in ("y", "yes", "s", "si") else "no"
     return ("The person is in this conversation but cannot answer in the "
             "middle of your turn. Stop here: end the turn now with your "
@@ -259,8 +272,14 @@ def _make_session():
         # get_completions wins the lookup and the class cannot be built.
         class _C(_SlashCompleter, Completer):
             pass
+        # The toolbar is the part of a harness that does not scroll away:
+        # project, model, how full the context is, whether a consolidation
+        # is being written. Drawn by prompt_toolkit under the prompt, from
+        # _STATE, which the loop keeps current.
         return PromptSession(completer=_C(), history=InMemoryHistory(),
-                             complete_while_typing=True, reserve_space_for_menu=6)
+                             complete_while_typing=True, reserve_space_for_menu=6,
+                             bottom_toolbar=lambda: _harness.toolbar(_STATE),
+                             style=_harness.prompt_style())
     except Exception:
         return None
 
@@ -289,7 +308,8 @@ def _hint() -> str:
     as everywhere else in the launcher, and a hint that lies is worse than no
     hint.
     """
-    return "ctrl+D to close the project" if _AT_HOME_NOW else "ctrl+D to go back"
+    return ("/chat to talk  ·  ctrl+D to close the project" if _AT_HOME_NOW
+            else "say something, or /help  ·  ctrl+D to go back")
 
 
 def _ask(session):
@@ -308,10 +328,12 @@ def _ask(session):
 
 
 def _prompt() -> str:
+    """The prompt mark, in the accent. The project's name is on the toolbar."""
+    glyph = _RENDERER.g["prompt"] if _RENDERER is not None else ">"
     a = _accent()
     if not a:
-        return "you > "
-    return a + "you" + "\033[0m" + " " + a + ">" + "\033[0m" + " "
+        return f"{glyph} "
+    return a + glyph + "\033[0m" + " "
 
 
 # At the briefing there is no conversation to leave halfway, and /chat is the
@@ -834,6 +856,16 @@ def _watch_job(path, job: dict) -> None:
         print(f"  {state} - {str(job.get('error', ''))[:100]}")
 
 
+def _writing_now() -> str:
+    """The note of the consolidation in flight for this store, or ""."""
+    try:
+        import pragma_jobs as jobs
+        live = jobs.running()
+    except Exception:
+        return ""
+    return (live.get("note") or "a session") if live else ""
+
+
 def _show_jobs() -> None:
     """What the memory has been doing on its own, newest first.
 
@@ -957,25 +989,11 @@ def _compact(history: list, turns: list[Turn], turn_msgs: list[int],
     return new_history, cut_at
 
 
-class _ChatRenderer(_PrettyRenderer):
-    """The pretty renderer, minus the thinking out loud.
-
-    This is the half of the fix the prompt cannot do alone. Telling a model
-    that a channel is internal is easy to ignore while its output is visibly
-    delivered to the reader - and it WAS delivered: the model answered in the
-    thought, called a tool, then answered again in the conclusion, so the
-    person read the same thing twice, the second time as a receipt.
-
-    With the text no longer printed, the instruction is simply true. The step
-    rule and the action line stay, so the conversation still shows what is
-    being done to the files - only the model's private note goes quiet.
-
-    `--show-thoughts` brings it back for debugging, where the whole point is
-    to see what the model told itself.
-    """
-
-    def thought(self, step, text):
-        self._rule(step)
+# The conversation is drawn by agent/harness.py: one status line for every
+# phase, tools on one line with their output folded, the answer streamed
+# paragraph by paragraph, one closing line per turn. The batch renderer with
+# the thoughts switched off, which used to be here, was the same information
+# as a wall.
 
 
 def _recall(text: str, cwd, desk_ids: set[str], desk_rules: set[str],
@@ -1010,10 +1028,13 @@ def _recall(text: str, cwd, desk_ids: set[str], desk_rules: set[str],
             "CURATOR",
             "searching memory for what bears on this…" if not first_turn
             else "opening the conversation — offering the latest memories…")
+        import time as _time
+        _t0 = _time.monotonic()
         info = curator.curate_knowledge_detailed(
             text, workspace=str(cwd),
             exclude_ids=desk_ids, exclude_rules=desk_rules,
             require_match=not first_turn, no_reinforce=reinforced)
+        took = f" · {_time.monotonic() - _t0:.0f}s"
     except Exception as e:
         renderer.faculty("CURATOR", f"recall unavailable — {e}")
         return ""
@@ -1026,7 +1047,8 @@ def _recall(text: str, cwd, desk_ids: set[str], desk_rules: set[str],
         renderer.faculty("CURATOR",
                          _pool_line(info) + " → "
                          "nothing bore on this"
-                         + (f" — {info['reason']}" if info.get("reason") else ""))
+                         + (f" — {info['reason']}" if info.get("reason") else "")
+                         + took)
         return ""
     desk_ids.update(info["episode_ids"])
     desk_rules.update(info["rule_texts"])
@@ -1041,7 +1063,7 @@ def _recall(text: str, cwd, desk_ids: set[str], desk_rules: set[str],
         note = f"{pool} → recalled {len(info['selected'])}"
         if info["reason"]:
             note += f" — {info['reason']}"
-        renderer.faculty("CURATOR", note, info["selected"])
+        renderer.faculty("CURATOR", note + took, info["selected"])
     return info["block"]
 
 
@@ -1151,9 +1173,19 @@ If the turn needed no tools at all, the conclusion is simply your reply.
         protocol=getattr(baseline_config, "LLM_TOOL_PROTOCOL", "text"),
     ) + chat_policy + project_contract(cwd)
 
-    renderer = _PrettyRenderer() if args.show_thoughts else _ChatRenderer()
+    global _RENDERER
+    renderer = _harness.Harness(
+        verbose=args.show_thoughts,
+        context_window=getattr(baseline_config, "CONTEXT_WINDOW", 0))
+    _RENDERER = renderer
+    # Every model call - the curator's, the segmenter's, the agent's - reports
+    # its wait to the same status line instead of drawing a spinner of its own.
+    llm_client.STATUS_HOOK = renderer
     served = getattr(baseline_config, "SERVED_MODEL", "") or baseline_config.DEFAULT_MODEL
     max_steps = args.max_steps or baseline_config.MAX_STEPS
+    _STATE.update(project=os.environ.get("PRAGMA_PROJECT") or cwd.name,
+                  model=served if online else "backend down",
+                  memory=bool(args.memory), turns=0, ctx=None, writing="")
 
     log_path = cwd / ".pragma_session.jsonl"
     print()
@@ -1175,6 +1207,10 @@ If the turn needed no tools at all, the conclusion is simply your reply.
         final_keys=("conclusion",),
         temperature=args.temperature,
         max_steps=max_steps,
+        # The reply as it is written, and the reasoning as it happens: the
+        # harness shows the first and scrolls the second through its status.
+        on_token=renderer.on_token,
+        on_reasoning=renderer.on_reasoning,
     )
 
     history: list | None = None
@@ -1249,7 +1285,7 @@ If the turn needed no tools at all, the conclusion is simply your reply.
     except Exception:
         pass
     _CHAT_HEADER[:] = [
-        f"  talking to {served or 'nothing - the backend is down'}"
+        f"  {_STATE['project']} · talking to {served or 'nothing - the backend is down'}"
         f" · memory {'on' if args.memory else 'off'}"
         f" · max {max_steps} steps per turn",
         "  /exit or ctrl+D goes back"
@@ -1260,6 +1296,9 @@ If the turn needed no tools at all, the conclusion is simply your reply.
 
     try:
         while True:
+            _STATE["turns"] = len(turns)
+            _STATE["ctx"] = renderer.ctx_pct()
+            _STATE["writing"] = _writing_now()
             try:
                 text = _ask(session)
             except EOFError:
@@ -1313,21 +1352,35 @@ If the turn needed no tools at all, the conclusion is simply your reply.
                     prompt = f"{block}\n\n{text}"
 
             before = len(history or [])
-            result = run_agent(
-                cfg, prompt,
-                # A wider budget for what the model said: in a conversation the
-                # thought field is where it talks to you, and the batch cap cut
-                # the replies short before the consolidator ever saw them.
-                on_step=_make_on_step(
-                    renderer, 0, turn.transcript,
-                    text_limit=getattr(baseline_config,
-                                       "CHAT_TRANSCRIPT_CHARS", 2000)),
-                history=history,
-                # Everything already in the history is a finished turn. The
-                # loop may compress its own step traffic; the conversation is
-                # not its to blur.
-                protect_prefix=before,
-            )
+            # A wider budget for what the model said: in a conversation the
+            # thought field is where it talks to you, and the batch cap cut
+            # the replies short before the consolidator ever saw them.
+            inner = _make_on_step(
+                renderer, 0, turn.transcript,
+                text_limit=getattr(baseline_config, "CHAT_TRANSCRIPT_CHARS", 2000))
+
+            def on_step(ev: dict, _inner=inner) -> None:
+                # The token counts of the call that just ended, before the
+                # adapter consumes them: the harness adds them up for the
+                # closing line instead of printing one per step.
+                if ev.get("type") in ("thought", "final"):
+                    renderer.note_stats(dict(getattr(llm_client, "LAST_STATS", {}) or {}))
+                _inner(ev)
+
+            renderer.turn_begin()
+            import time as _time
+            _t_turn = _time.monotonic()
+            try:
+                result = run_agent(
+                    cfg, prompt, on_step=on_step, history=history,
+                    # Everything already in the history is a finished turn.
+                    # The loop may compress its own step traffic; the
+                    # conversation is not its to blur.
+                    protect_prefix=before,
+                )
+            finally:
+                # Whatever ended the turn, nothing may be left spinning.
+                renderer.idle()
             if result is None:          # interrupted mid-turn
                 _append_raw_log(log_path, turn)
                 turns.append(turn)
@@ -1346,7 +1399,8 @@ If the turn needed no tools at all, the conclusion is simply your reply.
             history = result.get("messages") or history
             turn_msgs.append(max(len(history or []) - before, 1))
 
-            renderer.conclusion(result.get("forced", False), 0.0, conclusion)
+            renderer.conclusion(result.get("forced", False),
+                                _time.monotonic() - _t_turn, conclusion)
 
             # Compaction happens BETWEEN turns, never inside one: a turn that
             # is still running has no finished experience to consolidate, and

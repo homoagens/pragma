@@ -345,7 +345,7 @@ function script:Show-PragmaInfo {
     Write-Host '  pragma -Note "..."      record an experience (journal + episode)'
     Write-Host '  pragma -Ask "..."       ask memory something, no file changes'
     Write-Host "  pragma -Chat            live session: many turns, one conversation" -ForegroundColor DarkGray
-    Write-Host "  pragma -Chat -Verbose   the same, showing the model's per-step notes" -ForegroundColor DarkGray
+    Write-Host "  pragma -Chat -Verbose   the same, with the model's notes and whole tool outputs" -ForegroundColor DarkGray
     Write-Host "  pragma -Memory <view>   map . beliefs . diff . oblio . last . sizes . raw"
     Write-Host "  pragma -Sampling        what is sent, what the server adds, what applies"
     Write-Host "  pragma -Status          how this session is set up right now"

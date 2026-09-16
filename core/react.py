@@ -282,10 +282,14 @@ def _native_action_text(cfg: AgentConfig, messages, model, temperature,
         return None
 
     try:
+        # The same two callbacks the text channel honours. On this channel
+        # the content is the model's note or its answer and the arguments
+        # travel separately, so streaming the content is safe to show.
         r = llm_client.call_llm_tools(
             messages=messages, tools=tools, model=model,
             temperature=temperature, max_tokens=config.MAX_TOKENS,
             stop_event=cfg.stop_event,
+            on_token=cfg.on_token, on_reasoning=cfg.on_reasoning,
         )
     except llm_client.ToolsUnsupported as e:
         known.tools_unsupported = True

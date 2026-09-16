@@ -337,6 +337,17 @@ def _interruptible_post(url, headers, payload, timeout, stop_event):
     return holder["resp"]
 
 
+# WHO DRAWS THE WAIT. The spinner below is the right thing for a batch run
+# and for every faculty called from a script: it says who is thinking and for
+# how long, and needs nothing from its caller. A live session owns its screen
+# and wants ONE status line for the curator, the agent's steps and the tools
+# alike, not this spinner interleaved with its own. So the drawing can be
+# handed over: an object with begin(label), tick(label, seconds) and end() is
+# told exactly what the spinner would have shown, and the spinner stays off.
+# None means the spinner, which is every caller that existed before this.
+STATUS_HOOK = None
+
+
 def _post_with_retry(url, headers, payload, timeout, label, stop_event=None):
     """POST with retry on 502 (backoff 30/60/90/120s). Returns response.
 
@@ -371,7 +382,21 @@ def _post_with_retry(url, headers, payload, timeout, label, stop_event=None):
         # a terminal could not draw braille.
         t = threading.Thread(target=_worker, daemon=True)
         t.start()
-        if _can_spin():
+        hook = STATUS_HOOK
+        if hook is not None:
+            try:
+                hook.begin(who)
+                while t.is_alive():
+                    t.join(timeout=0.5)
+                    hook.tick(who, time.time() - start)
+            except Exception:
+                pass
+            finally:
+                try:
+                    hook.end()
+                except Exception:
+                    pass
+        elif _can_spin():
             try:
                 with _console.status(
                     f"[bold cyan]{who} is thinking...[/bold cyan]",
@@ -672,10 +697,112 @@ class ToolsUnsupported(Exception):
     """
 
 
+def _stream_tools_openai_compatible(payload, headers, timeout, base_url,
+                                    stop_event, on_token, on_reasoning):
+    """The tool channel over SSE: the same dict call_llm_tools returns, or None.
+
+    None means "the stream never started" - a transport error, a status other
+    than 200, or a body that is not an event stream - and the caller makes the
+    blocking call instead, so every failure keeps the handling it always had.
+    Once the stream has started its errors are the call's own.
+
+    Tool calls arrive as fragments keyed by index: the name in one delta, the
+    arguments spread over the next fifty. They are joined here and decoded
+    once at the end, exactly as the blocking path decodes the whole string.
+    Usage comes in the last chunk when the server is asked for it, which is
+    what stream_options says; a server that ignores the field simply leaves
+    LAST_STATS without token counts, as a blocking reply without usage would.
+    """
+    import json as _json
+    payload = dict(payload, stream=True, stream_options={"include_usage": True})
+    try:
+        resp = requests.post(f"{base_url}/chat/completions", headers=headers,
+                             json=payload, stream=True, timeout=(10, timeout))
+    except requests.RequestException:
+        return None
+    if resp.status_code in (400, 422):
+        body = ""
+        try:
+            body = resp.text[:300]
+        except Exception:
+            pass
+        resp.close()
+        raise ToolsUnsupported(f"{resp.status_code} {body}")
+    if (resp.status_code != 200
+            or "text/event-stream" not in (resp.headers.get("Content-Type") or "")):
+        resp.close()
+        return None
+
+    content, reasoning, finish, usage = "", "", "", {}
+    calls: dict = {}
+    guard = _make_loop_guard()
+    try:
+        for raw in resp.iter_lines():
+            if stop_event is not None and stop_event.is_set():
+                raise LLMInterrupted("LLM call aborted by stop signal")
+            if not raw:
+                continue
+            line = raw.decode("utf-8", "replace") if isinstance(raw, bytes) else raw
+            if not line.startswith("data:"):
+                continue
+            data = line[5:].strip()
+            if data == "[DONE]":
+                break
+            try:
+                chunk = _json.loads(data)
+            except ValueError:
+                continue
+            usage = chunk.get("usage") or usage
+            choice = (chunk.get("choices") or [{}])[0]
+            delta = choice.get("delta") or {}
+            thought = delta.get("reasoning_content") or ""
+            if thought:
+                reasoning += thought
+                if on_reasoning:
+                    on_reasoning(thought)
+                guard.observe(thought, reasoning)
+            for tc in delta.get("tool_calls") or []:
+                slot = calls.setdefault(int(tc.get("index", 0) or 0),
+                                        {"id": "", "name": "", "arguments": ""})
+                slot["id"] = tc.get("id") or slot["id"]
+                fn = tc.get("function") or {}
+                slot["name"] += fn.get("name") or ""
+                arguments = fn.get("arguments")
+                if isinstance(arguments, str):
+                    slot["arguments"] += arguments
+                elif arguments:
+                    slot["arguments"] += _json.dumps(arguments)
+            text = delta.get("content") or ""
+            if text:
+                content += text
+                if on_token:
+                    on_token(text)
+            if choice.get("finish_reason"):
+                finish = choice["finish_reason"]
+    finally:
+        resp.close()
+
+    parsed = []
+    for i in sorted(calls):
+        slot = calls[i]
+        try:
+            arguments = (_json.loads(slot["arguments"])
+                         if slot["arguments"].strip() else {})
+        except ValueError:
+            arguments = {"__unparsed_arguments__": slot["arguments"]}
+        parsed.append({"id": slot["id"], "name": slot["name"], "arguments": arguments})
+    return {"content": content.strip(), "reasoning": reasoning.strip(),
+            "tool_calls": parsed, "finish_reason": finish, "usage": usage}
+
+
 def call_llm_tools(messages, tools, model=None, temperature=None,
                    max_tokens=None, timeout=None, base_url=None, api_key=None,
-                   stop_event=None, tool_choice="auto"):
+                   stop_event=None, tool_choice="auto",
+                   on_token=None, on_reasoning=None):
     """Ask the model to choose a tool, and read the choice as structured data.
+
+    With on_token or on_reasoning set the reply is streamed and each fragment
+    handed over as it arrives; the return value is the same either way.
 
     The counterpart of call_llm() for the ReAct action channel. The difference
     is not the transport but the guarantee: when a server compiles `tools`
@@ -719,6 +846,19 @@ def call_llm_tools(messages, tools, model=None, temperature=None,
 
     global LAST_STATS
     t0 = time.time()
+    if on_token is not None or on_reasoning is not None:
+        streamed = _stream_tools_openai_compatible(
+            payload, headers, timeout, base_url, stop_event, on_token, on_reasoning)
+        if streamed is not None:
+            usage = streamed.pop("usage", None) or {}
+            LAST_STATS = {
+                "prompt":     usage.get("prompt_tokens", 0) or 0,
+                "completion": usage.get("completion_tokens", 0) or 0,
+                "total":      usage.get("total_tokens", 0) or 0,
+                "seconds":    time.time() - t0,
+                "model":      endpoints.state(base_url).served_model or model,
+            }
+            return streamed
     try:
         resp = _post_with_retry(f"{base_url}/chat/completions", headers,
                                 payload, timeout, model, stop_event)
