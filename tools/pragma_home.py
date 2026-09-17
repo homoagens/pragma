@@ -60,6 +60,7 @@ GREY, RESET = "\033[38;5;242m", "\033[0m"
 COMMANDS = {
     "/open":      "open a project and start talking; /open <name> goes straight in",
     "/new":       "start a project",
+    "/jobs":      "what the memory is writing in the background, in any project",
     "/configure": "set up the endpoint",
     "/clear":     "clear the screen",
     "/help":      "this list",
@@ -184,13 +185,69 @@ def memory_jobs() -> list[tuple[str, str]]:
     return out
 
 
+def show_jobs() -> None:
+    """The memory's background work in every project: followed while it runs,
+    listed when it failed, one line when there is nothing.
+
+    The same view the conversation has, from the screen where you actually are
+    after leaving a project - which is when a consolidation is running.
+    """
+    os.environ.setdefault("PRAGMA_NO_ENDPOINT_PROBE", "1")
+    sys.path[:0] = [str(ROOT), str(ROOT / "core"), str(ROOT / "tools")]
+    try:
+        import pragma_jobs as jobs
+    except Exception as e:
+        print(f"  jobs unavailable - {type(e).__name__}: {e}")
+        return
+    found: list[tuple[str, dict]] = []
+    for entry in registry_entries():
+        store = str(entry.get("memory") or "").strip()
+        if not store:
+            continue
+        try:
+            for job in jobs.listing(Path(store), limit=6):
+                found.append((str(entry["name"]), job))
+        except Exception:
+            continue
+    print()
+    if not found:
+        print("  nothing in the background - every memory is up to date.")
+        print()
+        return
+    live = [(p, j) for p, j in found if j.get("status") in ("pending", "running")]
+    failed = [(p, j) for p, j in found if j.get("status") not in ("pending", "running")]
+    if live:
+        project, job = live[0]
+        others = ", ".join(p for p, _ in live[1:])
+        print(f"  {project} - {job.get('note') or 'a session'}   ctrl+D to leave it to itself"
+              + (f"   (also writing: {others})" if others else ""))
+        print()
+        try:
+            jobs.watch(Path(job["_path"]), job)
+        except KeyboardInterrupt:
+            print()
+            print("  still working - it carries on without you.")
+        print()
+    if failed:
+        print("  these did not finish. The turns are still in them, so they can be")
+        print("  run again:  venv\\Scripts\\python.exe tools\\pragma_consolidate.py <file>")
+        print()
+        for project, job in failed:
+            when = job.get("finished") or job.get("started") or job.get("created") or ""
+            print(f"  {job.get('status', '?'):<10}{project:<16}{when}   {job.get('note', '')}")
+            if job.get("error"):
+                print(f"    {str(job['error'])[:100]}")
+            print(f"    {job.get('_path', '')}")
+            print()
+
+
 def memory_line(jobs_running: list[tuple[str, str]], grey: str, reset: str) -> None:
     for project, step in jobs_running:
         busy = "\033[33m" if grey else ""
         print(f"  {grey}{'memory':<12}{reset}{busy}{project} - writing{reset}"
               f"  {grey}{step}{reset}")
     if jobs_running:
-        print(f"  {grey}{'':<12}/open the project and /jobs to watch it{reset}")
+        print(f"  {grey}{'':<12}/jobs to watch it{reset}")
         print()
 
 
@@ -384,6 +441,8 @@ def main() -> int:
         cmd = ALIASES.get(cmd, cmd)
         if cmd == "/help":
             show_help(extra)
+        elif cmd == "/jobs":
+            show_jobs()
         elif cmd == "/exit":
             # Typed, not a keystroke: it says what is happening and stays.
             if not held_back():

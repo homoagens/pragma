@@ -756,86 +756,6 @@ def _consolidate_later(turns: list[Turn], cwd: Path,
     return True
 
 
-def _stop_key() -> bool:
-    """Has someone asked to stop watching? Ctrl+D, Escape or q.
-
-    Read without waiting, because the caller is in a display loop and must not
-    block on a keypress that may never come. Ctrl+C arrives as an exception
-    instead and is handled where the loop is.
-    """
-    if os.name != "nt":
-        return False
-    try:
-        import msvcrt
-        while msvcrt.kbhit():
-            ch = msvcrt.getch()
-            if ch in (b"\x04", b"\x03", b"\x1b", b"q", b"Q"):
-                return True
-    except Exception:
-        return False
-    return False
-
-
-def _watch_job(path, job: dict) -> None:
-    """Follow one running job the way the foreground used to read.
-
-    The faculties are the same and they take the same minute; what changed is
-    that you are no longer held there. So the log is FOLLOWED rather than
-    dumped: each line appears as its faculty finishes, and the one in flight
-    carries a second count, because forty seconds of nothing moving is
-    indistinguishable from a worker that has died.
-    """
-    import time
-    import pragma_jobs as jobs
-    shown = 0
-    started = time.time()
-    last_len = 0
-    # Repainting one line needs a terminal to repaint it on. Piped to a file,
-    # a carriage return is just a character, and the second counter would write
-    # four hundred copies of the same sentence into the log.
-    try:
-        repaint = sys.stdout.isatty()
-    except Exception:
-        repaint = False
-    while True:
-        fresh = jobs.read(path)
-        if not fresh and shown:
-            # The worker finished and cleaned up after itself. A job file that
-            # has gone is the success case, and the log already on screen is
-            # the whole of what there was to see.
-            print()
-            print("  done.")
-            return
-        job = fresh or job
-        log = job.get("log") or []
-        for line in log[shown:-1] if len(log) > shown else []:
-            print("\r" + " " * last_len + "\r  " + line[:100])
-            last_len = 0
-        shown = max(shown, len(log) - 1)
-        done = job.get("status") not in ("pending", "running")
-        tail = log[-1] if log else "starting"
-        if done:
-            if log:
-                print("\r" + " " * last_len + "\r  " + log[-1][:100])
-            break
-        if repaint:
-            row = f"  {tail[:88]}  {int(time.time() - started)}s"
-            print("\r" + row.ljust(last_len), end="", flush=True)
-            last_len = len(row)
-        if _stop_key():
-            print("\r" + " " * last_len + "\r"
-                  "  still working - it carries on without you.")
-            return
-        time.sleep(0.5)
-
-    state = job.get("status")
-    if state == "done":
-        n = len(job.get("episodes") or [])
-        print(f"  done - {n} episode(s) written.")
-    else:
-        print(f"  {state} - {str(job.get('error', ''))[:100]}")
-
-
 def _writing_now() -> str:
     """The note of the consolidation in flight for this store, or ""."""
     try:
@@ -874,7 +794,7 @@ def _show_jobs() -> None:
               "ctrl+D to leave it to itself")
         print()
         try:
-            _watch_job(Path(live["_path"]), live)
+            jobs.watch(Path(live["_path"]), live)
         except KeyboardInterrupt:
             print()
             print("  still working - it carries on without you.")

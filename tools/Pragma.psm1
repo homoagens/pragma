@@ -1550,6 +1550,7 @@ function script:Invoke-MenuLoop($suggested) {
             # day and created once.
             foreach ($row in @(@("/open",      "open a project and start talking"),
                                @("/new",       "start a project"),
+                               @("/jobs",      "what the memory is writing"),
                                @("/configure", "set up the endpoint"),
                                @("/help",      "what each command does"),
                                @("/exit",      "leave"))) {
