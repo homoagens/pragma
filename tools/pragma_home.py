@@ -58,7 +58,7 @@ GREY, RESET = "\033[38;5;242m", "\033[0m"
 # Order is the order on the page: open before new, because over the life of a
 # project it is opened every day and created once.
 COMMANDS = {
-    "/open":      "open a project; /open <name> goes straight in",
+    "/open":      "open a project and start talking; /open <name> goes straight in",
     "/new":       "start a project",
     "/configure": "set up the endpoint",
     "/clear":     "clear the screen",

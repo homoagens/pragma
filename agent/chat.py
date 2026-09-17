@@ -34,6 +34,13 @@
 # what it chose to that turn. The desk only grows: a fragment already placed is
 # excluded from later turns, so it is neither pasted nor reinforced twice.
 #
+# TWO SCREENS. The launcher's home prompt is where a project is chosen; opening
+# one draws its briefing and lands here, in the conversation. There used to be
+# a third place between them - a prompt under the briefing where /chat began
+# the talk - and it decided nothing: everything it offered works from inside
+# the conversation. Leaving goes back to the home prompt, one step, and what
+# was said is consolidated on the way.
+#
 # NOT IN THIS PHASE: consolidation on context overflow. See the plan.
 
 from __future__ import annotations
@@ -90,7 +97,6 @@ _EXIT_WORDS = {"/exit", "/quit", "/bye", "exit", "quit"}
 #
 # Each entry is (what it runs, one line of help).
 _COMMANDS = {
-    "/chat":      ("chat",      "talk to it - many turns, one conversation"),
     "/memory":    ("memory",    ""),      # the views fill the blurb in
     "/project":   ("project",   ""),      # so do the actions
     "/status":    ("status",    "how this project is set up right now"),
@@ -98,7 +104,7 @@ _COMMANDS = {
     "/configure": ("configure", "point Pragma at an LLM endpoint"),
     "/clear":     ("clear",     "clear the screen, keep the conversation"),
     "/help":      ("help",      "this list"),
-    "/exit":      ("exit",      "close the session and consolidate"),
+    "/exit":      ("exit",      "consolidate what was said and go back to the projects"),
 }
 
 # The views of the store. The name is the flag mem_map already takes, so the
@@ -119,14 +125,18 @@ _PROJECT_ACTIONS = {
     "switch":   ("ask:switch",   "another project"),
     "new":      ("ask:new",      "start a project"),
     "delete":   ("ask:delete",   "remove a project"),
-    "close":    ("ask:close",    "close this project, back to /open /new /configure"),
 }
 
 # Old names, and the odd synonym. They work exactly as they did and are offered
-# by nothing: the list stays short, the habits keep working.
+# by nothing: the list stays short, the habits keep working. /chat is one of
+# them now: there is no second place to be, so it answers where you already
+# are instead of failing.
 _ALIASES = {"/info": "/help"}
 _ALIASES.update({f"/{view}": f"/memory {view}" for view in _MEMORY_VIEWS})
 _ALIASES.update({f"/{action}": f"/project {action}" for action in _PROJECT_ACTIONS})
+# Leaving the project IS /exit now that there is no briefing to step back to:
+# one act, one line in the list, and the name people learned still works.
+_ALIASES["/close"] = "/exit"
 
 
 def _blurb(name: str) -> str:
@@ -171,8 +181,6 @@ class _SlashCompleter:
     menu at all.
     """
 
-    at_home = False
-
     def get_completions(self, document, complete_event):
         from prompt_toolkit.completion import Completion
         text = document.text_before_cursor
@@ -204,16 +212,6 @@ class _SlashCompleter:
             if name.startswith(text):
                 yield Completion(name, start_position=-len(text),
                                  display=name, display_meta=_blurb(name))
-
-
-def _set_level(session, at_home: bool) -> None:
-    """Tell the completer which set of commands is on offer."""
-    global _AT_HOME_NOW
-    _AT_HOME_NOW = at_home
-    try:
-        session.completer.at_home = at_home
-    except Exception:
-        pass
 
 
 def _chat_ask_user(topic: str = "", context: str = "", mode: str = "input",
@@ -301,15 +299,8 @@ def _accent() -> str:
 
 
 def _hint() -> str:
-    """What Ctrl+D does from here, which is not the same thing at both levels.
-
-    At the briefing it closes the project and goes back to the home prompt;
-    in a conversation it goes back to the briefing. One level up each time,
-    as everywhere else in the launcher, and a hint that lies is worse than no
-    hint.
-    """
-    return ("/chat to talk  ·  ctrl+D to close the project" if _AT_HOME_NOW
-            else "say something, or /help  ·  ctrl+D to go back")
+    """What the empty line offers: say something, or step back out."""
+    return "say something, or /help  ·  ctrl+D closes the project"
 
 
 def _ask(session):
@@ -336,19 +327,13 @@ def _prompt() -> str:
     return a + glyph + "\033[0m" + " "
 
 
-# At the briefing there is no conversation to leave halfway, and /chat is the
-# one thing that only makes sense there.
-_AT_HOME = set(_COMMANDS)
-_IN_CHAT = set(_COMMANDS) - {"/chat"}
-
-# Which level is being typed at. One place, read by the banner, the help
-# and the completer, so a command cannot be offered by one and refused by
-# another.
-_AT_HOME_NOW = True
-
-
+# ONE LEVEL. There used to be two - a briefing you typed at, and the
+# conversation /chat opened - and the first decided nothing: every command it
+# offered works from inside the talk, and the only one that did not, /chat,
+# existed to leave it. Now the briefing is the page you land on and the prompt
+# under it is already the conversation's.
 def _allowed() -> set:
-    return _AT_HOME if _AT_HOME_NOW else _IN_CHAT
+    return set(_COMMANDS)
 
 
 # What the conversation's page says at the top, kept so that clearing can put
@@ -370,23 +355,18 @@ def _show_chat_header() -> None:
     print()
 
 
-def _slash_banner(at_home: bool = False) -> None:
-    """At home a pointer, inside the list.
+def _slash_banner() -> None:
+    """One line under the briefing: what to type, and what a slash is for.
 
-    A wall of commands under a briefing is something to read before doing the
-    one thing anyone came for. Inside a conversation the list earns its place:
-    it is the only thing saying that a slash means something there at all.
+    The briefing is right above it and was read on the way in, so this says
+    the little the briefing cannot: that talking is the default and that the
+    slash commands exist.
     """
     a, r = _accent(), ("\033[0m" if _accent() else "")
     print()
-    if at_home:
-        print(f"  {a}/chat{r} to talk"
-              f"   ·   {a}/memory{r} to look at the store"
-              f"   ·   {a}/help{r} for everything else")
-    else:
-        names = " ".join(n for n in _COMMANDS if n in _allowed())
-        print(f"  {a}{names}{r}")
-        print("  anything else is a message.")
+    print(f"  say something to begin"
+          f"   ·   {a}/memory{r} to look at the store"
+          f"   ·   {a}/help{r} for the commands")
     print()
 
 
@@ -529,13 +509,13 @@ def _run_slash(line: str) -> bool:
     unconsolidated turns in it.
     """
     cmd, arg = _normalise(line)
+    if cmd == "/chat":
+        # It used to open the conversation from the briefing. There is one
+        # level now, so it answers where you already are.
+        print("  you are already in the conversation - just say it.")
+        return True
     if cmd not in _COMMANDS:
         print(f"  no such command: {cmd}   (/help for the list)")
-        return True
-    if cmd not in _allowed():
-        # Only /chat is level-bound, and only one way round.
-        print("  you are already in a conversation." if cmd == "/chat"
-              else f"  {cmd} needs a conversation - /chat first")
         return True
     action = _COMMANDS[cmd][0]
     if action == "memory":
@@ -562,15 +542,10 @@ def _run_slash(line: str) -> bool:
         _slash_help()
         return True
     if action == "clear":
-        # Clearing redraws the page rather than emptying the screen. At the
-        # briefing the page belongs to the launcher - the logo, the counts,
-        # what faded - so the only honest way to redraw it is to ask.
-        if _AT_HOME_NOW:
-            if _ask_launcher("refresh"):
-                return False
-            _new_page()
-            _slash_banner(at_home=True)
-            return True
+        # The screen, not the conversation: the briefing above scrolls away
+        # with everything else and the header takes its place, because asking
+        # the launcher to draw it again would mean starting a second process
+        # and losing the turns this one is holding.
         _new_page()
         _show_chat_header()
         return True
@@ -604,7 +579,7 @@ def _run_slash(line: str) -> bool:
         print("  leave Pragma and come back for the new one.")
         print()
         return True
-    if action in ("exit", "chat"):
+    if action == "exit":
         return False                      # handled by the caller
     if action.startswith("ask:"):
         want = action.split(":", 1)[1]
@@ -1197,7 +1172,7 @@ If the turn needed no tools at all, the conclusion is simply your reply.
     # started and made the briefing look like the chat.
     if not online:
         print(f"  backend down - {str(detail).split(chr(8212))[0].strip()[:70]}")
-        print("  the memory still answers: /map /beliefs /oblio /last")
+        print("  the memory still answers: /memory, /status, /jobs")
         print("  /configure points Pragma at another endpoint")
 
     cfg = AgentConfig(
@@ -1234,48 +1209,12 @@ If the turn needed no tools at all, the conclusion is simply your reply.
     turn_msgs: list[int] = []
     consolidated_upto = 0
 
-    # THE BRIEFING IS A PLACE, NOT A SPLASH. Landing straight in the
-    # conversation meant every look at the memory, every settings change, was
-    # something you did on the way out of a talk you had just started. Here
-    # nothing is running: /chat begins one, and leaving one comes back here.
+    # TWO SCREENS, NOT THREE. The launcher has just drawn the briefing - the
+    # logo, the project, what the memory holds, what changed while you were
+    # away - and the prompt under it is the conversation's. The screen is NOT
+    # cleared here: clearing it threw away the page that had just been drawn
+    # and replaced it with two lines saying less.
     #
-    # /exit means the same at both levels - out of where you are - so it takes
-    # two to leave the program, and Ctrl+D is the same key by another name.
-    _set_level(session, True)
-    _slash_banner(at_home=True)
-    while True:
-        try:
-            text = _ask(session)
-        except EOFError:
-            # Ctrl+D goes back one level: from a project's briefing that is
-            # the home prompt, where another project can be opened. It used to
-            # leave the program, so changing project meant quitting and
-            # starting again. /exit still leaves.
-            print()
-            _ask_launcher("close")
-            return 0                              # nothing to consolidate yet
-        except KeyboardInterrupt:
-            print()
-            return 0
-        if not text:
-            continue
-        if text.lower() in _EXIT_WORDS:
-            return 0
-        if text.startswith("/"):
-            if _normalise(text)[0] == "/chat":
-                break                             # into the conversation
-            if not _run_slash(text):
-                return 0                          # a page the launcher owns
-            continue
-        # Prose here would vanish: there is no turn to put it in yet, and
-        # swallowing it silently is how a first message gets lost.
-        print("  /chat first, then say it.")
-
-    # A conversation gets a page. Printed under the briefing it read as more
-    # of the same screen; cleared, it is somewhere you went. The commands are
-    # not repeated here - /help still lists them, and the slash still offers
-    # them as you type.
-    _set_level(session, False)
     # The undo net for this conversation. Batch opens one per run; the
     # conversation never did, so `revert` was offered with nothing behind it
     # and answered that no file had changed, whatever had.
@@ -1284,15 +1223,16 @@ If the turn needed no tools at all, the conclusion is simply your reply.
         checkpoint.begin_session(str(cwd))
     except Exception:
         pass
+    # What /clear puts back, since the briefing above cannot be redrawn from
+    # here without starting a second process.
     _CHAT_HEADER[:] = [
         f"  {_STATE['project']} · talking to {served or 'nothing - the backend is down'}"
         f" · memory {'on' if args.memory else 'off'}"
         f" · max {max_steps} steps per turn",
-        "  /exit or ctrl+D goes back"
-        "   ·   ctrl+C goes back and consolidates",
+        "  /exit or ctrl+D closes the project"
+        "   ·   ctrl+C the same, consolidating what was said",
     ]
-    _new_page()
-    _show_chat_header()
+    _slash_banner()
 
     try:
         while True:
@@ -1302,21 +1242,22 @@ If the turn needed no tools at all, the conclusion is simply your reply.
             try:
                 text = _ask(session)
             except EOFError:
-                # The same as /exit: out of the conversation, back to the
-                # briefing. Two of them leave the program, because the second
-                # is given to a briefing that has nothing left to step back to.
+                # One level up, which is now the home prompt: the project
+                # closes and another can be opened. What was said is
+                # consolidated on the way out, below.
                 print()
-                _ask_launcher("refresh")
+                _ask_launcher("close")
                 break
             except KeyboardInterrupt:
                 print()
+                _ask_launcher("close")
                 break
             if not text:
                 continue
             if text.lower() in _EXIT_WORDS:
-                # Back to the briefing, redrawn with whatever this
-                # conversation just added to the memory.
-                _ask_launcher("refresh")
+                # Out of the project, back to the home prompt, with whatever
+                # was said handed to the memory on the way.
+                _ask_launcher("close")
                 break
             # A slash is a command, not a message. Checked before anything
             # else so it never reaches the model, never becomes a Turn, and

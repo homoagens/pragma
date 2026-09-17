@@ -1548,7 +1548,7 @@ function script:Invoke-MenuLoop($suggested) {
             Write-Host ""
             # open before new: over the life of a project it is opened every
             # day and created once.
-            foreach ($row in @(@("/open",      "open a project"),
+            foreach ($row in @(@("/open",      "open a project and start talking"),
                                @("/new",       "start a project"),
                                @("/configure", "set up the endpoint"),
                                @("/help",      "what each command does"),
