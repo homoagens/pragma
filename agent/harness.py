@@ -13,10 +13,13 @@ between your question and the reply.
 
 This is the same information at the altitude of a terminal harness:
 
-- ONE STATUS LINE while anything is running - the curator, a model call, a
-  tool - saying who and for how long, with the model's reasoning scrolling
-  through it as it thinks. It is the same line for every phase, which is what
-  makes waiting legible: something is always moving and it always says what.
+- ONE STATUS BLOCK while anything is running - the curator, a model call, a
+  tool - saying who and for how long. While the model thinks, the last few
+  lines of its reasoning are under it, wrapped at words and redrawn in place:
+  readable sentences, not a window sliding over characters. It is the same
+  block for every phase, which is what makes waiting legible: something is
+  always moving and it always says what. When the thinking ends, one dim
+  line says how long it took.
 - A TOOL IS ONE LINE, and its result a few: the first lines and how much was
   left out. Errors keep more. --show-thoughts keeps everything, for the times
   the tool output is the point.
@@ -42,6 +45,12 @@ import re
 import sys
 import threading
 import time
+
+# How much of the reasoning is shown while it is being written: the last
+# THINK_LINES lines of it, wrapped to the terminal. Enough to read a thought,
+# not enough to become the screen.
+THINK_LINES = 4
+THINK_KEEP = 2000                  # characters of reasoning kept for the panel
 
 GLYPHS = {"prompt": "❯", "tool": "●", "out": "⎿", "fac": "◆",
           "ok": "✓", "bad": "✗", "note": "!", "dot": "·"}
@@ -224,9 +233,14 @@ class Harness:
         self.accent = accent_hex()
         self._lock = threading.RLock()
         self._status = None
+        self._spinner = None
         self._label = ""
         self._since = 0.0
-        self._tail = ""
+        self._tail = ""                 # the reasoning, as one flowing paragraph
+        self._reasoning = ""            # the whole of it, kept only when verbose
+        self._think_chars = 0
+        self._think_since = 0.0
+        self._last_draw = 0.0
         self._answer: _AnswerStream | None = None
         self._boundary = True
         self._call = {"streamed": 0}
@@ -243,23 +257,21 @@ class Harness:
         with self._lock:
             if self._answer is not None:
                 return                      # the answer itself is the progress
-            if label != self._label:
+            changed = label != self._label
+            if changed:
                 self._label = label
                 self._since = time.monotonic()
-            text = self._status_text()
             if self._status is None:
                 try:
-                    self._status = self.console.status(
-                        text, spinner="line" if self.legacy else "dots",
-                        spinner_style=self.accent)
+                    from rich.live import Live
+                    self._status = Live(self._renderable(), console=self.console,
+                                        refresh_per_second=8, transient=True)
                     self._status.start()
+                    self._last_draw = time.monotonic()
                 except Exception:
                     self._status = None
-            else:
-                try:
-                    self._status.update(text)
-                except Exception:
-                    pass
+            elif changed:
+                self._redraw()
 
     def _hide(self) -> None:
         with self._lock:
@@ -269,28 +281,65 @@ class Harness:
                 except Exception:
                     pass
                 self._status = None
+            self._spinner = None
             self._label = ""
             self._tail = ""
 
-    def _status_text(self) -> str:
-        from rich.markup import escape
+    def _redraw(self) -> None:
+        if self._status is not None:
+            try:
+                self._status.update(self._renderable())
+            except Exception:
+                pass
+        self._last_draw = time.monotonic()
+
+    def _renderable(self):
+        """The block: a spinner line saying who and for how long, and under it
+        the last lines of the reasoning while there is any."""
+        from rich.console import Group
+        from rich.padding import Padding
+        from rich.spinner import Spinner
+        from rich.text import Text
         secs = int(time.monotonic() - self._since) if self._since else 0
-        text = f"[bright_black]{escape(self._label)}[/bright_black]"
-        if self._tail:
-            room = max(20, self.console.width - len(self._label) - 16)
-            tail = self._tail[-room:]
-            text += f"  [italic bright_black]{escape(tail)}[/italic bright_black]"
-        return text + f"  [bright_black]{secs}s[/bright_black]"
+        head = Text(f"{self._label}  {secs}s", style="bright_black")
+        if self._spinner is None:
+            self._spinner = Spinner("line" if self.legacy else "dots", text=head,
+                                    style=self.accent)
+        else:
+            self._spinner.update(text=head)
+        if not self._tail:
+            return self._spinner
+        body = Text(self._tail, style="italic bright_black")
+        lines = body.wrap(self.console, max(20, self.console.width - 6))
+        return Group(self._spinner, Padding(Group(*lines[-THINK_LINES:]), (0, 0, 0, 4)))
 
     def _tick(self) -> None:
         while self._ticking:
             time.sleep(0.5)
             with self._lock:
                 if self._status is not None:
-                    try:
-                        self._status.update(self._status_text())
-                    except Exception:
-                        pass
+                    self._redraw()
+
+    def _end_thinking(self) -> None:
+        """The thinking is over: the panel goes, one line says how long.
+
+        Verbose keeps the whole reasoning on the screen instead, since the
+        panel only ever showed the end of it.
+        """
+        with self._lock:
+            chars, since, full = self._think_chars, self._think_since, self._reasoning
+            self._think_chars, self._think_since, self._reasoning = 0, 0.0, ""
+            self._tail = ""
+        if not chars:
+            return
+        self._hide()
+        from rich.padding import Padding
+        from rich.text import Text
+        if self.verbose and full.strip():
+            self.console.print(Padding(Text(" ".join(full.split()), style="italic bright_black"),
+                                       (0, 0, 0, 2)))
+        secs = time.monotonic() - since
+        self.console.print(Text(f"  {self.g['dot']} thought for {secs:.0f}s", style="bright_black"))
 
     # llm_client.STATUS_HOOK: what the spinner would have said, said here.
     def begin(self, who: str) -> None:
@@ -320,6 +369,7 @@ class Harness:
             if self._answer is not None:
                 self._answer.close()
                 self._answer = None
+            self._think_chars, self._think_since, self._reasoning = 0, 0.0, ""
         self._hide()
 
     # ── streaming from the model ────────────────────────────────────────────
@@ -333,11 +383,30 @@ class Harness:
     def on_reasoning(self, chunk: str) -> None:
         self._new_call()
         with self._lock:
-            self._tail = (self._tail + " ".join(chunk.split()) + (" " if chunk.endswith((" ", "\n")) else ""))[-200:]
+            if not self._think_chars:
+                self._think_since = time.monotonic()
+            self._think_chars += len(chunk)
+            if self.verbose:
+                self._reasoning = (self._reasoning + chunk)[-20000:]
+            # One flowing paragraph. The panel shows the last lines of it,
+            # wrapped at words, so what is read is sentences. Runs of
+            # whitespace become one space, but a space at either edge of a
+            # chunk is kept: chunks are cut mid-word, and dropping the edge
+            # glued "sulla lezione" into "sullalezione".
+            piece = re.sub(r"\s+", " ", chunk)
+            if piece.startswith(" ") and self._tail.endswith(" "):
+                piece = piece[1:]
+            self._tail = (self._tail + piece)[-THINK_KEEP:]
         self._show("thinking")
+        # Redrawn at most ten times a second: tokens arrive faster than that
+        # and the ticker catches whatever a throttle skipped.
+        if time.monotonic() - self._last_draw >= 0.1:
+            with self._lock:
+                self._redraw()
 
     def on_token(self, chunk: str) -> None:
         self._new_call()
+        self._end_thinking()
         with self._lock:
             self._call["streamed"] += len(chunk)
             if self._answer is None:
@@ -378,6 +447,7 @@ class Harness:
 
     def thought(self, step, text):
         self._close_answer()
+        self._end_thinking()
         self._hide()
         self._turn["steps"] += 1
         self._boundary = True
@@ -450,6 +520,7 @@ class Harness:
     def error(self, step, content):
         from rich.text import Text
         self._close_answer()
+        self._end_thinking()
         self._hide()
         t = Text(f"  {self.g['bad']} ", style="bold red")
         t.append(str(content)[:600], style="red")
