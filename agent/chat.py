@@ -81,7 +81,11 @@ _RENDERER = None
 # values, never work: the loop refreshes it between turns.
 _STATE: dict = {}
 
-_EXIT_WORDS = {"/exit", "/quit", "/bye", "exit", "quit"}
+# Not commands: the words people type when they mean ctrl+D. Answered rather
+# than obeyed, because obeying them would put a second door next to the one
+# every other screen already uses - and rejected as unknown they would look
+# like a mistake, when the only thing wrong is the habit.
+_LEAVING_WORDS = {"/exit", "/quit", "/bye", "/q"}
 
 # What a slash reaches without leaving the conversation. The alternative was
 # quitting the chat, walking a menu and coming back, which is the cost that
@@ -104,7 +108,6 @@ _COMMANDS = {
     "/configure": ("configure", "point Pragma at an LLM endpoint"),
     "/clear":     ("clear",     "clear the screen, keep the conversation"),
     "/help":      ("help",      "this list"),
-    "/exit":      ("exit",      "consolidate what was said and go back to the projects"),
 }
 
 # The views of the store. The name is the flag mem_map already takes, so the
@@ -134,9 +137,8 @@ _PROJECT_ACTIONS = {
 _ALIASES = {"/info": "/help"}
 _ALIASES.update({f"/{view}": f"/memory {view}" for view in _MEMORY_VIEWS})
 _ALIASES.update({f"/{action}": f"/project {action}" for action in _PROJECT_ACTIONS})
-# Leaving the project IS /exit now that there is no briefing to step back to:
-# one act, one line in the list, and the name people learned still works.
-_ALIASES["/close"] = "/exit"
+# The names for leaving all point at the same answer: ctrl+D.
+_ALIASES.update({"/close": "/exit"})
 
 
 def _blurb(name: str) -> str:
@@ -381,6 +383,7 @@ def _slash_help() -> None:
     print()
     print("  /memory and /project take one of the words above, /memory alone")
     print("  shows the map. Anything without a slash is a message to the agent.")
+    print(f"  {a}ctrl+D{r} closes the project, consolidating what was said.")
     print()
 
 
@@ -514,6 +517,10 @@ def _run_slash(line: str) -> bool:
         # level now, so it answers where you already are.
         print("  you are already in the conversation - just say it.")
         return True
+    if cmd in _LEAVING_WORDS:
+        print("  ctrl+D closes the project, and what was said is consolidated")
+        print("  on the way out. Another ctrl+D at the projects leaves Pragma.")
+        return True
     if cmd not in _COMMANDS:
         print(f"  no such command: {cmd}   (/help for the list)")
         return True
@@ -579,16 +586,14 @@ def _run_slash(line: str) -> bool:
         print("  leave Pragma and come back for the new one.")
         print()
         return True
-    if action == "exit":
-        return False                      # handled by the caller
     if action.startswith("ask:"):
         want = action.split(":", 1)[1]
         if not _ask_launcher(want):
             print("  that one needs the launcher: start with `pragma`.")
             return True
-        # False ends the loop the same way /exit does, so the turns consolidate
-        # before the launcher takes over. Leaving without that would drop the
-        # conversation on the floor to look at a settings page.
+        # False ends the loop the same way ctrl+D does, so the turns
+        # consolidate before the launcher takes over. Leaving without that
+        # would drop the conversation on the floor to look at a settings page.
         return False
 
     print(f"  {cmd} is not wired up in this copy of Pragma.")
@@ -696,7 +701,7 @@ def _consolidate_later(turns: list[Turn], cwd: Path,
     """Hand the turns to a detached worker. False means do it here instead.
 
     LEAVING SHOULD NOT TAKE LONGER THAN STAYING. Consolidation is four LLM
-    calls and about a minute on a 27B, and it used to run between `/exit` and
+    calls and about a minute on a 27B, and it used to run between leaving and
     the prompt coming back - so the last thing a conversation did was hold you
     there while it wrote itself down. The work is the same; only who waits for
     it changes.
@@ -1229,8 +1234,8 @@ If the turn needed no tools at all, the conclusion is simply your reply.
         f"  {_STATE['project']} · talking to {served or 'nothing - the backend is down'}"
         f" · memory {'on' if args.memory else 'off'}"
         f" · max {max_steps} steps per turn",
-        "  /exit or ctrl+D closes the project"
-        "   ·   ctrl+C the same, consolidating what was said",
+        "  ctrl+D closes the project and consolidates what was said"
+        "   ·   ctrl+C the same",
     ]
     _slash_banner()
 
@@ -1254,17 +1259,12 @@ If the turn needed no tools at all, the conclusion is simply your reply.
                 break
             if not text:
                 continue
-            if text.lower() in _EXIT_WORDS:
-                # Out of the project, back to the home prompt, with whatever
-                # was said handed to the memory on the way.
-                _ask_launcher("close")
-                break
             # A slash is a command, not a message. Checked before anything
             # else so it never reaches the model, never becomes a Turn, and
             # never lands in an episode as though it had been said.
             if text.startswith("/"):
                 if not _run_slash(text):
-                    break        # /exit, or a page the launcher owns
+                    break        # a page the launcher owns
                 continue
 
             # Only a real turn needs the model. Asked again rather than
