@@ -1,0 +1,27 @@
+#!/bin/sh
+# Copyright (C) 2026 Homo Agens
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# This file is part of Pragma <https://github.com/homoagens/pragma>.
+#
+# Pragma, on Linux and macOS: the same two screens the Windows launcher draws.
+#
+#     ./pragma                  from the repository
+#     ln -s "$PWD/pragma" ~/.local/bin/pragma     from anywhere
+#
+# It runs the repository's own venv when there is one, because that is where
+# rich and prompt_toolkit live; without it, whatever python3 is on the path.
+set -e
+here=$(cd "$(dirname "$(readlink -f "$0" 2>/dev/null || echo "$0")")" && pwd)
+if [ -x "$here/venv/bin/python" ]; then
+    py="$here/venv/bin/python"
+elif [ -x "$here/.venv/bin/python" ]; then
+    py="$here/.venv/bin/python"
+else
+    py=$(command -v python3 || command -v python)
+fi
+if [ -z "$py" ]; then
+    echo "pragma: no python found - install python3, or create the venv:" >&2
+    echo "        python3 -m venv venv && venv/bin/pip install -r requirements.txt" >&2
+    exit 1
+fi
+exec "$py" "$here/tools/pragma_launcher.py" "$@"
