@@ -10,6 +10,11 @@
 *.psm1  text eol=crlf
 *.psd1  text eol=crlf
 
+# The shell entry point is the other way round: a #!/bin/sh with CRLF is
+# a script Linux refuses to run.
+pragma  text eol=lf
+*.sh    text eol=lf
+
 # Everything else follows the working tree, normalised in the repository.
 *       text=auto
 
