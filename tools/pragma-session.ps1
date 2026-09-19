@@ -80,12 +80,16 @@ Set-SessionEnv "SKILL_MAX_TOKENS"  (Cfg "SkillMaxTokens" "")
 # did; set it when the model reasons its way through a three-line verdict and
 # you would rather it did not do so at the agent's budget.
 Set-SessionEnv "MEMORY_MAX_TOKENS" (Cfg "MemoryMaxTokens" "")
-# "" | select | all. Asks the chat template to skip the thinking phase on
-# memory calls only - the agent keeps thinking either way. "select" silences
-# the faculties that CHOOSE (curator, segmenter); "all" also silences those
-# that WRITE, whose mistakes end up in the store instead of expiring with the
-# turn. Off unless set: this changes the judgement, not only the speed.
+# Who reasons. Pragma says it on every call, true or false, because a
+# server's default is a choice made somewhere else: one that thinks by default
+# made "off" impossible to ask for, one that does not made "on" impossible.
+# MemoryNoThink "" | select | all: "" lets every memory call reason; "select"
+# silences the faculties that CHOOSE (curator, segmenter); "all" also silences
+# those that WRITE, whose mistakes end up in the store instead of expiring.
+# AgentThink on | off: whether the agent reasons before each step. Off unless
+# set - a conversation pays for it on every turn.
 Set-SessionEnv "MEMORY_NO_THINK"   (Cfg "MemoryNoThink"   "")
+Set-SessionEnv "AGENT_THINK"       (Cfg "AgentThink"      "")
 Set-SessionEnv "LLM_TIMEOUT"       (Cfg "Timeout"        "")
 # How wide the deterministic prefilter casts its net before the curator judges.
 # The right width depends on the store: ten candidates out of thirty is a very
@@ -206,9 +210,6 @@ function script:Get-BudgetLine {
     # waits a long time before its first step is usually waiting on the
     # curator, and this is the number that explains it.
     $mem = if ($env:MEMORY_MAX_TOKENS) { $env:MEMORY_MAX_TOKENS } else { "as skills" }
-    # Stated because it changes what the faculties DO, not only how fast, and
-    # WHICH of them, because silencing the writers is the consequential half.
-    if ($env:MEMORY_NO_THINK) { $mem = "$mem no-think:$($env:MEMORY_NO_THINK)" }
     # "120s" when set, plain "repo" when not - never "repos".
     $to  = if ($env:LLM_TIMEOUT) { "$($env:LLM_TIMEOUT)s" } else { $d }
     "ctx $ctx / out $mt / skills $sk / memory $mem / timeout $to"
@@ -232,6 +233,18 @@ function script:Get-RecallLine {
     $ln = if ($env:CURATOR_CANDIDATES_LEARNINGS) { $env:CURATOR_CANDIDATES_LEARNINGS } else { $d }
     $mx = if ($env:CURATOR_MAX_FRAGMENTS)        { $env:CURATOR_MAX_FRAGMENTS }        else { $d }
     "$ep candidates ($re held for the newest) + $ln rules -> max $mx on the desk"
+}
+
+# Who reasons, as this window will ask for it on every call.
+function script:Get-ThinkingLine {
+    $agent = if ($env:AGENT_THINK -in @('on', '1', 'true', 'yes')) { 'on' } else { 'off' }
+    $memory = switch ($env:MEMORY_NO_THINK) {
+        'select' { 'writing only (select)' }
+        'write'  { 'recall and segmenting only (write)' }
+        'all'    { 'none (all)' }
+        default  { 'every call' }
+    }
+    "agent $agent / memory $memory"
 }
 
 # What this window will actually SEND. Printed on entry because a sampling
@@ -330,6 +343,7 @@ function script:Show-Status {
     Write-Host "    protocol   $(if ($env:LLM_TOOL_PROTOCOL) { $env:LLM_TOOL_PROTOCOL } else { 'text (repo default)' })"
     Write-Host "    budgets    $(Get-BudgetLine)"
     Write-Host "    sampling   $(Get-SamplingLine)   (-Sampling for the full picture)" -ForegroundColor DarkGray
+    Write-Host "    thinking   $(Get-ThinkingLine)"
     Write-Host "    rules      $(Get-ContractLine)"
     $rl = Get-RecallLine
     if ($rl) { Write-Host "    recall     $rl" }
@@ -497,7 +511,7 @@ function global:pragma {
         Remove-Item Env:PRAGMA_WORKSPACE, Env:PRAGMA_DATA_DIR -ErrorAction SilentlyContinue
         Remove-Item Env:LLM_BASE_URL, Env:LLM_TOOL_PROTOCOL -ErrorAction SilentlyContinue
         Remove-Item Env:CONTEXT_WINDOW, Env:MAX_TOKENS -ErrorAction SilentlyContinue
-        Remove-Item Env:SKILL_MAX_TOKENS, Env:MEMORY_MAX_TOKENS, Env:MEMORY_NO_THINK, Env:LLM_TIMEOUT -ErrorAction SilentlyContinue
+        Remove-Item Env:SKILL_MAX_TOKENS, Env:MEMORY_MAX_TOKENS, Env:MEMORY_NO_THINK, Env:AGENT_THINK, Env:LLM_TIMEOUT -ErrorAction SilentlyContinue
         Remove-Item Env:CURATOR_CANDIDATES_EPISODES, Env:CURATOR_CANDIDATES_RECENT -ErrorAction SilentlyContinue
         Remove-Item Env:CURATOR_CANDIDATES_LEARNINGS, Env:CURATOR_MAX_FRAGMENTS -ErrorAction SilentlyContinue
         Write-Host "off - defaults restored for this window"
@@ -661,6 +675,7 @@ Write-Host "  workspace : $env:PRAGMA_WORKSPACE"
 Write-Host "  protocol  : $(if ($env:LLM_TOOL_PROTOCOL) { $env:LLM_TOOL_PROTOCOL } else { 'text (repo default)' })"
 Write-Host "  budgets   : $(Get-BudgetLine)"
 Write-Host "  sampling  : $(Get-SamplingLine)"
+Write-Host "  thinking  : $(Get-ThinkingLine)"
 Write-Host "  rules     : $(Get-ContractLine)"
 $rl = Get-RecallLine
 if ($rl) { Write-Host "  recall    : $rl" }

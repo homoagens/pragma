@@ -653,7 +653,7 @@ function script:New-Project([string]$name, [string]$workspace) {
         # MemoryNoThink select: recall and segmenting are choices from a short
         # list, and on a model that reasons they spent minutes thinking about
         # them. Writing memory keeps its reasoning. /settings changes it.
-        settings    = [pscustomobject]@{ Temperature = "server"; MemoryNoThink = "select" }
+        settings    = [pscustomobject]@{ Temperature = "server"; MemoryNoThink = "select"; AgentThink = "off" }
     }
     Write-Registry ($entries + $entry)
     Write-Host "pragma: registered '$name'" -ForegroundColor Green
@@ -904,14 +904,34 @@ function script:Invoke-ProjectChoices($entry) {
     Write-Accent "  choices for '$($entry.name)'"
     Write-Host "  enter keeps the value in brackets . ctrl+D stops" -ForegroundColor DarkGray
 
-    # 1. Whether the memory calls reason before they answer.
+    # 1. Whether the agent reasons before each step. Asked for explicitly on
+    # every call, so the answer means the same whatever the server's default.
+    $cur = Get-ProjectValue $entry 'AgentThink'
+    $shown = if ($cur -in @('on', 'true', '1', 'yes')) { 'on' } else { 'off' }
+    Write-Host ""
+    Write-Host "  agent thinking - does the agent reason before each step?"
+    Write-Host "    off  it answers and acts at once: fast, every turn (recommended for a conversation)" -ForegroundColor DarkGray
+    Write-Host "    on   it reasons first: better on problems in several steps, many times slower" -ForegroundColor DarkGray
+    while ($true) {
+        $v = Read-Line "  agent thinking [$shown]: "
+        if ($null -eq $v) { return }
+        $v = $v.Trim().ToLowerInvariant()
+        if (-not $v -or $v -eq $shown) { break }
+        if ($v -in @('on', 'off')) {
+            Set-ProjectSetting $entry 'AgentThink' $v | Out-Null
+            break
+        }
+        Write-Host "    on or off" -ForegroundColor Yellow
+    }
+
+    # 2. Whether the memory calls reason before they answer.
     $cur = Get-ProjectValue $entry 'MemoryNoThink'
     $shown = if ($cur -in @('select', 'all', 'write')) { $cur } else { 'on' }
     Write-Host ""
     Write-Host "  memory thinking - do the memory calls reason before answering?"
     Write-Host "    select  recall and segmenting answer at once, writing memory reasons (recommended)" -ForegroundColor DarkGray
     Write-Host "    all     no memory call reasons: fastest, plainer episodes and beliefs" -ForegroundColor DarkGray
-    Write-Host "    on      every memory call reasons: slowest on a model that thinks" -ForegroundColor DarkGray
+    Write-Host "    on      every memory call reasons: slowest, the writing runs in the background" -ForegroundColor DarkGray
     while ($true) {
         $v = Read-Line "  memory thinking [$shown]: "
         if ($null -eq $v) { return }
@@ -924,7 +944,7 @@ function script:Invoke-ProjectChoices($entry) {
         Write-Host "    select, all or on" -ForegroundColor Yellow
     }
 
-    # 2. Sampling, as the settings menu has always offered it.
+    # 3. Sampling, as the settings menu has always offered it.
     $t = Get-ProjectValue $entry 'Temperature'
     $shown = if ($t -eq 'server' -or $t -eq '') { if ($t) { 'server' } else { 'greedy' } }
              elseif ($t -in @('0', '0.0') -and -not (Get-ProjectValue $entry 'TopK')) { 'greedy' }
@@ -943,7 +963,7 @@ function script:Invoke-ProjectChoices($entry) {
         Write-Host "    server, greedy or manual" -ForegroundColor Yellow
     }
 
-    # 3. How far one turn may go before the agent has to answer.
+    # 4. How far one turn may go before the agent has to answer.
     $cur = Get-ProjectValue $entry 'MaxSteps'
     $shown = if ($cur) { $cur } else { '50' }
     Write-Host ""

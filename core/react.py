@@ -290,6 +290,7 @@ def _native_action_text(cfg: AgentConfig, messages, model, temperature,
             temperature=temperature, max_tokens=config.MAX_TOKENS,
             stop_event=cfg.stop_event,
             on_token=cfg.on_token, on_reasoning=cfg.on_reasoning,
+            template_kwargs=config.agent_template_kwargs(),
         )
     except llm_client.ToolsUnsupported as e:
         known.tools_unsupported = True
@@ -618,12 +619,14 @@ def run_agent(cfg: AgentConfig, user_task: str, log_path: Optional[Path] = None,
                         temperature=temperature, max_tokens=config.MAX_TOKENS,
                         stop_event=cfg.stop_event, on_token=cfg.on_token,
                         on_reasoning=cfg.on_reasoning,
+                        template_kwargs=config.agent_template_kwargs(),
                     )
                 else:
                     text = llm_client.call_llm(
                         messages=messages, model=model,
                         temperature=temperature, max_tokens=config.MAX_TOKENS,
                         stop_event=cfg.stop_event,
+                        template_kwargs=config.agent_template_kwargs(),
                     )
         except llm_client.LLMInterrupted:
             _emit({"type": "stopped", "content": "Task interrupted by user."})
@@ -1073,12 +1076,14 @@ def run_agent(cfg: AgentConfig, user_task: str, log_path: Optional[Path] = None,
                 temperature=temperature, max_tokens=config.MAX_TOKENS,
                 stop_event=cfg.stop_event, on_token=cfg.on_token,
                 on_reasoning=cfg.on_reasoning,
+                template_kwargs=config.agent_template_kwargs(),
             )
         else:
             text = llm_client.call_llm(
                 messages=messages, model=model,
                 temperature=temperature, max_tokens=config.MAX_TOKENS,
                 stop_event=cfg.stop_event,
+                template_kwargs=config.agent_template_kwargs(),
             )
         response = extract_json(text)
     except llm_client.LLMInterrupted:

@@ -453,9 +453,13 @@ def _status_lines() -> list[tuple[str, str]]:
     out.append(("steps", f"{getattr(cfg, 'MAX_STEPS', 0)} per turn"))
     think = getattr(cfg, "MEMORY_NO_THINK", "")
     # The value as well as its meaning: the sentence is what it does, the word
-    # in brackets is what to type to change it.
-    out.append(("thinking", {
-        "": "every memory call reasons before it answers  (on)",
+    # in brackets is what to type to change it. Both are asked for on every
+    # call, so they hold whatever the server's own default is.
+    out.append(("agent", "reasons before each step  (AgentThink on)"
+                if getattr(cfg, "AGENT_THINK", False)
+                else "acts without reasoning  (AgentThink off)"))
+    out.append(("memory", {
+        "": "every memory call reasons before it answers  (MemoryNoThink on)",
         "select": "recall and segmenting answer at once, writing memory reasons  (select)",
         "write": "writing memory answers at once, the rest reasons  (write)",
         "all": "no memory call reasons  (all)",

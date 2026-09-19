@@ -338,19 +338,43 @@ elif _NO_THINK in ("0", "false", "no", "off"):
 MEMORY_NO_THINK = _NO_THINK if _NO_THINK in ("select", "write", "all") else ""
 
 
+# THE AGENT'S SWITCH. Off unless set: a reasoning model spends most of its
+# tokens thinking, and a conversation feels that on every turn. AGENT_THINK=on
+# is for projects whose turns are problems rather than exchanges.
+_AGENT_THINK = os.environ.get("AGENT_THINK", "").strip().lower()
+AGENT_THINK = _AGENT_THINK in ("on", "1", "true", "yes")
+
+
+def _thinking(on: bool) -> dict:
+    # Both spellings: which key a chat template reads is a property of the
+    # model, and a template that reads neither ignores both in silence.
+    return {"enable_thinking": on, "thinking": on}
+
+
+def agent_template_kwargs():
+    """chat_template_kwargs for the agent's calls: always explicit.
+
+    Explicit because a server's default is a choice made somewhere else. A
+    server that thinks by default made "off" impossible to ask for; one that
+    does not made "on" impossible. Saying it on every call makes the setting
+    mean the same thing against either.
+    """
+    return _thinking(AGENT_THINK)
+
+
 def memory_template_kwargs(kind="write"):
-    """chat_template_kwargs for a memory call, or None to send no field.
+    """chat_template_kwargs for a memory call: always explicit, true or false.
 
     `kind` is "select" or "write" — which of the two groups above the calling
     faculty belongs to. It defaults to "write" so that a call site added later
     and left unmarked keeps its thinking: the conservative side of the switch
     is the one where being wrong is permanent.
+
+    It used to return None - send nothing - for the calls meant to think,
+    which only worked against a server that thinks by default.
     """
-    if not MEMORY_NO_THINK:
-        return None
-    if MEMORY_NO_THINK != "all" and MEMORY_NO_THINK != kind:
-        return None
-    return {"enable_thinking": False, "thinking": False}
+    silenced = MEMORY_NO_THINK == "all" or MEMORY_NO_THINK == kind
+    return _thinking(not silenced)
 
 # write_file emits a soft warning in the observation when content exceeds
 # this many bytes — the agent learns to prefer incremental edits.

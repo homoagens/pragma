@@ -98,6 +98,9 @@ class State:
     served_model: str = ""
     tools_unsupported: bool = False
     schema_unsupported: bool = False
+    # chat_template_kwargs is llama.cpp's, not OpenAI's: a server that rejects
+    # it is remembered, and the thinking switch is not sent to it again.
+    template_unsupported: bool = False
 
 
 _STATES: dict[str, State] = {}

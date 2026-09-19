@@ -557,6 +557,44 @@ def _warn_if_still_thinking(template_kwargs, msg):
         "are as slow as before.[/yellow]")
 
 
+_THINK_IGNORED = [False]
+
+
+def _warn_if_not_thinking(template_kwargs, has_reasoning: bool) -> None:
+    """Say it once when the model was asked to reason and did not.
+
+    The mirror of _warn_if_still_thinking. A template that does not read the
+    key accepts it in silence, so the only witness is the reply: no reasoning
+    where reasoning was asked for.
+    """
+    if _THINK_IGNORED[0] or has_reasoning or not template_kwargs:
+        return
+    if not any(v is True for v in template_kwargs.values()):
+        return
+    _THINK_IGNORED[0] = True
+    _console.print(
+        "[yellow]Pragma asked the model to reason (enable_thinking), but no "
+        "reasoning came back: this model or its template may not honour the "
+        "switch, or return its reasoning inside the answer.[/yellow]")
+
+
+def _template_for(base_url, template_kwargs):
+    """The template variables to send to this endpoint, or None."""
+    if not template_kwargs or endpoints.state(base_url).template_unsupported:
+        return None
+    return template_kwargs
+
+
+def _refused(e) -> bool:
+    """Did the server refuse the request as written, rather than fail?"""
+    status = getattr(getattr(e, "response", None), "status_code", None)
+    if status in (400, 422):
+        return True
+    msg = str(e).lower()
+    return any(s in msg for s in ("400", "422", "unknown field", "unsupported",
+                                  "unrecognized", "response_format", "json_schema"))
+
+
 def _call_openai_compatible(messages, model, temperature, max_tokens, timeout, base_url, api_key, stop_event=None, response_schema=None, template_kwargs=None):
     """Standard OpenAI /chat/completions — works with Groq, Ollama, vLLM, etc."""
     global LAST_STATS
@@ -570,10 +608,9 @@ def _call_openai_compatible(messages, model, temperature, max_tokens, timeout, b
     if temperature is not None:
         payload["temperature"] = temperature
     payload.update(config.sampling_extras())
-    # Variables handed to the server's chat template. Not an OpenAI field: a
-    # server that does not know it ignores it, which is the same outcome as
-    # not sending it. Used to ask a reasoning model to skip its thinking phase
-    # on calls where there is nothing to think about.
+    # Variables handed to the server's chat template: the thinking switch.
+    # Not an OpenAI field - a server that rejects it is remembered by the
+    # caller and not sent it again.
     if template_kwargs:
         payload["chat_template_kwargs"] = template_kwargs
     if response_schema:
@@ -603,6 +640,7 @@ def _call_openai_compatible(messages, model, temperature, max_tokens, timeout, b
     msg    = choice.get("message", {})
     finish = choice.get("finish_reason", "")
     _warn_if_still_thinking(template_kwargs, msg)
+    _warn_if_not_thinking(template_kwargs, bool((msg.get("reasoning_content") or "").strip()))
     text   = (msg.get("content") or msg.get("reasoning_content") or "").strip()
     return text, finish
 
@@ -611,7 +649,7 @@ def _call_openai_compatible(messages, model, temperature, max_tokens, timeout, b
 
 def _stream_openai_compatible(messages, model, temperature, max_tokens, timeout,
                                base_url, api_key, stop_event, on_token,
-                               on_reasoning=None):
+                               on_reasoning=None, template_kwargs=None):
     """Stream from an OpenAI-compatible /chat/completions endpoint (SSE)."""
     import json as _json
     payload = {
@@ -625,6 +663,8 @@ def _stream_openai_compatible(messages, model, temperature, max_tokens, timeout,
     if temperature is not None:
         payload["temperature"] = temperature
     payload.update(config.sampling_extras())
+    if template_kwargs:
+        payload["chat_template_kwargs"] = template_kwargs
     headers = {"Content-Type": "application/json"}
     if api_key:
         headers["Authorization"] = f"Bearer {api_key}"
@@ -798,7 +838,34 @@ def _stream_tools_openai_compatible(payload, headers, timeout, base_url,
 def call_llm_tools(messages, tools, model=None, temperature=None,
                    max_tokens=None, timeout=None, base_url=None, api_key=None,
                    stop_event=None, tool_choice="auto",
-                   on_token=None, on_reasoning=None):
+                   on_token=None, on_reasoning=None, template_kwargs=None):
+    """Ask the model to choose a tool; see _call_llm_tools_once.
+
+    template_kwargs is the thinking switch. A refusal with it attached is
+    retried once without, and only a refusal without it means no tools.
+    """
+    url, _key = _resolved_endpoint(base_url, api_key)
+    tk = _template_for(url, template_kwargs)
+    args = (messages, tools, model, temperature, max_tokens, timeout,
+            base_url, api_key, stop_event, tool_choice, on_token, on_reasoning)
+    try:
+        result = _call_llm_tools_once(*args, template_kwargs=tk)
+    except ToolsUnsupported:
+        if not tk:
+            raise
+        result = _call_llm_tools_once(*args, template_kwargs=None)
+        endpoints.state(url).template_unsupported = True
+        return result
+    has = bool((result.get("reasoning") or "").strip())
+    _warn_if_still_thinking(tk, {"reasoning_content": "x" if has else ""})
+    _warn_if_not_thinking(tk, has)
+    return result
+
+
+def _call_llm_tools_once(messages, tools, model=None, temperature=None,
+                         max_tokens=None, timeout=None, base_url=None, api_key=None,
+                         stop_event=None, tool_choice="auto",
+                         on_token=None, on_reasoning=None, template_kwargs=None):
     """Ask the model to choose a tool, and read the choice as structured data.
 
     With on_token or on_reasoning set the reply is streamed and each fragment
@@ -840,6 +907,8 @@ def call_llm_tools(messages, tools, model=None, temperature=None,
     # setting: it hands the choice to the server's launch-time default, which
     # is where a model's recommended preset usually already lives.
     payload.update(config.sampling_extras())
+    if template_kwargs:
+        payload["chat_template_kwargs"] = template_kwargs
     headers = {"Content-Type": "application/json"}
     if api_key:
         headers["Authorization"] = f"Bearer {api_key}"
@@ -960,32 +1029,46 @@ def call_llm(messages, model=None, temperature=None, max_tokens=None, timeout=No
             or known.schema_unsupported):
         response_schema = None
 
-    try:
-        text, finish = _call_openai_compatible(
-            messages, model, temperature, max_tokens, timeout, url, key,
-            stop_event, response_schema, template_kwargs,
-        )
-    except LLMInterrupted:
-        raise
-    except Exception as e:
-        # An endpoint that does not implement json_schema rejects the payload
-        # outright. Degrade for the rest of the process rather than failing a
-        # faculty: the reply is still parsed leniently downstream, exactly as
-        # it was before schemas existed.
-        msg = str(e).lower()
-        if response_schema and any(s in msg for s in (
-                "400", "422", "response_format", "json_schema", "schema",
-                "unknown field", "unsupported")):
-            known.schema_unsupported = True
-            if config.DEBUG:
-                print(f"[llm] endpoint rejected response_format ({str(e)[:120]}); "
-                      f"continuing without schemas.")
+    # WHAT TO SEND WHEN THE SERVER REFUSES. Two optional fields can make an
+    # endpoint reject a request it would otherwise answer: the template
+    # variables (an OpenAI server does not know them) and the schema (a server
+    # without structured output does not either). Try as asked, then without
+    # the template, then without the schema, then without both - and remember
+    # what had to go, for this endpoint, so the next call does not pay again.
+    # Degrading is better than failing a faculty: the reply is still parsed
+    # leniently downstream, exactly as it was before either field existed.
+    tk = _template_for(url, template_kwargs)
+    attempts = [(response_schema, tk)]
+    if tk:
+        attempts.append((response_schema, None))
+    if response_schema:
+        attempts.append((None, tk))
+        if tk:
+            attempts.append((None, None))
+    last = None
+    for schema, templ in attempts:
+        try:
             text, finish = _call_openai_compatible(
                 messages, model, temperature, max_tokens, timeout, url, key,
-                stop_event, None, template_kwargs,
+                stop_event, schema, templ,
             )
-        else:
+        except LLMInterrupted:
             raise
+        except Exception as e:
+            if not _refused(e):
+                raise
+            last = e
+            continue
+        if tk and templ is None:
+            known.template_unsupported = True
+        if response_schema and schema is None:
+            known.schema_unsupported = True
+            if config.DEBUG:
+                print(f"[llm] endpoint rejected response_format ({str(last)[:120]}); "
+                      f"continuing without schemas.")
+        break
+    else:
+        raise last
 
     # Salvage partial text on length truncation if possible.
     text = _on_length_finish(text, finish)
@@ -998,7 +1081,7 @@ def call_llm(messages, model=None, temperature=None, max_tokens=None, timeout=No
 
 def stream_llm(messages, model=None, temperature=None, max_tokens=None, timeout=None,
                base_url=None, api_key=None, stop_event=None,
-               on_token=None, on_reasoning=None):
+               on_token=None, on_reasoning=None, template_kwargs=None):
     """
     Like call_llm but calls on_token(chunk: str) for each text fragment as it
     arrives over SSE. Returns the complete response text when done.
@@ -1009,10 +1092,30 @@ def stream_llm(messages, model=None, temperature=None, max_tokens=None, timeout=
     if timeout     is None: timeout     = config.TIMEOUT
 
     url, key = _resolved_endpoint(base_url, api_key)
-    return _stream_openai_compatible(
-        messages, model, temperature, max_tokens, timeout,
-        url, key, stop_event, on_token, on_reasoning,
-    )
+    tk = _template_for(url, template_kwargs)
+    seen = {"reasoning": False}
+
+    def _reasoning(chunk):
+        seen["reasoning"] = True
+        if on_reasoning:
+            on_reasoning(chunk)
+
+    try:
+        text = _stream_openai_compatible(
+            messages, model, temperature, max_tokens, timeout,
+            url, key, stop_event, on_token, _reasoning, tk,
+        )
+    except requests.HTTPError as e:
+        if not (tk and _refused(e)):
+            raise
+        endpoints.state(url).template_unsupported = True
+        return _stream_openai_compatible(
+            messages, model, temperature, max_tokens, timeout,
+            url, key, stop_event, on_token, on_reasoning, None,
+        )
+    _warn_if_still_thinking(tk, {"reasoning_content": "x" if seen["reasoning"] else ""})
+    _warn_if_not_thinking(tk, seen["reasoning"])
+    return text
 
 
 if __name__ == "__main__":
