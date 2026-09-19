@@ -85,9 +85,30 @@ class _JobHook:
         self.said = ""
         self.written = 0.0
 
+    # What each faculty is doing, for the line that names it. The segmenter
+    # and the consolidator announce themselves already; these two run inside
+    # the consolidation and had no line of their own.
+    DOING = {
+        "ABSTRACTOR": "distilling beliefs from the episodes\u2026",
+        "RECONSOLIDATOR": "rereading similar memories in the light of the new one\u2026",
+        "SEGMENTER": "deciding what was worth keeping\u2026",
+        "CONSOLIDATOR": "writing the episode\u2026",
+        "CURATOR": "searching memory\u2026",
+    }
+
     def begin(self, who):
         self.tail = ""
         self.said = ""
+        # "[ABSTRACTOR] model" or "[CONSOLIDATOR 2/3] model" -> ABSTRACTOR
+        name = who[1:who.index("]")].split()[0] if who.startswith("[") and "]" in who else ""
+        if not name:
+            return
+        log = self.r.job.get("log") or []
+        last = log[-1] if log else ""
+        last_name = last[1:last.index("]")].split()[0] if last.startswith("[") and "]" in last else ""
+        if name != last_name:
+            doing = self.DOING.get(name, "thinking…")
+            self.r._add(f"[{name}] {doing}")
 
     def tick(self, who, seconds):
         pass
