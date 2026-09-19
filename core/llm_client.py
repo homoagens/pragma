@@ -337,7 +337,7 @@ def _interruptible_post(url, headers, payload, timeout, stop_event):
     return holder["resp"]
 
 
-# WHO DRAWS THE WAIT. The spinner below is the right thing for a batch run
+# WHO DRAWS THE WAIT - AND THE THINKING. The spinner below is the right thing for a batch run
 # and for every faculty called from a script: it says who is thinking and for
 # how long, and needs nothing from its caller. A live session owns its screen
 # and wants ONE status line for the curator, the agent's steps and the tools
@@ -345,7 +345,17 @@ def _interruptible_post(url, headers, payload, timeout, stop_event):
 # handed over: an object with begin(label), tick(label, seconds) and end() is
 # told exactly what the spinner would have shown, and the spinner stays off.
 # None means the spinner, which is every caller that existed before this.
+#
+# Two optional methods on the same object, for the faculties' streamed calls:
+# reasoning(chunk, who) receives their reasoning as it is written, and
+# looped(who, detail) is told when a reasoning went in circles and the call
+# was asked again without thinking. The conversation's harness shows the first
+# under its status line; the background worker writes both into the job.
 STATUS_HOOK = None
+
+
+def _hook(name):
+    return getattr(STATUS_HOOK, name, None) if STATUS_HOOK is not None else None
 
 
 def _post_with_retry(url, headers, payload, timeout, label, stop_event=None):
@@ -595,6 +605,109 @@ def _refused(e) -> bool:
                                   "unrecognized", "response_format", "json_schema"))
 
 
+def _post_streamed(url, headers, payload, timeout, label, stop_event):
+    """The request as a stream: (message, finish, usage, seconds), or None.
+
+    None means the stream never started - a transport error, a status other
+    than 200 or 400/422, a body that is not an event stream, or a connection
+    dropped halfway - and the caller makes the blocking request instead, with
+    the retries and 502 backoff it has always had. A 400/422 is raised as an
+    HTTPError, so a refused field is handled exactly as on the blocking path.
+
+    While it runs, the reasoning goes to the hook as it is written and through
+    the loop guard, which raises LLMLooped when a paragraph starts repeating.
+    """
+    import json as _json
+    base = url.rsplit("/chat/completions", 1)[0]
+    who = _who(endpoints.state(base).served_model or label)
+    body = dict(payload, stream=True, stream_options={"include_usage": True})
+    t0 = time.time()
+    try:
+        resp = requests.post(url, headers=headers, json=body, stream=True, timeout=(10, timeout))
+    except requests.RequestException:
+        return None
+    if resp.status_code in (400, 422):
+        text = ""
+        try:
+            text = resp.text[:300]
+        except Exception:
+            pass
+        resp.close()
+        raise requests.HTTPError(f"{resp.status_code} Client Error: {text}", response=resp)
+    if resp.status_code != 200 or "text/event-stream" not in (resp.headers.get("Content-Type") or ""):
+        resp.close()
+        return None
+
+    begin, end, think = _hook("begin"), _hook("end"), _hook("reasoning")
+    status = None
+    if begin:
+        try:
+            begin(who)
+        except Exception:
+            pass
+    elif _can_spin():
+        try:
+            status = _console.status(f"[bold cyan]{who} is thinking...[/bold cyan]", spinner="dots")
+            status.start()
+        except Exception:
+            status = None
+    content, reasoning, finish, usage = "", "", "", {}
+    guard = _make_loop_guard()
+    try:
+        for raw in resp.iter_lines():
+            if stop_event is not None and stop_event.is_set():
+                raise LLMInterrupted("LLM call aborted by stop signal")
+            if not raw:
+                continue
+            line = raw.decode("utf-8", "replace") if isinstance(raw, bytes) else raw
+            if not line.startswith("data:"):
+                continue
+            data = line[5:].strip()
+            if data == "[DONE]":
+                break
+            try:
+                chunk = _json.loads(data)
+            except ValueError:
+                continue
+            usage = chunk.get("usage") or usage
+            choice = (chunk.get("choices") or [{}])[0]
+            delta = choice.get("delta") or {}
+            piece = delta.get("reasoning_content") or ""
+            if piece:
+                reasoning += piece
+                if think:
+                    try:
+                        think(piece, who)
+                    except Exception:
+                        pass
+                guard.observe(piece, reasoning)
+            content += delta.get("content") or ""
+            if choice.get("finish_reason"):
+                finish = choice["finish_reason"]
+            if status is not None:
+                try:
+                    status.update(f"[bold cyan]{who} is thinking... {int(time.time() - t0)}s[/bold cyan]")
+                except Exception:
+                    pass
+    except (LLMInterrupted, LLMLooped):
+        raise
+    except requests.RequestException:
+        return None                     # dropped halfway: the blocking request starts over
+    finally:
+        resp.close()
+        if status is not None:
+            try:
+                status.stop()
+            except Exception:
+                pass
+        if end:
+            try:
+                end()
+            except Exception:
+                pass
+    return {"content": content, "reasoning_content": reasoning}, finish, usage, time.time() - t0
+
+
 def _call_openai_compatible(messages, model, temperature, max_tokens, timeout, base_url, api_key, stop_event=None, response_schema=None, template_kwargs=None):
     """Standard OpenAI /chat/completions — works with Groq, Ollama, vLLM, etc."""
     global LAST_STATS
@@ -624,11 +737,21 @@ def _call_openai_compatible(messages, model, temperature, max_tokens, timeout, b
     headers = {"Content-Type": "application/json"}
     if api_key:
         headers["Authorization"] = f"Bearer {api_key}"
-    t0     = time.time()
-    resp   = _post_with_retry(f"{base_url}/chat/completions", headers, payload, timeout, model, stop_event)
-    dt     = time.time() - t0
-    data   = resp.json()
-    usage  = data.get("usage") or {}
+    streamed = None
+    if getattr(config, "STREAM_CALLS", True):
+        streamed = _post_streamed(f"{base_url}/chat/completions", headers, payload,
+                                  timeout, model, stop_event)
+    if streamed is not None:
+        msg, finish, usage, dt = streamed
+    else:
+        t0     = time.time()
+        resp   = _post_with_retry(f"{base_url}/chat/completions", headers, payload, timeout, model, stop_event)
+        dt     = time.time() - t0
+        data   = resp.json()
+        usage  = data.get("usage") or {}
+        choice = data["choices"][0]
+        msg    = choice.get("message", {})
+        finish = choice.get("finish_reason", "")
     LAST_STATS = {
         "prompt":     usage.get("prompt_tokens", 0) or 0,
         "completion": usage.get("completion_tokens", 0) or 0,
@@ -636,9 +759,6 @@ def _call_openai_compatible(messages, model, temperature, max_tokens, timeout, b
         "seconds":    dt,
         "model":      endpoints.state(base_url).served_model or model,
     }
-    choice = data["choices"][0]
-    msg    = choice.get("message", {})
-    finish = choice.get("finish_reason", "")
     _warn_if_still_thinking(template_kwargs, msg)
     _warn_if_not_thinking(template_kwargs, bool((msg.get("reasoning_content") or "").strip()))
     text   = (msg.get("content") or msg.get("reasoning_content") or "").strip()
@@ -1037,38 +1157,60 @@ def call_llm(messages, model=None, temperature=None, max_tokens=None, timeout=No
     # what had to go, for this endpoint, so the next call does not pay again.
     # Degrading is better than failing a faculty: the reply is still parsed
     # leniently downstream, exactly as it was before either field existed.
-    tk = _template_for(url, template_kwargs)
-    attempts = [(response_schema, tk)]
-    if tk:
-        attempts.append((response_schema, None))
-    if response_schema:
-        attempts.append((None, tk))
+    def _answer(template):
+        tk = _template_for(url, template)
+        attempts = [(response_schema, tk)]
         if tk:
-            attempts.append((None, None))
-    last = None
-    for schema, templ in attempts:
-        try:
-            text, finish = _call_openai_compatible(
-                messages, model, temperature, max_tokens, timeout, url, key,
-                stop_event, schema, templ,
-            )
-        except LLMInterrupted:
-            raise
-        except Exception as e:
-            if not _refused(e):
+            attempts.append((response_schema, None))
+        if response_schema:
+            attempts.append((None, tk))
+            if tk:
+                attempts.append((None, None))
+        last = None
+        for schema, templ in attempts:
+            try:
+                result = _call_openai_compatible(
+                    messages, model, temperature, max_tokens, timeout, url, key,
+                    stop_event, schema, templ,
+                )
+            except (LLMInterrupted, LLMLooped):
                 raise
-            last = e
-            continue
-        if tk and templ is None:
-            known.template_unsupported = True
-        if response_schema and schema is None:
-            known.schema_unsupported = True
-            if config.DEBUG:
-                print(f"[llm] endpoint rejected response_format ({str(last)[:120]}); "
-                      f"continuing without schemas.")
-        break
-    else:
+            except Exception as e:
+                if not _refused(e):
+                    raise
+                last = e
+                continue
+            if tk and templ is None:
+                known.template_unsupported = True
+            if response_schema and schema is None:
+                known.schema_unsupported = True
+                if config.DEBUG:
+                    print(f"[llm] endpoint rejected response_format ({str(last)[:120]}); "
+                          f"continuing without schemas.")
+            return result
         raise last
+
+    # A REASONING THAT GOES IN CIRCLES is stopped by the guard and the same
+    # call is asked again without thinking - where a greedy decode has nothing
+    # to loop on - so the faculty still gets its answer. Said to the hook (the
+    # job log, the conversation) or on the console, never silently: an episode
+    # written without the thinking it was meant to have is worth knowing about.
+    try:
+        text, finish = _answer(template_kwargs)
+    except LLMLooped as e:
+        if not (template_kwargs and any(v is True for v in template_kwargs.values())):
+            raise
+        told = _hook("looped")
+        who = current_faculty() or "the model"
+        if told:
+            try:
+                told(who, str(e))
+            except Exception:
+                pass
+        else:
+            _console.print(f"[yellow]{who}: the reasoning went in circles - "
+                           f"asked again without thinking.[/yellow]")
+        text, finish = _answer({k: False for k in template_kwargs})
 
     # Salvage partial text on length truncation if possible.
     text = _on_length_finish(text, finish)

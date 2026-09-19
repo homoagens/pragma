@@ -255,13 +255,18 @@ def watch(path, job: dict) -> None:
     shown = 0
     started = time.time()
     last_len = 0
-    # Repainting one line needs a terminal to repaint it on. Piped to a file,
-    # a carriage return is just a character, and the second counter would write
-    # four hundred copies of the same sentence into the log.
+    # Repainting needs a terminal to repaint on. Piped to a file, a carriage
+    # return is just a character, and the second counter would write four
+    # hundred copies of the same sentence into the log.
     try:
         repaint = sys.stdout.isatty()
     except Exception:
         repaint = False
+    if repaint:
+        try:
+            return _watch_live(path, job)
+        except ImportError:
+            pass
     while True:
         fresh = read(path)
         if not fresh and shown:
@@ -299,6 +304,59 @@ def watch(path, job: dict) -> None:
         print(f"  done - {n} episode(s) written.")
     else:
         print(f"  {state} - {str(job.get('error', ''))[:100]}")
+
+
+def _watch_live(path, job: dict) -> None:
+    """watch() on a terminal: the step in flight with its seconds, and under it
+    the last lines of what the faculty is thinking - the same block the
+    conversation draws for the agent."""
+    from rich.console import Console, Group
+    from rich.live import Live
+    from rich.padding import Padding
+    from rich.spinner import Spinner
+    from rich.text import Text
+
+    console = Console(highlight=False)
+    spinner = Spinner("dots", text="")
+    shown = 0
+    started = time.time()
+
+    def block(tail, thinking):
+        spinner.update(text=Text(f"{tail[:88]}  {int(time.time() - started)}s", style="bright_black"))
+        if not thinking:
+            return spinner
+        flat = Text(" ".join(thinking.split()), style="italic bright_black")
+        lines = flat.wrap(console, max(20, console.width - 8))
+        return Group(spinner, Padding(Group(*lines[-4:]), (0, 0, 0, 4)))
+
+    with Live(block("starting", ""), console=console, refresh_per_second=4, transient=True) as live:
+        while True:
+            fresh = read(path)
+            if not fresh and shown:
+                live.stop()
+                console.print("  done.")
+                return
+            job = fresh or job
+            log = job.get("log") or []
+            for line in log[shown:-1] if len(log) > shown else []:
+                live.console.print("  " + line[:100], highlight=False)
+            shown = max(shown, len(log) - 1)
+            if job.get("status") not in ("pending", "running"):
+                if log:
+                    live.console.print("  " + log[-1][:100], highlight=False)
+                break
+            live.update(block(log[-1] if log else "starting", job.get("thinking") or ""))
+            if stop_key():
+                live.stop()
+                console.print("  still working - it carries on without you.")
+                return
+            time.sleep(0.5)
+
+    state = job.get("status")
+    if state == "done":
+        console.print(f"  done - {len(job.get('episodes') or [])} episode(s) written.")
+    else:
+        console.print(f"  {state} - {str(job.get('error', ''))[:100]}")
 
 
 # --- the lock -----------------------------------------------------------------

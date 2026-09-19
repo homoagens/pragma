@@ -413,6 +413,11 @@ OBSERVATION_SOFT_LIMIT = int(os.environ.get("OBSERVATION_SOFT_LIMIT", "12000"))
 #   _CHECK_EVERY : sample a new fingerprint every N reasoning chars.
 #   _THRESHOLD: number of repetitions of the same fingerprint that triggers.
 #   _ENABLED  : kill switch. Set false to disable the watchdog entirely.
+# The faculties' calls stream, so their reasoning can be watched and the
+# loop guard below can stop it. LLM_STREAM_CALLS=0 goes back to the blocking
+# request for every call_llm, for a server whose streaming misbehaves.
+STREAM_CALLS = os.environ.get("LLM_STREAM_CALLS", "1").strip().lower() not in ("0", "false", "no", "off")
+
 REASONING_LOOP_WINDOW      = int(os.environ.get("REASONING_LOOP_WINDOW", "200"))
 REASONING_LOOP_CHECK_EVERY = int(os.environ.get("REASONING_LOOP_CHECK_EVERY", "400"))
 REASONING_LOOP_THRESHOLD   = int(os.environ.get("REASONING_LOOP_THRESHOLD", "3"))

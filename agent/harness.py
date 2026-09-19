@@ -352,6 +352,27 @@ class Harness:
     def end(self) -> None:
         self._hide()
 
+    def reasoning(self, chunk: str, who: str) -> None:
+        """A faculty's reasoning, under its own status line.
+
+        The same panel the agent's thinking gets, but it keeps the faculty's
+        label and leaves no "thought for" line: the faculty's own summary
+        follows, with its time.
+        """
+        with self._lock:
+            piece = re.sub(r"\s+", " ", chunk)
+            if piece.startswith(" ") and self._tail.endswith(" "):
+                piece = piece[1:]
+            self._tail = (self._tail + piece)[-THINK_KEEP:]
+            if time.monotonic() - self._last_draw >= 0.1:
+                self._redraw()
+
+    def looped(self, who: str, detail: str) -> None:
+        from rich.text import Text
+        self._hide()
+        self.console.print(Text(f"  {self.g['note']} {who.lower()}: the reasoning went in circles "
+                                f"- asked again without thinking", style="yellow"))
+
     def pause(self) -> None:
         """Give the screen back for a question; resume() takes it again."""
         with self._lock:

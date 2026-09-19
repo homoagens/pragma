@@ -71,6 +71,41 @@ class _JobRenderer:
         self._add(f"[ERROR] {content}")
 
 
+class _JobHook:
+    """llm_client.STATUS_HOOK for the worker: the faculties' reasoning, into the job.
+
+    The tail of what is being thought, at most once a second - a write is the
+    whole job file - so /jobs can show it the way the conversation does. A
+    reasoning that went in circles becomes a line in the log.
+    """
+
+    def __init__(self, renderer):
+        self.r = renderer
+        self.tail = ""
+        self.written = 0.0
+
+    def begin(self, who):
+        self.tail = ""
+
+    def tick(self, who, seconds):
+        pass
+
+    def reasoning(self, chunk, who):
+        self.tail = (self.tail + chunk)[-600:]
+        if time.time() - self.written >= 1.0:
+            self.written = time.time()
+            self.r.job["thinking"] = self.tail
+            jobs.write(self.r.path, self.r.job)
+
+    def end(self):
+        if self.r.job.pop("thinking", None) is not None:
+            jobs.write(self.r.path, self.r.job)
+        self.tail = ""
+
+    def looped(self, who, detail):
+        self.r._add(f"[{who or 'MEMORY'}] the reasoning went in circles - asked again without thinking")
+
+
 def run(path: Path) -> int:
     job = jobs.read(path)
     if not job:
@@ -125,6 +160,8 @@ def run(path: Path) -> int:
             turns.append(turn)
 
         renderer = _JobRenderer(path, job)
+        import llm_client
+        llm_client.STATUS_HOOK = _JobHook(renderer)
         written = _consolidate(turns, Path(job.get("workspace") or os.getcwd()),
                                renderer, note=job.get("note") or "a session")
         job["episodes"] = [e.get("id", "") for e in written if e]
