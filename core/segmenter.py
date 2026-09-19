@@ -167,9 +167,8 @@ def segment(user_turns: list[str], model=None) -> tuple[list[tuple[list[int], bo
                 messages=[{"role": "system", "content": _SYSTEM},
                           {"role": "user", "content": numbered}],
                 model=model,
-                temperature=0.0,
                 max_tokens=config.MEMORY_MAX_TOKENS,
-                template_kwargs=config.memory_template_kwargs("select"),
+                **config.memory_call("select"),
                 response_schema=_SCHEMA,
             )
         data = extract_json(raw)

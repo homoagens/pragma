@@ -469,6 +469,11 @@ def _post_with_retry(url, headers, payload, timeout, label, stop_event=None):
 
 # ── Provider backends ──────────────────────────────────────────────────────────
 
+# How the most recent call_llm answer was written: thinking, temperature,
+# the samplers and seed it sent, and whether a loop forced a retry without
+# thinking. Read by the writers of episodes and beliefs right after their call.
+LAST_CALL: dict = {}
+
 # Stats of the most recent blocking call: {"prompt","completion","total",
 # "seconds","model"}. Read by renderers (batch) to show per-step token counts,
 # speed and context usage. Best-effort — empty when the backend sends no usage.
@@ -653,6 +658,9 @@ def _post_streamed(url, headers, payload, timeout, label, stop_event):
             status = None
     content, reasoning, finish, usage = "", "", "", {}
     guard = _make_loop_guard()
+    # The cap is for the faculties only: the agent may think long on purpose,
+    # and its own loop has the step budget and the watchdogs.
+    budget = getattr(config, "MEMORY_THINK_BUDGET", 0) if current_faculty() else 0
     try:
         for raw in resp.iter_lines():
             if stop_event is not None and stop_event.is_set():
@@ -681,6 +689,8 @@ def _post_streamed(url, headers, payload, timeout, label, stop_event):
                     except Exception:
                         pass
                 guard.observe(piece, reasoning)
+                if budget and not content and len(reasoning) > budget:
+                    raise LLMLooped(f"reasoning passed {budget} characters without an answer")
             content += delta.get("content") or ""
             if choice.get("finish_reason"):
                 finish = choice["finish_reason"]
@@ -708,7 +718,7 @@ def _post_streamed(url, headers, payload, timeout, label, stop_event):
     return {"content": content, "reasoning_content": reasoning}, finish, usage, time.time() - t0
 
 
-def _call_openai_compatible(messages, model, temperature, max_tokens, timeout, base_url, api_key, stop_event=None, response_schema=None, template_kwargs=None):
+def _call_openai_compatible(messages, model, temperature, max_tokens, timeout, base_url, api_key, stop_event=None, response_schema=None, template_kwargs=None, sampling=None):
     """Standard OpenAI /chat/completions — works with Groq, Ollama, vLLM, etc."""
     global LAST_STATS
     payload = {
@@ -721,6 +731,10 @@ def _call_openai_compatible(messages, model, temperature, max_tokens, timeout, b
     if temperature is not None:
         payload["temperature"] = temperature
     payload.update(config.sampling_extras())
+    # The caller's own samplers win over the project's: a memory call that
+    # reasons brings the thinking preset and its seed (config.memory_call).
+    if sampling:
+        payload.update(sampling)
     # Variables handed to the server's chat template: the thinking switch.
     # Not an OpenAI field - a server that rejects it is remembered by the
     # caller and not sent it again.
@@ -1106,7 +1120,7 @@ def _call_llm_tools_once(messages, tools, model=None, temperature=None,
 
 def call_llm(messages, model=None, temperature=None, max_tokens=None, timeout=None,
              base_url=None, api_key=None, stop_event=None, response_schema=None,
-             template_kwargs=None):
+             template_kwargs=None, sampling=None):
     """
     Send messages to the OpenAI-compatible endpoint and return the response text.
 
@@ -1157,7 +1171,7 @@ def call_llm(messages, model=None, temperature=None, max_tokens=None, timeout=No
     # what had to go, for this endpoint, so the next call does not pay again.
     # Degrading is better than failing a faculty: the reply is still parsed
     # leniently downstream, exactly as it was before either field existed.
-    def _answer(template):
+    def _answer(template, temp, samp):
         tk = _template_for(url, template)
         attempts = [(response_schema, tk)]
         if tk:
@@ -1170,8 +1184,8 @@ def call_llm(messages, model=None, temperature=None, max_tokens=None, timeout=No
         for schema, templ in attempts:
             try:
                 result = _call_openai_compatible(
-                    messages, model, temperature, max_tokens, timeout, url, key,
-                    stop_event, schema, templ,
+                    messages, model, temp, max_tokens, timeout, url, key,
+                    stop_event, schema, templ, samp,
                 )
             except (LLMInterrupted, LLMLooped):
                 raise
@@ -1195,13 +1209,19 @@ def call_llm(messages, model=None, temperature=None, max_tokens=None, timeout=No
     # to loop on - so the faculty still gets its answer. Said to the hook (the
     # job log, the conversation) or on the console, never silently: an episode
     # written without the thinking it was meant to have is worth knowing about.
+    global LAST_CALL
+    LAST_CALL = {}
+    asked = bool(template_kwargs) and any(v is True for v in template_kwargs.values())
+    looped = False
     try:
-        text, finish = _answer(template_kwargs)
+        text, finish = _answer(template_kwargs, temperature, sampling)
     except LLMLooped as e:
-        if not (template_kwargs and any(v is True for v in template_kwargs.values())):
+        # A faculty's call only: the agent's own loop catches this and has
+        # its own way back, with a hint to the model rather than a switch.
+        if not (asked and current_faculty()):
             raise
         told = _hook("looped")
-        who = current_faculty() or "the model"
+        who = current_faculty()
         if told:
             try:
                 told(who, str(e))
@@ -1210,7 +1230,14 @@ def call_llm(messages, model=None, temperature=None, max_tokens=None, timeout=No
         else:
             _console.print(f"[yellow]{who}: the reasoning went in circles - "
                            f"asked again without thinking.[/yellow]")
-        text, finish = _answer({k: False for k in template_kwargs})
+        # Without thinking there is nothing to loop on, and greedy is safe.
+        looped, asked, temperature, sampling = True, False, 0.0, None
+        text, finish = _answer({k: False for k in template_kwargs}, temperature, sampling)
+    # How this answer was written, for the records that keep it: the episode
+    # and the belief say it, so a store written under different regimes can
+    # tell its records apart.
+    LAST_CALL = {"thinking": asked and not known.template_unsupported,
+                 "temperature": temperature, **(sampling or {}), "looped": looped}
 
     # Salvage partial text on length truncation if possible.
     text = _on_length_finish(text, finish)

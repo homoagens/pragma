@@ -653,7 +653,7 @@ function script:New-Project([string]$name, [string]$workspace) {
         # MemoryNoThink select: recall and segmenting are choices from a short
         # list, and on a model that reasons they spent minutes thinking about
         # them. Writing memory keeps its reasoning. /settings changes it.
-        settings    = [pscustomobject]@{ Temperature = "server"; MemoryNoThink = "select"; AgentThink = "off" }
+        settings    = [pscustomobject]@{ Temperature = "server"; MemoryNoThink = "select"; AgentThink = "off"; MemorySampling = "preset" }
     }
     Write-Registry ($entries + $entry)
     Write-Host "pragma: registered '$name'" -ForegroundColor Green
@@ -944,7 +944,26 @@ function script:Invoke-ProjectChoices($entry) {
         Write-Host "    select, all or on" -ForegroundColor Yellow
     }
 
-    # 3. Sampling, as the settings menu has always offered it.
+    # 3. How a memory call that reasons picks its words.
+    $cur = Get-ProjectValue $entry 'MemorySampling'
+    $shown = if ($cur -eq 'greedy') { 'greedy' } else { 'preset' }
+    Write-Host ""
+    Write-Host "  memory sampling - when a memory call reasons, how does it pick its words?"
+    Write-Host "    preset  the model's thinking preset with a fixed seed: no loops, same answer twice (recommended)" -ForegroundColor DarkGray
+    Write-Host "    greedy  temperature 0 always, as the paper's runs were: a thinking model may loop" -ForegroundColor DarkGray
+    while ($true) {
+        $v = Read-Line "  memory sampling [$shown]: "
+        if ($null -eq $v) { return }
+        $v = $v.Trim().ToLowerInvariant()
+        if (-not $v -or $v -eq $shown) { break }
+        if ($v -in @('preset', 'greedy')) {
+            Set-ProjectSetting $entry 'MemorySampling' $v | Out-Null
+            break
+        }
+        Write-Host "    preset or greedy" -ForegroundColor Yellow
+    }
+
+    # 4. Sampling, as the settings menu has always offered it.
     $t = Get-ProjectValue $entry 'Temperature'
     $shown = if ($t -eq 'server' -or $t -eq '') { if ($t) { 'server' } else { 'greedy' } }
              elseif ($t -in @('0', '0.0') -and -not (Get-ProjectValue $entry 'TopK')) { 'greedy' }
@@ -963,7 +982,7 @@ function script:Invoke-ProjectChoices($entry) {
         Write-Host "    server, greedy or manual" -ForegroundColor Yellow
     }
 
-    # 4. How far one turn may go before the agent has to answer.
+    # 5. How far one turn may go before the agent has to answer.
     $cur = Get-ProjectValue $entry 'MaxSteps'
     $shown = if ($cur) { $cur } else { '50' }
     Write-Host ""

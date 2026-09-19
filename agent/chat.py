@@ -464,6 +464,10 @@ def _status_lines() -> list[tuple[str, str]]:
         "write": "writing memory answers at once, the rest reasons  (write)",
         "all": "no memory call reasons  (all)",
     }.get(think, think)))
+    out.append(("", "when it reasons: " + ("temperature 0  (MemorySampling greedy)"
+                                         if getattr(cfg, "MEMORY_SAMPLING", "preset") == "greedy"
+                                         else f"thinking preset, seed {getattr(cfg, 'MEMORY_SEED', 42)}"
+                                              "  (MemorySampling preset)")))
     temp = getattr(cfg, "DEFAULT_TEMPERATURE", None)
     extra = [f"{name} {value}" for name, value in
              (("top_k", getattr(cfg, "TOP_K", None)), ("top_p", getattr(cfg, "TOP_P", None)),

@@ -106,10 +106,10 @@ def session_reflect_detailed(transcript: str = "",
                     {"role": "user",
                      "content": f"Task transcript:\n\n{transcript}"},
                 ],
-                temperature=0.0,
                 max_tokens=config.MEMORY_MAX_TOKENS,
-                template_kwargs=config.memory_template_kwargs("write"),
+                **config.memory_call("write"),
             )
+        written_with = dict(llm_client.LAST_CALL)
         result = extract_json(raw)
     except Exception as e:
         return {"status": "error",
@@ -140,7 +140,7 @@ def session_reflect_detailed(transcript: str = "",
             if any(e.get("text") == text for e in store["entries"]):
                 continue
             entry = {"kind": kind, "text": text, "label": label or "", "ts": ts,
-                     "written_by": written_by}
+                     "written_by": written_by, "written_with": written_with}
             store["entries"].append(entry)
             added.append(entry)
 

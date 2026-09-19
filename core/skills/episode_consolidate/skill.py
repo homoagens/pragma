@@ -395,9 +395,8 @@ def _ask_episode(transcript: str, corrective: bool = False,
                 {"role": "system", "content": _EPISODE_SYSTEM},
                 {"role": "user",   "content": user_msg},
             ],
-            temperature=0.0,
             max_tokens=config.MEMORY_MAX_TOKENS,
-            template_kwargs=config.memory_template_kwargs("write"),
+            **config.memory_call("write"),
             response_schema=_EPISODE_SCHEMA,
         )
     data = extract_json(raw)
@@ -530,6 +529,7 @@ def episode_consolidate_detailed(transcript: str = "", workspace: str = "",
         anchors = ""
 
     llm_note = ""
+    llm_client.LAST_CALL = {}            # a fallback episode written by no model says so
     try:
         ep_data = _ask_episode(transcript, anchors=anchors)
     except Exception:
@@ -614,6 +614,11 @@ def episode_consolidate_detailed(transcript: str = "", workspace: str = "",
         # every role shares an endpoint; once memory runs elsewhere, "model"
         # alone would file a 4B's episode under the 27B that held the talk.
         "written_by": memory_model,
+        # And how: thinking or not, temperature, samplers, seed, and whether a
+        # reasoning loop forced a retry without thinking. Empty when no model
+        # wrote it. Without this, episodes written under different regimes
+        # are indistinguishable in a store that accumulates for years.
+        "written_with": dict(llm_client.LAST_CALL),
         "goal":      goal[:200],
         "narrative": narrative,          # facts — immutable
         "surprises": surprises,
@@ -744,11 +749,11 @@ def episode_consolidate_detailed(transcript: str = "", workspace: str = "",
                     {"role": "system", "content": _SEMANTIC_SYSTEM},
                     {"role": "user",   "content": payload},
                 ],
-                temperature=0.0,
                 max_tokens=config.MEMORY_MAX_TOKENS,
-                template_kwargs=config.memory_template_kwargs("write"),
+                **config.memory_call("write"),
                 response_schema=_SEMANTIC_SCHEMA,
             )
+        abstracted_with = dict(llm_client.LAST_CALL)
         sem = extract_json(raw)
     except Exception as e:
         result["summary"] = (
@@ -791,7 +796,7 @@ def episode_consolidate_detailed(transcript: str = "", workspace: str = "",
         entry = {"kind": kind, "text": text, "label": workspace or "", "ts": ts,
                  "sources": sources, "confidence": 0.6,
                  "confirmations": 0, "contradictions": 0, "status": "active",
-                 "written_by": memory_model}
+                 "written_by": memory_model, "written_with": abstracted_with}
         entries.append(entry)
         result["new_assertions"].append(entry)
 

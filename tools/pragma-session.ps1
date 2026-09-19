@@ -90,6 +90,10 @@ Set-SessionEnv "MEMORY_MAX_TOKENS" (Cfg "MemoryMaxTokens" "")
 # set - a conversation pays for it on every turn.
 Set-SessionEnv "MEMORY_NO_THINK"   (Cfg "MemoryNoThink"   "")
 Set-SessionEnv "AGENT_THINK"       (Cfg "AgentThink"      "")
+# MemorySampling preset | greedy: how a memory call that reasons picks its
+# words. preset = the model's thinking preset with a fixed seed; greedy =
+# temperature 0 for every memory call, as the paper's runs were.
+Set-SessionEnv "MEMORY_SAMPLING"   (Cfg "MemorySampling"  "")
 Set-SessionEnv "LLM_TIMEOUT"       (Cfg "Timeout"        "")
 # How wide the deterministic prefilter casts its net before the curator judges.
 # The right width depends on the store: ten candidates out of thirty is a very
@@ -244,7 +248,8 @@ function script:Get-ThinkingLine {
         'all'    { 'none (all)' }
         default  { 'every call' }
     }
-    "agent $agent / memory $memory"
+    $how = if ($env:MEMORY_SAMPLING -eq 'greedy') { 'greedy' } else { 'preset + seed' }
+    "agent $agent / memory $memory, $how"
 }
 
 # What this window will actually SEND. Printed on entry because a sampling
@@ -511,7 +516,7 @@ function global:pragma {
         Remove-Item Env:PRAGMA_WORKSPACE, Env:PRAGMA_DATA_DIR -ErrorAction SilentlyContinue
         Remove-Item Env:LLM_BASE_URL, Env:LLM_TOOL_PROTOCOL -ErrorAction SilentlyContinue
         Remove-Item Env:CONTEXT_WINDOW, Env:MAX_TOKENS -ErrorAction SilentlyContinue
-        Remove-Item Env:SKILL_MAX_TOKENS, Env:MEMORY_MAX_TOKENS, Env:MEMORY_NO_THINK, Env:AGENT_THINK, Env:LLM_TIMEOUT -ErrorAction SilentlyContinue
+        Remove-Item Env:SKILL_MAX_TOKENS, Env:MEMORY_MAX_TOKENS, Env:MEMORY_NO_THINK, Env:AGENT_THINK, Env:MEMORY_SAMPLING, Env:LLM_TIMEOUT -ErrorAction SilentlyContinue
         Remove-Item Env:CURATOR_CANDIDATES_EPISODES, Env:CURATOR_CANDIDATES_RECENT -ErrorAction SilentlyContinue
         Remove-Item Env:CURATOR_CANDIDATES_LEARNINGS, Env:CURATOR_MAX_FRAGMENTS -ErrorAction SilentlyContinue
         Write-Host "off - defaults restored for this window"

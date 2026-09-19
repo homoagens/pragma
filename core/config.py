@@ -376,6 +376,42 @@ def memory_template_kwargs(kind="write"):
     silenced = MEMORY_NO_THINK == "all" or MEMORY_NO_THINK == kind
     return _thinking(not silenced)
 
+
+# HOW A MEMORY CALL PICKS ITS WORDS. Temperature 0 was the rule, for a store
+# that reproduces and a benchmark that measures the agent rather than the dice.
+# It stays the rule for calls that do not reason. A call that reasons at
+# temperature 0 is what reasoning models are not trained for: greedy decoding
+# makes them repeat a paragraph until the budget runs out. So those use the
+# model's thinking preset, with a fixed seed - measured on montecucco, two
+# calls with the same seed gave the same reasoning and the same answer.
+#   preset  thinking calls sample with the preset and MEMORY_SEED (default)
+#   greedy  every memory call at temperature 0, as the paper's runs were
+# Separate from DEFAULT_TEMPERATURE on purpose: warming the conversation must
+# never warm the consolidator behind its back.
+_MS = os.environ.get("MEMORY_SAMPLING", "").strip().lower()
+MEMORY_SAMPLING = _MS if _MS in ("preset", "greedy") else "preset"
+MEMORY_SEED = int(os.environ.get("MEMORY_SEED", "") or 42)
+MEMORY_THINK_PRESET = {"temperature": 0.6, "top_p": 0.95, "top_k": 20, "min_p": 0.0}
+
+# A reasoning that goes on and on without an answer starting is stopped at
+# this many characters and the call asked again without thinking. The loop
+# guard only sees a paragraph repeated word for word; a model circling in new
+# words each time never trips it. About 4 000 tokens: a healthy consolidation
+# on montecucco reasoned 1 000 to 1 700. 0 = no cap.
+MEMORY_THINK_BUDGET = int(os.environ.get("MEMORY_THINK_BUDGET", "") or 16000)
+
+
+def memory_call(kind="write") -> dict:
+    """The arguments a memory call passes to call_llm about how to think:
+    temperature, template_kwargs (the thinking switch) and sampling."""
+    template = memory_template_kwargs(kind)
+    if template["enable_thinking"] and MEMORY_SAMPLING == "preset":
+        sampling = dict(MEMORY_THINK_PRESET)
+        temperature = sampling.pop("temperature")
+        sampling["seed"] = MEMORY_SEED
+        return {"temperature": temperature, "template_kwargs": template, "sampling": sampling}
+    return {"temperature": 0.0, "template_kwargs": template, "sampling": None}
+
 # write_file emits a soft warning in the observation when content exceeds
 # this many bytes — the agent learns to prefer incremental edits.
 WRITE_FILE_SOFT_LIMIT = int(os.environ.get("WRITE_FILE_SOFT_LIMIT", "8000"))
