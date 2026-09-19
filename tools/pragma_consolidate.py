@@ -82,10 +82,12 @@ class _JobHook:
     def __init__(self, renderer):
         self.r = renderer
         self.tail = ""
+        self.said = ""
         self.written = 0.0
 
     def begin(self, who):
         self.tail = ""
+        self.said = ""
 
     def tick(self, who, seconds):
         pass
@@ -97,10 +99,20 @@ class _JobHook:
             self.r.job["thinking"] = self.tail
             jobs.write(self.r.path, self.r.job)
 
+    def answering(self, chunk, who):
+        self.said = (self.said + chunk)[-600:]
+        if time.time() - self.written >= 1.0:
+            self.written = time.time()
+            self.r.job["answer"] = self.said
+            jobs.write(self.r.path, self.r.job)
+
     def end(self):
-        if self.r.job.pop("thinking", None) is not None:
+        had = self.r.job.pop("thinking", None) is not None
+        had = (self.r.job.pop("answer", None) is not None) or had
+        if had:
             jobs.write(self.r.path, self.r.job)
         self.tail = ""
+        self.said = ""
 
     def looped(self, who, detail):
         self.r._add(f"[{who or 'MEMORY'}] the reasoning went in circles - asked again without thinking")

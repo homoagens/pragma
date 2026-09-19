@@ -321,12 +321,17 @@ def _watch_live(path, job: dict) -> None:
     shown = 0
     started = time.time()
 
-    def block(tail, thinking):
+    def block(tail, thinking, answer=""):
         spinner.update(text=Text(f"{tail[:88]}  {int(time.time() - started)}s", style="bright_black"))
-        if not thinking:
+        # The answer, once the faculty has started writing it, in place of
+        # the reasoning - upright where the reasoning is in italics.
+        if answer:
+            body = Text(answer.strip("\n"), style="bright_black")
+        elif thinking:
+            body = Text(" ".join(thinking.split()), style="italic bright_black")
+        else:
             return spinner
-        flat = Text(" ".join(thinking.split()), style="italic bright_black")
-        lines = flat.wrap(console, max(20, console.width - 8))
+        lines = body.wrap(console, max(20, console.width - 8))
         return Group(spinner, Padding(Group(*lines[-4:]), (0, 0, 0, 4)))
 
     with Live(block("starting", ""), console=console, refresh_per_second=4, transient=True) as live:
@@ -345,7 +350,7 @@ def _watch_live(path, job: dict) -> None:
                 if log:
                     live.console.print("  " + log[-1][:100], highlight=False)
                 break
-            live.update(block(log[-1] if log else "starting", job.get("thinking") or ""))
+            live.update(block(log[-1] if log else "starting", job.get("thinking") or "", job.get("answer") or ""))
             if stop_key():
                 live.stop()
                 console.print("  still working - it carries on without you.")

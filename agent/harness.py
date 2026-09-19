@@ -237,6 +237,7 @@ class Harness:
         self._label = ""
         self._since = 0.0
         self._tail = ""                 # the reasoning, as one flowing paragraph
+        self._said = ""                 # a faculty's answer while it is written
         self._reasoning = ""            # the whole of it, kept only when verbose
         self._think_chars = 0
         self._think_since = 0.0
@@ -284,6 +285,7 @@ class Harness:
             self._spinner = None
             self._label = ""
             self._tail = ""
+            self._said = ""
 
     def _redraw(self) -> None:
         if self._status is not None:
@@ -307,9 +309,15 @@ class Harness:
                                     style=self.accent)
         else:
             self._spinner.update(text=head)
-        if not self._tail:
+        # A faculty's answer, once it has started, replaces its reasoning in
+        # the block: the thinking is over and what is being written is what
+        # there is to watch. Upright, where the reasoning is in italics.
+        if self._said:
+            body = Text(self._said.strip("\n"), style="bright_black")
+        elif self._tail:
+            body = Text(self._tail, style="italic bright_black")
+        else:
             return self._spinner
-        body = Text(self._tail, style="italic bright_black")
         lines = body.wrap(self.console, max(20, self.console.width - 6))
         return Group(self._spinner, Padding(Group(*lines[-THINK_LINES:]), (0, 0, 0, 4)))
 
@@ -364,6 +372,13 @@ class Harness:
             if piece.startswith(" ") and self._tail.endswith(" "):
                 piece = piece[1:]
             self._tail = (self._tail + piece)[-THINK_KEEP:]
+            if time.monotonic() - self._last_draw >= 0.1:
+                self._redraw()
+
+    def answering(self, chunk: str, who: str) -> None:
+        """A faculty's answer as it is written, in the same block, gone with it."""
+        with self._lock:
+            self._said = (self._said + chunk)[-THINK_KEEP:]
             if time.monotonic() - self._last_draw >= 0.1:
                 self._redraw()
 

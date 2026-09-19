@@ -346,8 +346,9 @@ def _interruptible_post(url, headers, payload, timeout, stop_event):
 # told exactly what the spinner would have shown, and the spinner stays off.
 # None means the spinner, which is every caller that existed before this.
 #
-# Two optional methods on the same object, for the faculties' streamed calls:
-# reasoning(chunk, who) receives their reasoning as it is written, and
+# Optional methods on the same object, for the faculties' streamed calls:
+# reasoning(chunk, who) receives their reasoning as it is written,
+# answering(chunk, who) their answer as it is written, and
 # looped(who, detail) is told when a reasoning went in circles and the call
 # was asked again without thinking. The conversation's harness shows the first
 # under its status line; the background worker writes both into the job.
@@ -643,7 +644,7 @@ def _post_streamed(url, headers, payload, timeout, label, stop_event):
         resp.close()
         return None
 
-    begin, end, think = _hook("begin"), _hook("end"), _hook("reasoning")
+    begin, end, think, say = _hook("begin"), _hook("end"), _hook("reasoning"), _hook("answering")
     status = None
     if begin:
         try:
@@ -691,7 +692,14 @@ def _post_streamed(url, headers, payload, timeout, label, stop_event):
                 guard.observe(piece, reasoning)
                 if budget and not content and len(reasoning) > budget:
                     raise LLMLooped(f"reasoning passed {budget} characters without an answer")
-            content += delta.get("content") or ""
+            text = delta.get("content") or ""
+            if text:
+                content += text
+                if say:
+                    try:
+                        say(text, who)
+                    except Exception:
+                        pass
             if choice.get("finish_reason"):
                 finish = choice["finish_reason"]
             if status is not None:
