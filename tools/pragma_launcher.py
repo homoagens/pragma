@@ -46,7 +46,6 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path[:0] = [str(ROOT), str(ROOT / "core"), str(ROOT / "tools")]
 
 import pragma_home as home                     # noqa: E402  the home prompt, shared
-import pragma_jobs as jobs                     # noqa: E402
 
 REGISTRY = Path.home() / ".pragma" / "registry.json"
 PROJECTS = Path.home() / ".pragma" / "projects"
