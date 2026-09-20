@@ -57,13 +57,30 @@ cd pragma
 Open a **new** terminal — the one that ran the installer has not read your
 profile yet — and type:
 
-```bat
+```bash
 pragma
 ```
 
-That is the whole interface. It opens on a prompt that suggests `/open`,
-`/new`, `/configure` and `/exit`: `/configure` points it at your model, `/new`
-makes a project. Inside a conversation `/help` lists the rest.
+That is the whole interface, and it is **two screens**.
+
+**Home** says what your model is serving and whether it answers, names any
+memory still being written, and takes `/open`, `/new`, `/jobs`, `/configure`
+and `/exit`. `/configure` points Pragma at your endpoint and gives each role —
+the agent, recall, the memory — its own if you want; `/new` makes a project and
+asks the handful of questions that change how it feels.
+
+**A project** opens on a briefing — what your memory holds, what changed while
+you were away, what wants attention — and then you talk. Commands there come in
+families: `/memory` to look at the store, `/project` for its settings, backups
+and the rest, plus `/status`, `/jobs` and `/help`. **ctrl+D** closes the
+project and hands the conversation to the memory; a second one, at home,
+leaves.
+
+While a turn runs you watch it happen: one status block that says who is
+working and for how long, the model's reasoning wrapped and scrolling under it
+while it lasts, each tool call with its output folded to a few lines, and a
+last line counting the steps, the tools and the seconds. The reasoning goes
+when it is over. The answer stays.
 
 ---
 
@@ -99,6 +116,15 @@ one.
 *learns*; that file is what you *decide*, and a rule written there always
 applies, on every task, without competing with anything the agent remembers.
 
+**What each project decides for itself** is asked when you make one and changed
+later from `/project settings`: whether the agent reasons before each step
+(off is fast and suits a conversation; on is better on problems in several
+steps), which memory calls reason, how a reasoning memory call picks its words
+(a seeded preset, so the same session consolidates the same way twice, or plain
+greedy), who chooses temperature and the rest — your endpoint or you — and how
+many steps a turn may take. The settings live in the registry, not in the
+repository, so two projects on one machine can disagree.
+
 ---
 
 ## The memory
@@ -117,9 +143,13 @@ by default.
 accumulates contradictions is reformulated rather than merely dropped.
 
 **It writes while you carry on.** Turning a conversation into episodes takes a
-minute of thinking, so it happens in the background: `/exit` gives you the
-terminal back at once and the memory finishes on its own. `/jobs` shows what it
-is doing, and the next briefing says whether anything is still being written.
+minute of thinking, so it happens in the background: **ctrl+D** gives you the
+terminal back at once and the memory finishes on its own — in its own process,
+so closing the conversation never interrupts it. `/jobs` follows it live, from
+inside a project or from the home screen, and names the faculty at work: the
+segmenter deciding what was worth keeping, the consolidator writing the
+episode, the abstractor distilling beliefs. The next briefing says whether
+anything is still being written, and the way out holds once to tell you so.
 
 ---
 
@@ -130,6 +160,8 @@ A browser interface exists and still runs:
 ```bat
 .\pragma-gui.bat
 ```
+
+(Windows only, like the batch file says.)
 
 It opens at `http://localhost:8006`. **In development and behind the terminal:**
 it predates the harness and has not been kept up with it, so treat it as a
