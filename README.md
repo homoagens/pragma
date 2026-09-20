@@ -15,7 +15,7 @@
 <p align="center">
   <a href="./LICENSE"><img src="https://img.shields.io/badge/license-AGPL--3.0-5c6bc0?style=flat-square" alt="License"></a>
   <img src="https://img.shields.io/badge/python-3.10%2B-3776ab?style=flat-square" alt="Python 3.10+">
-  <img src="https://img.shields.io/badge/platform-Windows-0078d4?style=flat-square" alt="Windows">
+  <img src="https://img.shields.io/badge/platform-Windows%20%C2%B7%20Linux%20%C2%B7%20macOS-0078d4?style=flat-square" alt="Windows, Linux, macOS">
   <img src="https://img.shields.io/badge/runs%20on-llama.cpp-f97316?style=flat-square" alt="llama.cpp">
 </p>
 
@@ -36,10 +36,20 @@ month and it tells you what it still holds and what has gone quiet.
 
 ## Install
 
+**Windows**
+
 ```bat
 git clone https://github.com/homoagens/pragma.git
 cd pragma
 .\install.ps1
+```
+
+**Linux and macOS**
+
+```bash
+git clone https://github.com/homoagens/pragma.git
+cd pragma
+./install.sh
 ```
 
 ## Run
@@ -59,8 +69,13 @@ makes a project. Inside a conversation `/help` lists the rest.
 
 ## Requirements
 
-Windows, and **Python 3.10 or newer** installed system-wide. The installer
-builds Pragma its own environment, so nothing is added to that Python.
+Windows, Linux or macOS, and **Python 3.10 or newer** installed system-wide.
+The installer builds Pragma its own environment, so nothing is added to that
+Python. (On Debian and Ubuntu, `sudo apt install python3-venv` first: they
+ship the standard library without the part that builds one.)
+
+The screens are the same everywhere. Windows runs them from PowerShell, the
+rest from `./pragma`; a memory store written on one opens on the other.
 
 You also need a model being served on an **OpenAI-compatible endpoint** —
 [llama.cpp](https://github.com/ggml-org/llama.cpp/releases), LM Studio, Ollama

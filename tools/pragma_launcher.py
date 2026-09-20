@@ -118,10 +118,11 @@ def accent() -> str:
 
 
 def clear() -> None:
-    try:
-        os.system("cls" if os.name == "nt" else "clear")
-    except Exception:
-        pass
+    """Home, wipe, and the scrollback with it - with the escape the terminal
+    itself understands, not by running `clear`, which needs a TERM the shell
+    may not have (over ssh without a pty it prints a complaint instead)."""
+    if sys.stdout.isatty():
+        print("[H[2J[3J", end="", flush=True)
 
 
 def say(text: str = "", style: str = "") -> None:
