@@ -223,11 +223,20 @@ class _AnswerStream:
 class Harness:
     """The renderer for a live session. See the module docstring."""
 
-    def __init__(self, console=None, verbose: bool = False, context_window: int = 0):
+    def __init__(self, console=None, verbose: bool = False, context_window: int = 0,
+                 envelope: bool = False):
         from rich.console import Console
         self.console = console or Console(highlight=False)
         self.verbose = verbose
         self.window = int(context_window or 0)
+        # On the text protocol the agent answers in a JSON envelope - thought,
+        # action, conclusion - so the token stream is that JSON and not prose.
+        # Printing it as the reply put the model's own scaffolding on the
+        # screen and then, because something had been streamed, left the
+        # parsed answer unprinted. With an envelope the stream goes to the
+        # block above, like a faculty's, and vanishes with it; the conclusion
+        # is printed by final(), rendered.
+        self.envelope = bool(envelope)
         self.legacy = bool(getattr(self.console, "legacy_windows", False))
         self.g = GLYPHS_LEGACY if self.legacy else GLYPHS
         self.accent = accent_hex()
@@ -443,6 +452,10 @@ class Harness:
     def on_token(self, chunk: str) -> None:
         self._new_call()
         self._end_thinking()
+        if self.envelope:
+            self._show("writing")
+            self.answering(chunk, "")
+            return
         with self._lock:
             self._call["streamed"] += len(chunk)
             if self._answer is None:

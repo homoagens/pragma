@@ -1084,7 +1084,8 @@ If the turn needed no tools at all, the conclusion is simply your reply.
     global _RENDERER
     renderer = _harness.Harness(
         verbose=args.show_thoughts,
-        context_window=getattr(baseline_config, "CONTEXT_WINDOW", 0))
+        context_window=getattr(baseline_config, "CONTEXT_WINDOW", 0),
+        envelope=getattr(baseline_config, "LLM_TOOL_PROTOCOL", "text") != "native")
     _RENDERER = renderer
     # Every model call - the curator's, the segmenter's, the agent's - reports
     # its wait to the same status line instead of drawing a spinner of its own.
