@@ -135,12 +135,35 @@ def say(text: str = "", style: str = "") -> None:
     print(f"{colour}{text}{RESET}" if colour else text)
 
 
+# The mark from interface-web/logo.png beside the word, exactly as
+# Show-Logo draws it in tools/Pragma.psm1 - one picture, two launchers.
+# F is a full cell, T an upper half, B a lower half: letters, so this file
+# stays readable, and so a terminal that cannot draw blocks needs one map
+# rather than a second copy of the art.
+LOGO = (
+    " BFFFFFFFFFBB",
+    " TTTTTTTTTTFFF",
+    "       BB   FFF",
+    "    B  TT   FFF",
+    "  BFFBBBBBBFFF   _ _ __ _ __ _ _ __  __ _",
+    r" FFFFFFFFFFTT   | '_/ _` / _` | '  \/ _` |",
+    r" FFFT           |_| \__,_\__, |_|_|_\__,_|",
+    " FT                       |___/",
+)
+BLOCKS = {"F": "█", "T": "▀", "B": "▄"}
+
+
 def logo() -> None:
-    """The word, in the accent. The block mark the PowerShell launcher draws is
-    a Windows console trick; here the name is enough."""
     a = accent()
+    r = RESET if a else ""
+    glyph = BLOCKS
+    try:                                   # a console that cannot encode them
+        "".join(BLOCKS.values()).encode(sys.stdout.encoding or "ascii")
+    except Exception:
+        glyph = {"F": "#", "T": "#", "B": "#"}
     print()
-    print(f"  {a}PRAGMA{RESET if a else ''}   {GREY if a else ''}homo agens{RESET if a else ''}")
+    for row in LOGO:
+        print(f"  {a}" + "".join(glyph.get(c, c) for c in row) + r)
 
 
 def ask(question: str, default: str = "", hint: str = "") -> str | None:
