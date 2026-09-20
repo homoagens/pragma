@@ -476,23 +476,35 @@ def _status_lines() -> list[tuple[str, str]]:
                 else " . ".join([f"temperature {temp}" if temp is not None else "temperature: the endpoint"] + extra)))
 
     # The store as it stands, from the same summary the briefing is built from.
+    # It reads the endpoint too, so a server that is down or a tunnel that is
+    # flapping makes it slow or makes it fail - and a page that then printed
+    # nothing about the memory looked like a Pragma with no memory at all.
+    # Whatever happens, these two lines say something.
+    out.append(("", ""))
     tool = Path(__file__).resolve().parent.parent / "tools" / "pragma_brief.py"
+    why, brief = "", {}
     try:
         done = subprocess.run([sys.executable, str(tool), str(cfg.EPISODES_DIR)],
                               capture_output=True, text=True, timeout=60)
         brief = json.loads(done.stdout or "{}")
-    except Exception:
-        brief = {}
-    if brief.get("ok"):
-        out.append(("", ""))
-        out.append(("episodes", f"{brief['episodes_active']} active, "
-                                f"{brief['episodes_dormant']} dormant, "
-                                f"{brief['beliefs']} beliefs"))
-        away, tau = brief.get("away_days"), brief.get("tau")
-        half = getattr(cfg, "EPISODE_DECAY_HALF_LIFE_DAYS", 0)
-        if away is not None:
-            out.append(("away", f"{away} day(s)" + (f", tau {tau}" if tau is not None else "")
-                        + f", half-life {half:g} days"))
+        if not brief.get("ok"):
+            why = str(brief.get("error") or (done.stderr or "").strip()[-120:] or "unreadable")
+    except subprocess.TimeoutExpired:
+        why = "took longer than a minute - the endpoint it also reads may be down"
+    except Exception as e:
+        why = f"{type(e).__name__}: {str(e)[:100]}"
+    if why:
+        out.append(("episodes", f"not read - {why}"))
+        out.append(("", f"the store itself is at {cfg.EPISODES_DIR}"))
+        return out
+    out.append(("episodes", f"{brief['episodes_active']} active, "
+                            f"{brief['episodes_dormant']} dormant, "
+                            f"{brief['beliefs']} beliefs"))
+    away, tau = brief.get("away_days"), brief.get("tau")
+    half = getattr(cfg, "EPISODE_DECAY_HALF_LIFE_DAYS", 0)
+    if away is not None:
+        out.append(("away", f"{away} day(s)" + (f", tau {tau}" if tau is not None else "")
+                    + f", half-life {half:g} days"))
     return out
 
 
