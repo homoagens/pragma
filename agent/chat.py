@@ -469,7 +469,7 @@ def _status_lines() -> list[tuple[str, str]]:
         line = f"{protocol} . the model writes its own JSON and escapes it itself"
     out.append(("actions", line))
     out.append(("", ""))
-    out.append(("steps", f"{getattr(cfg, 'MAX_STEPS', 0)} per turn"))
+    out.append(("steps", f"{_STATE.get('max_steps') or getattr(cfg, 'MAX_STEPS', 0)} per turn"))
     think = getattr(cfg, "MEMORY_NO_THINK", "")
     # The value as well as its meaning: the sentence is what it does, the word
     # in brackets is what to type to change it. Both are asked for on every
@@ -539,7 +539,7 @@ def _show_status() -> bool:
             continue
         print(f"    {grey}{label:<11}{r}{value}")
     print()
-    print(f"  {grey}/configure changes the endpoints . /project settings the rest{r}")
+    print(f"  {grey}/configure changes the endpoints . /settings the rest{r}")
     print()
     return True
 
@@ -1118,6 +1118,12 @@ If the turn needed no tools at all, the conclusion is simply your reply.
     max_steps = args.max_steps or baseline_config.MAX_STEPS
     _STATE.update(project=os.environ.get("PRAGMA_PROJECT") or cwd.name,
                   model=served if online else "backend down",
+                  # The budget in force, which is not config's: a project's
+                  # MaxSteps arrives as --max-steps, because it is an argument
+                  # of this process and not a setting of the machine. /status
+                  # read config and so reported the default however the
+                  # project was set.
+                  max_steps=max_steps,
                   memory=bool(args.memory), turns=0, ctx=None, writing="")
 
     log_path = cwd / ".pragma_session.jsonl"
