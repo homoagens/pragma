@@ -120,7 +120,7 @@ def _malformed_args_hint(action: str, kwargs: dict) -> str:
     # has to produce the encoding itself, token by token, and it gets it wrong:
     # observed twice in one session, decoding to a corrupted path. Recommending
     # it there sends the model down a road that damages the content silently.
-    if getattr(config, "LLM_TOOL_PROTOCOL", "text") == "native":
+    if getattr(config, "LLM_TOOL_PROTOCOL", "native") == "native":
         alt = None
 
     if carries_content and alt:
@@ -266,7 +266,7 @@ def _native_action_text(cfg: AgentConfig, messages, model, temperature,
     turns out to imitate the history instead of using the tools, that is the
     first thing to revisit.
     """
-    if getattr(config, "LLM_TOOL_PROTOCOL", "text") != "native":
+    if getattr(config, "LLM_TOOL_PROTOCOL", "native") != "native":
         return None
     known = endpoints.state(llm_client.current_endpoint().base_url)
     if known.tools_unsupported:

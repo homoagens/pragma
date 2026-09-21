@@ -1166,7 +1166,7 @@ def call_llm(messages, model=None, temperature=None, max_tokens=None, timeout=No
     # An endpoint that rejected a json_schema once is remembered, so a server
     # without structured output costs one failed request per process instead
     # of one per faculty call - remembered for that endpoint only.
-    if (getattr(config, "LLM_TOOL_PROTOCOL", "text") != "native"
+    if (getattr(config, "LLM_TOOL_PROTOCOL", "native") != "native"
             or not getattr(config, "MEMORY_SCHEMA", True)
             or known.schema_unsupported):
         response_schema = None

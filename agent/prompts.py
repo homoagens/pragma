@@ -212,7 +212,7 @@ def build_system_prompt(cwd: str, default_model: str = "",
     if not protocol:
         try:
             import config as _cfg
-            protocol = getattr(_cfg, "LLM_TOOL_PROTOCOL", "text")
+            protocol = getattr(_cfg, "LLM_TOOL_PROTOCOL", "native")
         except Exception:
             protocol = "text"
     response_format = (_RESPONSE_FORMAT_NATIVE if protocol == "native"

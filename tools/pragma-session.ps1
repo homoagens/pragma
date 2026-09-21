@@ -345,7 +345,7 @@ function script:Show-Status {
     Write-Host "    workspace  $env:PRAGMA_WORKSPACE"
     Write-Host "    endpoint   $(if ($env:LLM_BASE_URL) { $env:LLM_BASE_URL } else { '(from .env)' })"
     Write-Host "    max steps  $script:SSteps per session"
-    Write-Host "    protocol   $(if ($env:LLM_TOOL_PROTOCOL) { $env:LLM_TOOL_PROTOCOL } else { 'text (repo default)' })"
+    Write-Host "    protocol   $(if ($env:LLM_TOOL_PROTOCOL) { $env:LLM_TOOL_PROTOCOL } else { 'native (repo default)' })"
     Write-Host "    budgets    $(Get-BudgetLine)"
     Write-Host "    sampling   $(Get-SamplingLine)   (-Sampling for the full picture)" -ForegroundColor DarkGray
     Write-Host "    thinking   $(Get-ThinkingLine)"
@@ -677,7 +677,7 @@ Write-Host ""
 Write-Host "pragma session '$script:SName'   [$script:PragmaSessionVersion]" -ForegroundColor DarkGray
 Write-Host "  memory    : $env:PRAGMA_DATA_DIR"
 Write-Host "  workspace : $env:PRAGMA_WORKSPACE"
-Write-Host "  protocol  : $(if ($env:LLM_TOOL_PROTOCOL) { $env:LLM_TOOL_PROTOCOL } else { 'text (repo default)' })"
+Write-Host "  protocol  : $(if ($env:LLM_TOOL_PROTOCOL) { $env:LLM_TOOL_PROTOCOL } else { 'native (repo default)' })"
 Write-Host "  budgets   : $(Get-BudgetLine)"
 Write-Host "  sampling  : $(Get-SamplingLine)"
 Write-Host "  thinking  : $(Get-ThinkingLine)"

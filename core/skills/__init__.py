@@ -164,7 +164,7 @@ def palette(base: dict | None = None) -> dict:
     out = dict(ALL_SKILLS if base is None else base)
     for name in _NOT_AGENT_TOOLS:
         out.pop(name, None)
-    if getattr(config, "LLM_TOOL_PROTOCOL", "text") == "native":
+    if getattr(config, "LLM_TOOL_PROTOCOL", "native") == "native":
         for name in _TEXT_PROTOCOL_ONLY:
             out.pop(name, None)
     return out

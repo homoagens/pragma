@@ -1084,14 +1084,14 @@ If the turn needed no tools at all, the conclusion is simply your reply.
         str(cwd),
         default_model=baseline_config.DEFAULT_MODEL,
         skills_summary=skills_summary_for(skills.keys()),
-        protocol=getattr(baseline_config, "LLM_TOOL_PROTOCOL", "text"),
+        protocol=getattr(baseline_config, "LLM_TOOL_PROTOCOL", "native"),
     ) + chat_policy + project_contract(cwd)
 
     global _RENDERER
     renderer = _harness.Harness(
         verbose=args.show_thoughts,
         context_window=getattr(baseline_config, "CONTEXT_WINDOW", 0),
-        envelope=getattr(baseline_config, "LLM_TOOL_PROTOCOL", "text") != "native")
+        envelope=getattr(baseline_config, "LLM_TOOL_PROTOCOL", "native") != "native")
     _RENDERER = renderer
     # Every model call - the curator's, the segmenter's, the agent's - reports
     # its wait to the same status line instead of drawing a spinner of its own.

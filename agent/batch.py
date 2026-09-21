@@ -104,7 +104,7 @@ def _channel_line() -> str:
     the endpoint turns out to have no tool support; that event is reported
     separately, when it happens.
     """
-    p = getattr(baseline_config, "LLM_TOOL_PROTOCOL", "") or "text"
+    p = getattr(baseline_config, "LLM_TOOL_PROTOCOL", "") or "native"
     return f"{p} (max_tokens {baseline_config.MAX_TOKENS})"
 
 

@@ -219,25 +219,34 @@ MAX_TOKENS     = int(os.environ.get("MAX_TOKENS", "16384"))
 
 # How the agent's ACTION is carried, for the ReAct loop only.
 #
-#   text   : the model writes {"thought","action","args"} inside its reply and
-#            Pragma parses it afterwards. Nothing constrains the generation.
 #   native : the skills are sent as OpenAI `tools`. A server that compiles them
 #            into a grammar constrains the sampler, so malformed arguments
 #            cannot be produced rather than merely being detected.
+#   text   : the model writes {"thought","action","args"} inside its reply and
+#            Pragma parses it afterwards. Nothing constrains the generation, so
+#            every quote and newline of a file being written is the model's own
+#            escaping work, and a mistake is unrecoverable by the time it shows.
 #
-# Measured on the structural benchmark, same two cases, same model:
+# native is the default. Measured on the structural benchmark, same two cases,
+# same model:
 #   text   : 93 write_file calls, 17 with unusable arguments (18%);
 #            15 of 30 runs produced the requested figures.
 #   native : 25 write_file calls, 2 with unusable arguments (8%), both of
 #            them budget truncations rather than corruption; 6 of 6 runs
 #            produced the figures.
-# `native` costs roughly 3k more prompt tokens per request (the schemas
-# replace a compact summary) and needs a server that implements tools —
-# Pragma falls back to `text` automatically when it does not.
+# The gap widens as the model gets smaller: a sparse MoE with a few billion
+# active parameters is good enough to write the file and not good enough to
+# escape it, and on `text` those are the same task.
+#
+# It costs roughly 3k more prompt tokens per request (the schemas replace a
+# compact summary) and needs a server that implements tools — Pragma falls
+# back to `text` automatically, once per endpoint and out loud, when it does
+# not. `text` is otherwise for reproducing the frozen evaluation corpus, which
+# ran on it: set LLM_TOOL_PROTOCOL=text for that. No screen offers the choice.
 #
 # This governs the ACTION channel only. The memory faculties keep their own
 # text protocol either way, so the evaluation corpus stays comparable.
-LLM_TOOL_PROTOCOL = os.environ.get("LLM_TOOL_PROTOCOL", "text").strip().lower()
+LLM_TOOL_PROTOCOL = os.environ.get("LLM_TOOL_PROTOCOL", "native").strip().lower()
 
 # Seconds before an LLM HTTP call is abandoned. With a large output budget
 # on a slow local model (a dense 27B+ partially offloaded can sit under
