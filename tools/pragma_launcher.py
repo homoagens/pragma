@@ -303,6 +303,13 @@ def environment(entry: dict) -> dict:
     env = dict(os.environ)
     for key in ENV_OF.values():
         env.pop(key, None)
+    # The home prompt switches the endpoint probe off for its own speed, and
+    # here it runs in THIS process, so the switch was still on when the
+    # conversation inherited the environment: config then skipped asking the
+    # server what it serves and fell back to the repository's 65536, halving
+    # the window of a machine serving 131072. It is a flag for drawing a page,
+    # never for running a project.
+    env.pop("PRAGMA_NO_ENDPOINT_PROBE", None)
     settings = entry.get("settings") or {}
     for key, name in ENV_OF.items():
         value = str(settings.get(key, "")).strip()
@@ -699,11 +706,18 @@ def home_prompt() -> tuple[str, str]:
     out.parent.mkdir(parents=True, exist_ok=True)
     out.unlink(missing_ok=True)
     argv = sys.argv
+    probe = os.environ.get("PRAGMA_NO_ENDPOINT_PROBE")
     try:
         sys.argv = ["pragma_home", "--out", str(out)]
         home.main()
     finally:
         sys.argv = argv
+        # And put the environment back as it was found, so nothing downstream
+        # inherits a flag that belonged to one page.
+        if probe is None:
+            os.environ.pop("PRAGMA_NO_ENDPOINT_PROBE", None)
+        else:
+            os.environ["PRAGMA_NO_ENDPOINT_PROBE"] = probe
     try:
         data = json.loads(out.read_text(encoding="utf-8"))
     except Exception:
