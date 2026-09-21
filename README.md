@@ -64,17 +64,19 @@ pragma
 That is the whole interface, and it is **two screens**.
 
 **Home** says what your model is serving and whether it answers, names any
-memory still being written, and takes `/open`, `/new`, `/jobs`, `/delete`,
-`/configure` and `/exit`. `/configure` points Pragma at your endpoint and gives each role —
-the agent, recall, the memory — its own if you want; `/new` makes a project and
-asks the handful of questions that change how it feels.
+memory still being written, and takes `/projects`, `/jobs`, `/configure` and
+`/exit`. `/projects` is everything done *to* a project — open one, start one,
+snapshot or restore its memory, remove it — and `/configure` points Pragma at
+your endpoint, giving each role (the agent, recall, the memory) its own if you
+want. On a machine with no projects yet the page says `/new` and nothing else.
 
 **A project** opens on a briefing — what your memory holds, what changed while
-you were away, what wants attention — and then you talk. Commands there come in
-families: `/memory` to look at the store, `/project` for its settings, backups
-and the rest, plus `/status`, `/jobs` and `/help`. **ctrl+D** closes the
-project and hands the conversation to the memory; a second one, at home,
-leaves.
+you were away, what wants attention — and then you talk. What is there is what
+belongs to *this* project: `/memory` to look at the store, `/settings` for what
+it decides for itself, `/status` for how it is set up, plus `/jobs`, `/help`
+and `/configure` — an endpoint that dies mid-turn is worth fixing without
+leaving. **ctrl+D** closes the project and hands the conversation to the
+memory; a second one, at home, leaves.
 
 While a turn runs you watch it happen: one status block that says who is
 working and for how long, the model's reasoning wrapped and scrolling under it
@@ -117,7 +119,7 @@ one.
 applies, on every task, without competing with anything the agent remembers.
 
 **What each project decides for itself** is asked when you make one and changed
-later from `/project settings`: whether the agent reasons before each step
+later from `/settings`: whether the agent reasons before each step
 (off is fast and suits a conversation; on is better on problems in several
 steps), which memory calls reason, how a reasoning memory call picks its words
 (a seeded preset, so the same session consolidates the same way twice, or plain

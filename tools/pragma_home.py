@@ -15,7 +15,8 @@ neither, which is why the line is read here.
 The launcher draws the page and runs this for the line. /help and mistakes
 are answered here, under the page, and the prompt asks again. Anything the
 launcher has to do is written to --out as
-{"action": "open" | "new" | "delete" | "configure" | "exit", "arg": "..."}
+{"action": "projects" | "open" | "new" | "backups" | "delete"
+          | "configure" | "exit", "arg": "..."}
 and the process ends.
 
 MEMORY AT WORK. A consolidation runs in its own process and outlives the
@@ -58,17 +59,47 @@ GREY, RESET = "\033[38;5;242m", "\033[0m"
 # Order is the order on the page: open before new, because over the life of a
 # project it is opened every day and created once.
 COMMANDS = {
-    "/open":      "open a project and start talking; /open <name> goes straight in",
-    "/new":       "start a project",
+    "/projects":  "",                     # the actions fill the blurb in
     "/jobs":      "what the memory is writing in the background, in any project",
-    "/delete":    "remove a project, and the memory it keeps",
     "/configure": "set up the endpoint",
     "/clear":     "clear the screen",
     "/help":      "this list",
     "/exit":      "leave",
 }
-ALIASES = {"/o": "/open", "/n": "/new", "/q": "/exit", "/quit": "/exit", "/?": "/help"}
+
+# What /projects takes. These are the things that are done TO a project rather
+# than inside one, which is why they live here and not in a conversation: from
+# inside a project, starting another one or deleting a third was a door in the
+# wrong room. Bare /projects opens the page and you pick there.
+PROJECT_ACTIONS = {
+    "open":    "open a project and start talking; /projects open <name> goes straight in",
+    "new":     "start a project",
+    "backups": "snapshot a project's memory, or put one back",
+    "delete":  "remove a project, and the memory it keeps",
+}
+
+# Old names and short ones, offered by nothing: fingers that learned /open
+# keep working, the page stays short.
+ALIASES = {"/q": "/exit", "/quit": "/exit", "/?": "/help", "/project": "/projects"}
+ALIASES.update({f"/{action}": f"/projects {action}" for action in PROJECT_ACTIONS})
+ALIASES.update({"/o": "/projects open", "/n": "/projects new"})
 ROOT = Path(__file__).resolve().parent.parent
+
+
+def rows() -> list[tuple[str, str]]:
+    """The command rows for the home page, as the state makes them.
+
+    With nothing registered there is nothing to open, back up or delete, and
+    no memory that could be writing: a page listing them would be four doors
+    onto an empty room. /new, and the endpoint you will need anyway.
+    """
+    if not registry_entries():
+        return [("/new", "start your first project"),
+                ("/configure", COMMANDS["/configure"]),
+                ("/help", COMMANDS["/help"]),
+                ("/exit", COMMANDS["/exit"])]
+    return [(name, blurb.split(";")[0] or " . ".join(PROJECT_ACTIONS))
+            for name, blurb in COMMANDS.items() if name != "/clear"]
 
 
 def plugins_dir() -> Path:
@@ -267,7 +298,7 @@ def make_session(extra: dict | None = None):
             text = document.text_before_cursor
             if not text.startswith("/"):
                 return
-            offered = dict(COMMANDS)
+            offered = {c: b or " . ".join(PROJECT_ACTIONS) for c, b in COMMANDS.items()}
             offered.update({c: str(s.get("blurb") or "") for c, s in (extra or {}).items()})
             if " " not in text:
                 for name, blurb in offered.items():
@@ -276,11 +307,20 @@ def make_session(extra: dict | None = None):
                                          display=name, display_meta=blurb)
                 return
             head, typed = text.split(" ", 1)
-            wants_projects = head.lower() == "/open" or (
-                (extra or {}).get(head.lower(), {}).get("complete") == "projects")
-            if wants_projects and " " not in typed:
+            head = head.lower()
+            if head == "/projects" and " " not in typed.strip():
+                for action, blurb in PROJECT_ACTIONS.items():
+                    if action.startswith(typed.strip().lower()):
+                        yield Completion(action, start_position=-len(typed),
+                                         display=action, display_meta=blurb)
+                return
+            wants_projects = head in ("/open", "/projects open") or (
+                (extra or {}).get(head, {}).get("complete") == "projects")
+            if head == "/projects" and typed.strip().lower().startswith("open "):
+                wants_projects, typed = True, typed.strip()[5:]
+            if wants_projects and " " not in typed.strip():
                 for name in project_names():
-                    if name.lower().startswith(typed.lower()):
+                    if name.lower().startswith(typed.strip().lower()):
                         yield Completion(name, start_position=-len(typed))
 
     return PromptSession(completer=HomeCompleter(), complete_while_typing=True,
@@ -332,7 +372,10 @@ def show_help(extra: dict | None = None) -> None:
     r = RESET if a else ""
     print()
     for name, blurb in COMMANDS.items():
-        print(f"    {a}{name:<12}{r}{blurb}")
+        print(f"    {a}{name:<12}{r}{blurb or ''}")
+        if name == "/projects":
+            for action, what in PROJECT_ACTIONS.items():
+                print(f"      {a}{action:<10}{r}{what}")
     by_plugin: dict[str, list] = {}
     for name, spec in (extra or {}).items():
         by_plugin.setdefault(spec["plugin"], []).append((name, spec.get("blurb") or ""))
@@ -439,7 +482,9 @@ def main() -> int:
             continue
         head, _, rest = line.partition(" ")
         cmd = head.lower() if head.startswith("/") else "/" + head.lower()
-        cmd = ALIASES.get(cmd, cmd)
+        if cmd in ALIASES:                  # "/new" -> "/projects new"
+            cmd, _, more = ALIASES[cmd].partition(" ")
+            rest = (more + " " + rest).strip() if more else rest
         if cmd == "/help":
             show_help(extra)
         elif cmd == "/jobs":
@@ -448,6 +493,15 @@ def main() -> int:
             # Typed, not a keystroke: it says what is happening and stays.
             if not held_back():
                 return choose("exit")
+        elif cmd == "/projects":
+            action, _, name = rest.strip().partition(" ")
+            if not action:
+                return choose("projects")
+            if action.lower() not in PROJECT_ACTIONS:
+                print(f"  /projects takes one of: {', '.join(PROJECT_ACTIONS)}")
+                print()
+                continue
+            return choose(action.lower(), name.strip())
         elif cmd in COMMANDS:
             return choose(cmd[1:], rest.strip())
         elif cmd in extra:

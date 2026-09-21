@@ -102,7 +102,7 @@ _LEAVING_WORDS = {"/exit", "/quit", "/bye", "/q"}
 # Each entry is (what it runs, one line of help).
 _COMMANDS = {
     "/memory":    ("memory",    ""),      # the views fill the blurb in
-    "/project":   ("project",   ""),      # so do the actions
+    "/settings":  ("ask:settings", "what this project decides for itself"),
     "/status":    ("status",    "how this project is set up right now"),
     "/jobs":      ("jobs",      "what the memory is writing in the background"),
     "/configure": ("configure", "point Pragma at an LLM endpoint"),
@@ -121,13 +121,16 @@ _MEMORY_VIEWS = {
     "sizes":   "how wordy the store is",
 }
 
-# Handed back to the launcher: these are about the window, not the talk.
-_PROJECT_ACTIONS = {
-    "settings": ("ask:settings", "model, budgets, sampling for this project"),
-    "backups":  ("ask:backups",  "snapshot or restore"),
-    "switch":   ("ask:switch",   "another project"),
-    "new":      ("ask:new",      "start a project"),
-    "delete":   ("ask:delete",   "remove a project"),
+# Done TO a project rather than inside one, so they live on the screen where
+# no project is open. Typed here they say where they went: a habit is worth
+# one line of directions, and silently not existing is worth none.
+_AT_HOME = {
+    "/backups": "snapshot or restore",
+    "/switch":  "another project",
+    "/new":     "start a project",
+    "/delete":  "remove a project",
+    "/open":    "open a project",
+    "/projects": "the projects screen itself",
 }
 
 # Old names, and the odd synonym. They work exactly as they did and are offered
@@ -136,7 +139,9 @@ _PROJECT_ACTIONS = {
 # are instead of failing.
 _ALIASES = {"/info": "/help"}
 _ALIASES.update({f"/{view}": f"/memory {view}" for view in _MEMORY_VIEWS})
-_ALIASES.update({f"/{action}": f"/project {action}" for action in _PROJECT_ACTIONS})
+# /project settings was where these lived; the head is what is matched, so
+# the one entry covers both "/project" and "/project settings".
+_ALIASES.update({"/project": "/settings", "/config": "/configure"})
 # The names for leaving all point at the same answer: ctrl+D.
 _ALIASES.update({"/close": "/exit"})
 
@@ -145,8 +150,6 @@ def _blurb(name: str) -> str:
     """The help line for a command; a family lists what it takes."""
     if name == "/memory":
         return " . ".join(_MEMORY_VIEWS)
-    if name == "/project":
-        return " . ".join(_PROJECT_ACTIONS)
     return _COMMANDS[name][1]
 
 
@@ -196,11 +199,7 @@ class _SlashCompleter:
             head = head.lower()
             if head in _ALIASES:
                 return
-            options = {}
-            if head == "/memory":
-                options = dict(_MEMORY_VIEWS)
-            elif head == "/project":
-                options = {name: blurb for name, (_a, blurb) in _PROJECT_ACTIONS.items()}
+            options = dict(_MEMORY_VIEWS) if head == "/memory" else {}
             if head not in allowed or " " in typed.strip():
                 return
             for name, blurb in options.items():
@@ -381,8 +380,10 @@ def _slash_help() -> None:
         if name in _allowed():
             print(f"    {a}{name:<12}{r}{_blurb(name)}")
     print()
-    print("  /memory and /project take one of the words above, /memory alone")
-    print("  shows the map. Anything without a slash is a message to the agent.")
+    print("  /memory takes one of the words above; alone it shows the map.")
+    print("  Starting, backing up or removing a project is done where none is")
+    print("  open: ctrl+D, then /projects.")
+    print("  Anything without a slash is a message to the agent.")
     print(f"  {a}ctrl+D{r} closes the project, consolidating what was said.")
     print()
 
@@ -541,6 +542,10 @@ def _run_slash(line: str) -> bool:
         print("  ctrl+D closes the project, and what was said is consolidated")
         print("  on the way out. Another ctrl+D at the projects leaves Pragma.")
         return True
+    if cmd in _AT_HOME:
+        print(f"  {cmd} - {_AT_HOME[cmd]} - lives on the projects screen now:")
+        print("  ctrl+D closes this one, and /projects is there.")
+        return True
     if cmd not in _COMMANDS:
         print(f"  no such command: {cmd}   (/help for the list)")
         return True
@@ -552,17 +557,6 @@ def _run_slash(line: str) -> bool:
             print(f"  /memory takes one of: {', '.join(_MEMORY_VIEWS)}")
             return True
         return _show_memory(view)
-    if action == "project":
-        if not arg or arg not in _PROJECT_ACTIONS:
-            if arg:
-                print(f"  /project takes one of: {', '.join(_PROJECT_ACTIONS)}")
-            else:
-                print()
-                for name, (_a, blurb) in _PROJECT_ACTIONS.items():
-                    print(f"    /project {name:<10}{blurb}")
-                print()
-            return True
-        action = _PROJECT_ACTIONS[arg][0]
     if action == "status":
         return _show_status()
     if action == "help":

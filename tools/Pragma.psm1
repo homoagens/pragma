@@ -1393,6 +1393,46 @@ function script:Invoke-BackupMenu($entry) {
 }
 
 
+function script:Invoke-ProjectsPage {
+    # Everything that is done TO a project, in one place. Open is the whole
+    # list, because over a project's life it is opened every day and the rest
+    # happens a handful of times; the three words under it are the rest.
+    #
+    # Returns the project to open, or $null to stay at home.
+    while ($true) {
+        $entries = @(Read-Registry)
+        New-Page
+        Write-Host ""
+        Show-Logo
+        Write-Host ""
+        Write-Accent "  Projects"
+        Write-Host ""
+        $picks = @()
+        foreach ($e in $entries) {
+            $when = if ($e.last_opened) { ([string]$e.last_opened).Substring(0, 10) } else { "never opened" }
+            $picks += [pscustomobject]@{ key = ''
+                                         label = ("{0,-18} {1,-42} {2}" -f $e.name, $e.workspace, $when)
+                                         action = 'open'; entry = $e }
+        }
+        $picks += [pscustomobject]@{ key = 'n'; label = "new        start a project";                action = 'new';     entry = $null }
+        $picks += [pscustomobject]@{ key = 'b'; label = "backups    snapshot a memory, or put one back"; action = 'backups'; entry = $null }
+        $picks += [pscustomobject]@{ key = 'd'; label = "delete     remove a project, and its memory"; action = 'delete';  entry = $null }
+        $picks += [pscustomobject]@{ key = 'q'; label = "back";                                      action = '';        entry = $null }
+        $c = Show-Menu $picks "enter select . ctrl+D back"
+        Write-Host ""
+        if (-not $c -or -not $c.action) { return $null }
+        switch ($c.action) {
+            'open'    { return $c.entry }
+            'new'     { $made = Invoke-NewProject; if ($made) { return $made } }
+            'delete'  { Invoke-DeleteProject $null | Out-Null }
+            'backups' {
+                $which = Invoke-OpenProject $null
+                if ($which) { Invoke-BackupMenu $which }
+            }
+        }
+    }
+}
+
 function script:Invoke-OpenProject($preferred) {
     # The project list, whether it was reached from the home screen or from
     # /switch inside a conversation. One function because they are the same
@@ -1585,15 +1625,25 @@ function script:Invoke-MenuLoop($suggested) {
             elseif ($n -eq 1) { Write-Host "  1 project" -ForegroundColor DarkGray }
             else { Write-Host ("  {0} projects" -f $n) -ForegroundColor DarkGray }
             Write-Host ""
-            # open before new: over the life of a project it is opened every
-            # day and created once.
-            foreach ($row in @(@("/open",      "open a project and start talking"),
-                               @("/new",       "start a project"),
-                               @("/jobs",      "what the memory is writing"),
-                               @("/delete",    "remove a project"),
-                               @("/configure", "set up the endpoint"),
-                               @("/help",      "what each command does"),
-                               @("/exit",      "leave"))) {
+            # What is done TO a project - open it, start one, back one up,
+            # remove one - is one family, because from here that is the only
+            # kind of thing there is to do. With nothing registered the family
+            # would be four doors onto an empty room, so the page offers /new
+            # and the endpoint you will need anyway. The Linux launcher builds
+            # the same rows from pragma_home.rows(); keep the two in step.
+            $rows = if ($n -eq 0) {
+                @(@("/new",       "start your first project"),
+                  @("/configure", "set up the endpoint"),
+                  @("/help",      "what each command does"),
+                  @("/exit",      "leave"))
+            } else {
+                @(@("/projects",  "open . new . backups . delete"),
+                  @("/jobs",      "what the memory is writing"),
+                  @("/configure", "set up the endpoint"),
+                  @("/help",      "what each command does"),
+                  @("/exit",      "leave"))
+            }
+            foreach ($row in $rows) {
                 Write-Host ("  " + (Paint ("{0,-12}" -f $row[0]) 'accent') + (Paint $row[1] 'dim'))
             }
             Write-Host ""
@@ -1625,16 +1675,21 @@ function script:Invoke-MenuLoop($suggested) {
                 }
             } elseif ($cmd -in @('new', 'n')) {
                 $entry = Invoke-NewProject
+            } elseif ($cmd -eq 'projects') {
+                $entry = Invoke-ProjectsPage
             } elseif ($cmd -eq 'delete') {
                 # From here there is no project open, so nothing to go back to:
                 # the page lists them all and $null is what "none of them" means.
                 Invoke-DeleteProject $null | Out-Null
+            } elseif ($cmd -eq 'backups') {
+                $which = if ($arg) { Get-EntryByName $arg } else { Invoke-OpenProject $null }
+                if ($which) { Invoke-BackupMenu $which }
             } elseif ($cmd -eq 'configure') {
                 Invoke-Configure
             } elseif ($cmd -eq 'clear') {
                 # Nothing to do here: the loop draws the page again on a clean screen.
             } elseif ($cmd -notin @('help', '?')) {
-                $notice = "'/$cmd' is not a command here. Try /open, /new, /delete, /configure or /exit."
+                $notice = "'/$cmd' is not a command here. Try /projects, /configure or /exit."
             }
             continue
         }
