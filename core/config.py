@@ -281,13 +281,42 @@ def _plain(name: str) -> str:
     return "".join(ch for ch in (name or "").lower() if ch.isalnum())
 
 
+def agent_endpoint_name() -> str:
+    """What the catalogue calls the endpoint the agent talks to, or ""."""
+    try:
+        import endpoints
+        return endpoints.for_role("agent").name or ""
+    except Exception:
+        return ""
+
+
 def profile_table() -> tuple[str, dict]:
-    """(which model's table, the table) for whatever the endpoint is serving.
+    """(which table, the table) for the endpoint the agent is talking to.
+
+    THE ENDPOINT'S NAME FIRST. Those names are chosen, written down in
+    endpoints.json and already the vocabulary of /configure and the roles -
+    so a table called `qwen36` belongs to the endpoint called `qwen36`, and
+    naming it twice is not something anyone should have to think about. It is
+    matched whole (punctuation aside), because a name someone chose means
+    that name and not any string containing it. Two ports serving the same
+    model can then sample differently, which a table keyed on the model
+    cannot express at all.
+
+    THE SERVED MODEL SECOND. A table written on one machine should still
+    apply on another where the endpoints are named differently, and the model
+    is the thing that is really the same. Matched as a substring, longest
+    first, because model names carry sizes and quantisations nobody wants to
+    spell out.
 
     Looked up every time rather than once at import: the served model is only
-    known after the first call to the endpoint, and it changes the day the
-    server is restarted with another file.
+    known after the first call, and the endpoint can change with /configure
+    mid-session.
     """
+    here = _plain(agent_endpoint_name())
+    if here:
+        for key in SAMPLING_PROFILES:
+            if key != "default" and _plain(key) == here:
+                return key, SAMPLING_PROFILES[key]
     served = _plain(SERVED_MODEL or DEFAULT_MODEL or "")
     keys = [k for k in SAMPLING_PROFILES
             if k != "default" and k and _plain(k) and _plain(k) in served]

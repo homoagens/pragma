@@ -82,21 +82,33 @@ def show() -> None:
         used = [k for k in ORDER if any(k in row for row in table.values())]
         used += sorted({k for row in table.values() for k in row} - set(ORDER))
         head = "".join(f"{k.replace('_penalty', '_pen.'):>16}" for k in used)
-        mark = "   <- what this endpoint reads" if model == in_force and served else ""
+        mark = "   <- what this endpoint reads" if model == in_force else ""
         print(f"  {a}{model}{r}{g}{mark}{r}")
         print(f"    {g}{'row':<20}{head}{r}")
         for row, values in table.items():
             cells = "".join(f"{values[k]:>16g}" if k in values else f"{'-':>16}" for k in used)
             print(f"    {row:<20}{cells}")
         print()
-    if served:
-        print(f"  {g}the endpoint serves {served}, so its rows come from `{in_force}`{r}")
-        if in_force == "default":
-            print(f"  {g}no table names that model: give it a key and it will be read{r}")
+    # Which of the two routes matched, because `(qwen36)` on its own does not
+    # say whether it was the endpoint's name or the model's, and the two come
+    # apart the day a port is renamed or reloaded with something else.
+    here = config.agent_endpoint_name()
+    by_name = bool(here) and in_force != "default" and config._plain(here) == config._plain(in_force)
+    where = f"the agent talks to `{here}`" if here else "the agent's endpoint"
+    if by_name:
+        print(f"  {g}{where}, and a table has that name, so its rows are the ones sent{r}")
+    elif in_force != "default" and served:
+        print(f"  {g}{where}; no table has that name, so `{in_force}` was matched on the"
+              f" model it serves ({served}){r}")
+    elif served:
+        print(f"  {g}{where} serves {served}, which no table names: the default rows"
+              f" are sent{r}")
+        print(f"  {g}give it a key - the endpoint's name, or the model's - and it will"
+              f" be read{r}")
     else:
-        print(f"  {g}the agent's endpoint did not answer, so nothing can be said about"
-              f" which table{r}")
-        print(f"  {g}it would read - that is decided by the model it reports serving.{r}")
+        print(f"  {g}{where} did not answer, and no table has its name: nothing can be"
+              f" said about{r}")
+        print(f"  {g}which rows it would send until it does.{r}")
     print(f"  {g}a project picks a row with /settings: general or coding{r}")
     print()
 
