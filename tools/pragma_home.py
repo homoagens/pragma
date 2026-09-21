@@ -323,8 +323,12 @@ def make_session(extra: dict | None = None):
                     if name.lower().startswith(typed.strip().lower()):
                         yield Completion(name, start_position=-len(typed))
 
+    # The menu's reserved space is kept off the bottom of the screen whether a
+    # menu is showing or not, so on a short window it is six lines of page
+    # pushed off the top. Four is still two commands and their blurbs, which
+    # is what the completion is for here.
     return PromptSession(completer=HomeCompleter(), complete_while_typing=True,
-                         reserve_space_for_menu=6)
+                         reserve_space_for_menu=4)
 
 
 def read_line(session) -> str:

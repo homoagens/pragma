@@ -160,8 +160,31 @@ LOGO = (
 BLOCKS = {"F": "█", "T": "▀", "B": "▄"}
 
 
-def logo() -> None:
+# What the page needs under the mark before the prompt has somewhere to sit:
+# the project count, the commands, the endpoint, whatever the memory is
+# writing, and the six lines prompt_toolkit keeps free for its completion
+# menu. Below this the terminal scrolls, and what goes off the top is the
+# mark - which is how it comes to be half drawn.
+ROOM_FOR_THE_MARK = 28
+
+
+def logo(compact: bool | None = None) -> None:
+    """The mark, or the word alone on a terminal too short to hold it.
+
+    The PowerShell launcher has had the compact form since the beginning, for
+    exactly this: eight rows of block characters are worth the space on a
+    window that has it, and are the first thing to lose on one that does not.
+    """
+    if compact is None:
+        try:
+            compact = shutil.get_terminal_size(fallback=(80, 40)).lines < ROOM_FOR_THE_MARK
+        except Exception:
+            compact = False
     a = accent()
+    if compact:
+        print()
+        print(f"  {a}Pragma{RESET if a else ''}")
+        return
     r = RESET if a else ""
     glyph = BLOCKS
     try:                                   # a console that cannot encode them
@@ -171,6 +194,7 @@ def logo() -> None:
     print()
     for row in LOGO:
         print(f"  {a}" + "".join(glyph.get(c, c) for c in row) + r)
+
 
 
 def ask(question: str, default: str = "", hint: str = "") -> str | None:
