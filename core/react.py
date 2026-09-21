@@ -479,7 +479,12 @@ def run_agent(cfg: AgentConfig, user_task: str, log_path: Optional[Path] = None,
     # None, not DEFAULT_MODEL: an unset model is resolved by llm_client from
     # the agent's endpoint, which may name its own model in the catalogue.
     model       = cfg.model       or None
-    temperature = cfg.temperature if cfg.temperature is not None else config.DEFAULT_TEMPERATURE
+    # Asked for, not read: a sampling profile's temperature depends on which
+    # model the endpoint turns out to be serving, so it cannot be settled at
+    # import. config.agent_temperature() is DEFAULT_TEMPERATURE when no
+    # profile is in force.
+    temperature = (cfg.temperature if cfg.temperature is not None
+                   else config.agent_temperature())
     max_steps   = cfg.max_steps   or config.MAX_STEPS
 
     system_prompt = cfg.system_prompt

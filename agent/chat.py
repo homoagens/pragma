@@ -516,7 +516,10 @@ def _status_lines() -> list[tuple[str, str]]:
         profile, knobs = cfg.agent_profile()
     except Exception:
         pass
-    temp = getattr(cfg, "DEFAULT_TEMPERATURE", None)
+    try:
+        temp = cfg.agent_temperature()
+    except Exception:
+        temp = getattr(cfg, "DEFAULT_TEMPERATURE", None)
     if profile:
         sent = " . ".join(f"{k} {v:g}" for k, v in sorted(knobs.items()) if k != "temperature")
         out.append(("sampling", f"{profile}"))

@@ -1029,7 +1029,7 @@ def _call_llm_tools_once(messages, tools, model=None, temperature=None,
     import json as _json
 
     model       = resolved_model(model)
-    temperature = config.DEFAULT_TEMPERATURE if temperature is None else temperature
+    temperature = config.agent_temperature() if temperature is None else temperature
     max_tokens  = max_tokens or config.MAX_TOKENS
     timeout     = timeout or config.TIMEOUT
     base_url, api_key = _resolved_endpoint(base_url, api_key)
@@ -1150,7 +1150,7 @@ def call_llm(messages, model=None, temperature=None, max_tokens=None, timeout=No
     Hits POST {base_url}/chat/completions. Automatic retry on 502.
     """
     model = resolved_model(model)
-    if temperature is None: temperature = config.DEFAULT_TEMPERATURE
+    if temperature is None: temperature = config.agent_temperature()
     if max_tokens  is None: max_tokens  = config.MAX_TOKENS
     if timeout     is None: timeout     = config.TIMEOUT
 
@@ -1264,7 +1264,7 @@ def stream_llm(messages, model=None, temperature=None, max_tokens=None, timeout=
     arrives over SSE. Returns the complete response text when done.
     """
     model = resolved_model(model)
-    if temperature is None: temperature = config.DEFAULT_TEMPERATURE
+    if temperature is None: temperature = config.agent_temperature()
     if max_tokens  is None: max_tokens  = config.MAX_TOKENS
     if timeout     is None: timeout     = config.TIMEOUT
 

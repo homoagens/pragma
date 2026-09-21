@@ -180,15 +180,41 @@ SUMMARY_TEMPERATURE = float(os.environ.get("SUMMARY_TEMPERATURE", "0.2"))
 #
 # A penalty of 1.0 is no penalty, so it is omitted rather than sent: fewer
 # fields in the request, and nothing to misread later as a decision.
+# One table per MODEL, because that is whose recommendations these are. The
+# project says what it is doing; which numbers that means is the model's
+# business, and the model is not something anyone has to type - the server
+# reports it (SERVED_MODEL) and the key is matched against that name.
+#
+# A key matches when it appears in the served model's name, lowercased, and
+# the longest match wins: "qwen3.6" beats "qwen" on Qwen3.6-35B-A3B. What
+# matches nothing gets "default", which is where a model with no table of its
+# own lands - and where a single-model setup can simply put its numbers.
 SAMPLING_PROFILES = {
-    "thinking-general":   {"temperature": 1.0, "top_p": 0.95, "top_k": 20,
-                           "min_p": 0.0, "presence_penalty": 1.5},
-    "thinking-coding":    {"temperature": 0.6, "top_p": 0.95, "top_k": 20,
-                           "min_p": 0.0, "presence_penalty": 0.0},
-    "instruct-general":   {"temperature": 0.7, "top_p": 0.80, "top_k": 20,
-                           "min_p": 0.0, "presence_penalty": 1.5},
-    "instruct-reasoning": {"temperature": 1.0, "top_p": 0.95, "top_k": 20,
-                           "min_p": 0.0, "presence_penalty": 1.5},
+    # Qwen3, both families. From the model card; measured names, not the card's
+    # (see the note above on repetition_penalty).
+    "qwen3": {
+        "thinking-general":   {"temperature": 1.0, "top_p": 0.95, "top_k": 20,
+                               "min_p": 0.0, "presence_penalty": 1.5},
+        "thinking-coding":    {"temperature": 0.6, "top_p": 0.95, "top_k": 20,
+                               "min_p": 0.0, "presence_penalty": 0.0},
+        "instruct-general":   {"temperature": 0.7, "top_p": 0.80, "top_k": 20,
+                               "min_p": 0.0, "presence_penalty": 1.5},
+        "instruct-reasoning": {"temperature": 1.0, "top_p": 0.95, "top_k": 20,
+                               "min_p": 0.0, "presence_penalty": 1.5},
+    },
+    # Anything else. Deliberately the same numbers for now rather than an
+    # average of other model cards: a number nobody published is a guess with
+    # a decimal point on it. Put your model's own here, or give it a key.
+    "default": {
+        "thinking-general":   {"temperature": 1.0, "top_p": 0.95, "top_k": 20,
+                               "min_p": 0.0, "presence_penalty": 1.5},
+        "thinking-coding":    {"temperature": 0.6, "top_p": 0.95, "top_k": 20,
+                               "min_p": 0.0, "presence_penalty": 0.0},
+        "instruct-general":   {"temperature": 0.7, "top_p": 0.80, "top_k": 20,
+                               "min_p": 0.0, "presence_penalty": 1.5},
+        "instruct-reasoning": {"temperature": 1.0, "top_p": 0.95, "top_k": 20,
+                               "min_p": 0.0, "presence_penalty": 1.5},
+    },
 }
 
 # The table is data, so it can be corrected without touching the source: the
@@ -196,14 +222,42 @@ SAMPLING_PROFILES = {
 # recommendations - or a profile of your own - goes here.
 _PROFILES_FILE = Path(os.environ.get("PRAGMA_SAMPLING")
                       or (Path.home() / ".pragma" / "sampling.json"))
+def _merge_profiles(data: dict) -> None:
+    """Fold a table read from disk into the built-in one.
+
+    Two shapes are accepted, told apart by what the values are: a table of
+    models, each holding rows, or a bare table of rows - which is read as
+    "default", so a file written for one model keeps working when the
+    built-in table grows a second one.
+
+    A row is MERGED into the one it names, not swapped for it: correcting a
+    temperature should not mean restating the four numbers beside it, and a
+    partial row that silently dropped them would be a trap. A row that names
+    nothing built in is simply added.
+    """
+    def fold(bucket: dict, row: str, knobs: dict) -> None:
+        merged = dict(bucket.get(row) or {})
+        merged.update({k: float(v) for k, v in knobs.items()})
+        bucket[row] = merged
+
+    for key, value in data.items():
+        if not isinstance(value, dict):
+            continue
+        if value and all(isinstance(v, dict) for v in value.values()):
+            bucket = SAMPLING_PROFILES.setdefault(str(key).lower(), {})
+            for row, knobs in value.items():
+                if isinstance(knobs, dict):
+                    fold(bucket, str(row), knobs)
+        else:
+            fold(SAMPLING_PROFILES.setdefault("default", {}), str(key), value)
+
+
 try:
     if _PROFILES_FILE.is_file():
         import json as _json
         _extra = _json.loads(_PROFILES_FILE.read_text(encoding="utf-8-sig"))
         if isinstance(_extra, dict):
-            for _name, _knobs in _extra.items():
-                if isinstance(_knobs, dict):
-                    SAMPLING_PROFILES[str(_name)] = {k: float(v) for k, v in _knobs.items()}
+            _merge_profiles(_extra)
 except Exception:
     pass                                    # a broken file leaves the defaults
 
@@ -218,23 +272,41 @@ except Exception:
 SAMPLING_PROFILE = os.environ.get("SAMPLING_PROFILE", "").strip().lower()
 
 
+def profile_table() -> tuple[str, dict]:
+    """(which model's table, the table) for whatever the endpoint is serving.
+
+    Looked up every time rather than once at import: the served model is only
+    known after the first call to the endpoint, and it changes the day the
+    server is restarted with another file.
+    """
+    served = (SERVED_MODEL or DEFAULT_MODEL or "").lower()
+    keys = [k for k in SAMPLING_PROFILES if k != "default" and k and k in served]
+    if keys:
+        best = max(keys, key=len)
+        return best, SAMPLING_PROFILES[best]
+    return "default", SAMPLING_PROFILES.get("default", {})
+
+
 def agent_profile() -> tuple[str, dict]:
     """(name, knobs) for this project's agent calls, or ("", {}).
 
     The flavour is what the project said; the thinking half is what it is
-    already running. A flavour the table has no row for falls back to the
-    general one of the same half rather than inventing numbers - the table is
-    a quotation, and a row nobody wrote is not in it.
+    already running; the numbers are the served model's. A flavour the table
+    has no row for falls back to the general one of the same half rather than
+    inventing numbers - the table is a quotation, and a row nobody wrote is
+    not in it.
     """
     flavour = SAMPLING_PROFILE
     if flavour in ("", "server", "greedy", "manual"):
         return "", {}
-    if flavour in SAMPLING_PROFILES:                # a full name, as written
-        return flavour, dict(SAMPLING_PROFILES[flavour])
+    model, table = profile_table()
+    tail = "" if model == "default" else f" ({model})"
+    if flavour in table:                            # a full row name, as written
+        return flavour + tail, dict(table[flavour])
     half = "thinking" if AGENT_THINK else "instruct"
     for name in (f"{half}-{flavour}", f"{half}-general"):
-        if name in SAMPLING_PROFILES:
-            return name, dict(SAMPLING_PROFILES[name])
+        if name in table:
+            return name + tail, dict(table[name])
     return "", {}
 
 
@@ -267,7 +339,8 @@ def sampling_line():
     name, _ = agent_profile()
     if name:
         sent = ", ".join(f"{k} {v:g}" for k, v in sorted(sampling_extras().items()))
-        temp = "temp from the server" if DEFAULT_TEMPERATURE is None else f"temp {DEFAULT_TEMPERATURE:g}"
+        t = agent_temperature()
+        temp = "temp from the server" if t is None else f"temp {t:g}"
         return f"{name} . {temp} / {sent}" if sent else f"{name} . {temp}"
     if DEFAULT_TEMPERATURE is None:
         parts = ["temp from the server"]
@@ -449,17 +522,26 @@ MEMORY_NO_THINK = _NO_THINK if _NO_THINK in ("select", "write", "all") else ""
 _AGENT_THINK = os.environ.get("AGENT_THINK", "").strip().lower()
 AGENT_THINK = _AGENT_THINK in ("on", "1", "true", "yes")
 
-# The profile's own temperature, applied here rather than beside the table:
-# which half of it is in force depends on AGENT_THINK, and that is decided
-# on the line above.
-if SAMPLING_PROFILE not in ("", "server", "greedy", "manual") and not _TEMP_DECLARED:
-    _name, _knobs = agent_profile()
-    if _knobs.get("temperature") is not None:
-        DEFAULT_TEMPERATURE = float(_knobs["temperature"])
+# server and greedy are decided here, because they are decided by the word
+# alone. A profile's temperature is not: which table it comes from depends on
+# the model the endpoint turns out to be serving, which nothing knows yet.
 if SAMPLING_PROFILE == "server":
     DEFAULT_TEMPERATURE = None                      # the endpoint decides it too
 elif SAMPLING_PROFILE == "greedy":
     DEFAULT_TEMPERATURE = 0.0
+
+
+def agent_temperature():
+    """The temperature an agent call travels with when the caller names none.
+
+    A number someone typed wins over one chosen from a list, so a project
+    that set DEFAULT_TEMPERATURE keeps it whatever profile it also picked.
+    """
+    if not _TEMP_DECLARED:
+        _, knobs = agent_profile()
+        if knobs.get("temperature") is not None:
+            return float(knobs["temperature"])
+    return DEFAULT_TEMPERATURE
 
 
 
