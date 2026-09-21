@@ -190,30 +190,19 @@ SUMMARY_TEMPERATURE = float(os.environ.get("SUMMARY_TEMPERATURE", "0.2"))
 # matches nothing gets "default", which is where a model with no table of its
 # own lands - and where a single-model setup can simply put its numbers.
 SAMPLING_PROFILES = {
-    # Qwen3, both families. From the model card; measured names, not the card's
-    # (see the note above on repetition_penalty).
-    "qwen3": {
-        "thinking-general":   {"temperature": 1.0, "top_p": 0.95, "top_k": 20,
-                               "min_p": 0.0, "presence_penalty": 1.5},
-        "thinking-coding":    {"temperature": 0.6, "top_p": 0.95, "top_k": 20,
-                               "min_p": 0.0, "presence_penalty": 0.0},
-        "instruct-general":   {"temperature": 0.7, "top_p": 0.80, "top_k": 20,
-                               "min_p": 0.0, "presence_penalty": 1.5},
-        "instruct-reasoning": {"temperature": 1.0, "top_p": 0.95, "top_k": 20,
-                               "min_p": 0.0, "presence_penalty": 1.5},
-    },
-    # Anything else. Deliberately the same numbers for now rather than an
-    # average of other model cards: a number nobody published is a guess with
-    # a decimal point on it. Put your model's own here, or give it a key.
+    # The only table shipped, and it is for a model nobody has named. Two
+    # rows, because that is the split Pragma can make on its own - whether
+    # the agent reasons - and two numbers each, because temperature and
+    # top_p are the pair every model card publishes. top_k, min_p and the
+    # penalties are where models disagree most, so they are left out, which
+    # in this codebase means the server decides them: a number nobody
+    # published is a guess with a decimal point on it.
+    #
+    # A model with recommendations of its own gets a key in
+    # ~/.pragma/sampling.json. See tools/pragma_sampling.py.
     "default": {
-        "thinking-general":   {"temperature": 1.0, "top_p": 0.95, "top_k": 20,
-                               "min_p": 0.0, "presence_penalty": 1.5},
-        "thinking-coding":    {"temperature": 0.6, "top_p": 0.95, "top_k": 20,
-                               "min_p": 0.0, "presence_penalty": 0.0},
-        "instruct-general":   {"temperature": 0.7, "top_p": 0.80, "top_k": 20,
-                               "min_p": 0.0, "presence_penalty": 1.5},
-        "instruct-reasoning": {"temperature": 1.0, "top_p": 0.95, "top_k": 20,
-                               "min_p": 0.0, "presence_penalty": 1.5},
+        "thinking-general": {"temperature": 0.7, "top_p": 0.95},
+        "instruct-general": {"temperature": 0.7, "top_p": 0.90},
     },
 }
 
@@ -322,12 +311,19 @@ def agent_profile() -> tuple[str, dict]:
         return "", {}
     model, table = profile_table()
     tail = "" if model == "default" else f" ({model})"
-    if flavour in table:                            # a full row name, as written
-        return flavour + tail, dict(table[flavour])
     half = "thinking" if AGENT_THINK else "instruct"
-    for name in (f"{half}-{flavour}", f"{half}-general"):
-        if name in table:
-            return name + tail, dict(table[name])
+    # Every row is read over the general one of its own half. A coding row
+    # that says "cooler, and no presence penalty" means those two things and
+    # not "and nothing else at all", so a table can name what differs and
+    # leave the rest alone - the same rule the file's own rows follow when
+    # they are merged, applied here so it holds for the built-in table too.
+    base = dict(table.get(f"{half}-general") or {})
+    name = flavour if flavour in table else f"{half}-{flavour}"
+    if name in table:
+        base.update(table[name])
+        return name + tail, base
+    if base:
+        return f"{half}-general" + tail, base
     return "", {}
 
 
