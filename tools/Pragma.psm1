@@ -1590,6 +1590,7 @@ function script:Invoke-MenuLoop($suggested) {
             foreach ($row in @(@("/open",      "open a project and start talking"),
                                @("/new",       "start a project"),
                                @("/jobs",      "what the memory is writing"),
+                               @("/delete",    "remove a project"),
                                @("/configure", "set up the endpoint"),
                                @("/help",      "what each command does"),
                                @("/exit",      "leave"))) {
@@ -1624,12 +1625,16 @@ function script:Invoke-MenuLoop($suggested) {
                 }
             } elseif ($cmd -in @('new', 'n')) {
                 $entry = Invoke-NewProject
+            } elseif ($cmd -eq 'delete') {
+                # From here there is no project open, so nothing to go back to:
+                # the page lists them all and $null is what "none of them" means.
+                Invoke-DeleteProject $null | Out-Null
             } elseif ($cmd -eq 'configure') {
                 Invoke-Configure
             } elseif ($cmd -eq 'clear') {
                 # Nothing to do here: the loop draws the page again on a clean screen.
             } elseif ($cmd -notin @('help', '?')) {
-                $notice = "'/$cmd' is not a command here. Try /open, /new, /configure or /exit."
+                $notice = "'/$cmd' is not a command here. Try /open, /new, /delete, /configure or /exit."
             }
             continue
         }

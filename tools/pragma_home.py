@@ -15,7 +15,7 @@ neither, which is why the line is read here.
 The launcher draws the page and runs this for the line. /help and mistakes
 are answered here, under the page, and the prompt asks again. Anything the
 launcher has to do is written to --out as
-{"action": "open" | "new" | "configure" | "exit", "arg": "..."}
+{"action": "open" | "new" | "delete" | "configure" | "exit", "arg": "..."}
 and the process ends.
 
 MEMORY AT WORK. A consolidation runs in its own process and outlives the
@@ -61,6 +61,7 @@ COMMANDS = {
     "/open":      "open a project and start talking; /open <name> goes straight in",
     "/new":       "start a project",
     "/jobs":      "what the memory is writing in the background, in any project",
+    "/delete":    "remove a project, and the memory it keeps",
     "/configure": "set up the endpoint",
     "/clear":     "clear the screen",
     "/help":      "this list",

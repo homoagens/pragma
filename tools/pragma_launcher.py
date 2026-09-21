@@ -533,15 +533,64 @@ def open_project(suggested: dict | None = None) -> dict | None:
     return entries[chosen] if chosen is not None else None
 
 
-def delete_project(entry: dict) -> dict | None:
-    say(f"  removing '{entry['name']}' from the registry.", "warn")
-    say("  The workspace and the memory stay on disk; only the entry goes.", "dim")
-    if (ask("type the project name to confirm") or "") != entry["name"]:
-        say("  nothing touched", "good")
+def delete_project(entry: dict | None = None) -> dict | None:
+    """Remove a project: the registry entry and the memory it keeps.
+
+    The same page, and the same meaning, as Invoke-DeleteProject on Windows -
+    a destructive action that means two different things on two systems is
+    worse than not having it. What Pragma made, Pragma removes; the workspace
+    is the operator's own folder, often a git repository and often the only
+    copy of something, so it is never touched. Snapshots stay too: they are
+    the way back from exactly this.
+
+    Returns the project still open afterwards, or None when it was the one
+    deleted (or when there was none to begin with).
+    """
+    entries = read_registry()
+    if not entries:
+        say("  no projects to delete", "dim")
         return entry
-    write_registry([e for e in read_registry() if e["name"] != entry["name"]])
-    say(f"  '{entry['name']}' removed. Its store is still at {entry.get('memory')}", "good")
-    return None
+    chosen = pick("delete which project", [e["name"] for e in entries],
+                  [str(e.get("workspace") or "") for e in entries])
+    if chosen is None:
+        return entry
+    doomed = entries[chosen]
+    store = Path(doomed.get("memory") or "")
+    episodes = len(list((store / "episodes").glob("ep_*.json"))) if store.is_dir() else 0
+    backups = store.parent / "backups" / doomed["name"]
+
+    clear()
+    print()
+    say(f"  Delete '{doomed['name']}'", "bad")
+    print()
+    say("  This removes, for good:", "dim")
+    print(f"    the memory        {store}")
+    print(f"                      {episodes} episode(s), and every belief drawn from them")
+    print("    the registry entry")
+    print()
+    say("  This does NOT touch:", "dim")
+    print(f"    the workspace     {doomed.get('workspace')}")
+    if backups.is_dir():
+        print(f"    the snapshots     {backups}")
+    print()
+    say("  There is no undo.", "bad")
+    print()
+    if (ask("type the project name to confirm", hint="ctrl+D goes back") or "") != doomed["name"]:
+        say("  not deleted", "good")
+        ask("", hint="enter to go back")
+        return entry
+    write_registry([e for e in read_registry() if e["name"] != doomed["name"]])
+    gone = True
+    if store.is_dir():
+        try:
+            shutil.rmtree(store)
+        except Exception as e:
+            gone = False
+            say(f"  the entry is gone, but the store is not: {type(e).__name__}: {str(e)[:90]}", "warn")
+            say(f"  remove it by hand: {store}", "dim")
+    say(f"  '{doomed['name']}' deleted" + ("" if gone else " from the registry"), "good")
+    ask("", hint="enter to go back")
+    return None if (entry and entry["name"] == doomed["name"]) else entry
 
 
 # ── the loop ──────────────────────────────────────────────────────────────────
@@ -574,10 +623,11 @@ def home_page() -> None:
     say(f"  {'No projects yet.' if not n else '1 project' if n == 1 else f'{n} projects'}", "dim")
     print()
     a, r = accent(), (RESET if accent() else "")
-    for command, blurb in (("/open", "open a project and start talking"), ("/new", "start a project"),
-                           ("/jobs", "what the memory is writing"), ("/configure", "set up the endpoint"),
-                           ("/help", "what each command does"), ("/exit", "leave")):
-        print(f"  {a}{command:<12}{r}{GREY if a else ''}{blurb}{r}")
+    # From the prompt's own list, so a command added there appears here
+    # without a second list to remember. /clear has nothing to announce.
+    for command, blurb in home.COMMANDS.items():
+        if command != "/clear":
+            print(f"  {a}{command:<12}{r}{GREY if a else ''}{blurb.split(';')[0]}{r}")
 
 
 def configure_page() -> None:
@@ -608,6 +658,8 @@ def main() -> int:
                     notice = f"No project named '{arg}'."
             elif action == "new":
                 entry = new_project()
+            elif action == "delete":
+                delete_project()
             elif action == "configure":
                 configure_page()
             elif action == "clear":

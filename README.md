@@ -64,8 +64,8 @@ pragma
 That is the whole interface, and it is **two screens**.
 
 **Home** says what your model is serving and whether it answers, names any
-memory still being written, and takes `/open`, `/new`, `/jobs`, `/configure`
-and `/exit`. `/configure` points Pragma at your endpoint and gives each role —
+memory still being written, and takes `/open`, `/new`, `/jobs`, `/delete`,
+`/configure` and `/exit`. `/configure` points Pragma at your endpoint and gives each role —
 the agent, recall, the memory — its own if you want; `/new` makes a project and
 asks the handful of questions that change how it feels.
 
