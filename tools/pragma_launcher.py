@@ -49,7 +49,8 @@ import pragma_home as home                     # noqa: E402  the home prompt, sh
 
 REGISTRY = Path.home() / ".pragma" / "registry.json"
 PROJECTS = Path.home() / ".pragma" / "projects"
-GREY, RESET = "\033[38;5;242m", "\033[0m"
+ESC = "\033"
+GREY, RESET = ESC + "[38;5;242m", ESC + "[0m"
 
 # A project's settings, and the environment variable each one becomes. The
 # same table pragma-session.ps1 applies on Windows: one list, two launchers,
@@ -176,13 +177,102 @@ def ask(question: str, default: str = "", hint: str = "") -> str | None:
     return answer or default
 
 
-def pick(title: str, options: list[str], notes: list[str] | None = None) -> int | None:
-    """A numbered list. Arrow keys are the Windows launcher's; a number is the
-    thing that works in every terminal, over ssh included."""
+def read_key() -> str:
+    """One keypress, as a word: up, down, enter, back - or the character.
+
+    Raw mode for one key and straight back out: the alternative is a line
+    editor, and a menu that wants Enter after every arrow is not a menu.
+    Windows has msvcrt for the same thing, so this launcher behaves the same
+    there if it is ever the one running.
+    """
+    if os.name == "nt":                     # the PowerShell launcher usually runs there
+        import msvcrt
+        ch = msvcrt.getwch()
+        if ch in ("\x00", "\xe0"):          # an arrow arrives as two
+            return {"H": "up", "P": "down"}.get(msvcrt.getwch(), "")
+        return {"\r": "enter", "\n": "enter",
+                "\x04": "back", "\x1b": "back"}.get(ch, ch.lower())
+    import select as _select
+    import termios
+    import tty
+    fd = sys.stdin.fileno()
+    saved = termios.tcgetattr(fd)
+    try:
+        tty.setraw(fd)
+        ch = os.read(fd, 1)
+        if ch == ESC.encode():
+            # An escape sequence, or the Esc key alone: what tells them apart
+            # is whether anything follows it straight away.
+            more = b""
+            if _select.select([fd], [], [], 0.05)[0]:
+                more = os.read(fd, 2)
+            return {b"[A": "up", b"[B": "down"}.get(more, "back")
+    finally:
+        termios.tcsetattr(fd, termios.TCSADRAIN, saved)
+    if ch in (b"\r", b"\n"):
+        return "enter"
+    if ch == b"\x04":                       # ctrl+D, as everywhere else in Pragma
+        return "back"
+    if ch == b"\x03":
+        raise KeyboardInterrupt
+    return ch.decode("utf-8", "replace").lower()
+
+
+def menu(options: list[str], notes: list[str] | None = None, start: int = 0,
+         hint: str = "enter select . ctrl+D back") -> int | None:
+    """The list, walked with the arrows, as the Windows launcher walks it.
+
+    Drawn once and then redrawn over itself from where the drawing ended -
+    the same trick Show-Menu uses, for the same reason.
+
+    A number still picks a row, and so does a row's first letter: in a
+    terminal that swallows the arrows, the page still works.
+    """
+    sel = max(0, min(start, len(options) - 1))
+    a, r = accent(), (RESET if accent() else "")
+    drawn = 0
+    while True:
+        if drawn:
+            print(f"{ESC}[{drawn}A", end="")
+        for i, option in enumerate(options):
+            note = f"   {GREY}{notes[i]}{RESET}" if notes and notes[i] and a else ""
+            body = f"  {'>' if i == sel else ' '} {option}"
+            print(f"{ESC}[2K" + (f"{a}{body}{r}" if i == sel else body) + note)
+        print(f"{ESC}[2K")
+        print(f"{ESC}[2K  {GREY if a else ''}{hint}{r}")
+        drawn = len(options) + 2
+        try:
+            key = read_key()
+        except Exception:                   # a terminal that cannot go raw has
+            return None                     # no menu to offer
+        if key == "up":
+            sel = (sel - 1) % len(options)
+        elif key == "down":
+            sel = (sel + 1) % len(options)
+        elif key == "enter":
+            return sel
+        elif key in ("back", "q"):
+            return None
+        elif key.isdigit() and 1 <= int(key) <= len(options):
+            return int(key) - 1
+        else:
+            for i, option in enumerate(options):
+                if option[:1].lower() == key:
+                    return i
+
+
+def pick(title: str, options: list[str], notes: list[str] | None = None,
+         start: int = 0) -> int | None:
+    """A list to choose from: walked with the arrows where the terminal allows
+    it, numbered where it does not - a pipe, a log, a test."""
     if not options:
         return None
     print()
-    say(f"  {title}", "accent")
+    if title:
+        say(f"  {title}", "accent")
+        print()
+    if sys.stdin.isatty() and sys.stdout.isatty():
+        return menu(options, notes, start)
     for i, option in enumerate(options, 1):
         note = f"   {GREY}{notes[i - 1]}{RESET}" if notes and notes[i - 1] and accent() else ""
         print(f"    {i}. {option}{note}")
