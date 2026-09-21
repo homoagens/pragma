@@ -124,12 +124,43 @@ def accent() -> str:
     return home.accent()
 
 
+_CLEAR_SEQ: bytes | None = None
+
+
 def clear() -> None:
-    """Home, wipe, and the scrollback with it - with the escape the terminal
-    itself understands, not by running `clear`, which needs a TERM the shell
-    may not have (over ssh without a pty it prints a complaint instead)."""
-    if sys.stdout.isatty():
-        print("\033[H\033[2J\033[3J", end="", flush=True)
+    """Home, wipe, and the scrollback with it.
+
+    The sequence comes from TERMINFO - the terminal's own answer to "how do I
+    clear you", which is the string /usr/bin/clear writes, obtained without
+    spawning it. A hand-written ESC[H ESC[2J is right for xterm and is not
+    what every emulator wants: some keep the viewport where it was and draw
+    the new page below the old one, which looks like the screen sliding down
+    with the mark half off the top.
+
+    The hand-written escape stays as the fallback: a terminal with no TERM,
+    and Windows, where there is no terminfo to ask.
+    """
+    global _CLEAR_SEQ
+    if not sys.stdout.isatty():
+        return
+    if _CLEAR_SEQ is None:
+        _CLEAR_SEQ = b""
+        if os.name != "nt" and os.environ.get("TERM"):
+            try:
+                import curses
+                curses.setupterm()
+                _CLEAR_SEQ = curses.tigetstr("clear") or b""
+            except Exception:
+                _CLEAR_SEQ = b""
+    try:
+        if _CLEAR_SEQ:
+            sys.stdout.flush()
+            sys.stdout.buffer.write(_CLEAR_SEQ + b"\033[3J")    # and the scrollback
+            sys.stdout.flush()
+            return
+    except Exception:
+        pass
+    print("\033[H\033[2J\033[3J", end="", flush=True)
 
 
 def say(text: str = "", style: str = "") -> None:
@@ -160,6 +191,27 @@ LOGO = (
 BLOCKS = {"F": "█", "T": "▀", "B": "▄"}
 
 
+def terminal_lines(fallback: int = 40) -> int:
+    """How tall the window IS, asked of the window.
+
+    Not shutil.get_terminal_size, which believes $LINES and $COLUMNS before
+    it asks anything: bash sets them, and over ssh or after a resize they are
+    routinely stale. A launcher that believed a stale 50 on a 30-line window
+    drew the eight-row mark, overflowed the page, and the terminal scrolled
+    the mark half off the top - which is exactly the bug this was meant to
+    prevent.
+    """
+    for stream in (sys.__stdout__, sys.__stderr__, sys.__stdin__):
+        try:
+            return os.get_terminal_size(stream.fileno()).lines
+        except Exception:
+            continue
+    try:                                    # no terminal to ask: the env, then a guess
+        return shutil.get_terminal_size(fallback=(80, fallback)).lines
+    except Exception:
+        return fallback
+
+
 # What the page needs under the mark before the prompt has somewhere to sit:
 # the project count, the commands, the endpoint, whatever the memory is
 # writing, and the six lines prompt_toolkit keeps free for its completion
@@ -176,10 +228,7 @@ def logo(compact: bool | None = None) -> None:
     window that has it, and are the first thing to lose on one that does not.
     """
     if compact is None:
-        try:
-            compact = shutil.get_terminal_size(fallback=(80, 40)).lines < ROOM_FOR_THE_MARK
-        except Exception:
-            compact = False
+        compact = terminal_lines() < ROOM_FOR_THE_MARK
     a = accent()
     if compact:
         print()
