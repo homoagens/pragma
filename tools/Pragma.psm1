@@ -850,6 +850,21 @@ function script:Set-Sampling($entry, [string]$mode) {
     # greedy and top_k, top_p and min_p do nothing whatever they say. Offering
     # them as a set stops a project sitting in a combination that reads as
     # deliberate and is inert.
+    # general and coding are not a fourth state of the same four numbers: they
+    # are a named row of the model's own table, carrying the penalties too.
+    # The four hand-set values are cleared so nothing of an old answer survives
+    # underneath, and the profile is cleared by every other mode for the same
+    # reason. tools/pragma_sampling.py shows the table and writes it out.
+    if ($mode -in @('general', 'coding')) {
+        Set-ProjectSetting $entry 'SamplingProfile' $mode | Out-Null
+        foreach ($k in 'Temperature', 'TopK', 'TopP', 'MinP') {
+            Set-ProjectSetting $entry $k '' | Out-Null
+        }
+        Write-Host "  sampling: the model's own numbers for $mode" -ForegroundColor Green
+        Write-Host "  /status says which row of the table is in force" -ForegroundColor DarkGray
+        return
+    }
+    Set-ProjectSetting $entry 'SamplingProfile' '' | Out-Null
     switch ($mode) {
         'server' {
             # Omitted, all four: an absent field is what hands the choice over.
@@ -965,21 +980,26 @@ function script:Invoke-ProjectChoices($entry) {
 
     # 4. Sampling, as the settings menu has always offered it.
     $t = Get-ProjectValue $entry 'Temperature'
-    $shown = if ($t -eq 'server' -or $t -eq '') { if ($t) { 'server' } else { 'greedy' } }
+    $profile = Get-ProjectValue $entry 'SamplingProfile'
+    $shown = if ($profile) { $profile }
+             elseif ($t -eq 'server' -or $t -eq '') { if ($t) { 'server' } else { 'greedy' } }
              elseif ($t -in @('0', '0.0') -and -not (Get-ProjectValue $entry 'TopK')) { 'greedy' }
              else { 'manual' }
     Write-Host ""
-    Write-Host "  sampling - who picks temperature, top_k, top_p and min_p?"
-    Write-Host "    server  the endpoint decides all four (recommended)" -ForegroundColor DarkGray
-    Write-Host "    greedy  temperature 0: the most likely word, every time" -ForegroundColor DarkGray
-    Write-Host "    manual  enter the four yourself" -ForegroundColor DarkGray
+    Write-Host "  sampling - who picks temperature, top_k, top_p, min_p and the penalties?"
+    Write-Host "    server   the endpoint decides them all (recommended)" -ForegroundColor DarkGray
+    Write-Host "    general  the model's own numbers for conversation and reasoning" -ForegroundColor DarkGray
+    Write-Host "    coding   the model's own numbers for writing code: cooler, no penalty" -ForegroundColor DarkGray
+    Write-Host "    greedy   temperature 0: the most likely word, every time" -ForegroundColor DarkGray
+    Write-Host "    manual   enter the four yourself" -ForegroundColor DarkGray
+    Write-Host "    general and coding follow the thinking switch above on their own." -ForegroundColor DarkGray
     while ($true) {
         $v = Read-Line "  sampling [$shown]: "
         if ($null -eq $v) { return }
         $v = $v.Trim().ToLowerInvariant()
         if (-not $v -or ($v -eq $shown -and $v -ne 'manual')) { break }
-        if ($v -in @('server', 'greedy', 'manual')) { Set-Sampling $entry $v; break }
-        Write-Host "    server, greedy or manual" -ForegroundColor Yellow
+        if ($v -in @('server', 'greedy', 'manual', 'general', 'coding')) { Set-Sampling $entry $v; break }
+        Write-Host "    server, general, coding, greedy or manual" -ForegroundColor Yellow
     }
 
     # 5. How far one turn may go before the agent has to answer.
