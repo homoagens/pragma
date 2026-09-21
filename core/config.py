@@ -244,7 +244,15 @@ def _merge_profiles(data: dict) -> None:
         if not isinstance(value, dict):
             continue
         if value and all(isinstance(v, dict) for v in value.values()):
-            bucket = SAMPLING_PROFILES.setdefault(str(key).lower(), {})
+            name = str(key).lower()
+            if name not in SAMPLING_PROFILES:
+                # A model the table has never heard of starts from the default
+                # rows rather than from nothing, so {"llama": {"thinking-coding":
+                # {"temperature": 0.2}}} means "that row, cooler" and not "that
+                # row, and no top_p, top_k or min_p at all".
+                SAMPLING_PROFILES[name] = {r: dict(v) for r, v
+                                           in SAMPLING_PROFILES.get("default", {}).items()}
+            bucket = SAMPLING_PROFILES[name]
             for row, knobs in value.items():
                 if isinstance(knobs, dict):
                     fold(bucket, str(row), knobs)
@@ -272,6 +280,18 @@ except Exception:
 SAMPLING_PROFILE = os.environ.get("SAMPLING_PROFILE", "").strip().lower()
 
 
+def _plain(name: str) -> str:
+    """A model name with the punctuation taken out, for matching.
+
+    "qwen36", "qwen3.6" and "Qwen3-6" are the same key to a person and three
+    different strings to `in`. A model is called Qwen3.6-35B-A3B-MTP-GGUF in
+    one place, qwen3_6-35b in another and unsloth/Qwen3.6-35B in a third, so
+    a table keyed on the exact spelling is a table that quietly does not
+    apply - which is how a file written by hand came to be ignored.
+    """
+    return "".join(ch for ch in (name or "").lower() if ch.isalnum())
+
+
 def profile_table() -> tuple[str, dict]:
     """(which model's table, the table) for whatever the endpoint is serving.
 
@@ -279,10 +299,11 @@ def profile_table() -> tuple[str, dict]:
     known after the first call to the endpoint, and it changes the day the
     server is restarted with another file.
     """
-    served = (SERVED_MODEL or DEFAULT_MODEL or "").lower()
-    keys = [k for k in SAMPLING_PROFILES if k != "default" and k and k in served]
+    served = _plain(SERVED_MODEL or DEFAULT_MODEL or "")
+    keys = [k for k in SAMPLING_PROFILES
+            if k != "default" and k and _plain(k) and _plain(k) in served]
     if keys:
-        best = max(keys, key=len)
+        best = max(keys, key=lambda k: len(_plain(k)))
         return best, SAMPLING_PROFILES[best]
     return "default", SAMPLING_PROFILES.get("default", {})
 
