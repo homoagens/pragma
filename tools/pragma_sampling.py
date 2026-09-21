@@ -44,11 +44,29 @@ def accent() -> str:
     return "\033[38;2;" + raw + "m" if sys.stdout.isatty() else ""
 
 
+def ask_the_endpoint() -> str:
+    """What the agent's endpoint says it is serving, or "".
+
+    Asked, not assumed. This tool switches the import-time probe off so it
+    starts instantly, which left config.SERVED_MODEL empty and the table
+    falling back to DEFAULT_MODEL - a LABEL, "llama3.2" until someone sets
+    it. The page then named a model nobody was serving and blamed the
+    endpoint for the table it had chosen itself. One question costs a second
+    and is the only thing that can answer this honestly.
+    """
+    try:
+        import llm_client
+        ok, _ = llm_client.ping_models(timeout=4)
+        return config.SERVED_MODEL.strip() if ok else ""
+    except Exception:
+        return ""
+
+
 def show() -> None:
     a = accent()
     r = RESET if a else ""
     g = GREY if a else ""
-    served = (config.SERVED_MODEL or config.DEFAULT_MODEL or "").strip()
+    served = ask_the_endpoint()
     in_force, _ = config.profile_table()
     print()
     print(f"  {a}sampling table{r}")
@@ -73,8 +91,12 @@ def show() -> None:
         print()
     if served:
         print(f"  {g}the endpoint serves {served}, so its rows come from `{in_force}`{r}")
+        if in_force == "default":
+            print(f"  {g}no table names that model: give it a key and it will be read{r}")
     else:
-        print(f"  {g}no endpoint asked yet; a project would read `{in_force}`{r}")
+        print(f"  {g}the agent's endpoint did not answer, so nothing can be said about"
+              f" which table{r}")
+        print(f"  {g}it would read - that is decided by the model it reports serving.{r}")
     print(f"  {g}a project picks a row with /settings: general or coding{r}")
     print()
 
