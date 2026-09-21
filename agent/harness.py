@@ -492,6 +492,16 @@ class Harness:
         self._turn["out_tokens"] += int(stats.get("completion") or 0)
         self._turn["peak_total"] = max(int(self._turn.get("peak_total") or 0),
                                        int(stats.get("total") or 0))
+        # The prompt of the last request, as the server counted it. The
+        # conversation decides on this whether it is full, instead of
+        # estimating from characters - see config.CHAT_COMPACT_TOKENS.
+        self._turn["prompt_tokens"] = int(stats.get("prompt") or 0)
+
+    def last_prompt_tokens(self) -> int:
+        """What the last request of the turn actually weighed, or 0 if no
+        server reported it - an endpoint that sends no usage, or a turn that
+        has not spoken to one yet."""
+        return int(self._turn.get("prompt_tokens") or 0)
 
     def ctx_pct(self) -> int | None:
         total = self._turn.get("peak_total") or 0

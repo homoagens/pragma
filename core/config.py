@@ -661,6 +661,26 @@ CHAT_COMPACT_CHARS = int(os.environ.get(
     "CHAT_COMPACT_CHARS", str(int(CONTEXT_WINDOW * 4 * 0.50))))
 CHAT_KEEP_TURNS = int(os.environ.get("CHAT_KEEP_TURNS", "3"))
 
+# The same trigger, in TOKENS THE SERVER COUNTED, which is what it becomes as
+# soon as one request has been answered. The characters above are the estimate
+# used until then, and an estimate is all they can be: measured against this
+# model's own tokenizer, 4 chars per token holds for English prose (4.02) and
+# is generous for Italian (4.68), but Python source runs at 3.16 and a tool
+# observation full of JSON, numbers and paths at 1.23. A conversation about
+# code therefore sat near 70% of the window while the page said 50%, and the
+# margin that looked like caution was the error bar.
+#
+# usage.prompt_tokens comes back with every reply, so after the first turn the
+# real size is known exactly and free. The trigger is then 80% of the window,
+# but never closer to the top than the answer needs plus room for the turn to
+# grow after it is measured - tool observations arrive AFTER the last request
+# of a turn was counted. On a small window the second term is what binds.
+CHAT_COMPACT_MARGIN = int(os.environ.get("CHAT_COMPACT_MARGIN", "4096"))
+CHAT_COMPACT_TOKENS = int(os.environ.get(
+    "CHAT_COMPACT_TOKENS",
+    str(max(1024, min(int(CONTEXT_WINDOW * 0.80),
+                      CONTEXT_WINDOW - MAX_TOKENS - CHAT_COMPACT_MARGIN)))))
+
 # How much of what the model SAID survives into the transcript a turn is
 # consolidated from. The batch default is 300 characters, which is right there:
 # a thought is machinery, and five hundred steps of it would bury the work.

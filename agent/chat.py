@@ -459,12 +459,18 @@ def _status_lines() -> list[tuple[str, str]]:
         prompt_cap = int(getattr(cfg, "MAX_CHARS", 0) / 4)
         compact_at = int(getattr(cfg, "CHAT_COMPACT_CHARS", 0) / 4)
         answer = int(getattr(cfg, "MAX_TOKENS", 0))
-        if prompt_cap and compact_at:
+        compact_tokens = int(getattr(cfg, "CHAT_COMPACT_TOKENS", 0))
+        if compact_tokens:
             out.append(("", f"the conversation is consolidated into memory above "
-                            f"{compact_at} tokens ({compact_at * 100 // window}%)"))
-            out.append(("", f"a request is capped at {prompt_cap} ({prompt_cap * 100 // window}%) "
-                            f"plus {answer} for the answer "
-                            f"({(prompt_cap + answer) * 100 // window}% at most)"))
+                            f"{compact_tokens} tokens ({compact_tokens * 100 // window}%), "
+                            f"counted by the server"))
+        elif compact_at:
+            out.append(("", f"the conversation is consolidated into memory above "
+                            f"{compact_at} tokens ({compact_at * 100 // window}%), estimated"))
+        if prompt_cap:
+            out.append(("", f"one step of a turn is capped at {prompt_cap} "
+                            f"({prompt_cap * 100 // window}%), estimated, "
+                            f"plus {answer} for the answer"))
 
     # How the agent's actions are carried. It is not a thing a screen offers
     # to change, but it is the first thing to look at when a file comes back
@@ -1321,8 +1327,17 @@ If the turn needed no tools at all, the conclusion is simply your reply.
             # is still running has no finished experience to consolidate, and
             # a ~40s pause mid-answer is the worst possible moment for it.
             if args.memory and history:
-                size = sum(_msg_chars(m) for m in history)
-                if size > getattr(baseline_config, "CHAT_COMPACT_CHARS", 0):
+                # Is the conversation full? In tokens the server counted, once
+                # one request has been answered; in characters until then. The
+                # estimate is off by up to 3x on the content a coding session
+                # is made of, which is why it is only the fallback.
+                weighed = renderer.last_prompt_tokens()
+                if weighed:
+                    full = weighed > getattr(baseline_config, "CHAT_COMPACT_TOKENS", 0)
+                else:
+                    full = (sum(_msg_chars(m) for m in history)
+                            > getattr(baseline_config, "CHAT_COMPACT_CHARS", 0))
+                if full:
                     history, consolidated_upto = _compact(
                         history, turns, turn_msgs, consolidated_upto,
                         cwd, renderer)

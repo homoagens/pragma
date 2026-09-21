@@ -660,7 +660,8 @@ def delete_project(entry: dict | None = None) -> dict | None:
         return entry
     doomed = entries[chosen]
     store = Path(doomed.get("memory") or "")
-    episodes = len(list((store / "episodes").glob("ep_*.json"))) if store.is_dir() else 0
+    there = bool(str(store)) and store.is_dir()
+    episodes = len(list((store / "episodes").glob("ep_*.json"))) if there else 0
     backups = store.parent / "backups" / doomed["name"]
 
     clear()
@@ -668,9 +669,17 @@ def delete_project(entry: dict | None = None) -> dict | None:
     say(f"  Delete '{doomed['name']}'", "bad")
     print()
     say("  This removes, for good:", "dim")
-    print(f"    the memory        {store}")
-    print(f"                      {episodes} episode(s), and every belief drawn from them")
-    print("    the registry entry")
+    if there:
+        print(f"    the memory        {store}")
+        print(f"                      {episodes} episode(s), and every belief drawn from them")
+    else:
+        # A page that says "this removes the memory" about a folder that is
+        # not there is how someone comes away sure a store was deleted when
+        # nothing was. It says what it found instead.
+        print("    the registry entry - and nothing else: there is no store at")
+        print(f"                      {store or '(the entry names none)'}")
+    if there:
+        print("    the registry entry")
     print()
     say("  This does NOT touch:", "dim")
     print(f"    the workspace     {doomed.get('workspace')}")
@@ -685,14 +694,17 @@ def delete_project(entry: dict | None = None) -> dict | None:
         return entry
     write_registry([e for e in read_registry() if e["name"] != doomed["name"]])
     gone = True
-    if store.is_dir():
+    if there:
         try:
             shutil.rmtree(store)
         except Exception as e:
             gone = False
             say(f"  the entry is gone, but the store is not: {type(e).__name__}: {str(e)[:90]}", "warn")
             say(f"  remove it by hand: {store}", "dim")
-    say(f"  '{doomed['name']}' deleted" + ("" if gone else " from the registry"), "good")
+    if not there:
+        say(f"  '{doomed['name']}' removed from the registry. There was no store to delete.", "good")
+    else:
+        say(f"  '{doomed['name']}' deleted" + ("" if gone else " from the registry"), "good")
     ask("", hint="enter to go back")
     return None if (entry and entry["name"] == doomed["name"]) else entry
 
