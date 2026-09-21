@@ -110,6 +110,10 @@ DEFAULT_MODEL       = os.environ.get("DEFAULT_MODEL", "llama3.2")
 # would silently move every existing setup the day it upgraded.
 _temp_raw = os.environ.get("DEFAULT_TEMPERATURE", "0.0").strip()
 DEFAULT_TEMPERATURE = None if _temp_raw.lower() == "server" else float(_temp_raw)
+# A profile carries a temperature of its own; it is applied below, once the
+# table has been read. A project that also named a temperature keeps it: a
+# number someone typed beats a number someone chose from a list.
+_TEMP_DECLARED = bool(os.environ.get("DEFAULT_TEMPERATURE", "").strip())
 
 
 def _opt_float(name):
@@ -157,13 +161,97 @@ MIN_P = _opt_float("MIN_P")
 SUMMARY_TEMPERATURE = float(os.environ.get("SUMMARY_TEMPERATURE", "0.2"))
 
 
+# ── Sampling profiles ────────────────────────────────────────────────────────
+# The knobs travel in every request, so what a request does not send is what
+# the server was started with. A profile is a named set of them: the endpoint
+# keeps its own defaults and two projects on the same server can sample
+# differently, at the same time, without restarting anything.
+#
+# The names are the model's own recommendations, split the way the model
+# splits: whether it is reasoning, and what it is being asked to do. Pragma
+# knows the first (AGENT_THINK) and the project declares the second, so a
+# project chooses one word and the other half follows.
+#
+# MEASURED on llama.cpp (Qwen3.6-35B-A3B, 2026-09-21), one knob at a time:
+# temperature, top_k, top_p, min_p, presence_penalty, frequency_penalty and
+# repeat_penalty all change the reply. `repetition_penalty` does NOT: that is
+# the HuggingFace name and this server drops it in silence, which is why the
+# tables people copy from model cards have to be translated on the way in.
+#
+# A penalty of 1.0 is no penalty, so it is omitted rather than sent: fewer
+# fields in the request, and nothing to misread later as a decision.
+SAMPLING_PROFILES = {
+    "thinking-general":   {"temperature": 1.0, "top_p": 0.95, "top_k": 20,
+                           "min_p": 0.0, "presence_penalty": 1.5},
+    "thinking-coding":    {"temperature": 0.6, "top_p": 0.95, "top_k": 20,
+                           "min_p": 0.0, "presence_penalty": 0.0},
+    "instruct-general":   {"temperature": 0.7, "top_p": 0.80, "top_k": 20,
+                           "min_p": 0.0, "presence_penalty": 1.5},
+    "instruct-reasoning": {"temperature": 1.0, "top_p": 0.95, "top_k": 20,
+                           "min_p": 0.0, "presence_penalty": 1.5},
+}
+
+# The table is data, so it can be corrected without touching the source: the
+# same file, same key names, merged over the defaults. A model with other
+# recommendations - or a profile of your own - goes here.
+_PROFILES_FILE = Path(os.environ.get("PRAGMA_SAMPLING")
+                      or (Path.home() / ".pragma" / "sampling.json"))
+try:
+    if _PROFILES_FILE.is_file():
+        import json as _json
+        _extra = _json.loads(_PROFILES_FILE.read_text(encoding="utf-8-sig"))
+        if isinstance(_extra, dict):
+            for _name, _knobs in _extra.items():
+                if isinstance(_knobs, dict):
+                    SAMPLING_PROFILES[str(_name)] = {k: float(v) for k, v in _knobs.items()}
+except Exception:
+    pass                                    # a broken file leaves the defaults
+
+# What this project asks for. A flavour - general or coding - picks the half
+# of the table that matches what is being done; whether the agent reasons
+# picks the other half, from AGENT_THINK, because a project has already said
+# that and saying it twice is how two settings come to disagree.
+#
+# server : send none of them, the endpoint decides everything (the default)
+# greedy : temperature 0, nothing else - the paper's runs
+# manual : DEFAULT_TEMPERATURE / TOP_K / TOP_P / MIN_P, set one by one
+SAMPLING_PROFILE = os.environ.get("SAMPLING_PROFILE", "").strip().lower()
+
+
+def agent_profile() -> tuple[str, dict]:
+    """(name, knobs) for this project's agent calls, or ("", {}).
+
+    The flavour is what the project said; the thinking half is what it is
+    already running. A flavour the table has no row for falls back to the
+    general one of the same half rather than inventing numbers - the table is
+    a quotation, and a row nobody wrote is not in it.
+    """
+    flavour = SAMPLING_PROFILE
+    if flavour in ("", "server", "greedy", "manual"):
+        return "", {}
+    if flavour in SAMPLING_PROFILES:                # a full name, as written
+        return flavour, dict(SAMPLING_PROFILES[flavour])
+    half = "thinking" if AGENT_THINK else "instruct"
+    for name in (f"{half}-{flavour}", f"{half}-general"):
+        if name in SAMPLING_PROFILES:
+            return name, dict(SAMPLING_PROFILES[name])
+    return "", {}
+
+
 def sampling_extras():
     """The optional samplers, as payload fields — only the ones actually set.
+
+    A profile answers for all of them at once. Without one it is the four
+    knobs set by hand, as before.
 
     top_k / min_p are llama.cpp extensions rather than OpenAI fields; a server
     that does not know them ignores them, which is the same outcome as not
     sending them, so there is nothing to guard against.
     """
+    _, knobs = agent_profile()
+    if knobs:
+        knobs.pop("temperature", None)              # that one travels on its own
+        return {k: v for k, v in knobs.items() if v is not None}
     out = {}
     if TOP_K is not None:
         out["top_k"] = TOP_K
@@ -176,6 +264,11 @@ def sampling_extras():
 
 def sampling_line():
     """One human-readable line: what this process will actually send."""
+    name, _ = agent_profile()
+    if name:
+        sent = ", ".join(f"{k} {v:g}" for k, v in sorted(sampling_extras().items()))
+        temp = "temp from the server" if DEFAULT_TEMPERATURE is None else f"temp {DEFAULT_TEMPERATURE:g}"
+        return f"{name} . {temp} / {sent}" if sent else f"{name} . {temp}"
     if DEFAULT_TEMPERATURE is None:
         parts = ["temp from the server"]
     else:
@@ -355,6 +448,20 @@ MEMORY_NO_THINK = _NO_THINK if _NO_THINK in ("select", "write", "all") else ""
 # is for projects whose turns are problems rather than exchanges.
 _AGENT_THINK = os.environ.get("AGENT_THINK", "").strip().lower()
 AGENT_THINK = _AGENT_THINK in ("on", "1", "true", "yes")
+
+# The profile's own temperature, applied here rather than beside the table:
+# which half of it is in force depends on AGENT_THINK, and that is decided
+# on the line above.
+if SAMPLING_PROFILE not in ("", "server", "greedy", "manual") and not _TEMP_DECLARED:
+    _name, _knobs = agent_profile()
+    if _knobs.get("temperature") is not None:
+        DEFAULT_TEMPERATURE = float(_knobs["temperature"])
+if SAMPLING_PROFILE == "server":
+    DEFAULT_TEMPERATURE = None                      # the endpoint decides it too
+elif SAMPLING_PROFILE == "greedy":
+    DEFAULT_TEMPERATURE = 0.0
+
+
 
 
 def _thinking(on: bool) -> dict:

@@ -94,6 +94,7 @@ Set-SessionEnv "AGENT_THINK"       (Cfg "AgentThink"      "")
 # words. preset = the model's thinking preset with a fixed seed; greedy =
 # temperature 0 for every memory call, as the paper's runs were.
 Set-SessionEnv "MEMORY_SAMPLING"   (Cfg "MemorySampling"  "")
+Set-SessionEnv "SAMPLING_PROFILE"  (Cfg "SamplingProfile" "")
 Set-SessionEnv "LLM_TIMEOUT"       (Cfg "Timeout"        "")
 # How wide the deterministic prefilter casts its net before the curator judges.
 # The right width depends on the store: ten candidates out of thirty is a very

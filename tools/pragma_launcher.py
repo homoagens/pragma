@@ -61,7 +61,8 @@ ENV_OF = {
     "ContextWindow": "CONTEXT_WINDOW", "MaxTokens": "MAX_TOKENS",
     "SkillMaxTokens": "SKILL_MAX_TOKENS", "MemoryMaxTokens": "MEMORY_MAX_TOKENS",
     "MemoryNoThink": "MEMORY_NO_THINK", "AgentThink": "AGENT_THINK",
-    "MemorySampling": "MEMORY_SAMPLING", "Timeout": "LLM_TIMEOUT",
+    "MemorySampling": "MEMORY_SAMPLING", "SamplingProfile": "SAMPLING_PROFILE",
+    "Timeout": "LLM_TIMEOUT",
     "CuratorEpisodes": "CURATOR_CANDIDATES_EPISODES",
     "CuratorRecent": "CURATOR_CANDIDATES_RECENT",
     "CuratorLearnings": "CURATOR_CANDIDATES_LEARNINGS",
@@ -566,23 +567,28 @@ def choices_page(entry: dict) -> None:
         say("    preset or greedy", "warn")
 
     print()
-    print("  sampling - who picks temperature, top_k, top_p and min_p?")
-    say("    server  the endpoint decides all four (recommended)", "dim")
-    say("    greedy  temperature 0: the most likely word, every time", "dim")
-    say("    manual  enter the four yourself", "dim")
+    print("  sampling - who picks temperature, top_k, top_p, min_p and the penalties?")
+    say("    server   the endpoint decides them all (recommended)", "dim")
+    say("    general  the model's own numbers for conversation and reasoning", "dim")
+    say("    coding   the model's own numbers for writing code: cooler, no penalty", "dim")
+    say("    greedy   temperature 0: the most likely word, every time", "dim")
+    say("    manual   enter the four yourself", "dim")
+    say("    general and coding follow the thinking switch above on their own.", "dim")
     temperature = current("Temperature")
-    shown = ("server" if temperature == "server"
-             else "greedy" if temperature in ("0", "0.0", "") and not current("TopK") else "manual")
+    shown = (current("SamplingProfile") or
+             ("server" if temperature == "server"
+              else "greedy" if temperature in ("0", "0.0", "") and not current("TopK")
+              else "manual"))
     while True:
         value = ask("sampling", shown)
         if value is None:
             return
         if value == shown and value != "manual":
             break
-        if value.lower() in ("server", "greedy", "manual"):
+        if value.lower() in ("server", "greedy", "manual", "general", "coding"):
             set_sampling(name, value.lower())
             break
-        say("    server, greedy or manual", "warn")
+        say("    server, general, coding, greedy or manual", "warn")
 
     print()
     print("  steps per turn - how many actions the agent may take before it must answer")
@@ -602,8 +608,17 @@ def choices_page(entry: dict) -> None:
 
 
 def set_sampling(name: str, how: str) -> None:
-    """server: send none of the four. greedy: temperature 0 and the rest cleared.
-    manual: all four, asked."""
+    """server: send none of them. general/coding: a named profile, and the four
+    hand-set knobs cleared so nothing of the old answer survives underneath.
+    greedy: temperature 0 and the rest cleared. manual: all four, asked."""
+    if how in ("general", "coding"):
+        for key, value in (("SamplingProfile", how), ("Temperature", ""),
+                           ("TopK", ""), ("TopP", ""), ("MinP", "")):
+            save_setting(name, key, value)
+        say(f"  sampling: the model's own numbers for {how}", "dim")
+        say("  /status says which row of the table is in force", "dim")
+        return
+    save_setting(name, "SamplingProfile", "")     # a profile does not linger
     if how == "server":
         for key, value in (("Temperature", "server"), ("TopK", ""), ("TopP", ""), ("MinP", "")):
             save_setting(name, key, value)

@@ -508,12 +508,27 @@ def _status_lines() -> list[tuple[str, str]]:
                                          if getattr(cfg, "MEMORY_SAMPLING", "preset") == "greedy"
                                          else f"thinking preset, seed {getattr(cfg, 'MEMORY_SEED', 42)}"
                                               "  (MemorySampling preset)")))
+    # What this project's own calls carry. A profile answers for all of them at
+    # once and says which row of the table it is, because "temperature 0.6" on
+    # its own is a number and "thinking-coding" is a reason.
+    profile, knobs = ("", {})
+    try:
+        profile, knobs = cfg.agent_profile()
+    except Exception:
+        pass
     temp = getattr(cfg, "DEFAULT_TEMPERATURE", None)
-    extra = [f"{name} {value}" for name, value in
-             (("top_k", getattr(cfg, "TOP_K", None)), ("top_p", getattr(cfg, "TOP_P", None)),
-              ("min_p", getattr(cfg, "MIN_P", None))) if value is not None]
-    out.append(("sampling", "the endpoint decides" if temp is None and not extra
-                else " . ".join([f"temperature {temp}" if temp is not None else "temperature: the endpoint"] + extra)))
+    if profile:
+        sent = " . ".join(f"{k} {v:g}" for k, v in sorted(knobs.items()) if k != "temperature")
+        out.append(("sampling", f"{profile}"))
+        out.append(("", (f"temperature {temp:g}" if temp is not None else "temperature: the endpoint")
+                    + (f" . {sent}" if sent else "")))
+    else:
+        extra = [f"{name} {value}" for name, value in
+                 (("top_k", getattr(cfg, "TOP_K", None)), ("top_p", getattr(cfg, "TOP_P", None)),
+                  ("min_p", getattr(cfg, "MIN_P", None))) if value is not None]
+        out.append(("sampling", "the endpoint decides" if temp is None and not extra
+                    else " . ".join([f"temperature {temp}" if temp is not None
+                                     else "temperature: the endpoint"] + extra)))
 
     # The store as it stands, from the same summary the briefing is built from.
     # It reads the endpoint too, so a server that is down or a tunnel that is
