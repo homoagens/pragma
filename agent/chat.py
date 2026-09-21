@@ -450,6 +450,21 @@ def _status_lines() -> list[tuple[str, str]]:
     if served and window and served != window:
         context += f"   (the agent endpoint reports {served})"
     out.append(("context", context))
+    # What the window is spent on. Pragma never lets a request approach the
+    # window: the history is traded for episodes above one line, the prompt is
+    # capped at another, and the answer has to fit in what is left. Without
+    # these three numbers "ctx 31%" reads as "a third of the way to a wall",
+    # and the wall is somewhere else entirely.
+    if window:
+        prompt_cap = int(getattr(cfg, "MAX_CHARS", 0) / 4)
+        compact_at = int(getattr(cfg, "CHAT_COMPACT_CHARS", 0) / 4)
+        answer = int(getattr(cfg, "MAX_TOKENS", 0))
+        if prompt_cap and compact_at:
+            out.append(("", f"the conversation is consolidated into memory above "
+                            f"{compact_at} tokens ({compact_at * 100 // window}%)"))
+            out.append(("", f"a request is capped at {prompt_cap} ({prompt_cap * 100 // window}%) "
+                            f"plus {answer} for the answer "
+                            f"({(prompt_cap + answer) * 100 // window}% at most)"))
 
     # How the agent's actions are carried. It is not a thing a screen offers
     # to change, but it is the first thing to look at when a file comes back

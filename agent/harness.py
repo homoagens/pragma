@@ -474,19 +474,27 @@ class Harness:
 
     def turn_begin(self) -> None:
         self._turn = {"t0": time.monotonic(), "steps": 0, "tools": 0,
-                      "out_tokens": 0, "last_total": 0, "files": self._files()}
+                      "out_tokens": 0, "peak_total": 0, "files": self._files()}
         self._boundary = True
         self._note = ""
 
     def note_stats(self, stats: dict) -> None:
-        """The token counts of the call that just ended, kept for the summary."""
+        """The token counts of the call that just ended, kept for the summary.
+
+        The BIGGEST request of the turn, not the last one: a turn ends with
+        whatever step happened to be last, and a short one after a long one
+        made the figure fall while the conversation had only grown. What the
+        number is for is knowing how much room is left, and that is decided
+        by the largest request, not the most recent.
+        """
         if not stats or not stats.get("total"):
             return
         self._turn["out_tokens"] += int(stats.get("completion") or 0)
-        self._turn["last_total"] = int(stats.get("total") or 0)
+        self._turn["peak_total"] = max(int(self._turn.get("peak_total") or 0),
+                                       int(stats.get("total") or 0))
 
     def ctx_pct(self) -> int | None:
-        total = self._turn.get("last_total") or 0
+        total = self._turn.get("peak_total") or 0
         if not self.window or not total:
             return None
         return min(999, total * 100 // self.window)
