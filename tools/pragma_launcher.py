@@ -71,6 +71,13 @@ ENV_OF = {
 NEW_PROJECT_SETTINGS = {"Temperature": "server", "MemoryNoThink": "select",
                         "AgentThink": "off", "MemorySampling": "preset"}
 
+# The step budget a project runs at when it has never said. It is not a setting
+# of the machine but an argument of the conversation, so config's own default
+# (15, for a single batch task) never applies here: a conversation gets the
+# room a conversation needs. The same number pragma-session.ps1 falls back to,
+# because a project opened on one system and on the other must behave the same.
+DEFAULT_STEPS = "50"
+
 
 # ── the registry ──────────────────────────────────────────────────────────────
 
@@ -400,7 +407,7 @@ def talk(entry: dict, env: dict) -> str:
     request.parent.mkdir(parents=True, exist_ok=True)
     request.unlink(missing_ok=True)
     env = dict(env, PRAGMA_REQUEST=str(request))
-    steps = str((entry.get("settings") or {}).get("MaxSteps", "")).strip()
+    steps = str((entry.get("settings") or {}).get("MaxSteps", "")).strip() or DEFAULT_STEPS
     argv = [sys.executable, "-m", "agent.chat", "--cwd", str(entry.get("workspace") or Path.cwd()), "--memory"]
     if steps:
         argv += ["--max-steps", steps]
@@ -499,8 +506,8 @@ def choices_page(entry: dict) -> None:
 
     print()
     print("  steps per turn - how many actions the agent may take before it must answer")
-    say("    50 suits a conversation; long tasks on files may need more", "dim")
-    shown = current("MaxSteps", "50")
+    say(f"    {DEFAULT_STEPS} suits a conversation; long tasks on files may need more", "dim")
+    shown = current("MaxSteps", DEFAULT_STEPS)
     while True:
         value = ask("steps per turn", shown)
         if value is None:
