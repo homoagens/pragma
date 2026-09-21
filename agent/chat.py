@@ -450,6 +450,24 @@ def _status_lines() -> list[tuple[str, str]]:
     if served and window and served != window:
         context += f"   (the agent endpoint reports {served})"
     out.append(("context", context))
+
+    # How the agent's actions are carried. It is not a thing a screen offers
+    # to change, but it is the first thing to look at when a file comes back
+    # mangled, so it is a thing a screen has to show.
+    protocol = getattr(cfg, "LLM_TOOL_PROTOCOL", "native")
+    if protocol == "native":
+        line = "native . the skills go as tools and the server constrains the arguments"
+        try:
+            import endpoints
+            import llm_client
+            if endpoints.state(llm_client.current_endpoint().base_url).tools_unsupported:
+                line = ("native, but this endpoint refused tools . running on text, "
+                        "where the model escapes its own arguments")
+        except Exception:
+            pass
+    else:
+        line = f"{protocol} . the model writes its own JSON and escapes it itself"
+    out.append(("actions", line))
     out.append(("", ""))
     out.append(("steps", f"{getattr(cfg, 'MAX_STEPS', 0)} per turn"))
     think = getattr(cfg, "MEMORY_NO_THINK", "")
