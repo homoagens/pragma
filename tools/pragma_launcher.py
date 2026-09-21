@@ -631,54 +631,42 @@ def home_page() -> None:
 
 
 def projects_page() -> dict | None:
-    """Everything that is done TO a project, in one place.
+    """Everything that is done TO a project: four words, and the list of
+    projects under the first of them.
 
-    Open is first and takes the whole page under it: over a project's life it
-    is opened every day and the rest happens a handful of times.
+    The page listed the projects itself at first, which put two questions on
+    one screen - which project, and what to do with it - and meant the list
+    had to be read before the word you wanted was visible.
+
+    Returns the project to open, or None to stay at home.
     """
     while True:
-        entries = read_registry()
-        entries.sort(key=lambda e: str(e.get("last_opened") or ""), reverse=True)
         clear()
-        logo()
         print()
-        a, r = accent(), (RESET if accent() else "")
         say("  projects", "accent")
-        print()
-        for i, e in enumerate(entries, 1):
-            when = str(e.get("last_opened") or "")[:10] or "never opened"
-            print(f"    {a}{i:>2}{r}  {e['name']:<18}{GREY if a else ''}{e.get('workspace', '')}"
-                  f"   {when}{r}")
-        print()
-        for command, blurb in (("new", home.PROJECT_ACTIONS["new"]),
-                               ("backups", home.PROJECT_ACTIONS["backups"]),
-                               ("delete", home.PROJECT_ACTIONS["delete"])):
-            print(f"    {a}{command:<12}{r}{GREY if a else ''}{blurb}{r}")
-        print()
-        answer = ask("", hint="a number to open it, a word, or ctrl+D to go back")
-        if answer is None:
+        # Up to the semicolon: what the word does. What comes after it is how
+        # to type the same thing at the prompt, which is not news on a page
+        # that is already offering it.
+        chosen = pick("", list(home.PROJECT_ACTIONS),
+                      [blurb.split(";")[0] for blurb in home.PROJECT_ACTIONS.values()])
+        if chosen is None:
             return None
-        answer = answer.strip().lstrip("/").lower()
-        if answer.isdigit() and 1 <= int(answer) <= len(entries):
-            return entries[int(answer) - 1]
-        if answer in ("new", "n"):
+        action = list(home.PROJECT_ACTIONS)[chosen]
+        if action == "open":
+            entry = open_project()
+            if entry:
+                return entry
+        elif action == "new":
             made = new_project()
             if made:
                 return made
-        elif answer in ("delete", "d"):
+        elif action == "delete":
             delete_project()
-        elif answer in ("backups", "backup", "b"):
-            chosen = pick("back up which project", [e["name"] for e in entries])
-            if chosen is not None:
-                backups_page(entries[chosen])
+        elif action == "backups":
+            entry = open_project()
+            if entry:
+                backups_page(entry)
                 ask("", hint="enter to go back")
-        elif answer in ("open", "o"):
-            chosen = open_project()
-            if chosen:
-                return chosen
-        elif answer:
-            say("  a number, or new, backups, delete", "warn")
-            ask("", hint="enter to go back")
 
 
 def configure_page() -> None:

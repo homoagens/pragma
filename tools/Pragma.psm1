@@ -1393,42 +1393,40 @@ function script:Invoke-BackupMenu($entry) {
 }
 
 
-function script:Invoke-ProjectsPage {
-    # Everything that is done TO a project, in one place. Open is the whole
-    # list, because over a project's life it is opened every day and the rest
-    # happens a handful of times; the three words under it are the rest.
+function script:Invoke-ProjectsPage($suggested) {
+    # Everything that is done TO a project: four words, and the list of
+    # projects under the first of them. The page listed the projects itself
+    # at first, which put two questions on one screen - which project, and
+    # what to do with it - and made a menu long enough that Show-Menu's
+    # redraw fell off the bottom of a short console.
     #
     # Returns the project to open, or $null to stay at home.
     while ($true) {
-        $entries = @(Read-Registry)
         New-Page
-        Write-Host ""
-        Show-Logo
         Write-Host ""
         Write-Accent "  Projects"
         Write-Host ""
-        $picks = @()
-        foreach ($e in $entries) {
-            $when = if ($e.last_opened) { ([string]$e.last_opened).Substring(0, 10) } else { "never opened" }
-            $picks += [pscustomobject]@{ key = ''
-                                         label = ("{0,-18} {1,-42} {2}" -f $e.name, $e.workspace, $when)
-                                         action = 'open'; entry = $e }
-        }
-        $picks += [pscustomobject]@{ key = 'n'; label = "new        start a project";                action = 'new';     entry = $null }
-        $picks += [pscustomobject]@{ key = 'b'; label = "backups    snapshot a memory, or put one back"; action = 'backups'; entry = $null }
-        $picks += [pscustomobject]@{ key = 'd'; label = "delete     remove a project, and its memory"; action = 'delete';  entry = $null }
-        $picks += [pscustomobject]@{ key = 'q'; label = "back";                                      action = '';        entry = $null }
-        $c = Show-Menu $picks "enter select . ctrl+D back"
+        $items = @(
+            [pscustomobject]@{ key = 'o'; label = "open       open a project and start talking";    action = 'open' }
+            [pscustomobject]@{ key = 'n'; label = "new        start a project";                     action = 'new' }
+            [pscustomobject]@{ key = 'b'; label = "backups    snapshot a memory, or put one back";  action = 'backups' }
+            [pscustomobject]@{ key = 'd'; label = "delete     remove a project, and its memory";    action = 'delete' }
+            [pscustomobject]@{ key = 'q'; label = "back";                                           action = '' }
+        )
+        $c = Show-Menu $items "enter select . ctrl+D back"
         Write-Host ""
         if (-not $c -or -not $c.action) { return $null }
-        switch ($c.action) {
-            'open'    { return $c.entry }
-            'new'     { $made = Invoke-NewProject; if ($made) { return $made } }
-            'delete'  { Invoke-DeleteProject $null | Out-Null }
-            'backups' {
-                $which = Invoke-OpenProject $null
-                if ($which) { Invoke-BackupMenu $which }
-            }
+        if ($c.action -eq 'open') {
+            $chosen = Invoke-OpenProject $suggested
+            if ($chosen) { return $chosen }
+        } elseif ($c.action -eq 'new') {
+            $made = Invoke-NewProject
+            if ($made) { return $made }
+        } elseif ($c.action -eq 'delete') {
+            Invoke-DeleteProject $null | Out-Null
+        } elseif ($c.action -eq 'backups') {
+            $which = Invoke-OpenProject $null
+            if ($which) { Invoke-BackupMenu $which }
         }
     }
 }
@@ -1676,7 +1674,7 @@ function script:Invoke-MenuLoop($suggested) {
             } elseif ($cmd -in @('new', 'n')) {
                 $entry = Invoke-NewProject
             } elseif ($cmd -eq 'projects') {
-                $entry = Invoke-ProjectsPage
+                $entry = Invoke-ProjectsPage $suggested
             } elseif ($cmd -eq 'delete') {
                 # From here there is no project open, so nothing to go back to:
                 # the page lists them all and $null is what "none of them" means.
