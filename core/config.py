@@ -242,7 +242,10 @@ MAX_TOKENS     = int(os.environ.get("MAX_TOKENS", "16384"))
 # compact summary) and needs a server that implements tools — Pragma falls
 # back to `text` automatically, once per endpoint and out loud, when it does
 # not. `text` is otherwise for reproducing the frozen evaluation corpus, which
-# ran on it: set LLM_TOOL_PROTOCOL=text for that. No screen offers the choice.
+# ran on it: set LLM_TOOL_PROTOCOL=text for that, or `Protocol: text` in the
+# project - on Windows the session script sets the variable itself and .env does
+# not override a variable that already exists, so there the project setting is
+# the one that works. No screen offers the choice.
 #
 # This governs the ACTION channel only. The memory faculties keep their own
 # text protocol either way, so the evaluation corpus stays comparable.

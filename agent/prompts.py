@@ -394,7 +394,25 @@ embedded inside a JSON string. Follow these rules to avoid syntax errors:
 
 ## Task completion
 
-- Before concluding, verify your work: run the script, read the file back, or execute the test.
+- **Before concluding, exercise what you wrote.** Not a syntax check: `py_compile`,
+  an import, a linter and reading the file back all pass on code that is wrong in
+  every line that matters. They tell you the file parses. They tell you nothing
+  about whether it works.
+- **Run it.** If the program takes a task and finishes, run it. If it takes input,
+  run it with input. If you wrote a function, call it with real values and compare
+  what came back with what you expected.
+- **A program you cannot run as-is, take apart and run in pieces.** A game, a TUI,
+  a server — anything that seizes the terminal or waits forever: import the module
+  and call the pure parts (the geometry, the parsing, the state machine) on every
+  case you claim to handle. One rotation of each shape. One line of each format.
+  The boundary, and one past it. That is a minute of work, and it is where the bugs
+  are: a name out of scope, a value unpacked to the wrong shape, an attribute
+  nobody ever set.
+- **Never say it works on the strength of a syntax check.** Say what you ran and
+  what came back. If you could not exercise it, say that plainly in the
+  `conclusion`: "it compiles; I could not run it because X" is honest and useful.
+  "It should work correctly now" is neither, and it is wrong often enough that the
+  person has to find out for you.
 - If you produced code, a clean `conclusion` is better than a long one. Mention file paths
   (absolute) and what to do next (e.g., "Run: python C:\\path\\to\\script.py").
 - If you could not complete the task, `conclusion` must explain exactly what failed and why.
