@@ -6,6 +6,7 @@
 from __future__ import annotations
 import importlib.util
 import inspect
+import os
 import sys
 from pathlib import Path
 
@@ -100,34 +101,11 @@ def skills_summary_for(names) -> str:
     when a runner hides skills from the agent (e.g. the base64 skills on the
     native channel): otherwise the prompt would advertise skills the agent
     cannot call, and the model wastes turns calling them ('skill does not
-    exist'). Names without a summary line (e.g. get_skill_details) are
+    exist'). Names without a summary line are
     skipped, exactly as in SKILLS_SUMMARY."""
     wanted = set(names)
     return "\n".join(line for name, line in _SUMMARY_LINES.items()
                      if name in wanted)
-
-
-def get_skill_details(name: str) -> str:
-    """
-    Load the full documentation for a skill.
-    Returns the complete README.md content (parameters, return value, notes).
-    Call this before using a skill you are unsure about.
-    """
-    readme = SKILLS_DIR / name / "README.md"
-    if not readme.exists():
-        available = sorted(
-            f.name for f in SKILLS_DIR.iterdir()
-            if f.is_dir() and not f.name.startswith("_")
-        )
-        return (
-            f"ERROR: no documentation found for skill '{name}'.\n"
-            f"Available skills: {available}"
-        )
-    return readme.read_text(encoding="utf-8")
-
-
-# Add get_skill_details to the registry so the agent can call it
-ALL_SKILLS["get_skill_details"] = get_skill_details
 
 
 # Memory machinery that lives in skills/ for its imports, not for the agent.
@@ -140,6 +118,28 @@ ALL_SKILLS["get_skill_details"] = get_skill_details
 _NOT_AGENT_TOOLS = ("recall_episodes", "recall_learnings",
                     "episode_consolidate", "session_reflect")
 
+# Skills a Unix shell already does, and does better - so on a Unix system they
+# are not offered at all.
+#
+# NOT because they are bad. Because a tool that is offered is a tool that gets
+# used: the prompt has said "the shell is a first-class tool here" for a while
+# and the model kept reaching for grep_search, which is the cheaper thought.
+# A policy written in prose loses to a palette every time, so the palette has
+# to agree with it. `grep -rn`, `find`, `sed -n`, `git status`, `ls` answer in
+# one call what these answered in five, and they compose - which is the thing
+# no fixed signature can offer.
+#
+# What is NOT in this list, and why. Everything that writes stays, because
+# `revert` is a snapshot taken by the dispatcher before a skill that names a
+# `path` runs, and execute_command never passes through it: an edit made with
+# `sed -i` cannot be undone. file_outline stays because `cat` on a file that
+# turns out to be four thousand lines costs the context the outline saves.
+#
+# On Windows the whole palette stays: cmd.exe has no grep, no usable find, no
+# wc, and the prompt there says the opposite for the same reason.
+_SHELL_DOES_THIS_BETTER = ("read_file", "list_dir", "glob_match",
+                           "grep_search", "git_status", "git_diff")
+
 
 def palette(base: dict | None = None) -> dict:
     """The skills offered to the agent.
@@ -151,12 +151,18 @@ def palette(base: dict | None = None) -> dict:
     the agent only through the curator. Consolidation and reflection run after
     a task, never as a step inside one. Chat and batch each used to pop them
     on their own and the browser server did not, so the rule lives here.
+
+    On a Unix system the shell-replaceable half goes too: see
+    _SHELL_DOES_THIS_BETTER.
     """
     out = dict(ALL_SKILLS if base is None else base)
     for name in _NOT_AGENT_TOOLS:
         out.pop(name, None)
+    if os.name != "nt":
+        for name in _SHELL_DOES_THIS_BETTER:
+            out.pop(name, None)
     return out
 
 
 __all__ = ["ALL_SKILLS", "SKILLS_SUMMARY", "skills_summary_for",
-           "get_skill_details", "palette"]
+           "palette"]

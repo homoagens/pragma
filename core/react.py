@@ -90,7 +90,7 @@ _MUTATING_SKILLS = {
 # reads. Anything not listed here keeps the one-action-per-step contract.
 _READ_ONLY_SKILLS = frozenset({
     "read_file", "list_dir", "file_outline", "grep_search", "glob_match",
-    "git_status", "git_diff", "get_skill_details",
+    "git_status", "git_diff",
 })
 
 

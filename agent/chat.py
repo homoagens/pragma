@@ -65,7 +65,6 @@ import config as baseline_config          # noqa: E402
 import llm_client                          # noqa: E402
 from react import AgentConfig, run_agent, _msg_chars   # noqa: E402
 from skills import palette as skills_palette   # noqa: E402
-from skills import skills_summary_for      # noqa: E402
 
 from agent.batch import (                  # noqa: E402
     _pool_line,
@@ -1136,9 +1135,7 @@ If the turn needed no tools at all, the conclusion is simply your reply.
 """
 
     system_prompt = build_system_prompt(
-        str(cwd),
-        default_model=baseline_config.DEFAULT_MODEL,
-        skills_summary=skills_summary_for(skills.keys()),
+        str(cwd), default_model=baseline_config.DEFAULT_MODEL,
     ) + chat_policy + project_contract(cwd)
 
     global _RENDERER

@@ -1027,7 +1027,6 @@ async def websocket_endpoint(ws: WebSocket):
                         system_prompt = build_system_prompt(
                             thread_cwd,
                             default_model  = baseline_config.DEFAULT_MODEL,
-                            skills_summary = skills_summary_for(AGENT_SKILLS.keys()),
                         )
                         def on_token(chunk: str):
                             loop.call_soon_threadsafe(

@@ -69,7 +69,6 @@ import config as baseline_config
 import llm_client
 from react import AgentConfig, run_agent
 from skills import palette as skills_palette
-from skills import skills_summary_for
 from agent.prompts import build_system_prompt, project_contract
 
 
@@ -777,9 +776,7 @@ confirmed mid-task. Therefore:
     # model reads e.g. recall_learnings in the prompt, calls it, and hits
     # "skill does not exist" (field-found in the 5-year demo).
     system_prompt = build_system_prompt(
-        str(cwd),
-        default_model=baseline_config.DEFAULT_MODEL,
-        skills_summary=skills_summary_for(skills.keys()),
+        str(cwd), default_model=baseline_config.DEFAULT_MODEL,
     ) + batch_policy
 
     # ── Task assembly: instructions + memory + current request ──────────
