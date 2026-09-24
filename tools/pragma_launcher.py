@@ -48,7 +48,7 @@ sys.path[:0] = [str(ROOT), str(ROOT / "core"), str(ROOT / "tools")]
 import pragma_home as home                     # noqa: E402  the home prompt, shared
 # The arrows, the digits, the first letter, ctrl+D: one menu, every page that
 # offers a choice - this one and /configure.
-from pragma_menu import accent, ask, menu, pick, read_key, say   # noqa: E402,F401
+from pragma_menu import accent, ask, clear, menu, pick, read_key, say   # noqa: E402,F401
 
 REGISTRY = Path.home() / ".pragma" / "registry.json"
 PROJECTS = Path.home() / ".pragma" / "projects"
@@ -121,45 +121,6 @@ def save_setting(name: str, key: str, value: str) -> None:
 
 
 # ── the screen ────────────────────────────────────────────────────────────────
-
-_CLEAR_SEQ: bytes | None = None
-
-
-def clear() -> None:
-    """Home, wipe, and the scrollback with it.
-
-    The sequence comes from TERMINFO - the terminal's own answer to "how do I
-    clear you", which is the string /usr/bin/clear writes, obtained without
-    spawning it. A hand-written ESC[H ESC[2J is right for xterm and is not
-    what every emulator wants: some keep the viewport where it was and draw
-    the new page below the old one, which looks like the screen sliding down
-    with the mark half off the top.
-
-    The hand-written escape stays as the fallback: a terminal with no TERM,
-    and Windows, where there is no terminfo to ask.
-    """
-    global _CLEAR_SEQ
-    if not sys.stdout.isatty():
-        return
-    if _CLEAR_SEQ is None:
-        _CLEAR_SEQ = b""
-        if os.name != "nt" and os.environ.get("TERM"):
-            try:
-                import curses
-                curses.setupterm()
-                _CLEAR_SEQ = curses.tigetstr("clear") or b""
-            except Exception:
-                _CLEAR_SEQ = b""
-    try:
-        if _CLEAR_SEQ:
-            sys.stdout.flush()
-            sys.stdout.buffer.write(_CLEAR_SEQ + b"\033[3J")    # and the scrollback
-            sys.stdout.flush()
-            return
-    except Exception:
-        pass
-    print("\033[H\033[2J\033[3J", end="", flush=True)
-
 
 # The mark from interface-web/logo.png beside the word, exactly as
 # Show-Logo draws it in tools/Pragma.psm1 - one picture, two launchers.

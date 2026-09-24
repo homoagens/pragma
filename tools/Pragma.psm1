@@ -1721,10 +1721,9 @@ function script:Invoke-Configure {
     # project is open: which model Pragma talks to is a property of the machine,
     # not of a project. Nothing here has loaded .env yet, so the next chat
     # started from this window picks the change up.
+    # No header drawn here: the page clears the screen and writes its own the
+    # moment it starts, so one printed first is a flash and nothing more.
     New-Page
-    Write-Host ""
-    Write-Accent "  Configure"
-    Write-Host ""
     $tool = Join-Path $PSScriptRoot "pragma_configure.py"
     if (-not (Test-Path $script:Python)) {
         Write-Host "  The Python environment is missing: $($script:Python)" -ForegroundColor Red

@@ -44,6 +44,60 @@ def say(text: str = "", style: str = "") -> None:
     print(f"{colour}{text}{RESET}" if colour else text)
 
 
+_CLEAR_SEQ: bytes | None = None
+
+
+def clear() -> None:
+    """Home, wipe, and the scrollback with it.
+
+    The sequence comes from TERMINFO - the terminal's own answer to "how do I
+    clear you", which is the string /usr/bin/clear writes, obtained without
+    spawning it. A hand-written ESC[H ESC[2J is right for xterm and is not
+    what every emulator wants: some keep the viewport where it was and draw
+    the new page below the old one, which looks like the screen sliding down
+    with the page half off the top.
+
+    The hand-written escape stays as the fallback: a terminal with no TERM,
+    and Windows, where there is no terminfo to ask.
+    """
+    global _CLEAR_SEQ
+    if not sys.stdout.isatty():
+        return
+    if _CLEAR_SEQ is None:
+        _CLEAR_SEQ = b""
+        if os.name != "nt" and os.environ.get("TERM"):
+            try:
+                import curses
+                curses.setupterm()
+                _CLEAR_SEQ = curses.tigetstr("clear") or b""
+            except Exception:
+                _CLEAR_SEQ = b""
+    try:
+        if _CLEAR_SEQ:
+            sys.stdout.flush()
+            sys.stdout.buffer.write(_CLEAR_SEQ + b"\033[3J")    # and the scrollback
+            sys.stdout.flush()
+            return
+    except Exception:
+        pass
+    print(ESC + "[H" + ESC + "[2J" + ESC + "[3J", end="", flush=True)
+
+
+def title(name: str, crumbs: str = "") -> None:
+    """The head of a page: where you are, on a screen of its own.
+
+    Every page clears before it draws. A terminal that keeps the last four
+    questions above the current one is not showing history, it is showing
+    debris: the answers are already recorded in what the page says about
+    itself, and the eye has to find the live line among the dead ones.
+    """
+    clear()
+    a, r = accent(), (RESET if accent() else "")
+    print()
+    print(f"  {a}{name}{r}" + (f"  {GREY}{crumbs}{r}" if crumbs and a else
+                               (f"  {crumbs}" if crumbs else "")))
+
+
 def ask(question: str, default: str = "", hint: str = "") -> str | None:
     """One answer, or None for ctrl+D - which goes back, everywhere."""
     shown = f" [{default}]" if default else (f"  {hint}" if hint else "")
