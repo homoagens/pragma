@@ -510,6 +510,33 @@ def _current_step() -> str:
     return getattr(_LOCAL, "step", "")
 
 
+def _agent_knobs() -> dict:
+    """The endpoint's sampling table, for the AGENT's calls and no others.
+
+    The table describes how the conversation should sample. The memory
+    faculties are not the conversation: they answer under a schema at
+    temperature 0, or with the model's thinking preset and a fixed seed, and
+    that is a property the store depends on - two runs of the same corpus have
+    to produce the same beliefs.
+
+    MEASURED, which is why this exists: with a table written for qwen36, a
+    curator asking for `temperature 0.0, nothing else` received
+    presence_penalty 1.5 with it. At temperature 0 the decoding is greedy, so
+    top_p and the rest are inert - but a presence penalty moves the logits
+    BEFORE the argmax, so it can change which token wins. A call designed to
+    be reproducible had quietly stopped being one.
+
+    The rule is the one endpoints.py already routes by: a call's role comes
+    from the faculty making it, and everything unlabelled is the agent's.
+    """
+    try:
+        if endpoints.role_of(current_faculty()) != "agent":
+            return {}
+    except Exception:
+        pass
+    return config.sampling_extras()
+
+
 @contextmanager
 def faculty(name: str):
     """Name the faculty making the calls inside this block."""
@@ -738,7 +765,7 @@ def _call_openai_compatible(messages, model, temperature, max_tokens, timeout, b
     # the server, exactly as it already does for top_k, top_p and min_p.
     if temperature is not None:
         payload["temperature"] = temperature
-    payload.update(config.sampling_extras())
+    payload.update(_agent_knobs())
     # The caller's own samplers win over the project's: a memory call that
     # reasons brings the thinking preset and its seed (config.memory_call).
     if sampling:
@@ -804,7 +831,7 @@ def _stream_openai_compatible(messages, model, temperature, max_tokens, timeout,
     # the server, exactly as it already does for top_k, top_p and min_p.
     if temperature is not None:
         payload["temperature"] = temperature
-    payload.update(config.sampling_extras())
+    payload.update(_agent_knobs())
     if template_kwargs:
         payload["chat_template_kwargs"] = template_kwargs
     headers = {"Content-Type": "application/json"}
@@ -1048,7 +1075,7 @@ def _call_llm_tools_once(messages, tools, model=None, temperature=None,
     # Only the samplers actually configured. An absent field is not a missing
     # setting: it hands the choice to the server's launch-time default, which
     # is where a model's recommended preset usually already lives.
-    payload.update(config.sampling_extras())
+    payload.update(_agent_knobs())
     if template_kwargs:
         payload["chat_template_kwargs"] = template_kwargs
     headers = {"Content-Type": "application/json"}
