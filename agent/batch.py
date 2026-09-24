@@ -100,12 +100,10 @@ def _channel_line() -> str:
     Same for the output budget: a truncated write_file is a budget symptom,
     not a parser one, and the number has to be next to the evidence.
 
-    This is the CONFIGURED protocol. `native` degrades to `text` mid-run if
-    the endpoint turns out to have no tool support; that event is reported
-    separately, when it happens.
+    An endpoint with no tool support cannot run the agent at all; that is
+    reported when it happens, on the first step.
     """
-    p = getattr(baseline_config, "LLM_TOOL_PROTOCOL", "") or "native"
-    return f"{p} (max_tokens {baseline_config.MAX_TOKENS})"
+    return f"tools (max_tokens {baseline_config.MAX_TOKENS})"
 
 
 def _fmt_args_json(args) -> str:

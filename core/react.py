@@ -20,7 +20,6 @@
 # system_prompt + skills. See README.md for an example.
 
 import json
-import re
 import threading
 from dataclasses import dataclass
 from pathlib import Path
@@ -68,16 +67,6 @@ def _log_step(log_path: Path, entry: dict):
     log_path.write_text(json.dumps(log, indent=2, ensure_ascii=False), encoding="utf-8")
 
 
-# Skills whose payload is a blob of text — the ones whose arguments break the
-# JSON layer when the text is source code (newlines, quotes, backslashes).
-# Measured over 60 real coding sessions: write_file failed on 41% of .py files
-# and 0% of .md ones, and after a failure the model retried the SAME call 57
-# times out of 70 — because the error told it to. Where an escape-proof
-# variant exists, name it; the retry has to change strategy, not just repeat.
-_B64_ALTERNATIVE = {
-    "write_file": "write_file_b64",
-    "replace_in_file": "replace_in_file_b64",
-}
 _CONTENT_ARGS = ("content", "new", "old", "instruction")
 
 # Skills that modify a file on disk. Their target is snapshotted before the
@@ -85,8 +74,8 @@ _CONTENT_ARGS = ("content", "new", "old", "instruction")
 # touch several files named only inside the diff, and it snapshots its own
 # targets before applying.
 _MUTATING_SKILLS = {
-    "write_file", "write_file_b64", "append_file",
-    "replace_in_file", "replace_in_file_b64", "insert_after", "insert_before",
+    "write_file", "append_file",
+    "replace_in_file", "insert_after", "insert_before",
 }
 
 # Skills that only LOOK at the workspace: no file is written, no command runs,
@@ -108,52 +97,38 @@ _READ_ONLY_SKILLS = frozenset({
 def _malformed_args_hint(action: str, kwargs: dict) -> str:
     """Advice for an args-binding failure, aimed at the likely cause.
 
-    A binding failure on a content-carrying skill is almost never the model
-    forgetting a parameter: it is the payload having broken the JSON, with
-    json-repair then handing back a mangled dict. Repeating the call reproduces
-    it exactly, so the hint has to offer a different route.
+    Rarer than it was: the server escapes tool arguments now, so a payload
+    does not break on its own newlines and quotes. What is left is a call
+    whose fields do not bind - a name that does not exist, a required one
+    missing - and for that, repeating the call reproduces it exactly, so the
+    hint has to offer a different route.
     """
-    carries_content = any(k in kwargs for k in _CONTENT_ARGS)
-    alt = _B64_ALTERNATIVE.get(action)
-    # On the native channel the server does the escaping, so a broken payload
-    # is not an escaping problem and base64 does not fix it. Worse, the model
-    # has to produce the encoding itself, token by token, and it gets it wrong:
-    # observed twice in one session, decoding to a corrupted path. Recommending
-    # it there sends the model down a road that damages the content silently.
-    if getattr(config, "LLM_TOOL_PROTOCOL", "native") == "native":
-        alt = None
-
-    if carries_content and alt:
+    if any(k in kwargs for k in _CONTENT_ARGS):
         return (
-            f"Hint: your `args` JSON was almost certainly malformed by the "
-            f"content itself — newlines, quotes and backslashes in source code "
-            f"break the JSON layer, and json-repair then loses or invents "
-            f"fields. Do NOT retry `{action}` with the same payload: it will "
-            f"fail the same way. Use `{alt}` instead, passing the content "
-            f"base64-encoded — base64 is pure ASCII, so no escaping can go "
-            f"wrong. If the content is long, build the file incrementally: "
-            f"`write_file` the scaffolding, then `append_file` one section at "
-            f"a time."
-        )
-    if carries_content:
-        return (
-            f"Hint: your `args` JSON was probably malformed by the content "
-            f"itself — newlines, quotes and backslashes break the JSON layer. "
-            f"`{action}` has no base64 variant, so shrink the payload instead: "
-            f"send the change in smaller pieces, or write a scaffold first and "
-            f"`append_file` the rest one section at a time."
+            f"Hint: `{action}` was called with a payload its parameters could "
+            f"not take. Shrink it: send the change in smaller pieces, or write "
+            f"a scaffold with `write_file` and `append_file` the rest one "
+            f"section at a time."
         )
     return (
-        "Hint: this often happens when your JSON `args` was malformed and "
-        "json-repair dropped fields during recovery. Re-emit the action with "
-        "the full args dict, double-checking every required field is present."
+        "Hint: re-emit the call with the full argument list, checking every "
+        "required field is present and spelled as the schema names it."
     )
 
 
-# When an endpoint turns out not to implement tools, the run degrades to the
-# text protocol instead of retrying on every step. Remembered per endpoint
-# (endpoints.State.tools_unsupported), so a server without tools does not
-# switch the channel off for another one.
+# An endpoint that turns out not to implement tools is remembered
+# (endpoints.State.tools_unsupported), so the run stops on the first step
+# rather than retrying on every one - and it is remembered for THAT endpoint,
+# so a server without tools does not condemn another.
+#
+# There is no longer anywhere to fall back TO. The text protocol - the model
+# writing its own JSON envelope into the reply, and this file parsing it out -
+# was retired: llama.cpp compiles the schemas into a grammar, so on the native
+# channel malformed arguments are unrepresentable rather than merely
+# detectable, and keeping a second channel meant a second prompt, a second
+# palette and two sets of failures to reason about. A server that cannot do
+# tools cannot run this agent, and saying so is better than degrading to a
+# protocol the prompt no longer describes.
 
 # On the native protocol a reply with no tool call is how a task ends, and it
 # is taken as the answer immediately.
@@ -183,18 +158,6 @@ _NO_TOOL_STREAK = [0]
 _NO_TOOL_LIMIT = 1
 
 
-# The pseudo-XML a model writes when it decides to produce content instead of
-# calling a tool. Tolerant on purpose: the closing tags are often missing or
-# malformed - that is what "the model wrote it by hand" means - and a strict
-# pattern would match none of the cases it exists for.
-_TOOL_CALL_XML = re.compile(
-    r"<tool_call>\s*<function\s*=\s*(?P<name>[A-Za-z0-9_]+)\s*>(?P<body>.*?)"
-    r"(?:</tool_call>|\Z)", re.S)
-_TOOL_PARAM_XML = re.compile(
-    r"<parameter\s*=\s*(?P<key>[A-Za-z0-9_]+)\s*>(?P<val>.*?)"
-    r"(?:</parameter>|(?=<parameter)|\Z)", re.S)
-
-
 def _action_from_text(text: str):
     """A text-protocol action hidden in prose, or None.
 
@@ -222,28 +185,6 @@ def _action_from_text(text: str):
         except Exception:
             pass
 
-    # The other shape a model writes when it means to call a tool but produces
-    # content instead. Several families emit this pseudo-XML natively, and it
-    # reached a user as a FINAL ANSWER - the reply was the markup, path and all.
-    # A net that only knows the JSON form has a hole shaped exactly like
-    # whatever the model in front of it actually writes, so it has to know both.
-    m = _TOOL_CALL_XML.search(text)
-    if m:
-        name = m.group("name").strip()
-        args = {}
-        for pm in _TOOL_PARAM_XML.finditer(m.group("body") or ""):
-            args[pm.group("key").strip()] = pm.group("val").strip()
-        if not args:
-            # Some variants carry a JSON object instead of <parameter> tags.
-            try:
-                from json_parser import extract_json
-                blob = extract_json(m.group("body") or "")
-                if isinstance(blob, dict):
-                    args = blob
-            except Exception:
-                pass
-        if name:
-            return _wrap(name, args)
     return None
 
 
@@ -266,8 +207,6 @@ def _native_action_text(cfg: AgentConfig, messages, model, temperature,
     turns out to imitate the history instead of using the tools, that is the
     first thing to revisit.
     """
-    if getattr(config, "LLM_TOOL_PROTOCOL", "native") != "native":
-        return None
     known = endpoints.state(llm_client.current_endpoint().base_url)
     if known.tools_unsupported:
         return None
@@ -294,11 +233,8 @@ def _native_action_text(cfg: AgentConfig, messages, model, temperature,
         )
     except llm_client.ToolsUnsupported as e:
         known.tools_unsupported = True
-        # Not DEBUG-gated: the banner announced `native`, and from here on the
-        # run is a text run. A log that keeps that quiet is a log that lies
-        # about what it measured.
-        console.print(f"[yellow]Endpoint has no tool support ({e}); "
-                      f"using the text protocol for the rest of the run.[/yellow]")
+        console.print(f"[red]This endpoint does not implement tool calling "
+                      f"({e}).[/red]")
         return None
 
     calls = r.get("tool_calls") or []
@@ -622,25 +558,18 @@ def run_agent(cfg: AgentConfig, user_task: str, log_path: Optional[Path] = None,
             if queued is not None:
                 text = queued
             else:
-                native_text = _native_action_text(cfg, messages, model,
-                                                  temperature, queue=_pending)
-                if native_text is not None:
-                    text = native_text
-                elif cfg.on_token is not None:
-                    text = llm_client.stream_llm(
-                        messages=messages, model=model,
-                        temperature=temperature, max_tokens=config.MAX_TOKENS,
-                        stop_event=cfg.stop_event, on_token=cfg.on_token,
-                        on_reasoning=cfg.on_reasoning,
-                        template_kwargs=config.agent_template_kwargs(),
-                    )
-                else:
-                    text = llm_client.call_llm(
-                        messages=messages, model=model,
-                        temperature=temperature, max_tokens=config.MAX_TOKENS,
-                        stop_event=cfg.stop_event,
-                        template_kwargs=config.agent_template_kwargs(),
-                    )
+                text = _native_action_text(cfg, messages, model,
+                                           temperature, queue=_pending)
+                if text is None:
+                    # The endpoint cannot do tools, and there is no second
+                    # channel to fall back to any more. Stopping with the
+                    # reason named beats a run that produces nothing and
+                    # cannot say why.
+                    _emit({"type": "error", "content": (
+                        "This endpoint does not implement tool calling, which "
+                        "Pragma needs for every action. Point the agent role "
+                        "at a server that does - /configure.")})
+                    return None
         except llm_client.LLMInterrupted:
             _emit({"type": "stopped", "content": "Task interrupted by user."})
             return None
@@ -897,10 +826,8 @@ def run_agent(cfg: AgentConfig, user_task: str, log_path: Optional[Path] = None,
                 + "\n\n[JSON-REPAIR NOTE]: your JSON args were malformed "
                 "and recovered by the lenient parser. These keys appeared "
                 f"in your raw output but did NOT make it into the parsed "
-                f"args: {_lost_keys}. Re-emit the action with simpler / "
-                "shorter values for these fields (or base64-encode them "
-                "via replace_in_file_b64) so the JSON layer doesn't drop "
-                "them."
+                f"args: {_lost_keys}. Re-emit the action with simpler and "
+                "shorter values for these fields."
             )
         elif _was_repaired and _lost_keys:
             # Skill succeeded but the repair still lost fields — still warn

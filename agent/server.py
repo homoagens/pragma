@@ -760,10 +760,8 @@ def _build_thread_skills(thread_cwd: str,
                            max_results=max_results)
         skills["grep_search"] = grep_search_wrapped
 
-    for _name in ("read_file", "write_file", "write_file_b64",
-                  "insert_after", "insert_before",
-                  "append_file", "replace_in_file", "replace_in_file_b64",
-                  "file_outline"):
+    for _name in ("read_file", "write_file", "insert_after", "insert_before",
+                  "append_file", "replace_in_file", "file_outline"):
         _orig = AGENT_SKILLS.get(_name)
         if _orig:
             def _make_wrapped(fn):

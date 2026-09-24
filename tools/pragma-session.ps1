@@ -39,7 +39,6 @@ $script:SName    = Cfg "Name"     (Split-Path (Cfg "Root" ".") -Leaf)
 $script:SRoot    = Cfg "Root"     $null
 $script:SRepo    = Cfg "Repo"     $null
 $script:SSteps   = Cfg "MaxSteps" 50
-$script:SProto   = Cfg "Protocol" "native"
 
 if (-not $script:SRoot -or -not $script:SRepo) {
     Write-Host "This session file is incomplete: Root and Repo are required." -ForegroundColor Red
@@ -72,7 +71,6 @@ $env:PRAGMA_DATA_DIR  = Cfg "Memory"    (Join-Path $script:SRoot ".memoria")
 # ignores the model field of the request, so naming a server is naming a model.
 # Empty hands it back to .env, which is what configure writes.
 Set-SessionEnv "LLM_BASE_URL"      (Cfg "Endpoint" "")
-Set-SessionEnv "LLM_TOOL_PROTOCOL" $script:SProto
 Set-SessionEnv "CONTEXT_WINDOW"    (Cfg "ContextWindow"  "")
 Set-SessionEnv "MAX_TOKENS"        (Cfg "MaxTokens"      "")
 Set-SessionEnv "SKILL_MAX_TOKENS"  (Cfg "SkillMaxTokens" "")
@@ -361,7 +359,7 @@ function script:Show-Status {
     Write-Host "    workspace  $env:PRAGMA_WORKSPACE"
     Write-Host "    endpoint   $(if ($env:LLM_BASE_URL) { $env:LLM_BASE_URL } else { '(from .env)' })"
     Write-Host "    max steps  $script:SSteps per session"
-    Write-Host "    protocol   $(if ($env:LLM_TOOL_PROTOCOL) { $env:LLM_TOOL_PROTOCOL } else { 'native (repo default)' })"
+    Write-Host "    actions    tools, always - the server constrains the arguments"
     Write-Host "    budgets    $(Get-BudgetLine)"
     Write-Host "    sampling   $(Get-SamplingLine)   (-Sampling for the full picture)" -ForegroundColor DarkGray
     Write-Host "    thinking   $(Get-ThinkingLine)"
@@ -530,7 +528,7 @@ function global:pragma {
 
     if ($Off) {
         Remove-Item Env:PRAGMA_WORKSPACE, Env:PRAGMA_DATA_DIR -ErrorAction SilentlyContinue
-        Remove-Item Env:LLM_BASE_URL, Env:LLM_TOOL_PROTOCOL -ErrorAction SilentlyContinue
+        Remove-Item Env:LLM_BASE_URL -ErrorAction SilentlyContinue
         Remove-Item Env:CONTEXT_WINDOW, Env:MAX_TOKENS -ErrorAction SilentlyContinue
         Remove-Item Env:SKILL_MAX_TOKENS, Env:MEMORY_MAX_TOKENS, Env:MEMORY_NO_THINK, Env:MEMORY_SAMPLING, Env:LLM_TIMEOUT -ErrorAction SilentlyContinue
         Remove-Item Env:CURATOR_CANDIDATES_EPISODES, Env:CURATOR_CANDIDATES_RECENT -ErrorAction SilentlyContinue
@@ -693,7 +691,7 @@ Write-Host ""
 Write-Host "pragma session '$script:SName'   [$script:PragmaSessionVersion]" -ForegroundColor DarkGray
 Write-Host "  memory    : $env:PRAGMA_DATA_DIR"
 Write-Host "  workspace : $env:PRAGMA_WORKSPACE"
-Write-Host "  protocol  : $(if ($env:LLM_TOOL_PROTOCOL) { $env:LLM_TOOL_PROTOCOL } else { 'native (repo default)' })"
+Write-Host "  actions   : tools, always - the server constrains the arguments"
 Write-Host "  budgets   : $(Get-BudgetLine)"
 Write-Host "  sampling  : $(Get-SamplingLine)"
 Write-Host "  thinking  : $(Get-ThinkingLine)"

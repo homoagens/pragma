@@ -472,22 +472,17 @@ def _status_lines() -> list[tuple[str, str]]:
                             f"({prompt_cap * 100 // window}%), estimated, "
                             f"plus {answer} for the answer"))
 
-    # How the agent's actions are carried. It is not a thing a screen offers
-    # to change, but it is the first thing to look at when a file comes back
-    # mangled, so it is a thing a screen has to show.
-    protocol = getattr(cfg, "LLM_TOOL_PROTOCOL", "native")
-    if protocol == "native":
-        line = "native . the skills go as tools and the server constrains the arguments"
-        try:
-            import endpoints
-            import llm_client
-            if endpoints.state(llm_client.current_endpoint().base_url).tools_unsupported:
-                line = ("native, but this endpoint refused tools . running on text, "
-                        "where the model escapes its own arguments")
-        except Exception:
-            pass
-    else:
-        line = f"{protocol} . the model writes its own JSON and escapes it itself"
+    # Tools are the only way an action travels, so the line is not about a
+    # choice - it is about whether THIS endpoint can carry one, which is the
+    # first thing to look at when nothing happens.
+    line = "tools . the schemas go with every request and the server constrains the arguments"
+    try:
+        import endpoints
+        import llm_client
+        if endpoints.state(llm_client.current_endpoint().base_url).tools_unsupported:
+            line = "this endpoint refused tools - Pragma cannot act through it"
+    except Exception:
+        pass
     out.append(("actions", line))
     out.append(("", ""))
     out.append(("steps", f"{_STATE.get('max_steps') or getattr(cfg, 'MAX_STEPS', 0)} per turn"))
@@ -1144,14 +1139,13 @@ If the turn needed no tools at all, the conclusion is simply your reply.
         str(cwd),
         default_model=baseline_config.DEFAULT_MODEL,
         skills_summary=skills_summary_for(skills.keys()),
-        protocol=getattr(baseline_config, "LLM_TOOL_PROTOCOL", "native"),
     ) + chat_policy + project_contract(cwd)
 
     global _RENDERER
     renderer = _harness.Harness(
         verbose=args.show_thoughts,
         context_window=getattr(baseline_config, "CONTEXT_WINDOW", 0),
-        envelope=getattr(baseline_config, "LLM_TOOL_PROTOCOL", "native") != "native")
+        envelope=False)
     _RENDERER = renderer
     # Every model call - the curator's, the segmenter's, the agent's - reports
     # its wait to the same status line instead of drawing a spinner of its own.

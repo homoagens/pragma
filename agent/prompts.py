@@ -14,69 +14,9 @@ from datetime import timezone
 from core import clock
 
 
-# How the agent is told to express an action. The rest of the prompt — identity,
-# file rules, safety, memory, error recovery — is protocol-independent and is
-# shared verbatim, so the two channels differ only in how the action travels.
-_RESPONSE_FORMAT_TEXT = """## Response format
-
-Always respond with a SINGLE JSON object. Two possible shapes:
-
-To use a tool:
-{
-  "thought": "<= 200 characters, one sentence, no preamble",
-  "action":  "skill_name",
-  "args":    { "param1": "value1", "param2": "value2" }
-}
-
-When the task is complete:
-{
-  "thought":    "<= 200 characters",
-  "conclusion": "clear summary of what was done and the result (markdown OK)"
-}
-
-Never emit free prose outside the JSON. Never emit two JSON objects in one response.
-
-**Concluding is NOT a skill.** To finish a task, emit the JSON shape above
-with a `conclusion` key — do NOT put `conclusion`, `FINAL`, `done`, `finish`
-or any similar word in the `action` field. There is no such skill; the only
-way to end a task is the `conclusion` shape.
-
-**`action` must be one of the skills listed under "Available skills" below,
-spelled exactly.** Do not invent skill names and do not pass parameters that
-are not in a skill's `Call(...)` signature shown there.
-
-**ALL skill parameters go INSIDE the `args` object — never at the top level
-of the JSON.** A response like `{"action": "write_file", "path": "...",
-"content": "..."}` is WRONG: top-level keys other than `thought`, `action`,
-`args` and `conclusion` are silently ignored, so the skill receives no
-arguments and fails with "missing required argument". Correct form:
-`{"action": "write_file", "args": {"path": "...", "content": "..."}}`.
-
-### Hard rules on `thought` length
-
-The `thought` field is for the IMMEDIATE next-step justification only.
-Keep it under **200 characters**, ONE sentence, no preamble like "Now let
-me think...". Long thoughts:
-
-- waste your output token budget (you may hit `finish_reason=length`
-  and truncate the JSON mid-string)
-- duplicate your `<think>` block (which already records your reasoning)
-- delay tool execution
-
-**After a multi-step task, do NOT use the final `thought` for a verbose
-recap.** Put the recap in `conclusion` instead. The `conclusion` field
-is where summaries belong — it can be as long as needed and uses markdown.
-The final `thought` should be one short sentence like "Task done — see
-conclusion below."
-"""
-
-# The native channel needs one thing above all: that the model actually starts
-# a tool call. The server's grammar is trigger-based — it constrains nothing
-# until the model emits the tool-call marker, so a model that drifts into prose
-# is never brought back and will generate until the token budget is gone.
-# Measured on this exact setup: the same request without an instruction to act
-# through tools consumed 2500 tokens and returned no call; with it, one clean
-# call in 411.
+# How the agent is told to express an action: by calling a tool, which is the
+# only way there is. The channel where it wrote its own JSON envelope into the
+# reply was retired - see core/config.py for what was measured.
 _RESPONSE_FORMAT_NATIVE = """## Response format
 
 You act by CALLING THE PROVIDED TOOLS. The tools are supplied with this
@@ -176,46 +116,8 @@ def _os_environment(cwd: str) -> str:
 - Environment variables: use `$VAR` syntax in shell commands."""
 
 
-# Parts of the prompt that only make sense when the model writes its own JSON.
-# On the native channel the server escapes tool arguments, so rules about
-# escaping source code inside a JSON string are wrong advice there, and the
-# base64 skills they point to are withheld from the palette altogether: a
-# prompt recommending them sends the model after tools it cannot call.
-_TEXT_ONLY_SECTIONS = ("## Critical rules for writing Python code with write_file",)
-_TEXT_ONLY_BULLETS = ("- **`write_file_b64(", "- **JSON-escape trap")
-
-
-def _native_only(prompt: str) -> str:
-    """The prompt with the text-protocol-only sections and bullets removed.
-
-    A section runs to the next heading; a bullet runs over its indented
-    continuation lines. Removing them from the rendered text, rather than
-    keeping two copies of the prompt, leaves one source for everything the
-    two channels share.
-    """
-    out = []
-    skipping = None
-    for line in prompt.split(chr(10)):
-        if skipping == "section":
-            if not line.startswith("## "):
-                continue
-            skipping = None
-        elif skipping == "bullet":
-            if line.startswith("  "):
-                continue
-            skipping = None
-        if line in _TEXT_ONLY_SECTIONS:
-            skipping = "section"
-            continue
-        if line.startswith(_TEXT_ONLY_BULLETS):
-            skipping = "bullet"
-            continue
-        out.append(line)
-    return chr(10).join(out)
-
-
 def build_system_prompt(cwd: str, default_model: str = "",
-                        skills_summary: str = "", protocol: str = "") -> str:
+                        skills_summary: str = "") -> str:
     model_line = ""
     if default_model:
         model_line = f"\nActive model: {default_model}"
@@ -227,14 +129,7 @@ def build_system_prompt(cwd: str, default_model: str = "",
         write_hard_kb = max(1, round(_cfg.WRITE_FILE_HARD_LIMIT / 1000))
     except Exception:
         write_soft_kb, write_hard_kb = 8, 20
-    if not protocol:
-        try:
-            import config as _cfg
-            protocol = getattr(_cfg, "LLM_TOOL_PROTOCOL", "native")
-        except Exception:
-            protocol = "text"
-    response_format = (_RESPONSE_FORMAT_NATIVE if protocol == "native"
-                       else _RESPONSE_FORMAT_TEXT)
+    response_format = _RESPONSE_FORMAT_NATIVE
     prompt = f"""You are **Pragma**, an autonomous coding assistant that operates on the local filesystem.
 You reason step by step and use tools (skills) to read, write, search, execute and modify files.
 Be precise, concise, and deliberate.
@@ -288,22 +183,6 @@ All paths you use MUST be absolute. Build them by joining the working directory 
   `{cwd}\\subdir\\file.py`. Never pass bare names like `file.py` — they resolve against the
   server process's own directory, not the user's project.
 
-## Critical rules for writing Python code with write_file
-
-When writing Python source code as the `content` argument of `write_file`, the content is
-embedded inside a JSON string. Follow these rules to avoid syntax errors:
-
-- Use single quotes `'` for all Python string literals inside the code — never double quotes.
-  This avoids conflicts with JSON's double-quote delimiters.
-- For f-strings that embed variables, write: `f'Hello {{name}}'` (NOT `f"Hello {{name}}"`).
-- Escape every backslash as `\\\\` (four backslashes in JSON → two in the file → one in the string).
-- NEVER use triple-quoted strings (`\"\"\"` or `\'\'\'`) inside `write_file` content —
-  they are extremely error-prone in JSON. Use `\\n` for newlines inside regular strings instead.
-- For docstrings, prefer a simple single-line string: `'Brief description.'` at the top of the
-  function, or omit the docstring entirely.
-- If the code is long or complex, split it into multiple `write_file` calls — one function per
-  call — instead of one huge block. Smaller writes are more reliable.
-
 {response_format}
 
 ## Rules of engagement
@@ -332,13 +211,6 @@ embedded inside a JSON string. Follow these rules to avoid syntax errors:
   anchor, substring replace) and the parameter is rejected. If you find yourself writing
   `overwrite=true` on any skill other than `write_file`, you have the
   wrong skill — pick the deterministic one that matches your intent.
-- **`write_file_b64(path, content_b64, overwrite=False)`** — same semantics
-  as `write_file` but the content travels base64-encoded. Use this when the
-  content is large (> ~{write_soft_kb} KB) AND contains characters that the JSON layer
-  tends to mangle (literal `\\n`, mixed quotes, backslashes, control chars).
-  base64 = ASCII-safe → zero JSON escape ambiguity → no malformed-JSON
-  failures regardless of content. Trade-off: you must base64-encode the
-  payload yourself in `content_b64`. Worth it for any single file over {write_soft_kb} KB.
 - **Decomposition is NOT only about multiple files.** A SINGLE new file with
   more than ~{write_soft_kb} KB of structured content (list of 30+ items, styled HTML page
   with embedded data, CSV, fixtures, dense markdown) MUST be built incrementally:
@@ -401,14 +273,6 @@ embedded inside a JSON string. Follow these rules to avoid syntax errors:
   because it was too long. Next turn: (1) shorten `thought` to one sentence, (2) avoid
   `write_file` on existing files — use `replace_in_file` / `insert_after` / `insert_before`
   / `append_file` instead, (3) if the task is large, do one small step per turn.
-- **JSON-escape trap (literal `\\n`, `\\t` etc. inside files).** If a file contains a
-  LITERAL escape sequence — for example the two characters `\\` and `n` instead of a real
-  newline (you can see them in a `read_file` as `\\\\n` in the displayed bytes, or as a JS
-  SyntaxError when the file is loaded in a browser) — DO NOT try to fix it with
-  `replace_in_file`. The JSON-arg layer makes the escape level ambiguous and
-  the model (you) routinely picks the wrong number of backslashes, fails, retries, fails
-  again. Use `replace_in_file_b64` instead: base64-encode both `old` and `new` payloads
-  so the bytes cross the wire unambiguously. Same skill, no escape ambiguity.
 
 ## Task completion
 
@@ -443,8 +307,6 @@ embedded inside a JSON string. Follow these rules to avoid syntax errors:
 
 Call `get_skill_details(name)` before using a skill when you need the exact parameter names or want to check available options.
 """
-    if protocol == "native":
-        prompt = _native_only(prompt)
     return prompt
 
 

@@ -335,17 +335,14 @@ SERVED_MODEL = ""
 # campaign ran on the old budget.
 MAX_TOKENS     = int(os.environ.get("MAX_TOKENS", "16384"))
 
-# How the agent's ACTION is carried, for the ReAct loop only.
+# HOW THE AGENT'S ACTION IS CARRIED. As OpenAI `tools`, always: there is no
+# setting here any more, because there is no second answer.
 #
-#   native : the skills are sent as OpenAI `tools`. A server that compiles them
-#            into a grammar constrains the sampler, so malformed arguments
-#            cannot be produced rather than merely being detected.
-#   text   : the model writes {"thought","action","args"} inside its reply and
-#            Pragma parses it afterwards. Nothing constrains the generation, so
-#            every quote and newline of a file being written is the model's own
-#            escaping work, and a mistake is unrecoverable by the time it shows.
-#
-# native is the default. Measured on the structural benchmark, same two cases,
+# There used to be. `text` had the model write {"thought","action","args"}
+# inside its reply and Pragma parse it out afterwards, with nothing
+# constraining the generation - so every quote and newline of a file being
+# written was the model's own escaping work, and a mistake was unrecoverable
+# by the time it showed. Measured on the structural benchmark, same two cases,
 # same model:
 #   text   : 93 write_file calls, 17 with unusable arguments (18%);
 #            15 of 30 runs produced the requested figures.
@@ -356,18 +353,16 @@ MAX_TOKENS     = int(os.environ.get("MAX_TOKENS", "16384"))
 # active parameters is good enough to write the file and not good enough to
 # escape it, and on `text` those are the same task.
 #
-# It costs roughly 3k more prompt tokens per request (the schemas replace a
-# compact summary) and needs a server that implements tools — Pragma falls
-# back to `text` automatically, once per endpoint and out loud, when it does
-# not. `text` is otherwise for reproducing the frozen evaluation corpus, which
-# ran on it: set LLM_TOOL_PROTOCOL=text for that, or `Protocol: text` in the
-# project - on Windows the session script sets the variable itself and .env does
-# not override a variable that already exists, so there the project setting is
-# the one that works. No screen offers the choice.
+# Keeping the loser as an option cost more than it saved: a second prompt to
+# maintain, a second palette (the base64 skills existed only to work around
+# the escaping), a second set of failures to reason about, and a raw-format
+# parser in react.py that knew one model family's markup by heart. The frozen
+# evaluation corpus was produced on `text` and is reproducible from the tagged
+# commit, which is where a retired protocol belongs.
 #
-# This governs the ACTION channel only. The memory faculties keep their own
-# text protocol either way, so the evaluation corpus stays comparable.
-LLM_TOOL_PROTOCOL = os.environ.get("LLM_TOOL_PROTOCOL", "native").strip().lower()
+# An endpoint that does not implement tools cannot run the agent, and says so
+# on the first step. The memory faculties are untouched: they ask for a domain
+# JSON object, not for a tool choice.
 
 # Seconds before an LLM HTTP call is abandoned. With a large output budget
 # on a slow local model (a dense 27B+ partially offloaded can sit under
@@ -1036,13 +1031,11 @@ CURATOR_MAX_FRAGMENTS = int(os.environ.get("CURATOR_MAX_FRAGMENTS", "6"))
 MEMORY_NARRATIVE_CHARS      = int(os.environ.get("MEMORY_NARRATIVE_CHARS", "400"))
 MEMORY_INTERPRETATION_CHARS = int(os.environ.get("MEMORY_INTERPRETATION_CHARS", "200"))
 
-# Whether the memory faculties constrain their JSON with a schema. Only has
-# an effect on the native protocol, which is what carries schemas at all.
+# Whether the memory faculties constrain their JSON with a schema.
 #
-# Exists so the schema can be ablated WITHOUT changing the action channel:
-# turning LLM_TOOL_PROTOCOL back to text would move both at once, and the
-# question "do constrained faculties change what memory holds?" needs the
-# action channel held constant. Set MEMORY_SCHEMA=0 for the unconstrained arm.
+# Exists so the schema can be ablated on its own: the question "do
+# constrained faculties change what memory holds?" needs everything else held
+# constant. Set MEMORY_SCHEMA=0 for the unconstrained arm.
 MEMORY_SCHEMA = os.environ.get("MEMORY_SCHEMA", "1").strip().lower() not in (
     "0", "false", "no", "off")
 

@@ -4,8 +4,6 @@
 
 from __future__ import annotations
 
-import base64
-import binascii
 import re
 import subprocess
 import tempfile
@@ -27,8 +25,7 @@ def _targets(diff: str) -> list[str]:
     return out
 
 
-def apply_patch(diff: str = "", cwd: str = "", diff_b64: str = "",
-                dry_run: bool = False) -> str:
+def apply_patch(diff: str = "", cwd: str = "", dry_run: bool = False) -> str:
     """
     [D] Apply a unified diff. No LLM involved.
 
@@ -38,10 +35,6 @@ def apply_patch(diff: str = "", cwd: str = "", diff_b64: str = "",
     cannot silently patch the wrong occurrence.
 
     diff     : the unified diff text (--- / +++ / @@ hunks)
-    diff_b64 : the same diff, base64-encoded. PREFER THIS. A diff is multi-line
-               and full of quotes and backslashes, exactly the payload that
-               breaks the JSON argument layer; base64 is pure ASCII and cannot
-               be mangled. Pass either diff or diff_b64, not both.
     cwd      : directory the paths in the diff are relative to
     dry_run  : verify the patch applies cleanly, change nothing
 
@@ -49,13 +42,6 @@ def apply_patch(diff: str = "", cwd: str = "", diff_b64: str = "",
     Requires git on PATH (used only as the patch engine — no repository needed,
     nothing is staged or committed).
     """
-    if diff and diff_b64:
-        return "ERROR: pass either `diff` or `diff_b64`, not both"
-    if diff_b64:
-        try:
-            diff = base64.b64decode(diff_b64, validate=True).decode("utf-8")
-        except (binascii.Error, UnicodeDecodeError, ValueError) as e:
-            return f"ERROR: `diff_b64` is not valid base64-encoded UTF-8: {e}"
     if not diff.strip():
         return "ERROR: empty diff — nothing to apply"
 

@@ -60,8 +60,7 @@ GREY, RESET = ESC + "[38;5;242m", ESC + "[0m"
 # and a setting that means one thing on one system and another elsewhere is
 # not a thing that can happen quietly.
 ENV_OF = {
-    "Endpoint": "LLM_BASE_URL", "Protocol": "LLM_TOOL_PROTOCOL",
-    "ContextWindow": "CONTEXT_WINDOW", "MaxTokens": "MAX_TOKENS",
+    "Endpoint": "LLM_BASE_URL", "ContextWindow": "CONTEXT_WINDOW", "MaxTokens": "MAX_TOKENS",
     "SkillMaxTokens": "SKILL_MAX_TOKENS", "MemoryMaxTokens": "MEMORY_MAX_TOKENS",
     "MemoryNoThink": "MEMORY_NO_THINK", "MemorySampling": "MEMORY_SAMPLING",
     "Timeout": "LLM_TIMEOUT",

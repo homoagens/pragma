@@ -40,7 +40,7 @@ REPAIR_LOST_KEY    = "__pragma_json_lost_keys__"
 # words like "path:" in user content.
 _KNOWN_KEYS = (
     "path", "action", "args", "content", "old", "new", "anchor",
-    "instruction", "old_b64", "new_b64", "pattern", "command", "cwd",
+    "instruction", "pattern", "command", "cwd",
     "topic", "question",
 )
 _KEY_PATTERN = _re.compile(

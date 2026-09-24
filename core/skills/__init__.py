@@ -130,11 +130,6 @@ def get_skill_details(name: str) -> str:
 ALL_SKILLS["get_skill_details"] = get_skill_details
 
 
-# Skills that exist only to work around the text protocol: they take their
-# payload base64-encoded because raw source code — newlines, quotes,
-# backslashes — used to break the JSON the model had to write by hand.
-_TEXT_PROTOCOL_ONLY = ("write_file_b64", "replace_in_file_b64")
-
 # Memory machinery that lives in skills/ for its imports, not for the agent.
 # The raw recall skills reinforce and revive on keyword overlap alone, with no
 # judgement between the prefilter and the write, so an agent free to call them
@@ -147,26 +142,19 @@ _NOT_AGENT_TOOLS = ("recall_episodes", "recall_learnings",
 
 
 def palette(base: dict | None = None) -> dict:
-    """The skills to offer on the protocol this process is running.
+    """The skills offered to the agent.
 
-    On the native channel the server escapes the arguments, so the base64
-    variants solve a problem that no longer exists — and they introduce a worse
-    one: the model has to produce the encoding itself, token by token, and gets
-    it wrong. Observed twice in a single session, decoding to a corrupted path
-    and a truncated filename, with no error raised because base64 that decodes
-    to garbage is still valid base64. Silent content damage is a poor trade for
-    an escaping problem the server already solved, so they are withheld.
-
-    They stay available on the text protocol, where they still earn their keep
-    and where the frozen evaluation corpus was produced.
+    Everything in the registry except the memory machinery: the raw recall
+    skills reinforce and revive on keyword overlap alone, with no judgement
+    between the prefilter and the write, so an agent free to call them would
+    turn salience into a count of how often a word recurred - memory reaches
+    the agent only through the curator. Consolidation and reflection run after
+    a task, never as a step inside one. Chat and batch each used to pop them
+    on their own and the browser server did not, so the rule lives here.
     """
-    import config
     out = dict(ALL_SKILLS if base is None else base)
     for name in _NOT_AGENT_TOOLS:
         out.pop(name, None)
-    if getattr(config, "LLM_TOOL_PROTOCOL", "native") == "native":
-        for name in _TEXT_PROTOCOL_ONLY:
-            out.pop(name, None)
     return out
 
 

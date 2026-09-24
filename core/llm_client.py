@@ -1157,18 +1157,14 @@ def call_llm(messages, model=None, temperature=None, max_tokens=None, timeout=No
     url, key = _resolved_endpoint(base_url, api_key)
     known = endpoints.state(url)
 
-    # The schema rides the same switch as the action channel: one flag decides
-    # whether this run is constrained end to end or reproduces the old one.
-    # MEMORY_SCHEMA=0 additionally ablates the schema while LEAVING the action
-    # channel native, which is the only way to attribute a difference in what
-    # memory holds to the constraint rather than to the channel.
+    # MEMORY_SCHEMA=0 ablates the schema while leaving everything else alone,
+    # which is the only way to attribute a difference in what memory holds to
+    # the constraint rather than to something around it.
     #
     # An endpoint that rejected a json_schema once is remembered, so a server
     # without structured output costs one failed request per process instead
     # of one per faculty call - remembered for that endpoint only.
-    if (getattr(config, "LLM_TOOL_PROTOCOL", "native") != "native"
-            or not getattr(config, "MEMORY_SCHEMA", True)
-            or known.schema_unsupported):
+    if not getattr(config, "MEMORY_SCHEMA", True) or known.schema_unsupported:
         response_schema = None
 
     # WHAT TO SEND WHEN THE SERVER REFUSES. Two optional fields can make an
