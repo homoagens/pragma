@@ -602,25 +602,46 @@ def ask_the_model(ep, entry: dict, name: str = "") -> bool:
     payload = {
         "model": ep.model or "",
         "messages": [{"role": "user", "content": prompt}],
-        "max_tokens": 2000,
+        "max_tokens": 4000,
         "response_format": {"type": "json_object"},
+        # DO NOT LET IT THINK. This is a quotation, not a problem: the numbers
+        # are on the page and the job is to put them in the right boxes.
+        #
+        # Left to itself a reasoning model spends the whole budget in its
+        # <think> block and the content arrives EMPTY, which is what this page
+        # reported as "it answered, but not with numbers" - it had not
+        # answered at all. Worse, a json_object grammar forces `{` from the
+        # first token while the template is opening a thinking block, so the
+        # two constrain each other into nothing. Both spellings, because which
+        # key a chat template reads is a property of the model.
+        "chat_template_kwargs": {"enable_thinking": False, "thinking": False},
     }
     if not payload["model"]:
         payload.pop("model")
     headers = {"Content-Type": "application/json"}
     if ep.api_key:
         headers["Authorization"] = f"Bearer {ep.api_key}"
+    reply, reasoned, why = {}, "", ""
     try:
         request = urllib.request.Request(
             ep.base_url + "/chat/completions",
             data=json.dumps(payload).encode("utf-8"), headers=headers)
         with urllib.request.urlopen(request, timeout=300) as answer:
             body = json.loads(answer.read().decode("utf-8", "replace"))
-        said = body["choices"][0]["message"]["content"] or ""
+        choice = (body.get("choices") or [{}])[0]
+        reply = choice.get("message") or {}
+        why = str(choice.get("finish_reason") or "")
     except Exception as e:
         say(f"  The endpoint did not answer: {e}", "warn")
         ask("", hint="enter to go back")
         return False
+    said = (reply.get("content") or "").strip()
+    reasoned = (reply.get("reasoning_content") or "").strip()
+    if not said and reasoned:
+        # A server that refused chat_template_kwargs thought anyway. The JSON
+        # is often there, at the end of the reasoning - worth taking rather
+        # than failing for a reason the operator cannot act on.
+        said = reasoned
     found = re.search(r"\{.*\}", said, re.S)
     try:
         proposed = json.loads(found.group(0)) if found else {}
@@ -645,8 +666,20 @@ def ask_the_model(ep, entry: dict, name: str = "") -> bool:
     table = complete(table)
     kind = proposed.get("kind") if proposed.get("kind") in endpoints.KINDS else ""
     if not table and not kind:
-        say("  It answered, but not with numbers this page can use:", "warn")
-        print("    " + grey(" ".join(said.split())[:300]))
+        # WHY it failed, not just THAT it did. `length` is the one the
+        # operator can act on: the reply was cut off, so nothing was wrong
+        # with the card or the page.
+        if why == "length":
+            say("  It ran out of output budget before finishing its answer.", "warn")
+            print("  " + grey("A model that cannot be told to stop reasoning does this."))
+            print("  " + grey("Set the numbers with `advanced` instead - they are on the"))
+            print("  " + grey("page this just read: " + (where or "its model card") + "."))
+        elif not said:
+            say("  It answered with nothing at all.", "warn")
+            print("  " + grey(f"finish_reason: {why or 'not reported'}"))
+        else:
+            say("  It answered, but not with numbers this page can use:", "warn")
+            print("    " + grey(" ".join(said.split())[:300]))
         ask("", hint="enter to go back")
         return False
     step(f"tune > {name} > sampling > ask it" if name else "sampling > ask it")
