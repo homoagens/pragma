@@ -585,26 +585,33 @@ def card(alias: str) -> tuple[str, str]:
 
 ASK_THE_MODEL = """You are running on a server, and someone is setting up a client for you.
 
-Below are the parts of your own model card that talk about sampling. Report
-the settings IT recommends. Copy the numbers; do not reason about them.
+Below is the part of your own model card that talks about sampling, and a
+first reading of it made by a simple text scanner. The scanner only knows one
+layout - a label naming a mode, with the numbers beside it - so on this card it
+may be incomplete, or wrong, or empty.
 
-Answer with one JSON object and nothing else:
+YOUR JOB IS TO CHECK IT AGAINST THE CARD and answer with the corrected table.
+Take your time: read the card first, then the reading, then decide. Where the
+scanner is right, keep its numbers. Where the card says something else, or
+says something the scanner missed, correct it.
+
+Answer with one JSON object and nothing else after it:
 
 {"kind": "thinking" or "instruct",
  "thinking": {"general": {}, "coding": {}},
  "instruct": {"general": {}, "coding": {}}}
 
-"kind" is what the CARD says, not what you feel like right now: "thinking" if it
-describes a thinking or reasoning mode for this model, "instruct" if it does not.
-Each inner object may set only these, all numbers:
+"kind" is what the CARD says, not how you are running right now: "thinking" if
+it describes a thinking or reasoning mode for this model, "instruct" if it does
+not. Each inner object may set only these, all numbers:
   temperature, top_p, top_k, min_p, presence_penalty, repeat_penalty
 
 RULES, and they matter more than filling the shape:
-- Copy only numbers the card gives as a RECOMMENDATION. Numbers quoted beside a
+- Only numbers the card gives as a RECOMMENDATION. Numbers quoted beside a
   benchmark result - the settings a leaderboard run used - are not that.
 - The card usually splits its advice the same way this shape does: thinking
   versus non-thinking (instruct), and general versus coding. Put each set where
-  it belongs.
+  it belongs. A card may use other words for the same split.
 - If the card separates thinking from instruct but says nothing about coding,
   put the SAME numbers in "general" and in "coding" for that mode.
 - If the card names `repetition_penalty`, write it as `repeat_penalty`.
@@ -613,6 +620,9 @@ RULES, and they matter more than filling the shape:
 - Do not convert, do not average, do not invent a number that looks sensible.
 
 The model is: {alias}
+
+--- what the scanner read ---
+{scanned}
 
 --- the card ---
 {card}
@@ -648,29 +658,36 @@ def complete(table: dict) -> dict:
     return out
 
 
-def _model_reads(ep, alias: str, text: str, where: str):
-    """The fallback: hand the page to the model and read its answer.
+def _model_reads(ep, alias: str, text: str, where: str, scanned: dict):
+    """Hand the page and the scanner's draft to the model, and read its answer.
 
-    Returns (table, kind, True), or (None, "", False) when it could not be
-    used - in which case the reason has already been printed.
+    Returns (table, kind, True), or (None, "", False) when the answer could
+    not be used - having said why, but without stopping: whether there is
+    still something to offer is the caller's question.
     """
-    prompt = ASK_THE_MODEL.replace("{alias}", alias).replace("{card}", text)
+    draft = json.dumps(scanned, indent=1) if scanned else "(it found nothing)"
+    prompt = (ASK_THE_MODEL.replace("{alias}", alias)
+              .replace("{scanned}", draft).replace("{card}", text))
     payload = {
         "model": ep.model or "",
         "messages": [{"role": "user", "content": prompt}],
-        "max_tokens": 4000,
-        "response_format": {"type": "json_object"},
-        # DO NOT LET IT THINK. This is a quotation, not a problem: the numbers
-        # are on the page and the job is to put them in the right boxes.
+        # LET IT THINK, and give it room. Checking a reading against a page is
+        # exactly the work reasoning is for, and this happens once when an
+        # endpoint is set up - a minute here is cheap.
         #
-        # Left to itself a reasoning model spends the whole budget in its
-        # <think> block and the content arrives EMPTY, which is what this page
-        # reported as "it answered, but not with numbers" - it had not
-        # answered at all. Worse, a json_object grammar forces `{` from the
-        # first token while the template is opening a thinking block, so the
-        # two constrain each other into nothing. Both spellings, because which
-        # key a chat template reads is a property of the model.
-        "chat_template_kwargs": {"enable_thinking": False, "thinking": False},
+        # It was off for a while, after a run where the whole 2 000-token
+        # budget went into the <think> block and the content came back EMPTY.
+        # The budget was the bug, not the thinking: 16 000 leaves room for
+        # both, and a reply that still runs out says so by its finish_reason.
+        #
+        # response_format is NOT sent with it. A json_object grammar forces `{`
+        # from the first token while the template is opening a thinking block,
+        # and the two constrain each other into nothing. The object is found in
+        # the reply instead - which the parser below has always done anyway,
+        # because a model that adds a sentence around its JSON is not an error
+        # worth failing on.
+        "max_tokens": 16000,
+        "chat_template_kwargs": {"enable_thinking": True, "thinking": True},
     }
     if not payload["model"]:
         payload.pop("model")
@@ -690,7 +707,6 @@ def _model_reads(ep, alias: str, text: str, where: str):
         why = str(choice.get("finish_reason") or "")
     except Exception as e:
         say(f"  The endpoint did not answer: {e}", "warn")
-        ask("", hint="enter to go back")
         return None, "", False
     said = (reply.get("content") or "").strip()
     reasoned = (reply.get("reasoning_content") or "").strip()
@@ -737,7 +753,6 @@ def _model_reads(ep, alias: str, text: str, where: str):
         else:
             say("  It answered, but not with numbers this page can use:", "warn")
             print("    " + grey(" ".join(said.split())[:300]))
-        ask("", hint="enter to go back")
         return None, "", False
     return table, kind, True
 
@@ -764,41 +779,60 @@ def ask_the_model(ep, entry: dict, name: str = "") -> bool:
     say(f"  {where}", "dim")
     say(f"  the sampling part of it is {len(text)} characters", "dim")
 
-    # READ IT HERE FIRST. Cards are conventional about this table, and the
-    # convention is machine-readable - so a model is not needed to copy it,
-    # and the one time it was asked to, it reported itself as instruct (it
-    # had just been told not to think) and filled half the rows. The model is
-    # the fallback, for a card that does not follow the convention.
-    table = complete(read_rows(text))
-    kind = "thinking" if table.get("thinking") else ("instruct" if table else "")
-    by_model = False
-    if not table:
-        table, kind, by_model = _model_reads(ep, alias, text, where)
-        if table is None:
+    # READ IT HERE FIRST, then have the model check that reading against the
+    # page. The scanner knows ONE layout - a label naming a mode, numbers
+    # beside it - and that layout is a convention, not a standard: the next
+    # model's card may be written some other way, and a scanner that quietly
+    # returns half a table is worse than one that returns none. So it is a
+    # draft, not an answer. Checking a draft is also a much easier job than
+    # extracting from scratch, which is the one the model was failing at.
+    scanned = complete(read_rows(text))
+    table, kind, by_model = _model_reads(ep, alias, text, where, scanned)
+    if table is None:
+        if not scanned:
+            ask("", hint="enter to go back")
             return False
+        print()
+        say("  Falling back to what this program read off the page.", "dim")
+        # The endpoint could not be asked, but the page was read. Offer that
+        # rather than nothing, and say which it is.
+        table, kind, by_model = scanned, ("thinking" if scanned.get("thinking")
+                                          else "instruct"), False
 
     step(f"endpoints > tune > {name} > sampling > ask it" if name else "sampling > ask it")
     print()
-    # WHICH ROUTE produced these. The two are not equally trustworthy and the
-    # page must not pretend they are: one copied a table, the other quoted a
-    # page from memory.
-    say("  The model read this off its card:" if by_model
-        else "  Read off its card:", "accent")
+    # WHICH ROUTE produced these, and whether the two agreed. Two readings
+    # that match is the strongest thing this page can say; one that was
+    # corrected is worth looking at twice, and a reading with nothing behind
+    # it is worth saying so about.
+    if not by_model:
+        headline = "Read off its card, by this program alone:"
+    elif table == scanned and scanned:
+        headline = "Read off its card, and the model agrees:"
+    elif scanned:
+        headline = "Read off its card, corrected by the model:"
+    else:
+        headline = "The model read this off its card:"
+    say(f"  {headline}", "accent")
     print()
     if kind:
         print(f"    a {kind} model")
     for half in endpoints.KINDS:
         for work in endpoints.FLAVOURS:
             sent = knob_text((table.get(half) or {}).get(work) or {})
-            print(f"    {half} . {work:<8} " + (sent or grey("nothing")))
+            was = knob_text((scanned.get(half) or {}).get(work) or {})
+            mark = "  " + grey(f"(was: {was or 'nothing'})") if (
+                by_model and scanned and sent != was) else ""
+            print(f"    {half} . {work:<8} " + (sent or grey("nothing")) + mark)
     print()
-    if by_model:
-        print("  " + grey("The page does not follow the usual layout, so the model read"))
-        print("  " + grey("it instead - it is quoting from memory, and a small one can"))
-        print("  " + grey("quote the wrong line. That is why you see the numbers first."))
+    if not by_model:
+        print("  " + grey("The endpoint could not be asked, so nothing checked this."))
+        print("  " + grey("It reads one common layout; a card written another way"))
+        print("  " + grey("gives half a table or none. Look before you say yes."))
     else:
-        print("  " + grey("Taken straight from the page - no model was asked. Check them"))
-        print("  " + grey("anyway: what a card recommends is not always what you want."))
+        print("  " + grey("Two readings of the same page: this program's, and the"))
+        print("  " + grey("model's check of it. Neither is authority - what a card"))
+        print("  " + grey("recommends is not always what you want. Look before you say yes."))
     if not confirm("Write these numbers?", "yes, write them", "no, leave it alone"):
         return False
     if kind:
