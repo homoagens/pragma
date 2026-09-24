@@ -327,6 +327,13 @@ def _native_action_text(cfg: AgentConfig, messages, model, temperature,
 
     _NO_TOOL_STREAK[0] = 0
     first = calls[0]
+    # The two are not the same thing, and conflating them cost context on every
+    # turn. `thought` is for the transcript: on a reasoning model the content is
+    # routinely empty when a tool is called, and the reasoning is the only thing
+    # there is to show. What goes BACK to the model is the content alone - the
+    # chat template drops a previous turn's reasoning anyway, so re-sending it
+    # buys nothing and is paid for in the window at every step after it.
+    said = r.get("content") or ""
     if len(calls) > 1:
         names = [c.get("name", "?") for c in calls]
         if queue is not None and all(n in _READ_ONLY_SKILLS for n in names):
@@ -364,6 +371,7 @@ def _native_action_text(cfg: AgentConfig, messages, model, temperature,
         "action":  first.get("name", ""),
         "args":    first.get("arguments") or {},
         "__tool_call_id__": first.get("id") or "",
+        "__assistant_content__": said,
     }, ensure_ascii=False)
 
 
@@ -765,6 +773,9 @@ def run_agent(cfg: AgentConfig, user_task: str, log_path: Optional[Path] = None,
         # Present only when the action arrived through native tool calling.
         # Popped here so it never leaks into a final payload or a skill's args.
         _tool_call_id = response.pop("__tool_call_id__", "") or ""
+        # What the assistant turn carries back to the model: its content, never
+        # its reasoning. See _native_action_text.
+        _said = response.pop("__assistant_content__", "") or ""
 
         thought = response.get("thought", "")
         if config.DEBUG:
@@ -946,7 +957,7 @@ def run_agent(cfg: AgentConfig, user_task: str, log_path: Optional[Path] = None,
         if _tool_call_id:
             messages.append({
                 "role": "assistant",
-                "content": thought or "",
+                "content": _said,
                 "tool_calls": [{
                     "id": _tool_call_id,
                     "type": "function",
