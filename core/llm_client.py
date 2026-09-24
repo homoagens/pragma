@@ -595,9 +595,9 @@ def _warn_if_still_thinking(template_kwargs, msg):
         return
     _NOTHINK_IGNORED[0] = True
     _console.print(
-        "[yellow]MEMORY_NO_THINK is set, but the model still returned a "
-        "thinking block: this template reads neither key. The memory calls "
-        "are as slow as before.[/yellow]")
+        "[yellow]Pragma asked this model NOT to reason, but it returned a "
+        "thinking block anyway: its template reads neither key. Calls are as "
+        "slow as if the switch were on.[/yellow]")
 
 
 _THINK_IGNORED = [False]

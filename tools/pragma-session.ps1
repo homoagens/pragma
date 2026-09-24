@@ -78,20 +78,10 @@ Set-SessionEnv "SKILL_MAX_TOKENS"  (Cfg "SkillMaxTokens" "")
 # did; set it when the model reasons its way through a three-line verdict and
 # you would rather it did not do so at the agent's budget.
 Set-SessionEnv "MEMORY_MAX_TOKENS" (Cfg "MemoryMaxTokens" "")
-# Who reasons. Pragma says it on every call, true or false, because a
-# server's default is a choice made somewhere else: one that thinks by default
-# made "off" impossible to ask for, one that does not made "on" impossible.
-# MemoryNoThink "" | select | all: "" lets every memory call reason; "select"
-# silences the faculties that CHOOSE (curator, segmenter); "all" also silences
-# those that WRITE, whose mistakes end up in the store instead of expiring.
-# Whether the AGENT reasons is not here: it is the endpoint's, written beside
-# its address by /configure, because one server runs one model and that model
-# either reasons or does not. AGENT_THINK still overrides it for a single run.
-Set-SessionEnv "MEMORY_NO_THINK"   (Cfg "MemoryNoThink"   "")
-# MemorySampling preset | greedy: how a memory call that reasons picks its
-# words. preset = the model's thinking preset with a fixed seed; greedy =
-# temperature 0 for every memory call, as the paper's runs were.
-Set-SessionEnv "MEMORY_SAMPLING"   (Cfg "MemorySampling"  "")
+# Who reasons is not here. It is the endpoint's - written beside its address
+# by /configure, because one server runs one model and that model either
+# reasons or does not - and it governs the agent's steps and the six memory
+# faculties alike. AGENT_THINK still overrides it for a single run.
 Set-SessionEnv "LLM_TIMEOUT"       (Cfg "Timeout"        "")
 # How wide the deterministic prefilter casts its net before the curator judges.
 # The right width depends on the store: ten candidates out of thirty is a very
@@ -256,14 +246,11 @@ function script:Get-ThinkingLine {
     $agent = if ($env:AGENT_THINK -in @('on', '1', 'true', 'yes')) { 'on' }
              elseif ($env:AGENT_THINK -in @('off', '0', 'false', 'no')) { 'off' }
              elseif ((Get-EndpointKind) -eq 'thinking') { 'on' } else { 'off' }
-    $memory = switch ($env:MEMORY_NO_THINK) {
-        'select' { 'writing only (select)' }
-        'write'  { 'recall and segmenting only (write)' }
-        'all'    { 'none (all)' }
-        default  { 'every call' }
+    if ($agent -eq 'on') {
+        "the agent and the memory faculties reason before they answer"
+    } else {
+        "nothing reasons: every call answers at once"
     }
-    $how = if ($env:MEMORY_SAMPLING -eq 'greedy') { 'greedy' } else { 'preset + seed' }
-    "agent $agent / memory $memory, $how"
 }
 
 # What this window will actually SEND. Printed on entry because a sampling
@@ -530,7 +517,7 @@ function global:pragma {
         Remove-Item Env:PRAGMA_WORKSPACE, Env:PRAGMA_DATA_DIR -ErrorAction SilentlyContinue
         Remove-Item Env:LLM_BASE_URL -ErrorAction SilentlyContinue
         Remove-Item Env:CONTEXT_WINDOW, Env:MAX_TOKENS -ErrorAction SilentlyContinue
-        Remove-Item Env:SKILL_MAX_TOKENS, Env:MEMORY_MAX_TOKENS, Env:MEMORY_NO_THINK, Env:MEMORY_SAMPLING, Env:LLM_TIMEOUT -ErrorAction SilentlyContinue
+        Remove-Item Env:SKILL_MAX_TOKENS, Env:MEMORY_MAX_TOKENS, Env:LLM_TIMEOUT -ErrorAction SilentlyContinue
         Remove-Item Env:CURATOR_CANDIDATES_EPISODES, Env:CURATOR_CANDIDATES_RECENT -ErrorAction SilentlyContinue
         Remove-Item Env:CURATOR_CANDIDATES_LEARNINGS, Env:CURATOR_MAX_FRAGMENTS -ErrorAction SilentlyContinue
         Write-Host "off - defaults restored for this window"

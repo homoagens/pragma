@@ -62,7 +62,6 @@ GREY, RESET = ESC + "[38;5;242m", ESC + "[0m"
 ENV_OF = {
     "Endpoint": "LLM_BASE_URL", "ContextWindow": "CONTEXT_WINDOW", "MaxTokens": "MAX_TOKENS",
     "SkillMaxTokens": "SKILL_MAX_TOKENS", "MemoryMaxTokens": "MEMORY_MAX_TOKENS",
-    "MemoryNoThink": "MEMORY_NO_THINK", "MemorySampling": "MEMORY_SAMPLING",
     "Timeout": "LLM_TIMEOUT",
     "CuratorEpisodes": "CURATOR_CANDIDATES_EPISODES",
     "CuratorRecent": "CURATOR_CANDIDATES_RECENT",
@@ -70,7 +69,7 @@ ENV_OF = {
     "CuratorFragments": "CURATOR_MAX_FRAGMENTS",
     "Temperature": "DEFAULT_TEMPERATURE", "TopK": "TOP_K", "TopP": "TOP_P", "MinP": "MIN_P",
 }
-NEW_PROJECT_SETTINGS = {"MemoryNoThink": "select", "MemorySampling": "preset"}
+NEW_PROJECT_SETTINGS: dict[str, str] = {}
 
 # The step budget a project runs at when it has never said. It is not a setting
 # of the machine but an argument of the conversation, so config's own default
@@ -347,41 +346,9 @@ def choices_page(entry: dict) -> None:
         return str((by_name(name).get("settings") or {}).get(key, default) or default)
 
     print()
-    say("  whether the agent reasons, and how it samples, belong to the", "dim")
-    say("  endpoint it talks to - /configure, once, for every project.", "dim")
-    print()
-    print("  memory thinking - do the memory calls reason before answering?")
-    say("    select  recall and segmenting answer at once, writing memory reasons (recommended)", "dim")
-    say("    all     no memory call reasons: fastest, plainer episodes and beliefs", "dim")
-    say("    on      every memory call reasons: slowest, the writing runs in the background", "dim")
-    shown = current("MemoryNoThink") if current("MemoryNoThink") in ("select", "all", "write") else "on"
-    while True:
-        value = ask("memory thinking", shown)
-        if value is None:
-            return
-        if value == shown:
-            break
-        if value.lower() in ("select", "all", "on"):
-            save_setting(name, "MemoryNoThink", "" if value.lower() == "on" else value.lower())
-            break
-        say("    select, all or on", "warn")
-
-    print()
-    print("  memory sampling - when a memory call reasons, how does it pick its words?")
-    say("    preset  the model's thinking preset with a fixed seed: no loops, same answer twice (recommended)", "dim")
-    say("    greedy  temperature 0 always, as the paper's runs were: a thinking model may loop", "dim")
-    shown = "greedy" if current("MemorySampling") == "greedy" else "preset"
-    while True:
-        value = ask("memory sampling", shown)
-        if value is None:
-            return
-        if value == shown:
-            break
-        if value.lower() in ("preset", "greedy"):
-            save_setting(name, "MemorySampling", value.lower())
-            break
-        say("    preset or greedy", "warn")
-
+    say("  Whether anything reasons, and how it samples, belong to the", "dim")
+    say("  endpoint - /configure, once, for every project. The agent and", "dim")
+    say("  the memory faculties follow the same answer.", "dim")
     print()
     print("  steps per turn - how many actions the agent may take before it must answer")
     say(f"    {DEFAULT_STEPS} suits a conversation; long tasks on files may need more", "dim")

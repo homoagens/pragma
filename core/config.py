@@ -102,13 +102,18 @@ DEFAULT_MODEL       = os.environ.get("DEFAULT_MODEL", "llama3.2")
 # temperature could never apply - and at 0.0 the decoding is greedy, which
 # makes the other three inert however the server had set them.
 #
-# The faculties are unaffected. Curator, consolidator, abstractor and
-# reconsolidator pass temperature=0.0 explicitly at the call site, so the
-# store stays deterministic whatever this says.
+# UNSET NOW MEANS "THE SERVER DECIDES", and it used to mean 0.0. That was the
+# last place in this file where an absent value meant a number rather than a
+# deferral, and it was the one that mattered most: 0.0 is greedy decoding,
+# which is what a reasoning model is least trained for - it will repeat a
+# paragraph until the budget runs out - and it silently made top_k, top_p and
+# min_p inert however the endpoint had set them. A setup with no endpoint
+# table and no .env was running the whole harness greedy without anyone
+# choosing it.
 #
-# Empty still means 0.0, not "server": changing what an unset value means
-# would silently move every existing setup the day it upgraded.
-_temp_raw = os.environ.get("DEFAULT_TEMPERATURE", "0.0").strip()
+# Say `DEFAULT_TEMPERATURE=0.0` to get it back; the frozen evaluation corpus
+# ran that way and is reproducible from the tagged commit.
+_temp_raw = os.environ.get("DEFAULT_TEMPERATURE", "server").strip()
 DEFAULT_TEMPERATURE = None if _temp_raw.lower() == "server" else float(_temp_raw)
 # A profile carries a temperature of its own; it is applied below, once the
 # table has been read. A project that also named a temperature keeps it: a
@@ -418,73 +423,20 @@ SKILL_MAX_TOKENS       = int(os.environ.get("SKILL_MAX_TOKENS", str(_skill_defau
 MEMORY_MAX_TOKENS      = int(os.environ.get("MEMORY_MAX_TOKENS",
                                             str(SKILL_MAX_TOKENS)))
 
-# Ask the chat template to skip the thinking phase, for the memory calls only.
-#
-# WHY IT IS WORTH ASKING. A curator picks three fragments from a numbered list
-# and its output shape is already forced by a JSON schema. Measured against a
-# reasoning model: 83 completion tokens and 8.6s with thinking, 17 tokens and
-# 1.6s without, same answer. On a session that curates once per turn, that is
-# the difference between memory you notice and memory you wait for.
-#
-# WHY IT IS OFF BY DEFAULT. It is not a speed setting, it is a change of
-# faculty: a curator that does not deliberate may well select differently, and
-# what the store ends up holding is the thing under study here. Opt in per
-# session, and do not compare runs across the switch.
-#
-# WHY BOTH KEYS. Templates disagree on the name - `enable_thinking` is the
-# common one, `thinking` is used by others. Probing two models showed one
-# honouring both and the other honouring only `enable_thinking` while ignoring
-# `thinking` in silence, so an extra key costs nothing while a missing one
-# leaves thinking quietly on. A template that reads neither ignores both,
-# which llm_client notices and reports.
-#
-# WHY THREE STATES AND NOT A BOOLEAN. The six faculties do not do the same
-# kind of work, and the case for silencing them is not the same either.
-#
-#   SELECT  the curator picks fragments from a numbered list, the segmenter
-#           partitions turns. Routing decisions, output already forced by a
-#           schema, temperature 0. Deliberation here is mostly the prompt
-#           restated - and a bad pick costs one mediocre turn.
-#   WRITE   the consolidator composes a narrative, the abstractor generalises
-#           a RULE from one episode, the reconsolidator revises a belief.
-#           These compose rather than choose, and the abstractor's step is
-#           inductive by nature. A bad generalisation is WRITTEN INTO the
-#           store, recalled by later sessions, and shapes what the agent does
-#           next: the error compounds instead of expiring.
-#
-# So the asymmetry is in the cost of being wrong, not in the tokens. "select"
-# is the setting to reach for; "all" is for when you have measured that the
-# writers do just as well without.
-_NO_THINK = os.environ.get("MEMORY_NO_THINK", "").strip().lower()
-if _NO_THINK in ("1", "true", "yes", "on"):
-    _NO_THINK = "all"          # what the flag meant when it was a boolean
-elif _NO_THINK in ("0", "false", "no", "off"):
-    _NO_THINK = ""
-MEMORY_NO_THINK = _NO_THINK if _NO_THINK in ("select", "write", "all") else ""
-
-
-# THE AGENT'S SWITCH. Normally the endpoint's, because the endpoint is running
-# the model and knows whether it reasons: /configure writes that as `kind`,
-# and agent_thinking() reads it. AGENT_THINK overrides it for one run, either
-# way, which is why it is kept as the raw word rather than a boolean - "unset"
-# and "off" are different answers here.
+# THE THINKING SWITCH, for everything Pragma calls. Normally the endpoint's,
+# because the endpoint is running the model and knows whether it reasons:
+# /configure writes that as `kind`, and agent_thinking() reads it. AGENT_THINK
+# overrides it for one run, either way, which is why it is kept as the raw
+# word rather than a boolean - "unset" and "off" are different answers here.
 _AGENT_THINK = os.environ.get("AGENT_THINK", "").strip().lower()
 AGENT_THINK = _AGENT_THINK in ("on", "1", "true", "yes")
-
-# server and greedy are decided here, because they are decided by the word
-# alone. A profile's temperature is not: which table it comes from depends on
-# the model the endpoint turns out to be serving, which nothing knows yet.
-if SAMPLING_PROFILE == "server":
-    DEFAULT_TEMPERATURE = None                      # the endpoint decides it too
-elif SAMPLING_PROFILE == "greedy":
-    DEFAULT_TEMPERATURE = 0.0
 
 
 def agent_temperature():
     """The temperature an agent call travels with when the caller names none.
 
     A number someone typed wins over one chosen from a list, so a project
-    that set DEFAULT_TEMPERATURE keeps it whatever profile it also picked.
+    that set DEFAULT_TEMPERATURE keeps it whatever the endpoint also says.
     """
     if not _TEMP_DECLARED:
         _, knobs = agent_profile()
@@ -493,11 +445,13 @@ def agent_temperature():
     return DEFAULT_TEMPERATURE
 
 
-
-
 def _thinking(on: bool) -> dict:
-    # Both spellings: which key a chat template reads is a property of the
-    # model, and a template that reads neither ignores both in silence.
+    # BOTH SPELLINGS. Templates disagree on the name - `enable_thinking` is
+    # the common one, `thinking` is used by others. Probing two models showed
+    # one honouring both and the other honouring only `enable_thinking` while
+    # ignoring `thinking` in silence, so an extra key costs nothing while a
+    # missing one leaves thinking quietly on. A template that reads neither
+    # ignores both, which llm_client notices and reports.
     return {"enable_thinking": on, "thinking": on}
 
 
@@ -512,36 +466,39 @@ def agent_template_kwargs():
     return _thinking(agent_thinking())
 
 
-def memory_template_kwargs(kind="write"):
-    """chat_template_kwargs for a memory call: always explicit, true or false.
-
-    `kind` is "select" or "write" — which of the two groups above the calling
-    faculty belongs to. It defaults to "write" so that a call site added later
-    and left unmarked keeps its thinking: the conservative side of the switch
-    is the one where being wrong is permanent.
-
-    It used to return None - send nothing - for the calls meant to think,
-    which only worked against a server that thinks by default.
-    """
-    silenced = MEMORY_NO_THINK == "all" or MEMORY_NO_THINK == kind
-    return _thinking(not silenced)
-
-
-# HOW A MEMORY CALL PICKS ITS WORDS. Temperature 0 was the rule, for a store
-# that reproduces and a benchmark that measures the agent rather than the dice.
-# It stays the rule for calls that do not reason. A call that reasons at
-# temperature 0 is what reasoning models are not trained for: greedy decoding
-# makes them repeat a paragraph until the budget runs out. So those use the
-# model's thinking preset, with a fixed seed - measured on montecucco, two
-# calls with the same seed gave the same reasoning and the same answer.
-#   preset  thinking calls sample with the preset and MEMORY_SEED (default)
-#   greedy  every memory call at temperature 0, as the paper's runs were
-# Separate from DEFAULT_TEMPERATURE on purpose: warming the conversation must
-# never warm the consolidator behind its back.
-_MS = os.environ.get("MEMORY_SAMPLING", "").strip().lower()
-MEMORY_SAMPLING = _MS if _MS in ("preset", "greedy") else "preset"
+# HOW THE MEMORY FACULTIES THINK AND SAMPLE: exactly as the agent does.
+#
+# ONE SWITCH FOR THE WHOLE HARNESS. The endpoint says whether the model it
+# runs is a thinking one, and that answer governs every call Pragma makes -
+# the agent's steps and the six faculties alike. There is no per-faculty
+# switch any more.
+#
+# There was one, with three states, for a real reason: the faculties do not do
+# the same kind of work, and a curator picking three fragments from a numbered
+# list under a schema gains less from deliberating than a reconsolidator
+# revising a belief does. Measured against a reasoning model, a curator cost
+# 83 completion tokens and 8.6s with thinking and 17 tokens and 1.6s without,
+# for the same answer.
+#
+# It is still true, and it is still not worth a setting. A mixed harness -
+# curator thinking, agent not - is an OPTIMISATION, and one that has to be
+# measured per model before it means anything; until then it is three states
+# to hold in your head, a second place for the thinking switch to disagree
+# with the first, and a line in every status page. When there are numbers, it
+# comes back as a number, not as a knob nobody turned.
+#
+# AND NO GREEDY. Temperature 0 was the rule for memory, for a store that
+# reproduces exactly. It is not the rule any more: greedy decoding is what a
+# reasoning model is least trained for - it will repeat a paragraph until the
+# budget runs out - and the faculties now reason whenever the agent does. A
+# model working the way its authors recommend is worth more than a
+# determinism that costs it its judgement. MEMORY_SEED still pins the dice,
+# so two calls with the same prompt still agree; what is gone is the claim
+# that the numbers were the most likely tokens.
+#
+# The frozen evaluation corpus was produced under the old rule and is
+# reproducible from the tagged commit, which is where a retired rule belongs.
 MEMORY_SEED = int(os.environ.get("MEMORY_SEED", "") or 42)
-MEMORY_THINK_PRESET = {"temperature": 0.6, "top_p": 0.95, "top_k": 20, "min_p": 0.0}
 
 # A reasoning that goes on and on without an answer starting is stopped at
 # this many characters and the call asked again without thinking. The loop
@@ -551,16 +508,51 @@ MEMORY_THINK_PRESET = {"temperature": 0.6, "top_p": 0.95, "top_k": 20, "min_p": 
 MEMORY_THINK_BUDGET = int(os.environ.get("MEMORY_THINK_BUDGET", "") or 16000)
 
 
+def memory_template_kwargs(kind="write"):
+    """chat_template_kwargs for a memory call: the endpoint's answer, explicit.
+
+    `kind` is kept in the signature - every call site passes "select" or
+    "write" - so that the distinction is still there to act on the day there
+    are numbers to justify acting on it.
+    """
+    return _thinking(agent_thinking())
+
+
+def faculty_knobs() -> dict:
+    """The knobs a memory call sends: the endpoint's row for GENERAL work.
+
+    The same numbers the agent uses, minus the one choice that is the agent's
+    alone. `coding` describes what the conversation is doing - writing and
+    fixing code - and a consolidator composing a narrative about that session
+    is not doing it. So the faculties read the `general` row of whichever half
+    the endpoint is in, and an endpoint with no table sends nothing, exactly
+    as it does for the agent.
+    """
+    entry = _agent_entry()
+    if not entry.get("sampling"):
+        return {}
+    try:
+        import endpoints
+        half = "thinking" if agent_thinking() else "instruct"
+        return endpoints.sampling_row(entry, half, "general")
+    except Exception:
+        return {}
+
+
 def memory_call(kind="write") -> dict:
-    """The arguments a memory call passes to call_llm about how to think:
-    temperature, template_kwargs (the thinking switch) and sampling."""
-    template = memory_template_kwargs(kind)
-    if template["enable_thinking"] and MEMORY_SAMPLING == "preset":
-        sampling = dict(MEMORY_THINK_PRESET)
-        temperature = sampling.pop("temperature")
-        sampling["seed"] = MEMORY_SEED
-        return {"temperature": temperature, "template_kwargs": template, "sampling": sampling}
-    return {"temperature": 0.0, "template_kwargs": template, "sampling": None}
+    """How a memory call thinks and picks its words: as the agent does.
+
+    The seed travels with it. Sampling makes a call repeatable only if the
+    dice are pinned, and a store that answers differently on a re-run is a
+    store nobody can debug.
+    """
+    knobs = dict(faculty_knobs())
+    temperature = knobs.pop("temperature", None)
+    knobs["seed"] = MEMORY_SEED
+    return {"temperature": temperature,
+            "template_kwargs": memory_template_kwargs(kind),
+            "sampling": knobs}
+
 
 # write_file emits a soft warning in the observation when content exceeds
 # this many bytes — the agent learns to prefer incremental edits.

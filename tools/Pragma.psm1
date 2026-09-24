@@ -647,13 +647,9 @@ function script:New-Project([string]$name, [string]$workspace) {
         workspace   = $ws
         memory      = $memory
         last_opened = $null
-        # The endpoint decides unless told otherwise. The alternative default,
-        # an empty set, is not neutral: it means the repository's 0.0, which is
-        # greedy - a deliberate-looking choice nobody made.
-        # MemoryNoThink select: recall and segmenting are choices from a short
-        # list, and on a model that reasons they spent minutes thinking about
-        # them. Writing memory keeps its reasoning. /settings changes it.
-        settings    = [pscustomobject]@{ MemoryNoThink = "select"; MemorySampling = "preset" }
+        # Nothing about the model here. What it is, whether it reasons and
+        # how it samples are the endpoint's, and a project inherits them.
+        settings    = [pscustomobject]@{ }
     }
     Write-Registry ($entries + $entry)
     Write-Host "pragma: registered '$name'" -ForegroundColor Green
@@ -863,49 +859,11 @@ function script:Invoke-ProjectChoices($entry) {
     # What the model IS, and how it samples, are the endpoint's: one server,
     # one model, one answer for every project that talks to it. /configure.
     Write-Host ""
-    Write-Host "  whether the agent reasons, and how it samples, belong to the" -ForegroundColor DarkGray
-    Write-Host "  endpoint it talks to - /configure, once, for every project." -ForegroundColor DarkGray
+    Write-Host "  Whether anything reasons, and how it samples, belong to the" -ForegroundColor DarkGray
+    Write-Host "  endpoint - /configure, once, for every project. The agent and" -ForegroundColor DarkGray
+    Write-Host "  the memory faculties follow the same answer." -ForegroundColor DarkGray
 
-    # 2. Whether the memory calls reason before they answer.
-    $cur = Get-ProjectValue $entry 'MemoryNoThink'
-    $shown = if ($cur -in @('select', 'all', 'write')) { $cur } else { 'on' }
-    Write-Host ""
-    Write-Host "  memory thinking - do the memory calls reason before answering?"
-    Write-Host "    select  recall and segmenting answer at once, writing memory reasons (recommended)" -ForegroundColor DarkGray
-    Write-Host "    all     no memory call reasons: fastest, plainer episodes and beliefs" -ForegroundColor DarkGray
-    Write-Host "    on      every memory call reasons: slowest, the writing runs in the background" -ForegroundColor DarkGray
-    while ($true) {
-        $v = Read-Line "  memory thinking [$shown]: "
-        if ($null -eq $v) { return }
-        $v = $v.Trim().ToLowerInvariant()
-        if (-not $v -or $v -eq $shown) { break }
-        if ($v -in @('select', 'all', 'on')) {
-            Set-ProjectSetting $entry 'MemoryNoThink' $(if ($v -eq 'on') { '' } else { $v }) | Out-Null
-            break
-        }
-        Write-Host "    select, all or on" -ForegroundColor Yellow
-    }
-
-    # 3. How a memory call that reasons picks its words.
-    $cur = Get-ProjectValue $entry 'MemorySampling'
-    $shown = if ($cur -eq 'greedy') { 'greedy' } else { 'preset' }
-    Write-Host ""
-    Write-Host "  memory sampling - when a memory call reasons, how does it pick its words?"
-    Write-Host "    preset  the model's thinking preset with a fixed seed: no loops, same answer twice (recommended)" -ForegroundColor DarkGray
-    Write-Host "    greedy  temperature 0 always, as the paper's runs were: a thinking model may loop" -ForegroundColor DarkGray
-    while ($true) {
-        $v = Read-Line "  memory sampling [$shown]: "
-        if ($null -eq $v) { return }
-        $v = $v.Trim().ToLowerInvariant()
-        if (-not $v -or $v -eq $shown) { break }
-        if ($v -in @('preset', 'greedy')) {
-            Set-ProjectSetting $entry 'MemorySampling' $v | Out-Null
-            break
-        }
-        Write-Host "    preset or greedy" -ForegroundColor Yellow
-    }
-
-    # 4. How far one turn may go before the agent has to answer.
+    # 2. How far one turn may go before the agent has to answer.
     $cur = Get-ProjectValue $entry 'MaxSteps'
     $shown = if ($cur) { $cur } else { '50' }
     Write-Host ""

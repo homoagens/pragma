@@ -485,26 +485,20 @@ def _status_lines() -> list[tuple[str, str]]:
     out.append(("actions", line))
     out.append(("", ""))
     out.append(("steps", f"{_STATE.get('max_steps') or getattr(cfg, 'MAX_STEPS', 0)} per turn"))
-    think = getattr(cfg, "MEMORY_NO_THINK", "")
-    # The value as well as its meaning: the sentence is what it does, the word
-    # in brackets is what to type to change it. Both are asked for on every
-    # call, so they hold whatever the server's own default is.
+    # One switch for the whole harness: the endpoint says whether the model
+    # it runs reasons, and that governs the agent's steps and the six
+    # faculties alike. Asked for explicitly on every call, so it means the
+    # same against a server that thinks by default and one that does not.
     try:
         reasons = cfg.agent_thinking()
     except Exception:
         reasons = getattr(cfg, "AGENT_THINK", False)
-    out.append(("agent", "reasons before each step  (a thinking endpoint)"
-                if reasons else "acts without reasoning  (an instruct endpoint)"))
-    out.append(("memory", {
-        "": "every memory call reasons before it answers  (MemoryNoThink on)",
-        "select": "recall and segmenting answer at once, writing memory reasons  (select)",
-        "write": "writing memory answers at once, the rest reasons  (write)",
-        "all": "no memory call reasons  (all)",
-    }.get(think, think)))
-    out.append(("", "when it reasons: " + ("temperature 0  (MemorySampling greedy)"
-                                         if getattr(cfg, "MEMORY_SAMPLING", "preset") == "greedy"
-                                         else f"thinking preset, seed {getattr(cfg, 'MEMORY_SEED', 42)}"
-                                              "  (MemorySampling preset)")))
+    out.append(("thinking", "the agent and the memory faculties reason before"
+                            " they answer  (a thinking endpoint)" if reasons
+                else "nothing reasons: every call answers at once"
+                     "  (an instruct endpoint)"))
+    out.append(("", f"memory calls carry seed {getattr(cfg, 'MEMORY_SEED', 42)}, "
+                    f"so a repeated one agrees with itself"))
     # What this project's own calls carry. A profile answers for all of them at
     # once and says which row of the table it is, because "temperature 0.6" on
     # its own is a number and "thinking-coding" is a reason.
