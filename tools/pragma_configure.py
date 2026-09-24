@@ -305,10 +305,26 @@ def advanced(entry: dict, name: str = "") -> None:
 
 # -- asking the model about itself --------------------------------------------
 
-def fetch(url: str, timeout: float = 15.0) -> str:
-    request = urllib.request.Request(url, headers={"User-Agent": "pragma/configure"})
-    with urllib.request.urlopen(request, timeout=timeout) as answer:
-        return answer.read().decode("utf-8", "replace")
+def fetch(url: str, timeout: int = 30) -> str:
+    """A page, through Pragma's own web_fetch.
+
+    Pragma's, not a second HTTP client written here: the skill already has the
+    timeout, the user agent and the error strings, and a page fetched two
+    different ways is two things to keep in step. Nothing else of Pragma is
+    used - no memory, no recall, no episode. This is a GET and a model reading
+    what came back.
+
+    Returns "" on anything that went wrong, since web_fetch reports failures
+    as text beginning with ERROR / HTTP ERROR / TIMEOUT.
+    """
+    try:
+        from skills.web_fetch.skill import web_fetch
+    except Exception:
+        return ""
+    body = web_fetch(url, timeout=timeout, max_chars=400_000)
+    if not body or body.startswith(("ERROR", "HTTP ERROR", "CONNECTION ERROR", "TIMEOUT")):
+        return ""
+    return body
 
 
 def served_alias(ep) -> str:
@@ -321,7 +337,10 @@ def served_alias(ep) -> str:
     """
     root = ep.base_url[:-3] if ep.base_url.endswith("/v1") else ep.base_url
     try:
-        props = json.loads(fetch(root.rstrip("/") + "/props", timeout=5))
+        request = urllib.request.Request(root.rstrip("/") + "/props",
+                                         headers={"User-Agent": "pragma/configure"})
+        with urllib.request.urlopen(request, timeout=5) as answer:
+            props = json.loads(answer.read().decode("utf-8", "replace"))
     except Exception:
         return ""
     for key in ("model_alias", "model_path", "model"):
@@ -331,38 +350,172 @@ def served_alias(ep) -> str:
     return ""
 
 
-def card(alias: str) -> tuple[str, str]:
-    """(where it was read, the text) for the model's page on HuggingFace.
+def repositories(alias: str) -> list[str]:
+    """The pages worth reading for this model, best first.
 
-    A quantised repository is tried first, because that is the one the server
-    names, and then the same name without the -GGUF suffix: the people who
-    publish quantisations copy the card, but not always, and the original is
-    where the recommendation actually lives.
+    A server is started from a QUANTISATION - `unsloth/Qwen3.6-35B-A3B-GGUF` -
+    and whether that repository carries the original's card is up to whoever
+    published it. The original is the authority, and HuggingFace will say
+    which it is: the model API answers with `base_model`, so the link is read
+    rather than guessed from the name.
     """
     repo = alias.replace("\\", "/").split(":")[0].strip("/")
     parts = [p for p in repo.split("/") if p]
     if len(parts) < 2:
-        return "", ""
+        return []
     repo = "/".join(parts[-2:])
-    tries = [repo]
-    bare = re.sub(r"[-_.]?gguf$", "", repo, flags=re.I)
+    out = []
+    try:
+        request = urllib.request.Request(f"https://huggingface.co/api/models/{repo}",
+                                         headers={"User-Agent": "pragma/configure"})
+        with urllib.request.urlopen(request, timeout=15) as answer:
+            meta = json.loads(answer.read().decode("utf-8", "replace"))
+        base = (meta.get("cardData") or {}).get("base_model")
+        if isinstance(base, str):
+            base = [base]
+        for candidate in (base or []):
+            if isinstance(candidate, str) and candidate.count("/") == 1:
+                out.append(candidate)
+    except Exception:
+        pass
+    out.append(repo)
+    # Last resort when the API said nothing: the name without its quantisation
+    # suffix is often the original.
+    bare = re.sub(r"[-_.]?(gguf|mlx|awq|gptq)$", "", repo, flags=re.I)
     if bare != repo:
-        tries.append(bare)
-    for candidate in tries:
-        for name in ("README.md", "generation_config.json"):
-            url = f"https://huggingface.co/{candidate}/raw/main/{name}"
-            try:
-                text = fetch(url)
-            except Exception:
-                continue
-            if text.strip():
-                return url, text[:24000]
+        out.append(bare)
+    seen, unique = set(), []
+    for candidate in out:
+        if candidate not in seen:
+            seen.add(candidate)
+            unique.append(candidate)
+    return unique
+
+
+# The whole heading line, not its first character: the conventional heading is
+# most of the evidence, so it has to be readable when it is scored.
+_HEADING = re.compile(r"(?m)^#{1,4}[ \t]+\S[^\n]*")
+# A SETTING, not a mention: `temperature=1.0` is advice, the word "temperature"
+# in a sentence is not, and telling them apart is most of the work here.
+_ASSIGNMENT = re.compile(
+    r"(?i)\b(temperature|temp|top_p|top_k|min_p|presence_penalty|"
+    r"frequency_penalty|repetition_penalty|repeat_penalty)\b\s*[=:]\s*-?[0-9]*\.?[0-9]+")
+_KNOB_WORDS = re.compile(
+    r"(?i)\b(temperature|temp|top_p|top_k|min_p|presence_penalty|"
+    r"repetition_penalty|repeat_penalty)\b")
+
+
+def _sections(page: str) -> list[tuple[int, int, str]]:
+    """(start, end, heading) for every heading in a markdown card."""
+    marks = [(m.start(), m.group(0).strip()) for m in _HEADING.finditer(page)]
+    out = []
+    for i, (start, heading) in enumerate(marks):
+        end = marks[i + 1][0] if i + 1 < len(marks) else len(page)
+        out.append((start, end, heading))
+    return out
+
+
+def _score(text: str, heading: str) -> int:
+    """How likely this passage is to BE the recommendation.
+
+    Counting assignments rather than mentions: `temperature=1.0` is a setting,
+    the word "temperature" in a sentence is not. The heading is worth a lot
+    because cards are conventional about it, and "bench" is worth losing
+    points over because a benchmark table's footnote is full of assignments
+    that are a record of one leaderboard run, not advice.
+    """
+    score = 3 * len(_ASSIGNMENT.findall(text))
+    low = heading.lower()
+    if re.search(r"best practice|recommend|sampling parameter|generation config", low):
+        score += 40
+    elif re.search(r"\bsampling\b|\busage\b|\bparameters\b|how to use", low):
+        score += 8
+    if re.search(r"(?i)bench|leaderboard|evaluat", text[:2000]):
+        score -= 25
+    return score
+
+
+def recommendations(page: str, budget: int = 9000) -> str:
+    """The part of a model card that talks about sampling.
+
+    WHY NOT JUST THE FIRST N CHARACTERS. Because that was the bug. On the card
+    this was built against, the four recommended rows sit at character 64 439
+    of 67 520 - at 95% of the page, under "Best Practices", below every
+    benchmark table. A prefix of 24 000 characters contained NONE of them, and
+    the only numbers it did contain were the footnotes of the benchmark tables
+    ("temp=1.0, top_p=0.95, 200K context window" - what one leaderboard run
+    used, not what the authors advise). The model was not reading the card
+    badly; it was reading a part of the card that does not say what it was
+    asked.
+
+    WHY NOT THE FIRST MATCHING SECTION EITHER. Because that was the second
+    bug. Taking sections in the order they appear spent the whole budget on a
+    passage about VIDEO FRAME sampling, which is earlier and shares a word.
+    Position is not evidence. So each section is SCORED - how many settings it
+    actually assigns, whether its heading is the conventional one, whether it
+    reads like a benchmark note - and the best ones are kept, then put back in
+    document order so the page still reads like a page.
+    """
+    if not page:
+        return ""
+    ranked = []
+    for start, end, heading in _sections(page):
+        body = page[start:end]
+        if not _ASSIGNMENT.search(body):
+            continue
+        # A section can be a whole deployment guide; keep the neighbourhood of
+        # its settings rather than the guide.
+        if end - start > 5000:
+            first = _ASSIGNMENT.search(body)
+            last = None
+            for last in _ASSIGNMENT.finditer(body):
+                pass
+            lo = max(0, first.start() - 1200)
+            hi = min(len(body), (last.end() if last else first.end()) + 800)
+            body = body[:300] + "\n[...]\n" + body[lo:hi]
+        ranked.append((_score(body, heading), start, body))
+    if not ranked:
+        return page[:budget]
+    ranked.sort(key=lambda r: -r[0])
+    # Relative to the best, not to zero. A section that merely mentions a knob
+    # in passing - a note about VIDEO FRAME sampling, say - scores above zero
+    # and would be carried along on budget alone, diluting the passage that
+    # actually answers. The best section is always kept; the rest have to be
+    # in its league.
+    floor = max(1, ranked[0][0] // 4)
+    kept, spent = [], 0
+    for score, start, body in ranked:
+        if kept and score < floor:
+            break
+        if spent + len(body) > budget:
+            body = body[: max(0, budget - spent)]
+        if not body:
+            break
+        kept.append((start, body))
+        spent += len(body)
+    kept.sort()
+    return "\n\n[...]\n\n".join(body for _, body in kept)
+
+
+def card(alias: str) -> tuple[str, str]:
+    """(where it was read, the part of it that talks about sampling)."""
+    for repo in repositories(alias):
+        url = f"https://huggingface.co/{repo}/raw/main/README.md"
+        page = fetch(url)
+        if not page.strip():
+            continue
+        distilled = recommendations(page)
+        # A card with no sampling section at all is not worth handing over:
+        # the next repository in the list may be the one that has it.
+        if _KNOB_WORDS.search(distilled):
+            return url, distilled
     return "", ""
 
 
 ASK_THE_MODEL = """You are running on a server, and someone is setting up a client for you.
 
-Read the model card below and report the sampling settings IT recommends.
+Below are the parts of your own model card that talk about sampling. Report
+the settings IT recommends. Copy the numbers; do not reason about them.
 
 Answer with one JSON object and nothing else:
 
@@ -375,11 +528,16 @@ Each inner object may set only these, all numbers:
   temperature, top_p, top_k, min_p, presence_penalty, repeat_penalty
 
 RULES, and they matter more than filling the shape:
-- Only numbers the card actually gives. Leave a setting out when it is not named.
-- Leave a whole object empty when the card says nothing about that case.
-- A card that gives one set of numbers for thinking and one for non-thinking
-  puts them in "thinking" and "instruct"; put its coding advice, if it gives
-  any, in "coding", and leave "coding" empty when it gives none.
+- Copy only numbers the card gives as a RECOMMENDATION. Numbers quoted beside a
+  benchmark result - the settings a leaderboard run used - are not that.
+- The card usually splits its advice the same way this shape does: thinking
+  versus non-thinking (instruct), and general versus coding. Put each set where
+  it belongs.
+- If the card separates thinking from instruct but says nothing about coding,
+  put the SAME numbers in "general" and in "coding" for that mode.
+- If the card names `repetition_penalty`, write it as `repeat_penalty`.
+- Leave a setting out when it is not named. Leave a whole object empty only
+  when the card offers nothing for that mode at all.
 - Do not convert, do not average, do not invent a number that looks sensible.
 
 The model is: {alias}
@@ -387,6 +545,35 @@ The model is: {alias}
 --- the card ---
 {card}
 """
+
+
+def complete(table: dict) -> dict:
+    """The proposed rows, finished the way the catalogue wants them.
+
+    A card that separates thinking from instruct and says nothing about coding
+    is the common case, and it means "the same numbers" - so the general row
+    is copied across rather than left empty. Reading it over the general row
+    at call time would give the same answer, but a page showing `coding:
+    nothing` reads as a gap, and a file that states what it sends is a file
+    you can check.
+
+    A penalty of 1.0 is NO penalty, so it is dropped rather than sent: fewer
+    fields in the request, and nothing to misread later as a decision. Cards
+    write `repetition_penalty=1.0` precisely to say "leave this alone".
+    """
+    out = {}
+    for kind, rows in (table or {}).items():
+        clean_rows = {}
+        for work, knobs in (rows or {}).items():
+            knobs = {k: v for k, v in knobs.items()
+                     if not (k == "repeat_penalty" and v == 1.0)}
+            if knobs:
+                clean_rows[work] = knobs
+        if clean_rows.get("general") and not clean_rows.get("coding"):
+            clean_rows["coding"] = dict(clean_rows["general"])
+        if clean_rows:
+            out[kind] = clean_rows
+    return out
 
 
 def ask_the_model(ep, entry: dict, name: str = "") -> bool:
@@ -402,14 +589,15 @@ def ask_the_model(ep, entry: dict, name: str = "") -> bool:
         ask("", hint="enter to go back")
         return False
     say(f"  {alias}", "dim")
-    say("  reading its page on HuggingFace...", "dim")
+    say("  finding its page on HuggingFace...", "dim")
     where, text = card(alias)
     if not text:
         say("  That page could not be read - no network, or it is not public.", "warn")
         ask("", hint="enter to go back")
         return False
     say(f"  {where}", "dim")
-    say("  asking the model to read its own card... (this takes a moment)", "dim")
+    say(f"  read the sampling part of it: {len(text)} characters", "dim")
+    say("  asking the model to read it... (this takes a moment)", "dim")
     prompt = ASK_THE_MODEL.replace("{alias}", alias).replace("{card}", text)
     payload = {
         "model": ep.model or "",
@@ -454,6 +642,7 @@ def ask_the_model(ep, entry: dict, name: str = "") -> bool:
                      and not isinstance(v, bool)}
             if clean:
                 table.setdefault(kind, {})[work] = clean
+    table = complete(table)
     kind = proposed.get("kind") if proposed.get("kind") in endpoints.KINDS else ""
     if not table and not kind:
         say("  It answered, but not with numbers this page can use:", "warn")
@@ -471,7 +660,9 @@ def ask_the_model(ep, entry: dict, name: str = "") -> bool:
             sent = knob_text((table.get(half) or {}).get(work) or {})
             print(f"    {half} . {work:<8} " + (sent or grey("nothing")))
     print()
-    say("  A model quoting its own card can get this wrong. Read it before saying yes.", "dim")
+    print("  " + grey("How well this goes depends on the model doing the reading:"))
+    print("  " + grey("it is quoting a page back at you, and a small one can quote"))
+    print("  " + grey("the wrong line. That is why you see the numbers first."))
     if not confirm("Write these numbers?", "yes, write them", "no, leave it alone"):
         return False
     if kind:
