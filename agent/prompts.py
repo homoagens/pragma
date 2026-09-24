@@ -132,8 +132,13 @@ def _os_environment(cwd: str) -> str:
 - Path separator: backslash `\\` — always use backslash in paths passed to `execute_command`
 - Do NOT use Unix commands: no `ls`, `cat`, `rm`, `cp`, `mv`, `chmod`, `sudo`, `grep`, `find`, `touch`, `which`
 - Windows equivalents if needed: `dir`, `type`, `del`, `copy`, `move`, `where`
-- Prefer the filesystem skills (`list_dir`, `read_file`, `glob_match`, `grep_search`) over shell commands
-  for file operations — they are cross-platform and far more reliable than parsing `dir` / `type` output.
+- **Use the shell to RUN things**: tests, builds, `git`, a script, a one-off
+  `python -c`. That is what it is for, and reading the real output of a real
+  command beats reasoning about what it would have said.
+- **To look at files, prefer the skills** (`list_dir`, `read_file`,
+  `glob_match`, `grep_search`): here they are genuinely better, because
+  parsing `dir` and `type` output is worse than being handed the thing, and
+  cmd.exe mangles nested quotes in ways that are hard to see.
 - Run Python scripts: `python script.py`. Modules: `python -m module_name`.
   This is the PLATFORM default. If project instructions name an interpreter
   (a virtual environment, a specific path), that wins — for every call,
@@ -149,8 +154,21 @@ def _os_environment(cwd: str) -> str:
 - Shell used by `execute_command`: {shell} (NEW subprocess per call — no state is shared between calls)
 - Python executable: `{py}`
 - Path separator: forward slash `/`
-- Prefer the filesystem skills (`list_dir`, `read_file`, `glob_match`, `grep_search`) over shell commands
-  for file operations — they are cross-platform and far more reliable than parsing command output.
+- **The shell is a first-class tool here, not a last resort.** You are on a
+  Unix system: `grep -rn`, `find`, `sed -n`, `wc -l`, `head`, `tail`, `diff`,
+  `sort | uniq -c`, a pipeline — these answer in one call what would take
+  five, and they answer about the real filesystem. Use them, and use them to
+  RUN things too: the test suite, the build, `git`, the script you just wrote.
+- **Two things the skills still do better, and for a reason:**
+  - **changing a file** — `write_file`, `replace_in_file`, `insert_after` and
+    the rest snapshot the file first, so `revert` can undo them; a `sed -i`
+    or a heredoc cannot be undone, and pushing a whole file through shell
+    quoting is where content gets mangled.
+  - **reading one you have not seen** — `file_outline` then `read_file` costs
+    less context than `cat` on a file that turns out to be four thousand
+    lines.
+- Anything meant to keep running — a server, a watcher — goes with
+  `background=True`, or it can only ever end by hitting the timeout.
 - Run Python scripts: `{py} script.py`. Modules: `{py} -m module_name`.
   This is the PLATFORM default. If project instructions name an interpreter
   (a virtual environment, a specific path), that wins — for every call,
