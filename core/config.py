@@ -161,124 +161,49 @@ MIN_P = _opt_float("MIN_P")
 SUMMARY_TEMPERATURE = float(os.environ.get("SUMMARY_TEMPERATURE", "0.2"))
 
 
-# ── Sampling profiles ────────────────────────────────────────────────────────
+# ── Sampling profiles ─────────────────────────────────────────────────────────
 # The knobs travel in every request, so what a request does not send is what
-# the server was started with. A profile is a named set of them: the endpoint
-# keeps its own defaults and two projects on the same server can sample
-# differently, at the same time, without restarting anything.
+# the server was started with. WHICH knobs is a property of the ENDPOINT, and
+# it is written beside its address in ~/.pragma/endpoints.json - one file, one
+# page, one place to look:
 #
-# The names are the model's own recommendations, split the way the model
-# splits: whether it is reasoning, and what it is being asked to do. Pragma
-# knows the first (AGENT_THINK) and the project declares the second, so a
-# project chooses one word and the other half follows.
+#     "kind": "thinking" | "instruct"     what the model is
+#     "work": "general"  | "coding"       what this endpoint is used for
+#     "sampling": {"thinking": {"general": {...}, "coding": {...}},
+#                  "instruct": {"general": {...}, "coding": {...}}}
+#
+# An endpoint that says nothing sends nothing, and the server decides
+# everything - which is what it was started to do. That is the default, and
+# also what /configure calls "standard".
+#
+# The two words are the endpoint's because the server is what they describe:
+# the machine at that address is running one model, started one way, and no
+# project changes that by opening. A project can still override either for
+# its own run (AGENT_THINK, SAMPLING_PROFILE) - it is the same harness, and
+# the one who set it up is the one asking.
 #
 # MEASURED on llama.cpp (Qwen3.6-35B-A3B, 2026-09-21), one knob at a time:
 # temperature, top_k, top_p, min_p, presence_penalty, frequency_penalty and
 # repeat_penalty all change the reply. `repetition_penalty` does NOT: that is
 # the HuggingFace name and this server drops it in silence, which is why the
 # tables people copy from model cards have to be translated on the way in.
+# endpoints.KNOBS is that translated list, and nothing outside it is written.
 #
-# A penalty of 1.0 is no penalty, so it is omitted rather than sent: fewer
-# fields in the request, and nothing to misread later as a decision.
-# One table per MODEL, because that is whose recommendations these are. The
-# project says what it is doing; which numbers that means is the model's
-# business, and the model is not something anyone has to type - the server
-# reports it (SERVED_MODEL) and the key is matched against that name.
-#
-# A key matches when it appears in the served model's name, lowercased, and
-# the longest match wins: "qwen3.6" beats "qwen" on Qwen3.6-35B-A3B. What
-# matches nothing gets "default", which is where a model with no table of its
-# own lands - and where a single-model setup can simply put its numbers.
-SAMPLING_PROFILES = {
-    # The only table shipped, and it is for a model nobody has named. Two
-    # rows, because that is the split Pragma can make on its own - whether
-    # the agent reasons - and two numbers each, because temperature and
-    # top_p are the pair every model card publishes. top_k, min_p and the
-    # penalties are where models disagree most, so they are left out, which
-    # in this codebase means the server decides them: a number nobody
-    # published is a guess with a decimal point on it.
-    #
-    # A model with recommendations of its own gets a key in
-    # ~/.pragma/sampling.json. See tools/pragma_sampling.py.
-    "default": {
-        "thinking-general": {"temperature": 0.7, "top_p": 0.95},
-        "instruct-general": {"temperature": 0.7, "top_p": 0.90},
-    },
-}
-
-# The table is data, so it can be corrected without touching the source: the
-# same file, same key names, merged over the defaults. A model with other
-# recommendations - or a profile of your own - goes here.
-_PROFILES_FILE = Path(os.environ.get("PRAGMA_SAMPLING")
-                      or (Path.home() / ".pragma" / "sampling.json"))
-def _merge_profiles(data: dict) -> None:
-    """Fold a table read from disk into the built-in one.
-
-    Two shapes are accepted, told apart by what the values are: a table of
-    models, each holding rows, or a bare table of rows - which is read as
-    "default", so a file written for one model keeps working when the
-    built-in table grows a second one.
-
-    A row is MERGED into the one it names, not swapped for it: correcting a
-    temperature should not mean restating the four numbers beside it, and a
-    partial row that silently dropped them would be a trap. A row that names
-    nothing built in is simply added.
-    """
-    def fold(bucket: dict, row: str, knobs: dict) -> None:
-        merged = dict(bucket.get(row) or {})
-        merged.update({k: float(v) for k, v in knobs.items()})
-        bucket[row] = merged
-
-    for key, value in data.items():
-        if not isinstance(value, dict):
-            continue
-        if value and all(isinstance(v, dict) for v in value.values()):
-            name = str(key).lower()
-            if name not in SAMPLING_PROFILES:
-                # A model the table has never heard of starts from the default
-                # rows rather than from nothing, so {"llama": {"thinking-coding":
-                # {"temperature": 0.2}}} means "that row, cooler" and not "that
-                # row, and no top_p, top_k or min_p at all".
-                SAMPLING_PROFILES[name] = {r: dict(v) for r, v
-                                           in SAMPLING_PROFILES.get("default", {}).items()}
-            bucket = SAMPLING_PROFILES[name]
-            for row, knobs in value.items():
-                if isinstance(knobs, dict):
-                    fold(bucket, str(row), knobs)
-        else:
-            fold(SAMPLING_PROFILES.setdefault("default", {}), str(key), value)
-
-
-try:
-    if _PROFILES_FILE.is_file():
-        import json as _json
-        _extra = _json.loads(_PROFILES_FILE.read_text(encoding="utf-8-sig"))
-        if isinstance(_extra, dict):
-            _merge_profiles(_extra)
-except Exception:
-    pass                                    # a broken file leaves the defaults
-
-# What this project asks for. A flavour - general or coding - picks the half
-# of the table that matches what is being done; whether the agent reasons
-# picks the other half, from AGENT_THINK, because a project has already said
-# that and saying it twice is how two settings come to disagree.
-#
-# server : send none of them, the endpoint decides everything (the default)
+# server : send none of them, whatever the endpoint says
 # greedy : temperature 0, nothing else - the paper's runs
 # manual : DEFAULT_TEMPERATURE / TOP_K / TOP_P / MIN_P, set one by one
+# general | coding : that row of the endpoint's own table
 SAMPLING_PROFILE = os.environ.get("SAMPLING_PROFILE", "").strip().lower()
 
 
-def _plain(name: str) -> str:
-    """A model name with the punctuation taken out, for matching.
-
-    "qwen36", "qwen3.6" and "Qwen3-6" are the same key to a person and three
-    different strings to `in`. A model is called Qwen3.6-35B-A3B-MTP-GGUF in
-    one place, qwen3_6-35b in another and unsloth/Qwen3.6-35B in a third, so
-    a table keyed on the exact spelling is a table that quietly does not
-    apply - which is how a file written by hand came to be ignored.
-    """
-    return "".join(ch for ch in (name or "").lower() if ch.isalnum())
+def _agent_entry() -> dict:
+    """The agent endpoint's catalogue entry, or {}. Looked up every time: the
+    endpoint can change with /configure while a conversation is running."""
+    try:
+        import endpoints
+        return endpoints.entry_for_role("agent")
+    except Exception:
+        return {}
 
 
 def agent_endpoint_name() -> str:
@@ -290,70 +215,51 @@ def agent_endpoint_name() -> str:
         return ""
 
 
-def profile_table() -> tuple[str, dict]:
-    """(which table, the table) for the endpoint the agent is talking to.
+def agent_thinking() -> bool:
+    """Does the agent reason before answering?
 
-    THE ENDPOINT'S NAME FIRST. Those names are chosen, written down in
-    endpoints.json and already the vocabulary of /configure and the roles -
-    so a table called `qwen36` belongs to the endpoint called `qwen36`, and
-    naming it twice is not something anyone should have to think about. It is
-    matched whole (punctuation aside), because a name someone chose means
-    that name and not any string containing it. Two ports serving the same
-    model can then sample differently, which a table keyed on the model
-    cannot express at all.
-
-    THE SERVED MODEL SECOND. A table written on one machine should still
-    apply on another where the endpoints are named differently, and the model
-    is the thing that is really the same. Matched as a substring, longest
-    first, because model names carry sizes and quantisations nobody wants to
-    spell out.
-
-    Looked up every time rather than once at import: the served model is only
-    known after the first call, and the endpoint can change with /configure
-    mid-session.
+    The endpoint knows: it is running one model and that model either reasons
+    or does not, so `kind` in the catalogue is the answer for every project
+    that talks to it. AGENT_THINK still wins where it is set, for the run that
+    wants the other behaviour out of a model that can do both.
     """
-    here = _plain(agent_endpoint_name())
-    if here:
-        for key in SAMPLING_PROFILES:
-            if key != "default" and _plain(key) == here:
-                return key, SAMPLING_PROFILES[key]
-    served = _plain(SERVED_MODEL or DEFAULT_MODEL or "")
-    keys = [k for k in SAMPLING_PROFILES
-            if k != "default" and k and _plain(k) and _plain(k) in served]
-    if keys:
-        best = max(keys, key=lambda k: len(_plain(k)))
-        return best, SAMPLING_PROFILES[best]
-    return "default", SAMPLING_PROFILES.get("default", {})
+    if _AGENT_THINK in ("on", "1", "true", "yes"):
+        return True
+    if _AGENT_THINK in ("off", "0", "false", "no"):
+        return False
+    return _agent_entry().get("kind") == "thinking"
+
+
+def agent_flavour() -> str:
+    """What this endpoint is being used for: general work, or coding."""
+    if SAMPLING_PROFILE in ("general", "coding"):
+        return SAMPLING_PROFILE
+    work = _agent_entry().get("work")
+    return work if work in ("general", "coding") else "general"
 
 
 def agent_profile() -> tuple[str, dict]:
     """(name, knobs) for this project's agent calls, or ("", {}).
 
-    The flavour is what the project said; the thinking half is what it is
-    already running; the numbers are the served model's. A flavour the table
-    has no row for falls back to the general one of the same half rather than
-    inventing numbers - the table is a quotation, and a row nobody wrote is
-    not in it.
+    The name is the two words and whose table they came from, because that is
+    what a status line has to be able to say: `thinking . coding (montecucco)`.
     """
-    flavour = SAMPLING_PROFILE
-    if flavour in ("", "server", "greedy", "manual"):
+    if SAMPLING_PROFILE in ("server", "greedy", "manual"):
         return "", {}
-    model, table = profile_table()
-    tail = "" if model == "default" else f" ({model})"
-    half = "thinking" if AGENT_THINK else "instruct"
-    # Every row is read over the general one of its own half. A coding row
-    # that says "cooler, and no presence penalty" means those two things and
-    # not "and nothing else at all", so a table can name what differs and
-    # leave the rest alone - the same rule the file's own rows follow when
-    # they are merged, applied here so it holds for the built-in table too.
-    base = dict(table.get(f"{half}-general") or {})
-    name = flavour if flavour in table else f"{half}-{flavour}"
-    if name in table:
-        base.update(table[name])
-        return name + tail, base
-    if base:
-        return f"{half}-general" + tail, base
-    return "", {}
+    entry = _agent_entry()
+    if not entry.get("sampling"):
+        return "", {}
+    try:
+        import endpoints
+        kind = "thinking" if agent_thinking() else "instruct"
+        work = agent_flavour()
+        knobs = endpoints.sampling_row(entry, kind, work)
+    except Exception:
+        return "", {}
+    if not knobs:
+        return "", {}
+    where = agent_endpoint_name()
+    return f"{kind} . {work}" + (f" ({where})" if where else ""), knobs
 
 
 def sampling_extras():
@@ -562,9 +468,11 @@ elif _NO_THINK in ("0", "false", "no", "off"):
 MEMORY_NO_THINK = _NO_THINK if _NO_THINK in ("select", "write", "all") else ""
 
 
-# THE AGENT'S SWITCH. Off unless set: a reasoning model spends most of its
-# tokens thinking, and a conversation feels that on every turn. AGENT_THINK=on
-# is for projects whose turns are problems rather than exchanges.
+# THE AGENT'S SWITCH. Normally the endpoint's, because the endpoint is running
+# the model and knows whether it reasons: /configure writes that as `kind`,
+# and agent_thinking() reads it. AGENT_THINK overrides it for one run, either
+# way, which is why it is kept as the raw word rather than a boolean - "unset"
+# and "off" are different answers here.
 _AGENT_THINK = os.environ.get("AGENT_THINK", "").strip().lower()
 AGENT_THINK = _AGENT_THINK in ("on", "1", "true", "yes")
 
@@ -606,7 +514,7 @@ def agent_template_kwargs():
     does not made "on" impossible. Saying it on every call makes the setting
     mean the same thing against either.
     """
-    return _thinking(AGENT_THINK)
+    return _thinking(agent_thinking())
 
 
 def memory_template_kwargs(kind="write"):

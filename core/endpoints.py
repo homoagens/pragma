@@ -20,12 +20,28 @@
 #
 #     {
 #       "endpoints": {
-#         "big":   {"url": "http://127.0.0.1:8100/v1"},
+#         "big": {
+#           "url": "http://127.0.0.1:8100/v1",
+#           "kind": "thinking", "work": "general",
+#           "sampling": {
+#             "thinking": {"general": {"temperature": 0.6, "top_p": 0.95},
+#                          "coding":  {"temperature": 0.2}},
+#             "instruct": {"general": {}, "coding": {}}
+#           }
+#         },
 #         "small": {"url": "http://127.0.0.1:8190/v1", "model": "",
 #                   "key": "", "key_env": ""}
 #       },
 #       "roles": {"agent": "big", "recall": "small", "memory": "big"}
 #     }
+#
+# ONE FILE. What a model is (thinking or instruct), what an endpoint is used
+# for (general or coding) and the knobs each of those four combinations sends
+# live in the entry, beside the address. They used to live in a second file,
+# ~/.pragma/sampling.json, keyed by a model name that had to be spelled the
+# way the server happened to report it - two files to keep in step, and a
+# table that quietly did not apply when the spelling drifted. The endpoint is
+# the thing that is really being described, so it holds the description.
 #
 # It is global rather than per project because the machines are the same
 # whichever project is open, and it lives outside every backup, so no address
@@ -68,6 +84,23 @@ import config
 
 DEFAULT_BASE_URL = "http://127.0.0.1:8080/v1"
 ROLES = ("agent", "recall", "memory")
+
+# WHAT A MODEL IS, AND WHAT IT IS FOR. Both are properties of the server, not
+# of a project: the machine at the end of the address is running one model,
+# started one way, and no project of ours changes that by opening. So the
+# endpoint carries them, and every project that talks to it inherits them.
+#
+#   kind      thinking | instruct   what the model is
+#   work      general  | coding     what this endpoint is used for
+#   sampling  the four rows those two words index, each a set of knobs
+#
+# The knobs are the ones MEASURED to arrive (llama.cpp, 2026-09-21). There is
+# no `repetition_penalty` in the list on purpose: that is the HuggingFace
+# spelling and this server drops it in silence, so a table that carried it
+# would be a number nobody sends.
+KINDS = ("thinking", "instruct")
+FLAVOURS = ("general", "coding")
+KNOBS = ("temperature", "top_p", "top_k", "min_p", "presence_penalty", "repeat_penalty")
 
 # SUMMARIZER is deliberately absent: it compresses the agent's own history, so
 # it runs where the agent runs.
@@ -118,6 +151,48 @@ def catalogue_path() -> Path:
     return Path(raw).expanduser() if raw else Path.home() / ".pragma" / "endpoints.json"
 
 
+def _sampling_problem(table) -> str:
+    """What makes an endpoint's sampling table unusable, or ""."""
+    if table is None:
+        return ""
+    if not isinstance(table, dict):
+        return "\"sampling\" must be an object of thinking/instruct rows"
+    for half, rows in table.items():
+        if half not in KINDS:
+            return f"\"sampling\" has \"{half}\"; it has {' and '.join(KINDS)}"
+        if not isinstance(rows, dict):
+            return f"\"sampling.{half}\" must be an object of general/coding rows"
+        for flavour, knobs in rows.items():
+            if flavour not in FLAVOURS:
+                return f"\"sampling.{half}\" has \"{flavour}\"; it has {' and '.join(FLAVOURS)}"
+            if not isinstance(knobs, dict):
+                return f"\"sampling.{half}.{flavour}\" must be an object of numbers"
+            for knob, value in knobs.items():
+                if knob not in KNOBS:
+                    return (f"\"sampling.{half}.{flavour}\" sets \"{knob}\", which is not sent"
+                            f" - the knobs are {', '.join(KNOBS)}")
+                if not isinstance(value, (int, float)) or isinstance(value, bool):
+                    return f"\"sampling.{half}.{flavour}.{knob}\" is not a number"
+    return ""
+
+
+def sampling_row(entry: dict, kind: str = "", work: str = "") -> dict:
+    """The knobs one endpoint sends for one (kind, work), or {}.
+
+    The coding row is read OVER the general one of its own half, so a table
+    can say "the same, cooler" and mean it - naming one number must not
+    silently drop the four beside it.
+    """
+    table = (entry or {}).get("sampling") or {}
+    half = kind if kind in KINDS else (entry or {}).get("kind") or "instruct"
+    flavour = work if work in FLAVOURS else (entry or {}).get("work") or "general"
+    rows = table.get(half) or {}
+    knobs = dict(rows.get("general") or {})
+    if flavour != "general":
+        knobs.update(rows.get(flavour) or {})
+    return {k: float(v) for k, v in knobs.items() if k in KNOBS and v is not None}
+
+
 def _problem(data) -> str:
     """What makes a parsed catalogue unusable, or ""."""
     if not isinstance(data, dict):
@@ -131,6 +206,13 @@ def _problem(data) -> str:
     for name, e in eps.items():
         if not isinstance(e, dict) or not str(e.get("url") or "").strip():
             return f"endpoint \"{name}\" has no \"url\""
+        if e.get("kind") and e["kind"] not in KINDS:
+            return f"endpoint \"{name}\" is \"{e['kind']}\"; it is {' or '.join(KINDS)}"
+        if e.get("work") and e["work"] not in FLAVOURS:
+            return f"endpoint \"{name}\" works on \"{e['work']}\"; it is {' or '.join(FLAVOURS)}"
+        bad = _sampling_problem(e.get("sampling"))
+        if bad:
+            return f"endpoint \"{name}\": {bad}"
     for role, name in roles.items():
         if role not in ROLES:
             return f"\"{role}\" is not a role; the roles are {', '.join(ROLES)}"
@@ -318,6 +400,21 @@ def for_role(role: str) -> Endpoint:
     roles = data.get("roles") or {}
     name = roles.get(role) or roles.get("agent") or next(iter(data["endpoints"]))
     return _named(data, name)
+
+
+def entry_for_role(role: str) -> dict:
+    """The raw catalogue entry serving `role` - what it is, what it is for and
+    how it is sampled - or {} when there is no catalogue. Never raises: a page
+    asking what a model is should not be the thing that breaks a run."""
+    try:
+        data, error = load_catalogue()
+        if error or data is None:
+            return {}
+        roles = data.get("roles") or {}
+        name = roles.get(role) or roles.get("agent") or next(iter(data["endpoints"]))
+        return dict((data.get("endpoints") or {}).get(name) or {})
+    except Exception:
+        return {}
 
 
 def assignments() -> dict[str, Endpoint]:

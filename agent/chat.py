@@ -495,9 +495,12 @@ def _status_lines() -> list[tuple[str, str]]:
     # The value as well as its meaning: the sentence is what it does, the word
     # in brackets is what to type to change it. Both are asked for on every
     # call, so they hold whatever the server's own default is.
-    out.append(("agent", "reasons before each step  (AgentThink on)"
-                if getattr(cfg, "AGENT_THINK", False)
-                else "acts without reasoning  (AgentThink off)"))
+    try:
+        reasons = cfg.agent_thinking()
+    except Exception:
+        reasons = getattr(cfg, "AGENT_THINK", False)
+    out.append(("agent", "reasons before each step  (a thinking endpoint)"
+                if reasons else "acts without reasoning  (an instruct endpoint)"))
     out.append(("memory", {
         "": "every memory call reasons before it answers  (MemoryNoThink on)",
         "select": "recall and segmenting answer at once, writing memory reasons  (select)",

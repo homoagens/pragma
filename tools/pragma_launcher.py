@@ -46,6 +46,9 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path[:0] = [str(ROOT), str(ROOT / "core"), str(ROOT / "tools")]
 
 import pragma_home as home                     # noqa: E402  the home prompt, shared
+# The arrows, the digits, the first letter, ctrl+D: one menu, every page that
+# offers a choice - this one and /configure.
+from pragma_menu import accent, ask, menu, pick, read_key, say   # noqa: E402,F401
 
 REGISTRY = Path.home() / ".pragma" / "registry.json"
 PROJECTS = Path.home() / ".pragma" / "projects"
@@ -60,8 +63,7 @@ ENV_OF = {
     "Endpoint": "LLM_BASE_URL", "Protocol": "LLM_TOOL_PROTOCOL",
     "ContextWindow": "CONTEXT_WINDOW", "MaxTokens": "MAX_TOKENS",
     "SkillMaxTokens": "SKILL_MAX_TOKENS", "MemoryMaxTokens": "MEMORY_MAX_TOKENS",
-    "MemoryNoThink": "MEMORY_NO_THINK", "AgentThink": "AGENT_THINK",
-    "MemorySampling": "MEMORY_SAMPLING", "SamplingProfile": "SAMPLING_PROFILE",
+    "MemoryNoThink": "MEMORY_NO_THINK", "MemorySampling": "MEMORY_SAMPLING",
     "Timeout": "LLM_TIMEOUT",
     "CuratorEpisodes": "CURATOR_CANDIDATES_EPISODES",
     "CuratorRecent": "CURATOR_CANDIDATES_RECENT",
@@ -69,8 +71,7 @@ ENV_OF = {
     "CuratorFragments": "CURATOR_MAX_FRAGMENTS",
     "Temperature": "DEFAULT_TEMPERATURE", "TopK": "TOP_K", "TopP": "TOP_P", "MinP": "MIN_P",
 }
-NEW_PROJECT_SETTINGS = {"Temperature": "server", "MemoryNoThink": "select",
-                        "AgentThink": "off", "MemorySampling": "preset"}
+NEW_PROJECT_SETTINGS = {"MemoryNoThink": "select", "MemorySampling": "preset"}
 
 # The step budget a project runs at when it has never said. It is not a setting
 # of the machine but an argument of the conversation, so config's own default
@@ -121,10 +122,6 @@ def save_setting(name: str, key: str, value: str) -> None:
 
 # ── the screen ────────────────────────────────────────────────────────────────
 
-def accent() -> str:
-    return home.accent()
-
-
 _CLEAR_SEQ: bytes | None = None
 
 
@@ -162,16 +159,6 @@ def clear() -> None:
     except Exception:
         pass
     print("\033[H\033[2J\033[3J", end="", flush=True)
-
-
-def say(text: str = "", style: str = "") -> None:
-    a = accent()
-    if not a or not style:
-        print(text)
-        return
-    colour = {"accent": a, "dim": GREY, "good": "\033[32m", "warn": "\033[33m",
-              "bad": "\033[31m"}.get(style, "")
-    print(f"{colour}{text}{RESET}" if colour else text)
 
 
 # The mark from interface-web/logo.png beside the word, exactly as
@@ -245,125 +232,6 @@ def logo(compact: bool | None = None) -> None:
     for row in LOGO:
         print(f"  {a}" + "".join(glyph.get(c, c) for c in row) + r)
 
-
-
-def ask(question: str, default: str = "", hint: str = "") -> str | None:
-    """One answer, or None for ctrl+D - which goes back, everywhere."""
-    shown = f" [{default}]" if default else (f"  {hint}" if hint else "")
-    try:
-        answer = input(f"  {question}{shown}: ").strip()
-    except (EOFError, KeyboardInterrupt):
-        print()
-        return None
-    return answer or default
-
-
-def read_key() -> str:
-    """One keypress, as a word: up, down, enter, back - or the character.
-
-    Raw mode for one key and straight back out: the alternative is a line
-    editor, and a menu that wants Enter after every arrow is not a menu.
-    Windows has msvcrt for the same thing, so this launcher behaves the same
-    there if it is ever the one running.
-    """
-    if os.name == "nt":                     # the PowerShell launcher usually runs there
-        import msvcrt
-        ch = msvcrt.getwch()
-        if ch in ("\x00", "\xe0"):          # an arrow arrives as two
-            return {"H": "up", "P": "down"}.get(msvcrt.getwch(), "")
-        return {"\r": "enter", "\n": "enter",
-                "\x04": "back", "\x1b": "back"}.get(ch, ch.lower())
-    import select as _select
-    import termios
-    import tty
-    fd = sys.stdin.fileno()
-    saved = termios.tcgetattr(fd)
-    try:
-        tty.setraw(fd)
-        ch = os.read(fd, 1)
-        if ch == ESC.encode():
-            # An escape sequence, or the Esc key alone: what tells them apart
-            # is whether anything follows it straight away.
-            more = b""
-            if _select.select([fd], [], [], 0.05)[0]:
-                more = os.read(fd, 2)
-            return {b"[A": "up", b"[B": "down"}.get(more, "back")
-    finally:
-        termios.tcsetattr(fd, termios.TCSADRAIN, saved)
-    if ch in (b"\r", b"\n"):
-        return "enter"
-    if ch == b"\x04":                       # ctrl+D, as everywhere else in Pragma
-        return "back"
-    if ch == b"\x03":
-        raise KeyboardInterrupt
-    return ch.decode("utf-8", "replace").lower()
-
-
-def menu(options: list[str], notes: list[str] | None = None, start: int = 0,
-         hint: str = "enter select . ctrl+D back") -> int | None:
-    """The list, walked with the arrows, as the Windows launcher walks it.
-
-    Drawn once and then redrawn over itself from where the drawing ended -
-    the same trick Show-Menu uses, for the same reason.
-
-    A number still picks a row, and so does a row's first letter: in a
-    terminal that swallows the arrows, the page still works.
-    """
-    sel = max(0, min(start, len(options) - 1))
-    a, r = accent(), (RESET if accent() else "")
-    drawn = 0
-    while True:
-        if drawn:
-            print(f"{ESC}[{drawn}A", end="")
-        for i, option in enumerate(options):
-            note = f"   {GREY}{notes[i]}{RESET}" if notes and notes[i] and a else ""
-            body = f"  {'>' if i == sel else ' '} {option}"
-            print(f"{ESC}[2K" + (f"{a}{body}{r}" if i == sel else body) + note)
-        print(f"{ESC}[2K")
-        print(f"{ESC}[2K  {GREY if a else ''}{hint}{r}")
-        drawn = len(options) + 2
-        try:
-            key = read_key()
-        except Exception:                   # a terminal that cannot go raw has
-            return None                     # no menu to offer
-        if key == "up":
-            sel = (sel - 1) % len(options)
-        elif key == "down":
-            sel = (sel + 1) % len(options)
-        elif key == "enter":
-            return sel
-        elif key in ("back", "q"):
-            return None
-        elif key.isdigit() and 1 <= int(key) <= len(options):
-            return int(key) - 1
-        else:
-            for i, option in enumerate(options):
-                if option[:1].lower() == key:
-                    return i
-
-
-def pick(title: str, options: list[str], notes: list[str] | None = None,
-         start: int = 0) -> int | None:
-    """A list to choose from: walked with the arrows where the terminal allows
-    it, numbered where it does not - a pipe, a log, a test."""
-    if not options:
-        return None
-    print()
-    if title:
-        say(f"  {title}", "accent")
-        print()
-    if sys.stdin.isatty() and sys.stdout.isatty():
-        return menu(options, notes, start)
-    for i, option in enumerate(options, 1):
-        note = f"   {GREY}{notes[i - 1]}{RESET}" if notes and notes[i - 1] and accent() else ""
-        print(f"    {i}. {option}{note}")
-    while True:
-        answer = ask("choice", hint="a number, or ctrl+D to go back")
-        if answer is None:
-            return None
-        if answer.isdigit() and 1 <= int(answer) <= len(options):
-            return int(answer) - 1
-        say("    not one of them", "warn")
 
 
 # ── opening a project ─────────────────────────────────────────────────────────
@@ -507,8 +375,9 @@ def talk(entry: dict, env: dict) -> str:
 
 def choices_page(entry: dict) -> None:
     """The decisions that change how a project feels, asked one at a time.
-    Enter keeps what is in brackets, ctrl+D stops. The same five questions as
-    Invoke-ProjectChoices on Windows."""
+    Enter keeps what is in brackets, ctrl+D stops. The same three questions as
+    Invoke-ProjectChoices on Windows - the two that used to be here, whether
+    the agent reasons and how it samples, are the endpoint's now."""
     name = entry["name"]
     print()
     say(f"  choices for '{name}'", "accent")
@@ -518,21 +387,8 @@ def choices_page(entry: dict) -> None:
         return str((by_name(name).get("settings") or {}).get(key, default) or default)
 
     print()
-    print("  agent thinking - does the agent reason before each step?")
-    say("    off  it answers and acts at once: fast, every turn (recommended for a conversation)", "dim")
-    say("    on   it reasons first: better on problems in several steps, many times slower", "dim")
-    shown = "on" if current("AgentThink") in ("on", "1", "true", "yes") else "off"
-    while True:
-        value = ask("agent thinking", shown)
-        if value is None:
-            return
-        if value == shown:
-            break
-        if value.lower() in ("on", "off"):
-            save_setting(name, "AgentThink", value.lower())
-            break
-        say("    on or off", "warn")
-
+    say("  whether the agent reasons, and how it samples, belong to the", "dim")
+    say("  endpoint it talks to - /configure, once, for every project.", "dim")
     print()
     print("  memory thinking - do the memory calls reason before answering?")
     say("    select  recall and segmenting answer at once, writing memory reasons (recommended)", "dim")
@@ -567,30 +423,6 @@ def choices_page(entry: dict) -> None:
         say("    preset or greedy", "warn")
 
     print()
-    print("  sampling - who picks temperature, top_k, top_p, min_p and the penalties?")
-    say("    server   the endpoint decides them all (recommended)", "dim")
-    say("    general  the model's own numbers for conversation and reasoning", "dim")
-    say("    coding   the model's own numbers for writing code: cooler, no penalty", "dim")
-    say("    greedy   temperature 0: the most likely word, every time", "dim")
-    say("    manual   enter the four yourself", "dim")
-    say("    general and coding follow the thinking switch above on their own.", "dim")
-    temperature = current("Temperature")
-    shown = (current("SamplingProfile") or
-             ("server" if temperature == "server"
-              else "greedy" if temperature in ("0", "0.0", "") and not current("TopK")
-              else "manual"))
-    while True:
-        value = ask("sampling", shown)
-        if value is None:
-            return
-        if value == shown and value != "manual":
-            break
-        if value.lower() in ("server", "greedy", "manual", "general", "coding"):
-            set_sampling(name, value.lower())
-            break
-        say("    server, general, coding, greedy or manual", "warn")
-
-    print()
     print("  steps per turn - how many actions the agent may take before it must answer")
     say(f"    {DEFAULT_STEPS} suits a conversation; long tasks on files may need more", "dim")
     shown = current("MaxSteps", DEFAULT_STEPS)
@@ -605,36 +437,6 @@ def choices_page(entry: dict) -> None:
             break
         say("    a number from 1 to 1000", "warn")
     print()
-
-
-def set_sampling(name: str, how: str) -> None:
-    """server: send none of them. general/coding: a named profile, and the four
-    hand-set knobs cleared so nothing of the old answer survives underneath.
-    greedy: temperature 0 and the rest cleared. manual: all four, asked."""
-    if how in ("general", "coding"):
-        for key, value in (("SamplingProfile", how), ("Temperature", ""),
-                           ("TopK", ""), ("TopP", ""), ("MinP", "")):
-            save_setting(name, key, value)
-        say(f"  sampling: the model's own numbers for {how}", "dim")
-        say("  /status says which row of the table is in force", "dim")
-        return
-    save_setting(name, "SamplingProfile", "")     # a profile does not linger
-    if how == "server":
-        for key, value in (("Temperature", "server"), ("TopK", ""), ("TopP", ""), ("MinP", "")):
-            save_setting(name, key, value)
-        say("  sampling: the server's - it decides all four", "dim")
-        return
-    if how == "greedy":
-        for key, value in (("Temperature", "0.0"), ("TopK", ""), ("TopP", ""), ("MinP", "")):
-            save_setting(name, key, value)
-        say("  sampling: greedy - the most likely word, every time", "dim")
-        return
-    for key, question in (("Temperature", "temperature"), ("TopK", "top_k"),
-                          ("TopP", "top_p"), ("MinP", "min_p")):
-        value = ask(question, hint="a number, or empty to leave it to the server")
-        if value is None:
-            return
-        save_setting(name, key, value.strip())
 
 
 def backups_page(entry: dict) -> None:

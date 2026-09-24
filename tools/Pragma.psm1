@@ -653,7 +653,7 @@ function script:New-Project([string]$name, [string]$workspace) {
         # MemoryNoThink select: recall and segmenting are choices from a short
         # list, and on a model that reasons they spent minutes thinking about
         # them. Writing memory keeps its reasoning. /settings changes it.
-        settings    = [pscustomobject]@{ Temperature = "server"; MemoryNoThink = "select"; AgentThink = "off"; MemorySampling = "preset" }
+        settings    = [pscustomobject]@{ MemoryNoThink = "select"; MemorySampling = "preset" }
     }
     Write-Registry ($entries + $entry)
     Write-Host "pragma: registered '$name'" -ForegroundColor Green
@@ -844,65 +844,6 @@ function script:Show-Endpoint($ep) {
 }
 
 
-function script:Set-Sampling($entry, [string]$mode) {
-    # Four parameters, but only three states worth being in, and the fourth
-    # number is not independent of the others: at temperature 0 the decoding is
-    # greedy and top_k, top_p and min_p do nothing whatever they say. Offering
-    # them as a set stops a project sitting in a combination that reads as
-    # deliberate and is inert.
-    # general and coding are not a fourth state of the same four numbers: they
-    # are a named row of the model's own table, carrying the penalties too.
-    # The four hand-set values are cleared so nothing of an old answer survives
-    # underneath, and the profile is cleared by every other mode for the same
-    # reason. tools/pragma_sampling.py shows the table and writes it out.
-    if ($mode -in @('general', 'coding')) {
-        Set-ProjectSetting $entry 'SamplingProfile' $mode | Out-Null
-        foreach ($k in 'Temperature', 'TopK', 'TopP', 'MinP') {
-            Set-ProjectSetting $entry $k '' | Out-Null
-        }
-        Write-Host "  sampling: the model's own numbers for $mode" -ForegroundColor Green
-        Write-Host "  /status says which row of the table is in force" -ForegroundColor DarkGray
-        return
-    }
-    Set-ProjectSetting $entry 'SamplingProfile' '' | Out-Null
-    switch ($mode) {
-        'server' {
-            # Omitted, all four: an absent field is what hands the choice over.
-            Set-ProjectSetting $entry 'Temperature' 'server' | Out-Null
-            foreach ($k in 'TopK', 'TopP', 'MinP') {
-                Set-ProjectSetting $entry $k '' | Out-Null
-            }
-            Write-Host "  sampling: the endpoint decides all four" -ForegroundColor Green
-        }
-        'greedy' {
-            Set-ProjectSetting $entry 'Temperature' '0.0' | Out-Null
-            foreach ($k in 'TopK', 'TopP', 'MinP') {
-                Set-ProjectSetting $entry $k '' | Out-Null
-            }
-            Write-Host "  sampling: greedy - the most likely token, every time" -ForegroundColor Green
-        }
-        'manual' {
-            Write-Host ""
-            Write-Host "  Blank leaves that one to the server." -ForegroundColor DarkGray
-            Write-Host "  ctrl+D goes back; values already entered stay." -ForegroundColor DarkGray
-            foreach ($k in 'Temperature', 'TopK', 'TopP', 'MinP') {
-                $cur = ""
-                if ($entry.settings -and
-                    ($entry.settings.PSObject.Properties.Name -contains $k)) {
-                    $cur = $entry.settings.$k
-                }
-                $shown = if ($cur -ne "") { " [$cur]" } else { " [server]" }
-                $v = Read-Line ("  " + $k.PadRight(12) + $shown + ": ")
-                if ($null -eq $v) { break }
-                # Enter keeps what is there; "-" is how you clear one, since an
-                # empty answer cannot mean both "keep" and "clear".
-                if ($v -eq '-') { Set-ProjectSetting $entry $k '' | Out-Null }
-                elseif ($v -ne '') { Set-ProjectSetting $entry $k $v | Out-Null }
-            }
-        }
-    }
-}
-
 function script:Get-ProjectValue($entry, [string]$key) {
     if ($entry.settings -and ($entry.settings.PSObject.Properties.Name -contains $key)) {
         return "$($entry.settings.$key)"
@@ -919,25 +860,11 @@ function script:Invoke-ProjectChoices($entry) {
     Write-Accent "  choices for '$($entry.name)'"
     Write-Host "  enter keeps the value in brackets . ctrl+D stops" -ForegroundColor DarkGray
 
-    # 1. Whether the agent reasons before each step. Asked for explicitly on
-    # every call, so the answer means the same whatever the server's default.
-    $cur = Get-ProjectValue $entry 'AgentThink'
-    $shown = if ($cur -in @('on', 'true', '1', 'yes')) { 'on' } else { 'off' }
+    # What the model IS, and how it samples, are the endpoint's: one server,
+    # one model, one answer for every project that talks to it. /configure.
     Write-Host ""
-    Write-Host "  agent thinking - does the agent reason before each step?"
-    Write-Host "    off  it answers and acts at once: fast, every turn (recommended for a conversation)" -ForegroundColor DarkGray
-    Write-Host "    on   it reasons first: better on problems in several steps, many times slower" -ForegroundColor DarkGray
-    while ($true) {
-        $v = Read-Line "  agent thinking [$shown]: "
-        if ($null -eq $v) { return }
-        $v = $v.Trim().ToLowerInvariant()
-        if (-not $v -or $v -eq $shown) { break }
-        if ($v -in @('on', 'off')) {
-            Set-ProjectSetting $entry 'AgentThink' $v | Out-Null
-            break
-        }
-        Write-Host "    on or off" -ForegroundColor Yellow
-    }
+    Write-Host "  whether the agent reasons, and how it samples, belong to the" -ForegroundColor DarkGray
+    Write-Host "  endpoint it talks to - /configure, once, for every project." -ForegroundColor DarkGray
 
     # 2. Whether the memory calls reason before they answer.
     $cur = Get-ProjectValue $entry 'MemoryNoThink'
@@ -978,31 +905,7 @@ function script:Invoke-ProjectChoices($entry) {
         Write-Host "    preset or greedy" -ForegroundColor Yellow
     }
 
-    # 4. Sampling, as the settings menu has always offered it.
-    $t = Get-ProjectValue $entry 'Temperature'
-    $profile = Get-ProjectValue $entry 'SamplingProfile'
-    $shown = if ($profile) { $profile }
-             elseif ($t -eq 'server' -or $t -eq '') { if ($t) { 'server' } else { 'greedy' } }
-             elseif ($t -in @('0', '0.0') -and -not (Get-ProjectValue $entry 'TopK')) { 'greedy' }
-             else { 'manual' }
-    Write-Host ""
-    Write-Host "  sampling - who picks temperature, top_k, top_p, min_p and the penalties?"
-    Write-Host "    server   the endpoint decides them all (recommended)" -ForegroundColor DarkGray
-    Write-Host "    general  the model's own numbers for conversation and reasoning" -ForegroundColor DarkGray
-    Write-Host "    coding   the model's own numbers for writing code: cooler, no penalty" -ForegroundColor DarkGray
-    Write-Host "    greedy   temperature 0: the most likely word, every time" -ForegroundColor DarkGray
-    Write-Host "    manual   enter the four yourself" -ForegroundColor DarkGray
-    Write-Host "    general and coding follow the thinking switch above on their own." -ForegroundColor DarkGray
-    while ($true) {
-        $v = Read-Line "  sampling [$shown]: "
-        if ($null -eq $v) { return }
-        $v = $v.Trim().ToLowerInvariant()
-        if (-not $v -or ($v -eq $shown -and $v -ne 'manual')) { break }
-        if ($v -in @('server', 'greedy', 'manual', 'general', 'coding')) { Set-Sampling $entry $v; break }
-        Write-Host "    server, general, coding, greedy or manual" -ForegroundColor Yellow
-    }
-
-    # 5. How far one turn may go before the agent has to answer.
+    # 4. How far one turn may go before the agent has to answer.
     $cur = Get-ProjectValue $entry 'MaxSteps'
     $shown = if ($cur) { $cur } else { '50' }
     Write-Host ""
