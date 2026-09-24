@@ -499,6 +499,75 @@ def recommendations(page: str, budget: int = 9000) -> str:
     return "\n\n[...]\n\n".join(body for _, body in kept)
 
 
+_MODE_WORDS = re.compile(r"(?i)non[- ]?thinking|instruct|thinking|reasoning")
+_CODING_WORDS = re.compile(r"(?i)cod(e|ing)|webdev|web dev|programm|software")
+_SPELLING = {"temp": "temperature", "repetition_penalty": "repeat_penalty"}
+
+
+def _knobs_in(line: str) -> dict:
+    """Every `name=number` on one line, under the names Pragma sends."""
+    out = {}
+    for m in _ASSIGNMENT.finditer(line):
+        name = _SPELLING.get(m.group(1).lower(), m.group(1).lower())
+        if name not in endpoints.KNOBS:
+            continue
+        try:
+            value = float(m.group(0).rsplit("=", 1)[-1].rsplit(":", 1)[-1].strip())
+        except ValueError:
+            continue
+        if name == "repeat_penalty" and value == 1.0:
+            continue                    # 1.0 IS no penalty; sending it says nothing
+        out[name] = value
+    return out
+
+
+def read_rows(text: str) -> dict:
+    """The four rows, read off the page by this program rather than by a model.
+
+    Cards are conventional about this, and the convention is machine-readable:
+
+        - **Thinking mode for general tasks**:
+          `temperature=1.0`, `top_p=0.95`, `top_k=20`, `presence_penalty=1.5`
+        - **Instruct (or non-thinking) mode**:
+          `temperature=0.7`, `top_p=0.80`, `top_k=20`, `presence_penalty=1.5`
+
+    A label that names a mode, and the numbers beside it or on the next line.
+    So they are taken directly. The model is the FALLBACK now, for cards that
+    do not write it this way - which is the right way round: reading a table
+    is not a job that needs judgement, and the one time it was given to a
+    model it reported itself as instruct (it had just been told not to think)
+    and filled only half the table.
+
+    First match wins for a given row: a card that gives "instruct mode for
+    general tasks" and later "instruct mode for reasoning tasks" means the
+    first by that name, and the second is a case this shape has no box for.
+    """
+    rows: dict = {}
+    lines = [ln for ln in (text or "").splitlines()]
+    for i, line in enumerate(lines):
+        knobs = _knobs_in(line)
+        if len(knobs) < 2:
+            continue                    # one stray number is not a recommendation
+        # The label is on this line, or on the nearest non-empty one above it:
+        # cards routinely put the name on one line and the numbers under it.
+        label = line
+        if not _MODE_WORDS.search(label):
+            for back in range(i - 1, max(-1, i - 3), -1):
+                if lines[back].strip():
+                    label = lines[back]
+                    break
+        low = label.lower()
+        if re.search(r"(?i)non[- ]?thinking|instruct", low):
+            mode = "instruct"
+        elif "thinking" in low:
+            mode = "thinking"
+        else:
+            continue                    # a set of numbers belonging to nothing named
+        task = "coding" if _CODING_WORDS.search(low) else "general"
+        rows.setdefault(mode, {}).setdefault(task, knobs)
+    return rows
+
+
 def card(alias: str) -> tuple[str, str]:
     """(where it was read, the part of it that talks about sampling)."""
     for repo in repositories(alias):
@@ -525,7 +594,8 @@ Answer with one JSON object and nothing else:
  "thinking": {"general": {}, "coding": {}},
  "instruct": {"general": {}, "coding": {}}}
 
-"kind" is what this model is: does it reason before answering, or answer at once?
+"kind" is what the CARD says, not what you feel like right now: "thinking" if it
+describes a thinking or reasoning mode for this model, "instruct" if it does not.
 Each inner object may set only these, all numbers:
   temperature, top_p, top_k, min_p, presence_penalty, repeat_penalty
 
@@ -578,27 +648,12 @@ def complete(table: dict) -> dict:
     return out
 
 
-def ask_the_model(ep, entry: dict, name: str = "") -> bool:
-    """Let the endpoint read its own card and propose the four rows."""
-    step(f"endpoints > tune > {name} > sampling > ask it" if name else "sampling > ask it")
-    print()
-    with waiting("asking the server what it is serving"):
-        alias = served_alias(ep)
-    if not alias:
-        say("  The server does not say which repository it was started from.", "warn")
-        print("  " + grey("llama.cpp reports it in /props as model_alias; a model"))
-        print("  " + grey("started from a plain file path has no name left to look up."))
-        ask("", hint="enter to go back")
-        return False
-    say(f"  {alias}", "dim")
-    with waiting("finding and reading its page on HuggingFace"):
-        where, text = card(alias)
-    if not text:
-        say("  That page could not be read - no network, or it is not public.", "warn")
-        ask("", hint="enter to go back")
-        return False
-    say(f"  {where}", "dim")
-    say(f"  the sampling part of it is {len(text)} characters", "dim")
+def _model_reads(ep, alias: str, text: str, where: str):
+    """The fallback: hand the page to the model and read its answer.
+
+    Returns (table, kind, True), or (None, "", False) when it could not be
+    used - in which case the reason has already been printed.
+    """
     prompt = ASK_THE_MODEL.replace("{alias}", alias).replace("{card}", text)
     payload = {
         "model": ep.model or "",
@@ -636,7 +691,7 @@ def ask_the_model(ep, entry: dict, name: str = "") -> bool:
     except Exception as e:
         say(f"  The endpoint did not answer: {e}", "warn")
         ask("", hint="enter to go back")
-        return False
+        return None, "", False
     said = (reply.get("content") or "").strip()
     reasoned = (reply.get("reasoning_content") or "").strip()
     if not said and reasoned:
@@ -683,21 +738,67 @@ def ask_the_model(ep, entry: dict, name: str = "") -> bool:
             say("  It answered, but not with numbers this page can use:", "warn")
             print("    " + grey(" ".join(said.split())[:300]))
         ask("", hint="enter to go back")
-        return False
+        return None, "", False
+    return table, kind, True
+
+
+def ask_the_model(ep, entry: dict, name: str = "") -> bool:
+    """Let the endpoint read its own card and propose the four rows."""
     step(f"endpoints > tune > {name} > sampling > ask it" if name else "sampling > ask it")
     print()
-    say("  What it read off the card:", "accent")
+    with waiting("asking the server what it is serving"):
+        alias = served_alias(ep)
+    if not alias:
+        say("  The server does not say which repository it was started from.", "warn")
+        print("  " + grey("llama.cpp reports it in /props as model_alias; a model"))
+        print("  " + grey("started from a plain file path has no name left to look up."))
+        ask("", hint="enter to go back")
+        return False
+    say(f"  {alias}", "dim")
+    with waiting("finding and reading its page on HuggingFace"):
+        where, text = card(alias)
+    if not text:
+        say("  That page could not be read - no network, or it is not public.", "warn")
+        ask("", hint="enter to go back")
+        return False
+    say(f"  {where}", "dim")
+    say(f"  the sampling part of it is {len(text)} characters", "dim")
+
+    # READ IT HERE FIRST. Cards are conventional about this table, and the
+    # convention is machine-readable - so a model is not needed to copy it,
+    # and the one time it was asked to, it reported itself as instruct (it
+    # had just been told not to think) and filled half the rows. The model is
+    # the fallback, for a card that does not follow the convention.
+    table = complete(read_rows(text))
+    kind = "thinking" if table.get("thinking") else ("instruct" if table else "")
+    by_model = False
+    if not table:
+        table, kind, by_model = _model_reads(ep, alias, text, where)
+        if table is None:
+            return False
+
+    step(f"endpoints > tune > {name} > sampling > ask it" if name else "sampling > ask it")
+    print()
+    # WHICH ROUTE produced these. The two are not equally trustworthy and the
+    # page must not pretend they are: one copied a table, the other quoted a
+    # page from memory.
+    say("  The model read this off its card:" if by_model
+        else "  Read off its card:", "accent")
     print()
     if kind:
-        print(f"    it says it is {kind}")
+        print(f"    a {kind} model")
     for half in endpoints.KINDS:
         for work in endpoints.FLAVOURS:
             sent = knob_text((table.get(half) or {}).get(work) or {})
             print(f"    {half} . {work:<8} " + (sent or grey("nothing")))
     print()
-    print("  " + grey("How well this goes depends on the model doing the reading:"))
-    print("  " + grey("it is quoting a page back at you, and a small one can quote"))
-    print("  " + grey("the wrong line. That is why you see the numbers first."))
+    if by_model:
+        print("  " + grey("The page does not follow the usual layout, so the model read"))
+        print("  " + grey("it instead - it is quoting from memory, and a small one can"))
+        print("  " + grey("quote the wrong line. That is why you see the numbers first."))
+    else:
+        print("  " + grey("Taken straight from the page - no model was asked. Check them"))
+        print("  " + grey("anyway: what a card recommends is not always what you want."))
     if not confirm("Write these numbers?", "yes, write them", "no, leave it alone"):
         return False
     if kind:
