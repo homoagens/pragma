@@ -80,6 +80,28 @@ def accent_hex() -> str:
     return "#{:02x}{:02x}{:02x}".format(*(int(p) for p in parts))
 
 
+# An escape sequence, and what is left of the C0 controls once newline and tab
+# are spared. Tool output is not text written for this screen: it is whatever a
+# program printed, and a program that DRAWS - curses, a progress bar, anything
+# that repaints - writes instructions rather than characters.
+_ESCAPE = re.compile(r"\x1b\[[0-9;?]*[ -/]*[@-~]"          # CSI: colours, cursor, erase
+                     r"|\x1b[\]P^_].*?(?:\x07|\x1b\\)"      # OSC and friends, to their end
+                     r"|\x1b[@-Z\\-_]", re.DOTALL)          # the short two-character ones
+_CONTROLS = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")
+
+
+def tame(text: str) -> str:
+    """Tool output with its terminal instructions taken out.
+
+    A curses program's output is mostly escape sequences, and printing them
+    hands the terminal to whatever the agent just ran: a tetris under test
+    cleared the screen and redrew the session from the top, which looked like
+    Pragma restarting itself. What a tool produced is EVIDENCE - it is read,
+    not obeyed.
+    """
+    return _CONTROLS.sub("", _ESCAPE.sub("", text or ""))
+
+
 def fold(content: str, width: int, verbose: bool = False) -> list[str]:
     """A tool's output as the lines worth a glance.
 
@@ -88,7 +110,7 @@ def fold(content: str, width: int, verbose: bool = False) -> list[str]:
     everything, within reason. Every line is clipped to the width, since a
     minified file on one line is still one line.
     """
-    text = content if isinstance(content, str) else str(content)
+    text = tame(content if isinstance(content, str) else str(content))
     lines = text.splitlines() or [""]
     error = text.lstrip().upper().startswith("ERROR")
     limit = 400 if verbose else (12 if error else 4)
