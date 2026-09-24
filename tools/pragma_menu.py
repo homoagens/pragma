@@ -18,8 +18,11 @@ a log, a test), so nothing here needs a terminal to be exercised.
 
 from __future__ import annotations
 
+import contextlib
 import os
 import sys
+import threading
+import time
 
 ESC = "\033"
 GREY, RESET = ESC + "[38;5;242m", ESC + "[0m"
@@ -96,6 +99,57 @@ def title(name: str, crumbs: str = "") -> None:
     print()
     print(f"  {a}{name}{r}" + (f"  {GREY}{crumbs}{r}" if crumbs and a else
                                (f"  {crumbs}" if crumbs else "")))
+
+
+_SPIN_FANCY = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"
+_SPIN_PLAIN = "|/-\\"
+
+
+@contextlib.contextmanager
+def waiting(message: str):
+    """A line that moves while something slow happens, and the seconds with it.
+
+    A local model asked to read a page can sit for a minute, and a terminal
+    that shows nothing in that minute is indistinguishable from one that has
+    hung - which is the moment people press ctrl+C on work that was about to
+    finish. The elapsed count is the part that actually answers the question:
+    a spinner says "alive", a number says "forty seconds so far, this is
+    normal" or "four minutes, something is wrong".
+
+    The line is erased on the way out, so whatever the caller prints next
+    lands where the spinner was.
+    """
+    if not sys.stdout.isatty():
+        print(f"  {message}...")
+        yield
+        return
+    frames = _SPIN_FANCY
+    try:
+        frames.encode(sys.stdout.encoding or "ascii")
+    except Exception:
+        frames = _SPIN_PLAIN          # a console that cannot draw braille
+    stop = threading.Event()
+    a, r = accent(), (RESET if accent() else "")
+
+    def spin():
+        started = time.time()
+        i = 0
+        while not stop.is_set():
+            seconds = int(time.time() - started)
+            clock = f"{seconds}s" if seconds < 60 else f"{seconds // 60}m {seconds % 60}s"
+            print(f"\r{ESC}[2K  {a}{frames[i % len(frames)]}{r} {message}  "
+                  f"{GREY}{clock}{r}", end="", flush=True)
+            i += 1
+            stop.wait(0.09)
+
+    thread = threading.Thread(target=spin, daemon=True)
+    thread.start()
+    try:
+        yield
+    finally:
+        stop.set()
+        thread.join(timeout=1)
+        print(f"\r{ESC}[2K", end="", flush=True)
 
 
 def ask(question: str, default: str = "", hint: str = "") -> str | None:
