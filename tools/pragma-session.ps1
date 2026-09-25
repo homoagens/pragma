@@ -80,8 +80,11 @@ Set-SessionEnv "SKILL_MAX_TOKENS"  (Cfg "SkillMaxTokens" "")
 Set-SessionEnv "MEMORY_MAX_TOKENS" (Cfg "MemoryMaxTokens" "")
 # Who reasons is not here. It is the endpoint's - written beside its address
 # by /configure, because one server runs one model and that model either
-# reasons or does not - and it governs the agent's steps and the six memory
-# faculties alike. AGENT_THINK still overrides it for a single run.
+# reasons or does not - and /configure says it role by role: the steps, the
+# recall, the memory. AGENT_THINK still overrides it for a single run.
+# Three things you might ask next, offered under the empty prompt. Off unless
+# the project asked: one more call per turn on the server everything queues on.
+Set-SessionEnv "SUGGEST_NEXT"      (Cfg "Prediction"     "")
 Set-SessionEnv "LLM_TIMEOUT"       (Cfg "Timeout"        "")
 # How wide the deterministic prefilter casts its net before the curator judges.
 # The right width depends on the store: ten candidates out of thirty is a very

@@ -632,6 +632,18 @@ def memory_call(kind="write") -> dict:
             "sampling": knobs}
 
 
+# WHAT YOU MIGHT ASK NEXT, offered under the empty prompt. One short call on
+# the `recall` role after each answer - see core/suggest.py for why it is a
+# faculty and not a second model kept running beside the big one.
+#
+# OFF unless asked for, and asked for per project. It is an extra call on
+# every turn, on a local model shared with everything else: a machine with one
+# slot pays for it in the queue, behind the consolidation. Nobody should
+# inherit that for a convenience they did not ask for.
+SUGGEST_NEXT = os.environ.get("SUGGEST_NEXT", "").strip().lower() in (
+    "on", "1", "true", "yes")
+
+
 # write_file emits a soft warning in the observation when content exceeds
 # this many bytes — the agent learns to prefer incremental edits.
 WRITE_FILE_SOFT_LIMIT = int(os.environ.get("WRITE_FILE_SOFT_LIMIT", "8000"))

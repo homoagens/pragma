@@ -910,6 +910,26 @@ function script:Invoke-ProjectChoices($entry) {
         Write-Host "    a number from 1 to 1000" -ForegroundColor Yellow
     }
     Write-Host ""
+
+    # 3. What you might ask next, under the empty prompt. Off by default and
+    # asked last: it is a convenience, and it is one more call per turn on the
+    # same server everything else queues on.
+    $cur = Get-ProjectValue $entry 'Prediction'
+    $shown = if ("$cur".ToLower() -in @('on', '1', 'true', 'yes')) { 'on' } else { 'off' }
+    Write-Host "  prediction - three things you might ask next, offered under the prompt"
+    Write-Host "    one short call after each answer, on the recall endpoint" -ForegroundColor DarkGray
+    while ($true) {
+        $v = Read-Line "  prediction [$shown]: "
+        if ($null -eq $v) { return }
+        $v = $v.Trim().ToLower()
+        if (-not $v -or $v -eq $shown) { break }
+        if ($v -in @('on', 'off')) {
+            Set-ProjectSetting $entry 'Prediction' $v | Out-Null
+            break
+        }
+        Write-Host "    on or off" -ForegroundColor Yellow
+    }
+    Write-Host ""
 }
 
 function script:Invoke-SettingsMenu($entry) {

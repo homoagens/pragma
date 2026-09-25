@@ -68,6 +68,7 @@ ENV_OF = {
     "CuratorLearnings": "CURATOR_CANDIDATES_LEARNINGS",
     "CuratorFragments": "CURATOR_MAX_FRAGMENTS",
     "Temperature": "DEFAULT_TEMPERATURE", "TopK": "TOP_K", "TopP": "TOP_P", "MinP": "MIN_P",
+    "Prediction": "SUGGEST_NEXT",
 }
 NEW_PROJECT_SETTINGS: dict[str, str] = {}
 
@@ -363,6 +364,25 @@ def choices_page(entry: dict) -> None:
             save_setting(name, "MaxSteps", value)
             break
         say("    a number from 1 to 1000", "warn")
+    print()
+
+    # What you might ask next, under the empty prompt. Off by default and
+    # asked last, because it is a convenience and it is not free: one more
+    # call per turn on the same server everything else queues on.
+    print("  prediction - three things you might ask next, offered under the prompt")
+    say("    one short call after each answer, on the recall endpoint", "dim")
+    shown = "on" if current("Prediction", "").lower() in ("on", "1", "true", "yes") else "off"
+    while True:
+        value = ask("prediction", shown)
+        if value is None:
+            return
+        value = value.strip().lower()
+        if value == shown:
+            break
+        if value in ("on", "off"):
+            save_setting(name, "Prediction", value)
+            break
+        say("    on or off", "warn")
     print()
 
 

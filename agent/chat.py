@@ -50,6 +50,7 @@ import json
 import os
 import subprocess
 import sys
+import threading
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -177,17 +178,34 @@ def _ask_launcher(action: str) -> bool:
         return False
 
 
+# WHAT YOU MIGHT ASK NEXT, filled in by the suggester after each answer and
+# read by the completer on the next empty line. A list, replaced whole: a turn
+# that produced nothing leaves nothing behind, so a stale suggestion from two
+# turns ago is never offered as though it were about this one.
+_NEXT: list[str] = []
+
+
 class _SlashCompleter:
     """Offers the commands, narrowed by what has been typed after the slash.
 
     Only on a line that STARTS with a slash: a message that happens to contain
     one is prose, and a menu popping up mid-sentence would be worse than no
     menu at all.
+
+    On an EMPTY line it offers what you might ask next, when the project asked
+    for that. Empty and nowhere else: a suggestion appearing over a sentence
+    being written is an interruption, and the whole point of this one is that
+    it costs nothing to ignore.
     """
 
     def get_completions(self, document, complete_event):
         from prompt_toolkit.completion import Completion
         text = document.text_before_cursor
+        if not text:
+            for q in _NEXT:
+                yield Completion(q, start_position=0, display=q,
+                                 display_meta="you might ask")
+            return
         if not text.startswith("/"):
             return
         allowed = _allowed()
@@ -299,8 +317,46 @@ def _accent() -> str:
 
 
 def _hint() -> str:
-    """What the empty line offers: say something, or step back out."""
+    """What the empty line offers: say something, or step back out.
+
+    The suggestions are announced only when there are some. An offer of tab
+    that yields nothing teaches the person that tab yields nothing, which is
+    the opposite of what it is for.
+    """
+    if _NEXT:
+        return "tab for what you might ask next  ·  or say something  ·  /help"
     return "say something, or /help  ·  ctrl+D closes the project"
+
+
+def _suggest_later(asked: str, answered: str) -> None:
+    """Guess the next question, off the critical path. Never raises.
+
+    Started as soon as the answer is on the screen and BEFORE the memory
+    faculties: a server with one slot serves one call at a time, and behind a
+    consolidation this would arrive long after the line was already typed.
+
+    The thread is a daemon and nothing waits on it. If it is slow the prompt
+    is simply drawn without suggestions; if it finishes first they are there.
+    """
+    _NEXT.clear()
+    try:
+        import suggest
+        if not suggest.enabled():
+            return
+    except Exception:
+        return
+
+    def work():
+        try:
+            got = suggest.next_questions(asked, answered)
+        except Exception:
+            return
+        _NEXT[:] = got
+
+    try:
+        threading.Thread(target=work, daemon=True).start()
+    except Exception:
+        pass
 
 
 def _ask(session):
@@ -485,6 +541,11 @@ def _status_lines() -> list[tuple[str, str]]:
     out.append(("actions", line))
     out.append(("", ""))
     out.append(("steps", f"{_STATE.get('max_steps') or getattr(cfg, 'MAX_STEPS', 0)} per turn"))
+    # Only when it is on. A line saying a thing is off, on a page read to find
+    # out what IS on, is a line to skip past every time.
+    if getattr(cfg, "SUGGEST_NEXT", False):
+        out.append(("prediction", "three things you might ask next, under the"
+                                  " prompt  (one recall call per turn)"))
     # One switch per role: the endpoint says whether the model it runs can
     # reason, and which of the three roles is asked to. Named here rather than
     # summarised, because "thinking is on" stopped being a whole answer the
@@ -1335,6 +1396,11 @@ If the turn needed no tools at all, the conclusion is simply your reply.
 
             renderer.conclusion(result.get("forced", False),
                                 _time.monotonic() - _t_turn, conclusion)
+
+            # What you might ask next, started here - after the answer is on
+            # the screen and before the consolidation below, which on a
+            # one-slot server would otherwise be queued in front of it.
+            _suggest_later(text, conclusion)
 
             # Compaction happens BETWEEN turns, never inside one: a turn that
             # is still running has no finished experience to consolidate, and
