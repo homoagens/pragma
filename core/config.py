@@ -536,11 +536,34 @@ def agent_template_kwargs():
 MEMORY_SEED = int(os.environ.get("MEMORY_SEED", "") or 42)
 
 # A reasoning that goes on and on without an answer starting is stopped at
-# this many characters and the call asked again without thinking. The loop
-# guard only sees a paragraph repeated word for word; a model circling in new
-# words each time never trips it. About 4 000 tokens: a healthy consolidation
-# on montecucco reasoned 1 000 to 1 700. 0 = no cap.
-MEMORY_THINK_BUDGET = int(os.environ.get("MEMORY_THINK_BUDGET", "") or 16000)
+# this many characters and the call asked again without thinking. 0 = no cap.
+#
+# WHAT THIS CAP IS FOR, now that there are two watchdogs and not one. The loop
+# guard catches a paragraph repeated word for word - the pathology. This one
+# is not about pathology at all: it is there so the reasoning does not eat the
+# whole completion budget and leave the JSON truncated, which reads as a
+# faculty that found nothing. So it belongs at "no room left to answer in",
+# not at a number picked for how long feels long.
+#
+# It used to be 16 000 characters - about 4 000 tokens, a quarter of the
+# completion budget - chosen when a healthy consolidation reasoned 1 000 to
+# 1 700 tokens, and when the memory faculties did not reason at all by
+# default. They do now, and the abstractor weighs several episodes against the
+# beliefs already in the store; six minutes of visible, progressing reasoning
+# was being cut off and reported as going in circles.
+#
+# Derived instead: everything the server will let the answer use, minus room
+# for the answer itself. A memory answer is a few hundred tokens of JSON;
+# 2 000 is generous. At four characters a token that is the rest of the budget
+# and nothing more, so the cap still does its one job.
+#
+# The cost of the change is honest and worth knowing: a call that reasons all
+# the way to this cap now takes minutes rather than a minute and a half. What
+# has NOT changed is the pathological case - a model repeating itself is
+# caught by the loop guard within a few hundred characters, as it always was.
+_ANSWER_ROOM = 2000              # tokens kept back for the JSON itself
+_THINK_DEFAULT = max(8000, (MEMORY_MAX_TOKENS - _ANSWER_ROOM) * 4)
+MEMORY_THINK_BUDGET = int(os.environ.get("MEMORY_THINK_BUDGET", "") or _THINK_DEFAULT)
 
 
 def current_role() -> str:
