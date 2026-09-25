@@ -1236,10 +1236,15 @@ def call_llm(messages, model=None, temperature=None, max_tokens=None, timeout=No
         raise last
 
     # A REASONING THAT GOES IN CIRCLES is stopped by the guard and the same
-    # call is asked again without thinking - where a greedy decode has nothing
-    # to loop on - so the faculty still gets its answer. Said to the hook (the
-    # job log, the conversation) or on the console, never silently: an episode
-    # written without the thinking it was meant to have is worth knowing about.
+    # call is asked again without thinking, so the faculty still gets its
+    # answer. Said to the hook (the job log, the conversation) or on the
+    # console, never silently: an episode written without the thinking it was
+    # meant to have is worth knowing about, and the store records it too.
+    #
+    # The retry samples the way this endpoint samples with thinking off - its
+    # `instruct` row - and keeps the seed. It used to be hardcoded greedy,
+    # which was the one greedy decode left in the harness and the opposite of
+    # what the model's authors recommend for a model answering at once.
     global LAST_CALL
     LAST_CALL = {}
     asked = bool(template_kwargs) and any(v is True for v in template_kwargs.values())
@@ -1261,8 +1266,16 @@ def call_llm(messages, model=None, temperature=None, max_tokens=None, timeout=No
         else:
             _console.print(f"[yellow]{who}: the reasoning went in circles - "
                            f"asked again without thinking.[/yellow]")
-        # Without thinking there is nothing to loop on, and greedy is safe.
-        looped, asked, temperature, sampling = True, False, 0.0, None
+        knobs = {}
+        try:
+            knobs = dict(config.no_think_knobs(endpoints.role_of(who)))
+        except Exception:
+            pass
+        seed = (sampling or {}).get("seed")
+        if seed is not None:
+            knobs["seed"] = seed
+        temperature = knobs.pop("temperature", None)
+        looped, asked, sampling = True, False, (knobs or None)
         text, finish = _answer({k: False for k in template_kwargs}, temperature, sampling)
     # How this answer was written, for the records that keep it: the episode
     # and the belief say it, so a store written under different regimes can

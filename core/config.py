@@ -592,6 +592,24 @@ def role_knobs(role: str = "") -> dict:
         return {}
 
 
+def no_think_knobs(role: str = "") -> dict:
+    """The row this endpoint would use for `role` with thinking OFF.
+
+    What a retry after a reasoning loop should sample with. Not greedy: the
+    rule everywhere else is that a call which does not reason reads the
+    `instruct` half, because that is what the card publishes for a model
+    answering at once, and an endpoint with no table still sends nothing.
+    """
+    entry = _entry_for(role or current_role())
+    if not entry.get("sampling"):
+        return {}
+    try:
+        import endpoints
+        return endpoints.sampling_row(entry, "instruct", "general")
+    except Exception:
+        return {}
+
+
 def memory_call(kind="write") -> dict:
     """How a memory call thinks and picks its words.
 
