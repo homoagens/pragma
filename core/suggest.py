@@ -36,18 +36,35 @@ import config
 import llm_client
 from json_parser import extract_json
 
-_SYSTEM = """You read the last exchange of a conversation and write the ONE
-thing the person is most likely to say next.
+_SYSTEM = """You read the last exchange of a conversation between a person and
+an assistant, and you write the ONE line the PERSON is most likely to type
+next.
+
+YOU ARE WRITING AS THE PERSON, NOT AS THE ASSISTANT. What you write goes
+straight into their input box, so it has to be in their voice: they say "I"
+and "me", and they call the assistant "you". An offer of help is always
+wrong - that is the assistant's line, not theirs.
+
+    wrong: How can I help you today?
+    right: What can you do for me?
+    wrong: Let me know if you want me to try the other model.
+    right: Try it with the other model
 
 Rules:
-- Write it as they would type it: a question or a request, not a topic.
+- Write it as they would type it: a question or an instruction, not a topic,
+  and not a sentence about them.
+- It must ASK FOR something or TELL the assistant to do something. "Thanks,
+  I will look" and "ok, got it" are things people type and are useless as
+  suggestions: nothing happens when they are sent.
+- Build it out of what is in front of you. The likeliest next line names
+  something the answer just mentioned - a file, a command, a number, a choice
+  offered - and asks for the next step on it.
 - Write it in the language the person is using, whatever it is.
 - Keep it short: one line, no more than about twelve words.
-- Follow the thread that is actually open. The likeliest next line is usually
-  the obvious next step of what was just done, not a new subject.
-- If the exchange does not point anywhere in particular, answer with an empty
-  string. A wrong guess costs more than no guess: it sits in the input box
-  where the person is about to type.
+- If the exchange gives you nothing to build on - a greeting, a goodbye, an
+  answer that closed the subject - answer with an empty string. A wrong guess
+  costs more than no guess: it sits in the input box where the person is
+  about to type, and they have to delete it.
 
 Answer as JSON: {"question": "..."}"""
 
@@ -98,8 +115,15 @@ def next_question(asked: str, answered: str, model=None) -> str:
     asked, answered = (asked or "").strip(), (answered or "").strip()
     if not asked or not answered:
         return ""
-    payload = (f"THEY ASKED:\n{asked[:ASKED_CHARS]}\n\n"
-               f"PRAGMA ANSWERED:\n{answered[:ANSWERED_CHARS]}")
+    # The instruction is repeated at the END, where it is nearest the answer:
+    # a model that read "write as the person" at the top of a system prompt
+    # and then a whole exchange can arrive at the reply having slipped back
+    # into the voice it usually speaks in. Measured the hard way - it offered
+    # "How can I help you today?".
+    payload = (f"THE PERSON SAID:\n{asked[:ASKED_CHARS]}\n\n"
+               f"THE ASSISTANT ANSWERED:\n{answered[:ANSWERED_CHARS]}\n\n"
+               f"Now write the next line THE PERSON types. Their voice, not "
+               f"the assistant's.")
     try:
         with llm_client.faculty("SUGGESTER"):
             raw = llm_client.call_llm(
