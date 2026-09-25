@@ -135,6 +135,15 @@ def knob_text(knobs: dict) -> str:
     return ", ".join(f"{k} {knobs[k]:g}" for k in order)
 
 
+def config_base_url() -> str:
+    """The address someone actually set, or "" when nothing did."""
+    try:
+        import config
+        return str(config.LLM_BASE_URL or "").strip()
+    except Exception:
+        return ""
+
+
 def nature(entry: dict) -> str:
     """One line: what this endpoint is, what it is for, what it sends."""
     kind, work = entry.get("kind"), entry.get("work")
@@ -182,7 +191,17 @@ def show(state: dict, crumbs: str = "") -> None:
         p = endpoints.probe(env)
         print()
         print("  " + grey("An endpoint is a server Pragma can talk to, under a name"))
-        print("  " + grey("you choose. Until you add one, it uses the one in .env:"))
+        print("  " + grey("you choose. There are none yet, so `add` is the way in."))
+        print()
+        # WHERE THAT ADDRESS COMES FROM, said exactly. It used to say "the one
+        # in .env" in both cases, which on a machine with no .env named a file
+        # that is not there and made a built-in fallback look like a setting
+        # somebody had written.
+        if config_base_url():
+            print("  " + grey("Meanwhile it talks to the address in .env:"))
+        else:
+            print("  " + grey("Meanwhile it tries llama.cpp's own default port,"))
+            print("  " + grey("which is a guess, not a setting:"))
         print()
         print(f"    {env.base_url}  {ok_bad(p.get('up'))}{endpoints.status_text(p)}{off()}")
         return
