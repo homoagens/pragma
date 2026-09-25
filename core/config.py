@@ -195,9 +195,15 @@ SUMMARY_TEMPERATURE = float(os.environ.get("SUMMARY_TEMPERATURE", "0.2"))
 # endpoints.KNOBS is that translated list, and nothing outside it is written.
 #
 # server : send none of them, whatever the endpoint says
-# greedy : temperature 0, nothing else - the paper's runs
 # manual : DEFAULT_TEMPERATURE / TOP_K / TOP_P / MIN_P, set one by one
 # general | coding : that row of the endpoint's own table
+#
+# There was a `greedy` here - "temperature 0, nothing else", the paper's runs.
+# It stopped doing that when the temperature default became "server": the name
+# answered "no table", and the 0 it promised never travelled. A name that
+# quietly means something else is worse than no name, and the frozen corpus
+# is reproducible from its tagged commit, which is where a retired regime
+# belongs. To decode greedily now, say so: DEFAULT_TEMPERATURE=0.0.
 SAMPLING_PROFILE = os.environ.get("SAMPLING_PROFILE", "").strip().lower()
 
 
@@ -272,7 +278,7 @@ def agent_profile() -> tuple[str, dict]:
     The name is the two words and whose table they came from, because that is
     what a status line has to be able to say: `thinking . coding (montecucco)`.
     """
-    if SAMPLING_PROFILE in ("server", "greedy", "manual"):
+    if SAMPLING_PROFILE in ("server", "manual"):
         return "", {}
     entry = _agent_entry()
     if not entry.get("sampling"):

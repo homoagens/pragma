@@ -118,14 +118,18 @@ one.
 *learns*; that file is what you *decide*, and a rule written there always
 applies, on every task, without competing with anything the agent remembers.
 
+**What the endpoint decides** is what the model is, and it is set once for the
+whole machine in `/configure`: whether it reasons, which of the three roles —
+the agent's steps, the recall, the memory faculties — are asked to use that
+reasoning, and the sampling numbers each of them travels with. They belong to
+the server because the server is running the model, and every project talking
+to it inherits them.
+
 **What each project decides for itself** is asked when you make one and changed
-later from `/settings`: whether the agent reasons before each step
-(off is fast and suits a conversation; on is better on problems in several
-steps), which memory calls reason, how a reasoning memory call picks its words
-(a seeded preset, so the same session consolidates the same way twice, or plain
-greedy), who chooses temperature and the rest — your endpoint or you — and how
-many steps a turn may take. The settings live in the registry, not in the
-repository, so two projects on one machine can disagree.
+later from `/settings`: how much the curator may put on the desk each turn, how
+big a context and an answer may be, and how many steps a turn may take. These
+live in the registry, not in the repository, so two projects on one machine can
+disagree.
 
 ---
 
