@@ -201,14 +201,24 @@ SUMMARY_TEMPERATURE = float(os.environ.get("SUMMARY_TEMPERATURE", "0.2"))
 SAMPLING_PROFILE = os.environ.get("SAMPLING_PROFILE", "").strip().lower()
 
 
-def _agent_entry() -> dict:
-    """The agent endpoint's catalogue entry, or {}. Looked up every time: the
-    endpoint can change with /configure while a conversation is running."""
+def _entry_for(role: str) -> dict:
+    """The catalogue entry of the endpoint serving `role`, or {}.
+
+    Per role, not per harness: two roles can be served by two machines running
+    two different models, and then "does it reason" and "how does it sample"
+    have two different answers. Looked up every time, because /configure can
+    change either while a conversation is running.
+    """
     try:
         import endpoints
-        return endpoints.entry_for_role("agent")
+        return endpoints.entry_for_role(role if role in endpoints.ROLES else "agent")
     except Exception:
         return {}
+
+
+def _agent_entry() -> dict:
+    """The agent endpoint's entry: the common case of the above."""
+    return _entry_for("agent")
 
 
 def agent_endpoint_name() -> str:
@@ -220,19 +230,32 @@ def agent_endpoint_name() -> str:
         return ""
 
 
-def agent_thinking() -> bool:
-    """Does the agent reason before answering?
+def thinking_for(role: str = "agent") -> bool:
+    """Does `role` reason before answering?
 
-    The endpoint knows: it is running one model and that model either reasons
-    or does not, so `kind` in the catalogue is the answer for every project
-    that talks to it. AGENT_THINK still wins where it is set, for the run that
-    wants the other behaviour out of a model that can do both.
+    The endpoint knows whether the model CAN: it is running one model and that
+    model either reasons or does not, which is `kind` in the catalogue. Which
+    of the three roles is ASKED to is the endpoint's too, under `reasons`, and
+    a thinking endpoint that says nothing reasons for all three.
+
+    AGENT_THINK still wins where it is set, for every role at once: it is a
+    run-level override - "this window, the other way" - and a run that wanted
+    per-role answers would be writing them in the catalogue instead.
     """
     if _AGENT_THINK in ("on", "1", "true", "yes"):
         return True
     if _AGENT_THINK in ("off", "0", "false", "no"):
         return False
-    return _agent_entry().get("kind") == "thinking"
+    try:
+        import endpoints
+        return endpoints.reasons_for(_entry_for(role), role)
+    except Exception:
+        return _entry_for(role).get("kind") == "thinking"
+
+
+def agent_thinking() -> bool:
+    """Does the agent reason before answering? The common case of the above."""
+    return thinking_for("agent")
 
 
 def agent_flavour() -> str:
@@ -423,11 +446,12 @@ SKILL_MAX_TOKENS       = int(os.environ.get("SKILL_MAX_TOKENS", str(_skill_defau
 MEMORY_MAX_TOKENS      = int(os.environ.get("MEMORY_MAX_TOKENS",
                                             str(SKILL_MAX_TOKENS)))
 
-# THE THINKING SWITCH, for everything Pragma calls. Normally the endpoint's,
-# because the endpoint is running the model and knows whether it reasons:
-# /configure writes that as `kind`, and agent_thinking() reads it. AGENT_THINK
-# overrides it for one run, either way, which is why it is kept as the raw
-# word rather than a boolean - "unset" and "off" are different answers here.
+# THE THINKING SWITCH. Normally the endpoint's, because the endpoint is
+# running the model and knows whether it reasons: /configure writes that as
+# `kind`, and which roles are asked to use it as `reasons`. thinking_for()
+# reads both. AGENT_THINK overrides them for one run, for every role at once,
+# which is why it is kept as the raw word rather than a boolean - "unset" and
+# "off" are different answers here.
 _AGENT_THINK = os.environ.get("AGENT_THINK", "").strip().lower()
 AGENT_THINK = _AGENT_THINK in ("on", "1", "true", "yes")
 
@@ -466,35 +490,40 @@ def agent_template_kwargs():
     return _thinking(agent_thinking())
 
 
-# HOW THE MEMORY FACULTIES THINK AND SAMPLE: exactly as the agent does.
+# HOW THE MEMORY FACULTIES THINK AND SAMPLE: like the agent, unless the
+# endpoint says otherwise.
 #
-# ONE SWITCH FOR THE WHOLE HARNESS. The endpoint says whether the model it
-# runs is a thinking one, and that answer governs every call Pragma makes -
-# the agent's steps and the six faculties alike. There is no per-faculty
-# switch any more.
+# ONE SWITCH PER ROLE, and the roles are the three endpoints.py already routes
+# by: `agent` (the steps, and the summarizer that compresses them), `recall`
+# (the curator) and `memory` (segmenter, consolidator, reconsolidator,
+# abstractor, reflect). Three, not seven, because that is the division the
+# harness already makes and a fourth way of grouping the same faculties would
+# be a fourth thing to keep in your head.
 #
-# There was one, with three states, for a real reason: the faculties do not do
-# the same kind of work, and a curator picking three fragments from a numbered
-# list under a schema gains less from deliberating than a reconsolidator
-# revising a belief does. Measured against a reasoning model, a curator cost
-# 83 completion tokens and 8.6s with thinking and 17 tokens and 1.6s without,
-# for the same answer.
+# WHY IT IS NOT ONE SWITCH. This was one switch for a day, and the comment
+# that stood here said it would come back "as a number, not as a knob nobody
+# turned". The number: on Qwen3.6 a curator picking fragments from a numbered
+# list under a schema cost 83 completion tokens and 8.6s reasoning, and 17
+# tokens and 1.6s without, FOR THE SAME ANSWER. The curator runs on every
+# turn, in front of the person waiting, which makes it the one call where
+# those seconds are felt and the one where they buy nothing. An agent writing
+# code and a reconsolidator deciding whether a belief still holds are the
+# other end of that trade.
 #
-# It is still true, and it is still not worth a setting. A mixed harness -
-# curator thinking, agent not - is an OPTIMISATION, and one that has to be
-# measured per model before it means anything; until then it is three states
-# to hold in your head, a second place for the thinking switch to disagree
-# with the first, and a line in every status page. When there are numbers, it
-# comes back as a number, not as a knob nobody turned.
+# THE HALF FOLLOWS THE SWITCH, NOT THE MODEL. A role told not to reason reads
+# the `instruct` row of the endpoint's table, because for the length of that
+# call it IS a model answering at once, and the cards publish two rows for
+# exactly that reason - Qwen recommends 0.7/0.8 for one mode and 1.0/0.95 for
+# the other. Sending a thinking row to a call with thinking switched off is
+# the combination the authors warn against.
 #
 # AND NO GREEDY. Temperature 0 was the rule for memory, for a store that
 # reproduces exactly. It is not the rule any more: greedy decoding is what a
 # reasoning model is least trained for - it will repeat a paragraph until the
-# budget runs out - and the faculties now reason whenever the agent does. A
-# model working the way its authors recommend is worth more than a
-# determinism that costs it its judgement. MEMORY_SEED still pins the dice,
-# so two calls with the same prompt still agree; what is gone is the claim
-# that the numbers were the most likely tokens.
+# budget runs out. A model working the way its authors recommend is worth more
+# than a determinism that costs it its judgement. MEMORY_SEED still pins the
+# dice, so two calls with the same prompt still agree; what is gone is the
+# claim that the numbers were the most likely tokens.
 #
 # The frozen evaluation corpus was produced under the old rule and is
 # reproducible from the tagged commit, which is where a retired rule belongs.
@@ -508,49 +537,74 @@ MEMORY_SEED = int(os.environ.get("MEMORY_SEED", "") or 42)
 MEMORY_THINK_BUDGET = int(os.environ.get("MEMORY_THINK_BUDGET", "") or 16000)
 
 
+def current_role() -> str:
+    """Which of the three roles is making the call happening right now.
+
+    Read from the faculty llm_client has named for this thread, through the
+    same map endpoints.py routes by - so "which endpoint answers this" and
+    "does this one reason" can never disagree. Imported here rather than at
+    the top because llm_client imports config: by the time anyone calls this,
+    both modules are loaded.
+    """
+    try:
+        import endpoints
+        import llm_client
+        return endpoints.role_of(llm_client.current_faculty())
+    except Exception:
+        return "agent"
+
+
 def memory_template_kwargs(kind="write"):
     """chat_template_kwargs for a memory call: the endpoint's answer, explicit.
 
     `kind` is kept in the signature - every call site passes "select" or
     "write" - so that the distinction is still there to act on the day there
-    are numbers to justify acting on it.
+    are numbers to justify acting on it. What the answer turns on today is the
+    ROLE: a curator may be asked to answer at once on the same endpoint where
+    a reconsolidator reasons.
     """
-    return _thinking(agent_thinking())
+    return _thinking(thinking_for(current_role()))
 
 
-def faculty_knobs() -> dict:
-    """The knobs a memory call sends: the endpoint's row for GENERAL work.
+def role_knobs(role: str = "") -> dict:
+    """The knobs a call in `role` sends: that role's row, for GENERAL work.
 
-    The same numbers the agent uses, minus the one choice that is the agent's
-    alone. `coding` describes what the conversation is doing - writing and
-    fixing code - and a consolidator composing a narrative about that session
-    is not doing it. So the faculties read the `general` row of whichever half
-    the endpoint is in, and an endpoint with no table sends nothing, exactly
-    as it does for the agent.
+    Two things pick the row. The half is whether THIS ROLE reasons, not what
+    the model can do: a curator asked to answer at once should sample the way
+    the card recommends for a model answering at once, because that is what it
+    has become for the length of that call. Qwen publishes 0.7/0.8 for one and
+    1.0/0.95 for the other precisely so they are not swapped.
+
+    The flavour is always `general`. `coding` describes what the CONVERSATION
+    is doing - writing and fixing code - and a consolidator composing a
+    narrative about that session is not doing it. An endpoint with no table
+    sends nothing, exactly as it does for the agent.
     """
-    entry = _agent_entry()
+    role = role or current_role()
+    entry = _entry_for(role)
     if not entry.get("sampling"):
         return {}
     try:
         import endpoints
-        half = "thinking" if agent_thinking() else "instruct"
+        half = "thinking" if thinking_for(role) else "instruct"
         return endpoints.sampling_row(entry, half, "general")
     except Exception:
         return {}
 
 
 def memory_call(kind="write") -> dict:
-    """How a memory call thinks and picks its words: as the agent does.
+    """How a memory call thinks and picks its words.
 
     The seed travels with it. Sampling makes a call repeatable only if the
     dice are pinned, and a store that answers differently on a re-run is a
     store nobody can debug.
     """
-    knobs = dict(faculty_knobs())
+    role = current_role()
+    knobs = dict(role_knobs(role))
     temperature = knobs.pop("temperature", None)
     knobs["seed"] = MEMORY_SEED
     return {"temperature": temperature,
-            "template_kwargs": memory_template_kwargs(kind),
+            "template_kwargs": _thinking(thinking_for(role)),
             "sampling": knobs}
 
 

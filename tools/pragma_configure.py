@@ -84,6 +84,14 @@ WORK_BLURB = {
     "general": "conversation, reading, reasoning about a problem",
     "coding":  "writing and fixing code: cooler, less wandering",
 }
+# WHO REASONS. The three roles endpoints.py routes by, said in terms of what
+# the person actually waits for. Only shown for a thinking endpoint: an
+# instruct one has nothing to switch.
+ROLE_BLURB = {
+    "agent":  "the steps of the conversation: reading, editing, running",
+    "recall": "choosing what to bring back from memory, every turn",
+    "memory": "writing and revising what is remembered, after the turn",
+}
 KNOB_BLURB = {
     "temperature":      "how far from the most likely word it will go",
     "top_p":            "keep the words that make up this much of the mass",
@@ -133,6 +141,12 @@ def nature(entry: dict) -> str:
     if not kind and not work and not entry.get("sampling"):
         return "not tuned yet - what it is, and how it samples"
     words = f"{kind or 'kind not set'} . {work or 'general'}"
+    # Said only when it is news. A thinking endpoint that reasons for all
+    # three is what "thinking" already means, and repeating it on every line
+    # would bury the case that differs.
+    who = reasons_text(entry)
+    if who and who != "all three":
+        words += f" ({who} reason)" if who != "nobody" else " (nobody reasons)"
     if not entry.get("sampling"):
         return f"{words} . the server's own numbers"
     sent = knob_text(endpoints.sampling_row(entry))
@@ -846,29 +860,74 @@ def ask_the_model(ep, entry: dict, name: str = "") -> bool:
 
 # -- the actions --------------------------------------------------------------
 
+def reasons_text(entry: dict) -> str:
+    """Who reasons on this endpoint, as one line - or "" if nothing can."""
+    if entry.get("kind") != "thinking":
+        return ""
+    on = [r for r in endpoints.ROLES if endpoints.reasons_for(entry, r)]
+    if len(on) == len(endpoints.ROLES):
+        return "all three"
+    return ", ".join(on) if on else "nobody"
+
+
+def who_reasons(entry: dict, name: str) -> bool:
+    """Three switches, one per role. Written only when one is turned off.
+
+    An endpoint that reasons for everyone is the common case and the one a
+    catalogue written before this existed describes, so it stays written the
+    way it always was: no `reasons` key at all.
+    """
+    changed = False
+    while True:
+        step(f"endpoints > tune > {name} > who reasons")
+        print()
+        print("  " + grey("This model reasons. Each of the three can be asked"))
+        print("  " + grey("to use it, or to answer at once instead."))
+        rows = [f"{role:<8}{'reasons' if endpoints.reasons_for(entry, role) else 'answers at once'}"
+                for role in endpoints.ROLES]
+        i = pick("", rows, [ROLE_BLURB[r] for r in endpoints.ROLES])
+        if i is None:
+            return changed
+        role = endpoints.ROLES[i]
+        table = dict(entry.get("reasons") or {})
+        table[role] = not endpoints.reasons_for(entry, role)
+        if all(table.get(r, True) for r in endpoints.ROLES):
+            entry.pop("reasons", None)
+        else:
+            entry["reasons"] = {r: table.get(r, True) for r in endpoints.ROLES}
+        changed = True
+
+
 def tune(state: dict, name: str) -> bool:
-    """What the endpoint is, what it is for, and how it samples."""
+    """What the endpoint is, what it is for, who reasons, and how it samples."""
     cat = state["cat"]
     entry = cat["endpoints"][name]
     changed = False
     while True:
         sampling = ("the server's own numbers" if not entry.get("sampling")
                     else knob_text(endpoints.sampling_row(entry)) or "nothing set yet")
+        rows = [(f"what it is      {entry.get('kind') or 'not set'}",
+                 "a reasoning model, or one that answers at once", "kind"),
+                (f"what it is for  {entry.get('work') or 'general'}",
+                 "conversation, or writing code", "work")]
+        # Only where there is something to switch: on an instruct endpoint the
+        # three answers exist but mean nothing, and a row that cannot change
+        # anything is a row that has to be explained.
+        if entry.get("kind") == "thinking":
+            rows.append((f"who reasons     {reasons_text(entry)}",
+                         "the agent, the recall, the memory - each on or off", "who"))
+        rows.append((f"sampling        {sampling}",
+                     "the knobs every request carries", "sampling"))
         step(f"endpoints > tune > {name}")
         print()
         print("  " + grey(entry.get("url", "")))
         print("  " + grey("What this endpoint is. Every project that talks to it"))
-        print("  " + grey("inherits these three answers."))
-        i = pick("",
-                 [f"what it is      {entry.get('kind') or 'not set'}",
-                  f"what it is for  {entry.get('work') or 'general'}",
-                  f"sampling        {sampling}"],
-                 ["a reasoning model, or one that answers at once",
-                  "conversation, or writing code",
-                  "the knobs every request carries"])
+        print("  " + grey("inherits these answers."))
+        i = pick("", [r for r, _, _ in rows], [b for _, b, _ in rows])
         if i is None:
             return changed
-        if i == 0:
+        what = rows[i][2]
+        if what == "kind":
             step(f"endpoints > tune > {name} > what it is")
             got = choose("Does this model reason before it answers?",
                          [(k, KIND_BLURB[k]) for k in endpoints.KINDS],
@@ -876,13 +935,16 @@ def tune(state: dict, name: str) -> bool:
             if got:
                 entry["kind"] = got
                 changed = True
-        elif i == 1:
+        elif what == "work":
             step(f"endpoints > tune > {name} > what it is for")
             got = choose("What is this endpoint used for?",
                          [(w, WORK_BLURB[w]) for w in endpoints.FLAVOURS],
                          entry.get("work", "general"))
             if got:
                 entry["work"] = got
+                changed = True
+        elif what == "who":
+            if who_reasons(entry, name):
                 changed = True
         else:
             step(f"endpoints > tune > {name} > sampling")

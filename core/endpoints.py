@@ -93,6 +93,7 @@ ROLES = ("agent", "recall", "memory")
 #   kind      thinking | instruct   what the model is
 #   work      general  | coding     what this endpoint is used for
 #   sampling  the four rows those two words index, each a set of knobs
+#   reasons   which of the three roles actually reasons on it
 #
 # The knobs are the ones MEASURED to arrive (llama.cpp, 2026-09-21). There is
 # no `repetition_penalty` in the list on purpose: that is the HuggingFace
@@ -112,6 +113,32 @@ _ROLE_OF_FACULTY = {
     "ABSTRACTOR":     "memory",
     "REFLECT":        "memory",
 }
+
+
+# WHO REASONS, ROLE BY ROLE. `kind` says whether the model CAN reason;
+# `reasons` says which of the three roles is asked to. A model that reasons
+# reasons for everyone unless this says otherwise, so an endpoint written
+# before this existed behaves exactly as it did.
+#
+# It is not one switch because the three roles do different work, and the
+# difference has been measured: on Qwen3.6 a curator picking fragments under a
+# schema cost 83 completion tokens and 8.6s reasoning, and 17 tokens and 1.6s
+# without, FOR THE SAME ANSWER. The curator runs on every turn, so that is the
+# wait a person feels; an agent writing code and a reconsolidator revising a
+# belief are the calls where deliberating earns its seconds.
+#
+# An instruct endpoint has nothing to switch, and answers False for everyone
+# without consulting the table - which is why the table is kept rather than
+# zeroed when `kind` changes: switching to instruct and back finds the same
+# three answers, instead of three that nobody chose.
+def reasons_for(entry: dict, role: str = "agent") -> bool:
+    """Is `role` asked to reason on this endpoint?"""
+    if (entry or {}).get("kind") != "thinking":
+        return False
+    table = (entry or {}).get("reasons")
+    if not isinstance(table, dict):
+        return True
+    return bool(table.get(role if role in ROLES else "agent", True))
 
 
 class EndpointError(RuntimeError):
@@ -193,6 +220,20 @@ def sampling_row(entry: dict, kind: str = "", work: str = "") -> dict:
     return {k: float(v) for k, v in knobs.items() if k in KNOBS and v is not None}
 
 
+def _reasons_problem(table) -> str:
+    """What makes an endpoint's `reasons` unusable, or ""."""
+    if table is None:
+        return ""
+    if not isinstance(table, dict):
+        return "\"reasons\" must be an object of role switches"
+    for role, on in table.items():
+        if role not in ROLES:
+            return f"\"reasons\" has \"{role}\"; the roles are {', '.join(ROLES)}"
+        if not isinstance(on, bool):
+            return f"\"reasons.{role}\" must be true or false"
+    return ""
+
+
 def _problem(data) -> str:
     """What makes a parsed catalogue unusable, or ""."""
     if not isinstance(data, dict):
@@ -211,6 +252,9 @@ def _problem(data) -> str:
         if e.get("work") and e["work"] not in FLAVOURS:
             return f"endpoint \"{name}\" works on \"{e['work']}\"; it is {' or '.join(FLAVOURS)}"
         bad = _sampling_problem(e.get("sampling"))
+        if bad:
+            return f"endpoint \"{name}\": {bad}"
+        bad = _reasons_problem(e.get("reasons"))
         if bad:
             return f"endpoint \"{name}\": {bad}"
     for role, name in roles.items():

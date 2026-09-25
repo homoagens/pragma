@@ -513,11 +513,11 @@ def _current_step() -> str:
 def _agent_knobs() -> dict:
     """The endpoint's sampling table, for the AGENT's calls and no others.
 
-    The table describes how the conversation should sample. The memory
-    faculties are not the conversation: they answer under a schema at
-    temperature 0, or with the model's thinking preset and a fixed seed, and
-    that is a property the store depends on - two runs of the same corpus have
-    to produce the same beliefs.
+    The table describes how the conversation should sample, and the flavour
+    it reads - general or coding - is the conversation's. The curator and the
+    memory faculties are not the conversation: they bring their own row and
+    their own seed (config.memory_call), chosen for the role rather than for
+    what the agent happens to be working on.
 
     MEASURED, which is why this exists: with a table written for qwen36, a
     curator asking for `temperature 0.0, nothing else` received

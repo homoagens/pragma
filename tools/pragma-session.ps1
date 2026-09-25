@@ -227,27 +227,53 @@ function script:Get-RecallLine {
     "$ep candidates ($re held for the newest) + $ln rules -> max $mx on the desk"
 }
 
-# What the agent endpoint is, as /configure wrote it: "thinking" or "instruct".
-# Read from the catalogue here rather than asked of Python, because this runs
-# on every page draw and starting an interpreter to read one word is a wait.
-function script:Get-EndpointKind {
+# The agent endpoint's entry, as /configure wrote it. Read from the catalogue
+# here rather than asked of Python, because this runs on every page draw and
+# starting an interpreter to read two fields is a wait.
+function script:Get-EndpointEntry {
     try {
         $file = Join-Path $HOME ".pragma/endpoints.json"
-        if (-not (Test-Path $file)) { return "" }
+        if (-not (Test-Path $file)) { return $null }
         $cat = Get-Content -Raw $file | ConvertFrom-Json
         $name = $cat.roles.agent
         if (-not $name) { $name = ($cat.endpoints.PSObject.Properties.Name)[0] }
-        return "$($cat.endpoints.$name.kind)"
-    } catch { return "" }
+        return $cat.endpoints.$name
+    } catch { return $null }
 }
 
-# Who reasons, as this window will ask for it on every call.
+function script:Get-EndpointKind {
+    $e = Get-EndpointEntry
+    if ($null -eq $e) { return "" }
+    return "$($e.kind)"
+}
+
+# Who reasons, as this window will ask for it on every call. The mirror of
+# config.thinking_for: `kind` says whether the model can, `reasons` says which
+# of the three roles is asked to, and AGENT_THINK overrides both for all three.
 function script:Get-ThinkingLine {
-    $agent = if ($env:AGENT_THINK -in @('on', '1', 'true', 'yes')) { 'on' }
-             elseif ($env:AGENT_THINK -in @('off', '0', 'false', 'no')) { 'off' }
-             elseif ((Get-EndpointKind) -eq 'thinking') { 'on' } else { 'off' }
-    if ($agent -eq 'on') {
-        "the agent and the memory faculties reason before they answer"
+    $roles = @('agent', 'recall', 'memory')
+    $forced = if ($env:AGENT_THINK -in @('on', '1', 'true', 'yes')) { 'on' }
+              elseif ($env:AGENT_THINK -in @('off', '0', 'false', 'no')) { 'off' }
+              else { '' }
+    if ($forced -eq 'on')  { $on = $roles }
+    elseif ($forced -eq 'off') { $on = @() }
+    else {
+        $e = Get-EndpointEntry
+        if ($null -eq $e -or "$($e.kind)" -ne 'thinking') {
+            $on = @()
+        } else {
+            $on = @($roles | Where-Object {
+                $v = if ($e.reasons) { $e.reasons.$_ } else { $null }
+                ($null -eq $v) -or $v
+            })
+        }
+    }
+    $says = @{ agent = 'the steps'; recall = 'the recall'; memory = 'the memory faculties' }
+    if ($on.Count -eq 3) {
+        "the steps, the recall and the memory faculties reason before they answer"
+    } elseif ($on.Count -gt 0) {
+        $named = ($on | ForEach-Object { $says[$_] }) -join ' and '
+        "$named reason before answering; the rest answer at once"
     } else {
         "nothing reasons: every call answers at once"
     }
