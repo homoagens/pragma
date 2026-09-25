@@ -136,7 +136,11 @@ class _JobHook:
         self.said = ""
 
     def looped(self, who, detail):
-        self.r._add(f"[{who or 'MEMORY'}] the reasoning went in circles - asked again without thinking")
+        # WHAT ACTUALLY HAPPENED, not a guess at it. A reasoning is cut short
+        # either for repeating itself or for running past its budget, and the
+        # two are different problems: one is the model and its sampling, the
+        # other is a number in the configuration.
+        self.r._add(f"[{who or 'MEMORY'}] {detail} - asked again without thinking")
 
 
 def run(path: Path) -> int:

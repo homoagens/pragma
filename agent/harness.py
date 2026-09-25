@@ -416,7 +416,7 @@ class Harness:
     def looped(self, who: str, detail: str) -> None:
         from rich.text import Text
         self._hide()
-        self.console.print(Text(f"  {self.g['note']} {who.lower()}: the reasoning went in circles "
+        self.console.print(Text(f"  {self.g['note']} {who.lower()}: {detail} "
                                 f"- asked again without thinking", style="yellow"))
 
     def pause(self) -> None:

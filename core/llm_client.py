@@ -97,12 +97,26 @@ def stopping() -> bool:
 
 
 class LLMLooped(Exception):
-    """Raised when the watchdog detects the model is repeating itself
-    inside the <think> block — i.e. the reasoning_content stream is
-    producing the same paragraph over and over without converging.
-    The caller (agent loop) catches this and injects a recovery hint
-    so the model can change strategy on the next turn."""
-    pass
+    """Raised when a reasoning has to be cut short, for either of two reasons.
+
+    TWO REASONS, NOT ONE, and telling them apart is the whole point of `said`.
+    Either the stream is producing the same paragraph over and over without
+    converging - a real loop, and a property of the model and how it is being
+    sampled - or the reasoning has simply run past its budget without starting
+    an answer, which is a long deliberation meeting a number someone chose.
+
+    Both used to be reported as "the reasoning went in circles", so a faculty
+    that had thought hard for six minutes and been cut off was described as
+    having gone in circles, and the number to change was nowhere on the
+    screen. `said` is the half-sentence the pages print.
+
+    The caller (agent loop) catches this and injects a recovery hint so the
+    model can change strategy on the next turn.
+    """
+
+    def __init__(self, message: str, said: str = ""):
+        super().__init__(message)
+        self.said = said or "the reasoning had to be cut short"
 
 
 # Marker prepended to text that came back as a truncated partial. The agent
@@ -186,7 +200,8 @@ class _ReasoningLoopGuard:
         if n >= self.threshold:
             raise LLMLooped(
                 f"Reasoning loop detected: the trailing {self.window}-char "
-                f"window appears {n} times in the last {len(view)} chars."
+                f"window appears {n} times in the last {len(view)} chars.",
+                said=f"the same {self.window} characters came round {n} times",
             )
 
 
@@ -755,7 +770,10 @@ def _post_streamed(url, headers, payload, timeout, label, stop_event):
                         pass
                 guard.observe(piece, reasoning)
                 if budget and not content and len(reasoning) > budget:
-                    raise LLMLooped(f"reasoning passed {budget} characters without an answer")
+                    raise LLMLooped(
+                        f"reasoning passed {budget} characters without an answer",
+                        said=f"it reasoned past {budget} characters without "
+                             f"starting an answer (MEMORY_THINK_BUDGET)")
             text = delta.get("content") or ""
             if text:
                 content += text
@@ -1297,14 +1315,15 @@ def call_llm(messages, model=None, temperature=None, max_tokens=None, timeout=No
             raise
         told = _hook("looped")
         who = current_faculty()
+        said = getattr(e, "said", "") or "the reasoning had to be cut short"
         if told:
             try:
-                told(who, str(e))
+                told(who, said)
             except Exception:
                 pass
         else:
-            _console.print(f"[yellow]{who}: the reasoning went in circles - "
-                           f"asked again without thinking.[/yellow]")
+            _console.print(f"[yellow]{who}: {said} - asked again without "
+                           f"thinking.[/yellow]")
         knobs = {}
         try:
             knobs = dict(config.no_think_knobs(endpoints.role_of(who)))
