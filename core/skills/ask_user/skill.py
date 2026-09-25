@@ -47,13 +47,17 @@ def ask_user(topic: str = "", context: str = "", mode: str = "input",
         user_msg += "\nMode: choice — list available options clearly inside the question"
 
     # 2. LLM formulates the optimal question [H]
+    #
+    # No temperature of its own. This used to say 0.0, which made it the one
+    # call in the agent's own path that decoded greedily - invisibly, because
+    # nothing prints it. Phrasing a question is ordinary agent work, so it
+    # samples the way the endpoint says the agent samples.
     try:
         raw = llm_client.call_llm(
             messages=[
                 {"role": "system", "content": _ASK_SYSTEM},
                 {"role": "user",   "content": user_msg},
             ],
-            temperature=0.0,
         )
         formulated = extract_json(raw)
     except Exception:
