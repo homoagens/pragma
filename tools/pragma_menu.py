@@ -20,12 +20,57 @@ from __future__ import annotations
 
 import contextlib
 import os
+import re
+import shutil
 import sys
 import threading
 import time
 
 ESC = "\033"
 GREY, RESET = ESC + "[38;5;242m", ESC + "[0m"
+
+_ANSI = re.compile(r"\x1b\[[0-9;]*[A-Za-z]")
+
+
+def visible(text: str) -> int:
+    """How many columns a string occupies once the colours are taken out."""
+    return len(_ANSI.sub("", text))
+
+
+def columns() -> int:
+    """The terminal's width, with a floor a menu can still be drawn in."""
+    try:
+        return max(24, shutil.get_terminal_size((80, 24)).columns)
+    except Exception:
+        return 80
+
+
+def fit(body: str, note: str = "") -> str:
+    """One menu line, trimmed so it NEVER wraps.
+
+    A wrapped row is what breaks the redraw: menu() goes back up by one line
+    per option, and a row that took two physical lines leaves the cursor in
+    the wrong place, so the next draw lands beside the last one instead of
+    over it - the row appearing again and again down the page. Seen on a
+    narrow WSL window, where the sampling row and its note are long.
+
+    The note is what gives way first: the row itself is the answer and the
+    note only explains it. What is cut ends in a dot, so a trimmed note does
+    not read as a short one.
+    """
+    room = columns() - 1
+    if visible(body) >= room:
+        return body[:max(0, room - 1)] + "."
+    if not note:
+        return body
+    left = room - visible(body)
+    if visible(note) <= left:
+        return body + note
+    # The note carries its own colour codes; cut the text, keep the codes.
+    plain = _ANSI.sub("", note).strip()
+    if left < 7:
+        return body
+    return body + f"   {GREY}{plain[:left - 4]}.{RESET}"
 
 
 def accent() -> str:
@@ -223,7 +268,8 @@ def menu(options: list[str], notes: list[str] | None = None, start: int = 0,
         for i, option in enumerate(options):
             note = f"   {GREY}{notes[i]}{RESET}" if notes and notes[i] and a else ""
             body = f"  {'>' if i == sel else ' '} {option}"
-            print(f"{ESC}[2K" + (f"{a}{body}{r}" if i == sel else body) + note)
+            line = fit(f"{a}{body}{r}" if i == sel else body, note)
+            print(f"{ESC}[2K" + line)
         print(f"{ESC}[2K")
         print(f"{ESC}[2K  {GREY if a else ''}{hint}{r}")
         drawn = len(options) + 2

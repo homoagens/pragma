@@ -595,8 +595,36 @@ function script:New-Project([string]$name, [string]$workspace) {
         Write-Host "pragma: a project named '$name' already exists" -ForegroundColor Red
         return $null
     }
+    # A FOLDER THAT IS NOT THERE YET is the normal way to start a project, not
+    # a mistake: you name where the work will go before there is any of it. So
+    # it is offered, not refused - and offered rather than made silently,
+    # because a typed path with a typo would otherwise become a folder nobody
+    # meant to create. The Python launcher asks the same question.
+    $full = $workspace
+    try { $full = [System.IO.Path]::GetFullPath(
+            [System.IO.Path]::Combine((Get-Location).Path, $workspace)) } catch { }
+    if (Test-Path -LiteralPath $full -PathType Leaf) {
+        Write-Host "pragma: that is a file, not a folder: $full" -ForegroundColor Red
+        return $null
+    }
+    if (-not (Test-Path -LiteralPath $full -PathType Container)) {
+        Write-Host ""
+        Write-Host "  $full does not exist." -ForegroundColor DarkGray
+        $ans = Show-Menu @(
+            [pscustomobject]@{ key = 'n'; label = "no, go back";   action = '' }
+            [pscustomobject]@{ key = 'y'; label = "yes, create it"; action = 'make' }
+        ) "enter select . ctrl+D back"
+        Write-Host ""
+        if (-not $ans -or -not $ans.action) { return $null }
+        try {
+            $null = New-Item -ItemType Directory -Path $full -Force -ErrorAction Stop
+        } catch {
+            Write-Host "pragma: cannot create it: $($_.Exception.Message)" -ForegroundColor Red
+            return $null
+        }
+    }
     try {
-        $ws = (Resolve-Path -LiteralPath $workspace -ErrorAction Stop).Path
+        $ws = (Resolve-Path -LiteralPath $full -ErrorAction Stop).Path
     } catch {
         Write-Host "pragma: no such folder: $workspace" -ForegroundColor Red
         return $null
@@ -860,8 +888,8 @@ function script:Invoke-ProjectChoices($entry) {
     # one model, one answer for every project that talks to it. /configure.
     Write-Host ""
     Write-Host "  Whether anything reasons, and how it samples, belong to the" -ForegroundColor DarkGray
-    Write-Host "  endpoint - /configure, once, for every project. The agent and" -ForegroundColor DarkGray
-    Write-Host "  the memory faculties follow the same answer." -ForegroundColor DarkGray
+    Write-Host "  endpoint - /configure, once, for every project. There it is" -ForegroundColor DarkGray
+    Write-Host "  said role by role: the steps, the recall, the memory." -ForegroundColor DarkGray
 
     # 2. How far one turn may go before the agent has to answer.
     $cur = Get-ProjectValue $entry 'MaxSteps'

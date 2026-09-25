@@ -48,7 +48,7 @@ sys.path[:0] = [str(ROOT), str(ROOT / "core"), str(ROOT / "tools")]
 import pragma_home as home                     # noqa: E402  the home prompt, shared
 # The arrows, the digits, the first letter, ctrl+D: one menu, every page that
 # offers a choice - this one and /configure.
-from pragma_menu import accent, ask, clear, menu, pick, read_key, say   # noqa: E402,F401
+from pragma_menu import accent, ask, clear, confirm, menu, pick, read_key, say   # noqa: E402,F401
 
 REGISTRY = Path.home() / ".pragma" / "registry.json"
 PROJECTS = Path.home() / ".pragma" / "projects"
@@ -347,8 +347,8 @@ def choices_page(entry: dict) -> None:
 
     print()
     say("  Whether anything reasons, and how it samples, belong to the", "dim")
-    say("  endpoint - /configure, once, for every project. The agent and", "dim")
-    say("  the memory faculties follow the same answer.", "dim")
+    say("  endpoint - /configure, once, for every project. There it is", "dim")
+    say("  said role by role: the steps, the recall, the memory.", "dim")
     print()
     print("  steps per turn - how many actions the agent may take before it must answer")
     say(f"    {DEFAULT_STEPS} suits a conversation; long tasks on files may need more", "dim")
@@ -424,9 +424,22 @@ def new_project() -> dict | None:
     if workspace is None:
         return None
     ws = Path(workspace).expanduser().resolve()
-    if not ws.is_dir():
-        say(f"  no such folder: {ws}", "warn")
+    # A FOLDER THAT IS NOT THERE YET is the normal way to start a project, not
+    # a mistake: you name where the work will go before there is any. So it is
+    # offered, not refused - and still offered rather than made silently,
+    # because a typed path with a typo in it would otherwise become a folder
+    # nobody meant to create.
+    if ws.exists() and not ws.is_dir():
+        say(f"  that is a file, not a folder: {ws}", "warn")
         return None
+    if not ws.exists():
+        if not confirm(f"{ws} does not exist. Create it?", "yes, create it"):
+            return None
+        try:
+            ws.mkdir(parents=True, exist_ok=True)
+        except OSError as e:
+            say(f"  cannot create it: {e.strerror or e}", "warn")
+            return None
     if ROOT == ws or ROOT in ws.parents:
         say("  not inside Pragma's own source: the agent must never edit itself", "warn")
         return None
