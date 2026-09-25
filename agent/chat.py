@@ -178,11 +178,19 @@ def _ask_launcher(action: str) -> bool:
         return False
 
 
-# WHAT YOU MIGHT ASK NEXT, filled in by the suggester after each answer and
-# read by the completer on the next empty line. A list, replaced whole: a turn
-# that produced nothing leaves nothing behind, so a stale suggestion from two
-# turns ago is never offered as though it were about this one.
+# WHAT YOU WILL PROBABLY SAY NEXT, written by the suggester after each answer
+# and shown in grey on the empty input line. One line, not a list: a list is a
+# menu, and a menu where you are about to type is a thing to read first. This
+# is meant to be the line you were going to write anyway, already written -
+# tab takes it, and typing anything ignores it.
+#
+# A one-element list because it is written by the suggester's thread and read
+# by the prompt: rebinding a module global from another thread is the kind of
+# thing that works until it does not.
 _NEXT: list[str] = []
+# The live prompt, so the suggester can wake it when the guess arrives after
+# the line was already drawn - which is the normal case, not the exception.
+_SESSION: list = []
 
 
 class _SlashCompleter:
@@ -192,20 +200,13 @@ class _SlashCompleter:
     one is prose, and a menu popping up mid-sentence would be worse than no
     menu at all.
 
-    On an EMPTY line it offers what you might ask next, when the project asked
-    for that. Empty and nowhere else: a suggestion appearing over a sentence
-    being written is an interruption, and the whole point of this one is that
-    it costs nothing to ignore.
+    The prediction is NOT here. It is grey text on the line itself, taken with
+    tab - not a menu to open, read and choose from.
     """
 
     def get_completions(self, document, complete_event):
         from prompt_toolkit.completion import Completion
         text = document.text_before_cursor
-        if not text:
-            for q in _NEXT:
-                yield Completion(q, start_position=0, display=q,
-                                 display_meta="you might ask")
-            return
         if not text.startswith("/"):
             return
         allowed = _allowed()
@@ -284,18 +285,55 @@ def _make_session():
         from prompt_toolkit.completion import Completer
         from prompt_toolkit.history import InMemoryHistory
 
+        from prompt_toolkit.auto_suggest import AutoSuggest, Suggestion
+        from prompt_toolkit.filters import Condition
+        from prompt_toolkit.key_binding import KeyBindings
+
         # The mixin first: with Completer leading, its abstract
         # get_completions wins the lookup and the class cannot be built.
         class _C(_SlashCompleter, Completer):
             pass
+
+        class _Predicted(AutoSuggest):
+            """The guess, in grey, on an empty line and nowhere else.
+
+            An auto-suggestion on a line with something typed on it would be
+            prompt_toolkit completing your sentence, which is a different and
+            much more annoying thing than offering you the whole line.
+            """
+
+            def get_suggestion(self, buff, document):
+                if document.text or not _NEXT:
+                    return None
+                return Suggestion(_NEXT[0])
+
+        kb = KeyBindings()
+
+        @kb.add("tab", filter=Condition(lambda: bool(_NEXT)))
+        def _take(event):
+            """Tab takes the guess - but only when it is the thing on offer.
+
+            The filter matters: with something typed, tab is still completion,
+            and a slash still opens the commands. This binding exists for the
+            empty line, where there is nothing to complete.
+            """
+            buff = event.current_buffer
+            if buff.text or not _NEXT:
+                buff.start_completion()
+                return
+            buff.insert_text(_NEXT[0])
+
         # The toolbar is the part of a harness that does not scroll away:
         # project, model, how full the context is, whether a consolidation
         # is being written. Drawn by prompt_toolkit under the prompt, from
         # _STATE, which the loop keeps current.
-        return PromptSession(completer=_C(), history=InMemoryHistory(),
-                             complete_while_typing=True, reserve_space_for_menu=6,
-                             bottom_toolbar=lambda: _harness.toolbar(_STATE),
-                             style=_harness.prompt_style())
+        session = PromptSession(completer=_C(), history=InMemoryHistory(),
+                                complete_while_typing=True, reserve_space_for_menu=6,
+                                auto_suggest=_Predicted(), key_bindings=kb,
+                                bottom_toolbar=lambda: _harness.toolbar(_STATE),
+                                style=_harness.prompt_style())
+        _SESSION[:] = [session]
+        return session
     except Exception:
         return None
 
@@ -327,13 +365,52 @@ def _suggesting(cfg) -> bool:
 def _hint() -> str:
     """What the empty line offers: say something, or step back out.
 
-    The suggestions are announced only when there are some. An offer of tab
-    that yields nothing teaches the person that tab yields nothing, which is
-    the opposite of what it is for.
+    Nothing while a guess is on the line. The placeholder and the grey
+    suggestion are drawn in the same place, so both at once is two sentences
+    on top of each other - and the guess is the more useful of the two.
     """
     if _NEXT:
-        return "tab for what you might ask next  ·  or say something  ·  /help"
+        return ""
     return "say something, or /help  ·  ctrl+D closes the project"
+
+
+def _show_prediction() -> None:
+    """Put the guess on a prompt that is already waiting, and repaint it.
+
+    The ordinary case, not the exception: the line is drawn as soon as the
+    answer ends, and the guess arrives a second or two later. Without this it
+    would sit in _NEXT until the NEXT prompt, which is a guess about the wrong
+    turn.
+
+    invalidate() is documented thread-safe; touching the buffer from this
+    thread is not, so the assignment is handed to the prompt's own loop when
+    there is one to hand it to.
+    """
+    if not _SESSION or not _NEXT:
+        return
+    session = _SESSION[0]
+    try:
+        from prompt_toolkit.auto_suggest import Suggestion
+        app = session.app
+        if app is None or not app.is_running:
+            return
+
+        def put():
+            try:
+                buff = session.default_buffer
+                if not buff.text:
+                    buff.suggestion = Suggestion(_NEXT[0])
+            except Exception:
+                pass
+
+        loop = getattr(app, "_loop", None) or getattr(app, "loop", None)
+        if loop is not None:
+            loop.call_soon_threadsafe(put)
+        else:
+            put()
+        app.invalidate()
+    except Exception:
+        pass
 
 
 def _suggest_later(asked: str, answered: str) -> None:
@@ -356,10 +433,13 @@ def _suggest_later(asked: str, answered: str) -> None:
 
     def work():
         try:
-            got = suggest.next_questions(asked, answered)
+            got = suggest.next_question(asked, answered)
         except Exception:
             return
-        _NEXT[:] = got
+        if not got:
+            return
+        _NEXT[:] = [got]
+        _show_prediction()
 
     try:
         threading.Thread(target=work, daemon=True).start()
@@ -372,10 +452,15 @@ def _ask(session):
     if session is None:
         return input(_prompt()).strip()
     from prompt_toolkit.formatted_text import ANSI
+
+    # A CALLABLE, not a string. The guess usually arrives a second after the
+    # line is drawn, and a placeholder fixed at draw time would still be
+    # sitting under it when it did - two greys in the same place.
+    def placeholder():
+        return ANSI("\033[38;5;242m" + _hint() + "\033[0m")
+
     try:
-        return session.prompt(ANSI(_prompt()),
-                              placeholder=ANSI("\033[38;5;242m" + _hint()
-                                               + "\033[0m")).strip()
+        return session.prompt(ANSI(_prompt()), placeholder=placeholder).strip()
     except TypeError:
         # Older prompt_toolkit has no placeholder. The prompt is the point;
         # the hint is not worth failing over.
@@ -552,8 +637,8 @@ def _status_lines() -> list[tuple[str, str]]:
     # Only when it is on. A line saying a thing is off, on a page read to find
     # out what IS on, is a line to skip past every time.
     if _suggesting(cfg):
-        out.append(("prediction", "three things you might ask next, under the"
-                                  " prompt  (one recall call per turn)"))
+        out.append(("prediction", "the line you will probably type next, in grey"
+                                  " on the prompt  (one recall call per turn)"))
     # One switch per role: the endpoint says whether the model it runs can
     # reason, and which of the three roles is asked to. Named here rather than
     # summarised, because "thinking is on" stopped being a whole answer the

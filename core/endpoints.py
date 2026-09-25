@@ -150,7 +150,7 @@ def reasons_for(entry: dict, role: str = "agent") -> bool:
 # for the machine: /configure is the page you open when you set Pragma up, and
 # a switch that means the same thing in every project belongs on it.
 #
-#   prediction  three things you might ask next, under the empty prompt
+#   prediction  the line you will probably type next, grey on the prompt
 OPTIONS = ("prediction",)
 
 

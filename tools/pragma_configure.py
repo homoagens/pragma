@@ -1276,7 +1276,7 @@ def main() -> int:
         for name, blurb, _h in ACTIONS:
             if name == "prediction":
                 labels.append(f"prediction  {'on' if on else 'off'}")
-                blurbs.append("three things you might ask next, under the prompt")
+                blurbs.append("the line you will probably type next, in grey; tab takes it")
             else:
                 labels.append(name)
                 blurbs.append(blurb)

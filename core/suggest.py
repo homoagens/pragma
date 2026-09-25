@@ -3,7 +3,7 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 # This file is part of Pragma <https://github.com/homoagens/pragma>.
 
-"""What you might ask next: three questions, offered under the empty prompt.
+"""What you will probably type next: one line, in grey, on the empty prompt.
 
 A FACULTY, not a second model. The obvious way to do this is a small model
 kept running beside the big one, and it costs a second server, a slice of
@@ -17,11 +17,16 @@ care about pays for the thing you do not.
 So it is one short call of its own, after the answer is on the screen, on the
 `recall` role - the one already meant to be fast, and the one /configure lets
 you tell not to reason. It never blocks the prompt: the line comes back
-immediately and the questions arrive into it, or do not.
+immediately and the guess arrives into it, or does not.
+
+ONE guess, not a list. A list is a menu, and a menu where you are about to
+type is something to read before you can start. This is meant to be the line
+you were going to write anyway, already written: tab takes it, and typing
+anything at all ignores it.
 
 OFF unless asked for. It is an extra call per turn on a local model that is
 shared with everything else, and a machine with one slot pays for it in the
-queue. SUGGEST_NEXT=on turns it on, per project, from /settings.
+queue. /configure turns it on, once, for the whole harness.
 """
 from __future__ import annotations
 
@@ -31,29 +36,28 @@ import config
 import llm_client
 from json_parser import extract_json
 
-_SYSTEM = """You read the last exchange of a conversation and guess what the
-person is most likely to ask next.
+_SYSTEM = """You read the last exchange of a conversation and write the ONE
+thing the person is most likely to say next.
 
 Rules:
-- Write QUESTIONS OR REQUESTS the person would plausibly type, not topics.
-- Write them in the language the person is using, whatever it is.
-- Keep each one short: one line, no more than about twelve words.
-- Make them different from one another. Three near-identical questions are
-  worth one suggestion, and the person has to read all three to find that out.
-- Follow the thread that is actually open. The best suggestion is usually the
-  obvious next step of what was just done, not a new subject.
-- Suggest nothing you were not given grounds for. If the exchange does not
-  point anywhere in particular, return fewer, or none at all.
+- Write it as they would type it: a question or a request, not a topic.
+- Write it in the language the person is using, whatever it is.
+- Keep it short: one line, no more than about twelve words.
+- Follow the thread that is actually open. The likeliest next line is usually
+  the obvious next step of what was just done, not a new subject.
+- If the exchange does not point anywhere in particular, answer with an empty
+  string. A wrong guess costs more than no guess: it sits in the input box
+  where the person is about to type.
 
-Answer as JSON: {"questions": ["...", "...", "..."]}"""
+Answer as JSON: {"question": "..."}"""
 
 _SCHEMA = {
-    "__name__": "suggestions",
+    "__name__": "suggestion",
     "type": "object",
     "properties": {
-        "questions": {"type": "array", "items": {"type": "string"}},
+        "question": {"type": "string"},
     },
-    "required": ["questions"],
+    "required": ["question"],
     "additionalProperties": False,
 }
 
@@ -61,7 +65,6 @@ _SCHEMA = {
 # short enough that the call stays cheap: this runs on every turn.
 ASKED_CHARS = 700
 ANSWERED_CHARS = 1400
-MAX_QUESTIONS = 3
 MAX_CHARS = 90
 
 # A SUGGESTION HAS A SHELF LIFE. The harness's own timeout is generous because
@@ -80,8 +83,13 @@ def enabled() -> bool:
         return False
 
 
-def next_questions(asked: str, answered: str, model=None) -> list[str]:
-    """Three things the person might type next, or [] - never raises.
+def next_question(asked: str, answered: str, model=None) -> str:
+    """The one thing the person is likeliest to type next, or "" - never raises.
+
+    ONE, not a list. A list is a menu, and a menu on the input line is a thing
+    to read before you can type; this is meant to be the line you were going
+    to write anyway, already written. If it is not that, it is wrong, and the
+    right number of wrong guesses to show is none.
 
     A suggestion that fails is a suggestion that is not offered. Nothing here
     is worth interrupting a conversation for, and the caller runs it off the
@@ -89,7 +97,7 @@ def next_questions(asked: str, answered: str, model=None) -> list[str]:
     """
     asked, answered = (asked or "").strip(), (answered or "").strip()
     if not asked or not answered:
-        return []
+        return ""
     payload = (f"THEY ASKED:\n{asked[:ASKED_CHARS]}\n\n"
                f"PRAGMA ANSWERED:\n{answered[:ANSWERED_CHARS]}")
     try:
@@ -107,13 +115,9 @@ def next_questions(asked: str, answered: str, model=None) -> list[str]:
             )
         data = extract_json(raw) or {}
     except Exception:
-        return []
-    out = []
-    for q in (data.get("questions") or [])[:MAX_QUESTIONS]:
-        q = " ".join(str(q).split())
-        # A model that answers the question instead of asking it produces a
-        # paragraph. One line is the contract; anything longer is not a
-        # suggestion and would break the prompt's layout anyway.
-        if q and len(q) <= MAX_CHARS and q not in out:
-            out.append(q)
-    return out
+        return ""
+    # A model that answers the question instead of asking it produces a
+    # paragraph. One line is the contract; anything longer is not a suggestion
+    # and would not fit on the input line anyway.
+    q = " ".join(str(data.get("question") or "").split())
+    return q if len(q) <= MAX_CHARS else ""
