@@ -897,6 +897,11 @@ def who_reasons(entry: dict, name: str) -> bool:
     way it always was: no `reasons` key at all.
     """
     changed = False
+    # WHERE THE CURSOR IS WHEN THE PAGE COMES BACK. A switch is flipped by
+    # pressing Enter on it, and the page redraws to show the new answer - so
+    # landing back on the first row means the one you are working on walks
+    # away from you every time you press it. It stays where you left it.
+    at = 0
     while True:
         step(f"endpoints > tune > {name} > who reasons")
         print()
@@ -904,9 +909,10 @@ def who_reasons(entry: dict, name: str) -> bool:
         print("  " + grey("to use it, or to answer at once instead."))
         rows = [f"{role:<8}{'reasons' if endpoints.reasons_for(entry, role) else 'answers at once'}"
                 for role in endpoints.ROLES]
-        i = pick("", rows, [ROLE_BLURB[r] for r in endpoints.ROLES])
+        i = pick("", rows, [ROLE_BLURB[r] for r in endpoints.ROLES], at)
         if i is None:
             return changed
+        at = i
         role = endpoints.ROLES[i]
         table = dict(entry.get("reasons") or {})
         table[role] = not endpoints.reasons_for(entry, role)
@@ -922,6 +928,7 @@ def tune(state: dict, name: str) -> bool:
     cat = state["cat"]
     entry = cat["endpoints"][name]
     changed = False
+    at = 0
     while True:
         sampling = ("the server's own numbers" if not entry.get("sampling")
                     else knob_text(endpoints.sampling_row(entry)) or "nothing set yet")
@@ -942,9 +949,10 @@ def tune(state: dict, name: str) -> bool:
         print("  " + grey(entry.get("url", "")))
         print("  " + grey("What this endpoint is. Every project that talks to it"))
         print("  " + grey("inherits these answers."))
-        i = pick("", [r for r, _, _ in rows], [b for _, b, _ in rows])
+        i = pick("", [r for r, _, _ in rows], [b for _, b, _ in rows], at)
         if i is None:
             return changed
+        at = i
         what = rows[i][2]
         if what == "kind":
             step(f"endpoints > tune > {name} > what it is")
@@ -1140,33 +1148,61 @@ ENDPOINT_ACTIONS = [
     ("edit", "address, model name, API key", cmd_edit),
 ]
 
-# What changes the SET of endpoints, plus the way in to the three above.
+def cmd_prediction(state: dict) -> bool:
+    """One press, on or off. No page of its own: it is one answer."""
+    cat = state["cat"]
+    opts = dict(cat.get("options") or {})
+    now = bool(opts.get("prediction", False))
+    if now:
+        opts.pop("prediction", None)     # off is the default: say nothing
+    else:
+        opts["prediction"] = True
+    if opts:
+        cat["options"] = opts
+    else:
+        cat.pop("options", None)
+    return True
+
+
+# What changes the SET of endpoints, the way in to the three above, and the
+# switches that are the harness's rather than one server's.
 ACTIONS = [
     ("add",       "a server: its address, its name, what it is", cmd_add),
     ("remove",    "one no role needs", cmd_remove),
     ("endpoints", "use, tune, edit", None),
+    ("prediction", "", cmd_prediction),
 ]
 
 
 def endpoints_page(state: dict) -> bool:
     """use, tune, edit - until ctrl+D."""
     changed = False
+    at = 0
     while True:
         show(state, crumbs="endpoints")
         i = pick("", [a for a, _, _ in ENDPOINT_ACTIONS],
-                 [b for _, b, _ in ENDPOINT_ACTIONS])
+                 [b for _, b, _ in ENDPOINT_ACTIONS], at)
         if i is None:
             return changed
+        at = i
         _, _, handler = ENDPOINT_ACTIONS[i]
         if run_action(state, handler):
             changed = True
 
 
 def save(state: dict) -> None:
-    """The file, or no file: an empty catalogue means "use .env", so it goes."""
+    """The file, or no file: an empty catalogue means "use .env", so it goes.
+
+    Unless a harness switch has been set. Those live in the same file, and a
+    file deleted for having no endpoints would take them with it - so turning
+    prediction on before adding a server would forget it the moment the page
+    redrew.
+    """
     cat = state["cat"]
     path = endpoints.catalogue_path()
-    if cat["endpoints"]:
+    if not cat.get("options"):
+        cat.pop("options", None)      # never write an empty object
+    if cat["endpoints"] or cat.get("options"):
         endpoints.save_catalogue(cat)
     elif path.exists():
         path.unlink()
@@ -1180,7 +1216,8 @@ def run_action(state: dict, handler) -> bool:
     """
     cat = state["cat"]
     before = {"endpoints": json.loads(json.dumps(cat["endpoints"])),
-              "roles": dict(cat["roles"])}
+              "roles": dict(cat["roles"]),
+              "options": dict(cat.get("options") or {})}
     try:
         if handler(state):
             save(state)
@@ -1218,6 +1255,8 @@ def main() -> int:
         data = None
     cat = {"endpoints": dict((data or {}).get("endpoints") or {}),
            "roles": dict((data or {}).get("roles") or {})}
+    if (data or {}).get("options"):
+        cat["options"] = dict(data["options"])
     state = {"cat": cat}
 
     old = Path.home() / ".pragma" / "sampling.json"
@@ -1226,12 +1265,26 @@ def main() -> int:
                          f"each endpoint now, under tune")
 
     changed = False
+    at = 0
     while True:
         show(state)
-        i = pick("", [a for a, _, _ in ACTIONS], [b for _, b, _ in ACTIONS])
+        # The prediction row says what it IS, not what pressing it does: a
+        # menu where some rows are verbs and one is a promise is a menu you
+        # have to read twice. Enter flips it, like every other switch here.
+        on = bool((cat.get("options") or {}).get("prediction"))
+        labels, blurbs = [], []
+        for name, blurb, _h in ACTIONS:
+            if name == "prediction":
+                labels.append(f"prediction  {'on' if on else 'off'}")
+                blurbs.append("three things you might ask next, under the prompt")
+            else:
+                labels.append(name)
+                blurbs.append(blurb)
+        i = pick("", labels, blurbs, at)
         if i is None:
             clear()
             return CHANGED if changed else UNCHANGED
+        at = i
         action, _, handler = ACTIONS[i]
         if action == "endpoints":
             if not cat["endpoints"]:

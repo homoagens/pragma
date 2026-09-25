@@ -636,12 +636,29 @@ def memory_call(kind="write") -> dict:
 # the `recall` role after each answer - see core/suggest.py for why it is a
 # faculty and not a second model kept running beside the big one.
 #
-# OFF unless asked for, and asked for per project. It is an extra call on
-# every turn, on a local model shared with everything else: a machine with one
-# slot pays for it in the queue, behind the consolidation. Nobody should
-# inherit that for a convenience they did not ask for.
-SUGGEST_NEXT = os.environ.get("SUGGEST_NEXT", "").strip().lower() in (
-    "on", "1", "true", "yes")
+# OFF unless asked for, and asked for ONCE for the machine, in /configure
+# beside the endpoints - not per project. Whether Pragma guesses your next
+# question is a thing about how you like working, not about what you are
+# working on, and answering it again in every project is answering it again
+# in every project. SUGGEST_NEXT still overrides it for one run.
+#
+# Off by default because it is an extra call on every turn, on a local model
+# shared with everything else: a machine with one slot pays for it in the
+# queue, behind the consolidation.
+_SUGGEST_RAW = os.environ.get("SUGGEST_NEXT", "").strip().lower()
+
+
+def suggest_next() -> bool:
+    """Does Pragma guess what you might ask next?"""
+    if _SUGGEST_RAW in ("on", "1", "true", "yes"):
+        return True
+    if _SUGGEST_RAW in ("off", "0", "false", "no"):
+        return False
+    try:
+        import endpoints
+        return endpoints.option("prediction", False)
+    except Exception:
+        return False
 
 
 # write_file emits a soft warning in the observation when content exceeds

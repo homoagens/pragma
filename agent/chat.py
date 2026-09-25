@@ -316,6 +316,14 @@ def _accent() -> str:
     return "\033[38;2;" + raw + "m"
 
 
+def _suggesting(cfg) -> bool:
+    """Is the harness guessing what you might ask next? Never raises."""
+    try:
+        return bool(cfg.suggest_next())
+    except Exception:
+        return False
+
+
 def _hint() -> str:
     """What the empty line offers: say something, or step back out.
 
@@ -543,7 +551,7 @@ def _status_lines() -> list[tuple[str, str]]:
     out.append(("steps", f"{_STATE.get('max_steps') or getattr(cfg, 'MAX_STEPS', 0)} per turn"))
     # Only when it is on. A line saying a thing is off, on a page read to find
     # out what IS on, is a line to skip past every time.
-    if getattr(cfg, "SUGGEST_NEXT", False):
+    if _suggesting(cfg):
         out.append(("prediction", "three things you might ask next, under the"
                                   " prompt  (one recall call per turn)"))
     # One switch per role: the endpoint says whether the model it runs can

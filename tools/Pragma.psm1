@@ -887,9 +887,10 @@ function script:Invoke-ProjectChoices($entry) {
     # What the model IS, and how it samples, are the endpoint's: one server,
     # one model, one answer for every project that talks to it. /configure.
     Write-Host ""
-    Write-Host "  Whether anything reasons, and how it samples, belong to the" -ForegroundColor DarkGray
-    Write-Host "  endpoint - /configure, once, for every project. There it is" -ForegroundColor DarkGray
-    Write-Host "  said role by role: the steps, the recall, the memory." -ForegroundColor DarkGray
+    Write-Host "  Whether anything reasons, how it samples, and whether Pragma" -ForegroundColor DarkGray
+    Write-Host "  guesses your next question belong to /configure - once, for" -ForegroundColor DarkGray
+    Write-Host "  every project. There the thinking is said role by role: the" -ForegroundColor DarkGray
+    Write-Host "  steps, the recall, the memory." -ForegroundColor DarkGray
 
     # 2. How far one turn may go before the agent has to answer.
     $cur = Get-ProjectValue $entry 'MaxSteps'
@@ -908,26 +909,6 @@ function script:Invoke-ProjectChoices($entry) {
             break
         }
         Write-Host "    a number from 1 to 1000" -ForegroundColor Yellow
-    }
-    Write-Host ""
-
-    # 3. What you might ask next, under the empty prompt. Off by default and
-    # asked last: it is a convenience, and it is one more call per turn on the
-    # same server everything else queues on.
-    $cur = Get-ProjectValue $entry 'Prediction'
-    $shown = if ("$cur".ToLower() -in @('on', '1', 'true', 'yes')) { 'on' } else { 'off' }
-    Write-Host "  prediction - three things you might ask next, offered under the prompt"
-    Write-Host "    one short call after each answer, on the recall endpoint" -ForegroundColor DarkGray
-    while ($true) {
-        $v = Read-Line "  prediction [$shown]: "
-        if ($null -eq $v) { return }
-        $v = $v.Trim().ToLower()
-        if (-not $v -or $v -eq $shown) { break }
-        if ($v -in @('on', 'off')) {
-            Set-ProjectSetting $entry 'Prediction' $v | Out-Null
-            break
-        }
-        Write-Host "    on or off" -ForegroundColor Yellow
     }
     Write-Host ""
 }

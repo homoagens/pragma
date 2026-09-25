@@ -145,6 +145,27 @@ def reasons_for(entry: dict, role: str = "agent") -> bool:
     return bool(table.get(role if role in ROLES else "agent", True))
 
 
+# WHAT THE HARNESS DOES, as opposed to what a model is. These sit beside the
+# endpoints rather than in a project's settings because they are answered once
+# for the machine: /configure is the page you open when you set Pragma up, and
+# a switch that means the same thing in every project belongs on it.
+#
+#   prediction  three things you might ask next, under the empty prompt
+OPTIONS = ("prediction",)
+
+
+def option(name: str, default: bool = False) -> bool:
+    """One harness-wide switch from the catalogue. Never raises."""
+    try:
+        data, error = load_catalogue()
+        if error or not data:
+            return default
+        got = (data.get("options") or {}).get(name)
+        return default if got is None else bool(got)
+    except Exception:
+        return default
+
+
 class EndpointError(RuntimeError):
     """The catalogue says something that cannot be followed."""
 
@@ -246,7 +267,12 @@ def _problem(data) -> str:
     roles = data.get("roles", {})
     if not isinstance(eps, dict) or not isinstance(roles, dict):
         return "\"endpoints\" and \"roles\" must both be objects"
-    if not eps:
+    # A catalogue with no endpoints used to be meaningless, and saying so
+    # caught a half-written file. It is not meaningless any more: the harness
+    # switches live here too, and turning prediction on before adding a server
+    # is a reasonable order to do things in. With no endpoints every role
+    # falls back to .env, exactly as it does with no file at all.
+    if not eps and not data.get("options"):
         return "it lists no endpoints"
     for name, e in eps.items():
         if not isinstance(e, dict) or not str(e.get("url") or "").strip():
@@ -268,6 +294,15 @@ def _problem(data) -> str:
             return f"role \"{role}\" names \"{name}\", which is not in \"endpoints\""
     if not roles.get("agent") and len(eps) > 1:
         return "no endpoint is assigned to \"agent\", and there is more than one to choose from"
+    opts = data.get("options")
+    if opts is not None:
+        if not isinstance(opts, dict):
+            return "\"options\" must be an object of switches"
+        for key, on in opts.items():
+            if key not in OPTIONS:
+                return f"\"options\" has \"{key}\"; it has {', '.join(OPTIONS)}"
+            if not isinstance(on, bool):
+                return f"\"options.{key}\" must be true or false"
     return ""
 
 
@@ -445,6 +480,8 @@ def for_role(role: str) -> Endpoint:
         raise EndpointError(error)
     if data is None:
         return _from_env()
+    if not (data.get("endpoints") or {}):
+        return _from_env()
     roles = data.get("roles") or {}
     name = roles.get(role) or roles.get("agent") or next(iter(data["endpoints"]))
     return _named(data, name)
@@ -457,6 +494,8 @@ def entry_for_role(role: str) -> dict:
     try:
         data, error = load_catalogue()
         if error or data is None:
+            return {}
+        if not (data.get("endpoints") or {}):
             return {}
         roles = data.get("roles") or {}
         name = roles.get(role) or roles.get("agent") or next(iter(data["endpoints"]))

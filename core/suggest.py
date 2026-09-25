@@ -73,8 +73,11 @@ TIMEOUT = int(os.environ.get("SUGGEST_TIMEOUT", "") or 20)
 
 
 def enabled() -> bool:
-    """Off unless the project said otherwise."""
-    return bool(getattr(config, "SUGGEST_NEXT", False))
+    """Off unless /configure said otherwise, for the whole harness."""
+    try:
+        return bool(config.suggest_next())
+    except Exception:
+        return False
 
 
 def next_questions(asked: str, answered: str, model=None) -> list[str]:
