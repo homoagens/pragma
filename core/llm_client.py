@@ -61,6 +61,41 @@ class LLMInterrupted(Exception):
     pass
 
 
+# THE WAY OUT, for every call at once. A conversation closing has one or two
+# faculties still talking to the server - the segmenter, then a consolidator
+# per segment - and each is a call that can run for a minute. Without this,
+# stopping the conversation stopped the LOOP and left those calls running:
+# the window came back, the process did not go away, and reopening Pragma
+# found the old one still writing memories nobody was watching.
+#
+# Set once, by whoever is closing, and every call in this process notices at
+# its next check - mid-request, between the lines of a stream, or between two
+# retries. A stop is never retried, so setting it ends the traffic instead of
+# restarting it.
+SHUTDOWN = threading.Event()
+
+
+class _EitherStop:
+    """The caller's stop signal, or the process closing. Either ends the call."""
+
+    __slots__ = ("_own",)
+
+    def __init__(self, own):
+        self._own = own
+
+    def is_set(self) -> bool:
+        return SHUTDOWN.is_set() or (self._own is not None and self._own.is_set())
+
+
+def stop_everything() -> None:
+    """Abort every LLM call in this process, now and from now on."""
+    SHUTDOWN.set()
+
+
+def stopping() -> bool:
+    return SHUTDOWN.is_set()
+
+
 class LLMLooped(Exception):
     """Raised when the watchdog detects the model is repeating itself
     inside the <think> block — i.e. the reasoning_content stream is
@@ -368,6 +403,7 @@ def _post_with_retry(url, headers, payload, timeout, label, stop_event=None):
     The waiting spinner shows the model the endpoint actually serves (when
     known) and a live elapsed counter, so a long call is visibly alive."""
     disp = endpoints.state(url.rsplit("/chat/completions", 1)[0]).served_model or label
+    stop_event = _EitherStop(stop_event)
     last = None
     attempt = 0            # 502: the backend is loading, wait long
     transport = 0          # dropped connection: retry fast or fail fast
@@ -651,6 +687,7 @@ def _post_streamed(url, headers, payload, timeout, label, stop_event):
     the loop guard, which raises LLMLooped when a paragraph starts repeating.
     """
     import json as _json
+    stop_event = _EitherStop(stop_event)
     base = url.rsplit("/chat/completions", 1)[0]
     who = _who(endpoints.state(base).served_model or label)
     body = dict(payload, stream=True, stream_options={"include_usage": True})
@@ -821,6 +858,7 @@ def _stream_openai_compatible(messages, model, temperature, max_tokens, timeout,
                                on_reasoning=None, template_kwargs=None):
     """Stream from an OpenAI-compatible /chat/completions endpoint (SSE)."""
     import json as _json
+    stop_event = _EitherStop(stop_event)
     payload = {
         "model":       model,
         "messages":    messages,
@@ -923,6 +961,7 @@ def _stream_tools_openai_compatible(payload, headers, timeout, base_url,
     LAST_STATS without token counts, as a blocking reply without usage would.
     """
     import json as _json
+    stop_event = _EitherStop(stop_event)
     payload = dict(payload, stream=True, stream_options={"include_usage": True})
     try:
         resp = requests.post(f"{base_url}/chat/completions", headers=headers,

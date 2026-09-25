@@ -1524,10 +1524,32 @@ If the turn needed no tools at all, the conclusion is simply your reply.
         # when the context filled up, once again on the way out.
         pending = turns[consolidated_upto:]
         if not _consolidate_later(pending, cwd):
-            _consolidate(pending, cwd, renderer)
+            # CLOSING IS NOT LEAVING, until this is done. A segmenter and one
+            # consolidator per segment are calls that can each run a minute,
+            # and they start AFTER the conversation has said goodbye - so from
+            # the outside the window is gone while the process is still
+            # talking to the server. Stopping the conversation used to stop
+            # the loop and nothing else: you would reopen Pragma and find the
+            # old one still writing memories nobody was watching.
+            #
+            # So the way out is said, and it works: ctrl+C here aborts the
+            # call in flight and every call after it. Nothing is left half
+            # written - an episode is saved whole or not at all - so what is
+            # lost is the segments that had not been reached yet.
+            print("\n  writing what was said to memory - ctrl+C stops it")
+            try:
+                _consolidate(pending, cwd, renderer)
+            except KeyboardInterrupt:
+                llm_client.stop_everything()
+                print("\n  stopped. What was written is kept; the rest is "
+                      "still in the log.")
     elif turns:
         print(f"\n  {len(turns)} turn(s) recorded in {log_path.name} "
               f"(no --memory: nothing was consolidated)")
+    # NOTHING KEEPS TALKING AFTER THIS. The suggester runs in a daemon thread
+    # and a faculty may still be mid-request; both notice at their next check
+    # and stop, so the process ends when it says it is ending.
+    llm_client.stop_everything()
     return 0
 
 
