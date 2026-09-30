@@ -238,16 +238,39 @@ def _native_action_text(cfg: AgentConfig, messages, model, temperature,
         return None
 
     calls = r.get("tool_calls") or []
-    thought = r.get("content") or r.get("reasoning") or ""
+    # What the model SAID, and what the transcript shows. They differ on a
+    # reasoning model, whose content is routinely empty when it calls a tool:
+    # the reasoning is then the only thing there is to show. But it is only
+    # ever SHOWN - see below for why it is never acted on or answered with.
+    said = r.get("content") or ""
+    thought = said or r.get("reasoning") or ""
 
     if not calls:
+        # THE REASONING IS NEVER THE ANSWER, AND NEVER AN ACTION. A reply with
+        # no call and nothing said used to end the run with the reasoning as
+        # the final answer - the model's scratch work, shown to the user as
+        # its conclusion. And the salvage below read actions out of it, which
+        # would run a call the model had only considered. Whatever the model
+        # has not said, it has not said.
+        if not said.strip():
+            if r.get("finish_reason") == "length":
+                # The reasoning ate the whole budget: the loop's answer to a
+                # reasoning that ran on is a hint to act, not another try.
+                raise llm_client._no_answer("length")
+            # It reasoned and stopped. Not "finished": nothing was answered.
+            # Asked once more, like any reply that called no tool - and the
+            # history records the empty reply it was, not the reasoning.
+            return _json.dumps({"thought": thought or "(no answer produced)",
+                                "__no_tool_call__": True,
+                                "__assistant_content__": ""})
+
         # Safety net. The model sometimes answers in the OTHER dialect: no tool
         # call, and the action written as protocol JSON in the prose. Feeding
         # the history back in native shape (below) is the actual cure, but if
         # one slips through, accepting it as the final answer would end the run
         # with a tool call that was never executed - which is what happened
         # twice before that fix. If the prose IS an action, run it.
-        salvaged = _action_from_text(thought)
+        salvaged = _action_from_text(said)
         if salvaged is not None:
             _NO_TOOL_STREAK[0] = 0
             return salvaged
@@ -255,11 +278,12 @@ def _native_action_text(cfg: AgentConfig, messages, model, temperature,
         _NO_TOOL_STREAK[0] += 1
         if _NO_TOOL_STREAK[0] >= _NO_TOOL_LIMIT:
             # No call and no action hidden in the prose: this is the answer.
-            return _json.dumps({"conclusion": thought or "(no answer produced)"})
+            return _json.dumps({"conclusion": said})
         # Unreachable at the current limit; kept so raising _NO_TOOL_LIMIT
         # restores the confirmation round without further surgery.
         return _json.dumps({"thought": thought or "(no tool called)",
-                            "__no_tool_call__": True})
+                            "__no_tool_call__": True,
+                            "__assistant_content__": said})
 
     _NO_TOOL_STREAK[0] = 0
     first = calls[0]
@@ -269,7 +293,6 @@ def _native_action_text(cfg: AgentConfig, messages, model, temperature,
     # there is to show. What goes BACK to the model is the content alone - the
     # chat template drops a previous turn's reasoning anyway, so re-sending it
     # buys nothing and is paid for in the window at every step after it.
-    said = r.get("content") or ""
     if len(calls) > 1:
         names = [c.get("name", "?") for c in calls]
         if queue is not None and all(n in _READ_ONLY_SKILLS for n in names):
@@ -632,21 +655,22 @@ def run_agent(cfg: AgentConfig, user_task: str, log_path: Optional[Path] = None,
             step += 1
             continue
         except llm_client.LLMLooped as e:
-            # Watchdog detected the model is stuck repeating itself inside
-            # the <think> block. Abort this turn and inject a recovery hint
-            # so the model breaks out of the loop on the next attempt.
+            # The reasoning ended without an action: the watchdog caught it
+            # repeating itself, or it ran into the token limit. Either way
+            # nothing was done, and the model is told which - "you were
+            # repeating a paragraph" said to a reasoning that simply ran long
+            # would be a wrong diagnosis handed to the one reading it.
             err_str = str(e)
+            said = getattr(e, "said", "") or "the reasoning had to be cut short"
             if config.DEBUG:
-                console.print(f"[red]Reasoning loop at step {step}: {err_str}[/red]")
+                console.print(f"[red]Reasoning cut short at step {step}: {err_str}[/red]")
             _emit({"type": "error",
-                   "content": f"Reasoning loop detected at step {step}. "
-                              f"Aborted to prevent runaway thinking."})
+                   "content": f"Reasoning cut short at step {step}: {said}."})
             messages.append({
                 "role": "user",
                 "content": (
-                    "[SYSTEM]: The watchdog detected that you were REPEATING "
-                    "the same paragraph inside your <think> block without "
-                    "converging. To recover:\n"
+                    f"[SYSTEM]: Your reasoning was cut short ({said}) and "
+                    "nothing was done. To recover:\n"
                     "1. STOP analyzing the same code over and over.\n"
                     "2. Either pick the most likely hypothesis and TEST IT "
                     "with a tool call (run, edit, read a specific line), or "
@@ -809,7 +833,10 @@ def run_agent(cfg: AgentConfig, user_task: str, log_path: Optional[Path] = None,
                                    f"On the native channel that reads as "
                                    f"\"finished\" — asking it to confirm or "
                                    f"take the next action.")})
-                messages.append({"role": "assistant", "content": thought})
+                # What it said, when that is not the thought shown: a reply
+                # that only reasoned said nothing, and its reasoning must not
+                # enter the history as though it had been spoken.
+                messages.append({"role": "assistant", "content": _said})
                 messages.append({"role": "user", "content": (
                     "[SYSTEM]: your previous reply called no tool, so NOTHING "
                     "was executed. If the task is NOT finished, call the tool "

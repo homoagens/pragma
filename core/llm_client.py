@@ -97,13 +97,14 @@ def stopping() -> bool:
 
 
 class LLMLooped(Exception):
-    """Raised when a reasoning has to be cut short, for either of two reasons.
+    """Raised when a reasoning ends without an answer, for one of three reasons.
 
-    TWO REASONS, NOT ONE, and telling them apart is the whole point of `said`.
+    THREE REASONS, NOT ONE, and telling them apart is the whole point of `said`.
     Either the stream is producing the same paragraph over and over without
     converging - a real loop, and a property of the model and how it is being
     sampled - or the reasoning has simply run past its budget without starting
-    an answer, which is a long deliberation meeting a number someone chose.
+    an answer, which is a long deliberation meeting a number someone chose. Or
+    the reply came back with reasoning and nothing else: see _no_answer.
 
     Both used to be reported as "the reasoning went in circles", so a faculty
     that had thought hard for six minutes and been cut off was described as
@@ -151,6 +152,31 @@ def _overflowed(e) -> bool:
         "exceed_context_size", "exceeds the available context",
         "larger than the max context", "context_length_exceeded",
         "maximum context length"))
+
+
+def _no_answer(finish: str) -> LLMLooped:
+    """A reply that carried reasoning and no answer, as the error that says so.
+
+    THE REASONING IS NEVER THE ANSWER. It used to be taken as one whenever
+    `content` came back empty: a faculty whose reasoning ran into the token
+    limit returned that reasoning, tagged as truncated, and json_repair was
+    set to find a JSON in it - so a belief could be extracted from half a
+    chain of thought. The two channels are separated by the server precisely
+    so that nobody has to guess which is which; merging them back on the
+    client undoes that. What comes back empty is an empty answer, and the
+    callers already know what to do with a reasoning that ended without one:
+    a faculty asks again without thinking, the agent is told to act.
+
+    LLMLooped, not a new exception, because that is the recovery every caller
+    already has for "the reasoning ended and no answer came out of it".
+    """
+    if finish == "length":
+        return LLMLooped(
+            "the reasoning used the whole token budget without starting an answer",
+            said="it reasoned until the token limit without starting an answer")
+    return LLMLooped(
+        "the reply ended inside the reasoning, with no answer",
+        said="it ended its reply inside the reasoning, with no answer")
 
 
 # Marker prepended to text that came back as a truncated partial. The agent
@@ -899,7 +925,9 @@ def _call_openai_compatible(messages, model, temperature, max_tokens, timeout, b
     }
     _warn_if_still_thinking(template_kwargs, msg)
     _warn_if_not_thinking(template_kwargs, bool((msg.get("reasoning_content") or "").strip()))
-    text   = (msg.get("content") or msg.get("reasoning_content") or "").strip()
+    text   = (msg.get("content") or "").strip()
+    if not text and (msg.get("reasoning_content") or "").strip():
+        raise _no_answer(finish)
     return text, finish
 
 
@@ -982,14 +1010,14 @@ def _stream_openai_compatible(messages, model, temperature, max_tokens, timeout,
                 if fin:
                     finish = fin
 
+    # Some reasoning models end the reply inside the <think> block, so the
+    # whole of it arrives as reasoning_content and no content ever comes. That
+    # is a reply with no answer, not an answer to fish out of the reasoning.
+    if not text.strip() and reasoning_buf.strip():
+        raise _no_answer(finish)
     # Salvage partial text on length truncation if possible. See _on_length_finish.
     text = _on_length_finish(text, finish)
     finish = "" if text.startswith(TRUNCATION_PARTIAL_MARKER) else finish
-    # Fallback: some reasoning models (e.g. Qwen3) emit the entire answer
-    # inside the <think> block as reasoning_content and never produce content.
-    # Use the reasoning buffer as the response text in that case.
-    if not text and reasoning_buf:
-        text = reasoning_buf
     if not text:
         raise RuntimeError("The model returned an empty response.")
     return text
