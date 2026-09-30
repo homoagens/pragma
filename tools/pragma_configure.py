@@ -160,11 +160,12 @@ def nature(entry: dict) -> str:
     if not kind and not work and not entry.get("sampling"):
         return "not tuned yet - what it is, and how it samples"
     words = f"{kind or 'kind not set'} · {work or 'general'}"
-    # Said only when it is news. A thinking endpoint that reasons for all
-    # three is what "thinking" already means, and repeating it on every line
-    # would bury the case that differs.
+    # Said only when it is news: when the endpoint's table differs from what
+    # "thinking" means by default (the agent and the memory reason, the
+    # recall answers at once). Repeating the default on every line would bury
+    # the case that differs.
     who = reasons_text(entry)
-    if who and who != "all three":
+    if who and entry.get("reasons"):
         words += f" ({who} reason)" if who != "nobody" else " (nobody reasons)"
     if not entry.get("sampling"):
         return f"{words} · the server's own numbers"
@@ -907,11 +908,9 @@ def reasons_text(entry: dict) -> str:
 
 
 def who_reasons(entry: dict, name: str) -> bool:
-    """Three switches, one per role. Written only when one is turned off.
-
-    An endpoint that reasons for everyone is the common case and the one a
-    catalogue written before this existed describes, so it stays written the
-    way it always was: no `reasons` key at all.
+    """Three switches, one per role. Written only when they differ from the
+    default - the agent and the memory reason, the recall answers at once -
+    so an endpoint that takes the default has no `reasons` key at all.
     """
     changed = False
     # WHERE THE CURSOR IS WHEN THE PAGE COMES BACK. A switch is flipped by
@@ -931,12 +930,16 @@ def who_reasons(entry: dict, name: str) -> bool:
             return changed
         at = i
         role = endpoints.ROLES[i]
-        table = dict(entry.get("reasons") or {})
-        table[role] = not endpoints.reasons_for(entry, role)
-        if all(table.get(r, True) for r in endpoints.ROLES):
+        now = {r: endpoints.reasons_for(entry, r) for r in endpoints.ROLES}
+        now[role] = not now[role]
+        # Written only when it differs from what an endpoint that says nothing
+        # gets - which is no longer "all three": the recall answers at once
+        # by default. Compared against "all true", turning the recall ON would
+        # have removed the table and switched it straight back off.
+        if now == {r: endpoints._REASONS_BY_DEFAULT[r] for r in endpoints.ROLES}:
             entry.pop("reasons", None)
         else:
-            entry["reasons"] = {r: table.get(r, True) for r in endpoints.ROLES}
+            entry["reasons"] = now
         changed = True
 
 

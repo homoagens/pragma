@@ -241,14 +241,28 @@ def thinking_for(role: str = "agent") -> bool:
 
     The endpoint knows whether the model CAN: it is running one model and that
     model either reasons or does not, which is `kind` in the catalogue. Which
-    of the three roles is ASKED to is the endpoint's too, under `reasons`, and
-    a thinking endpoint that says nothing reasons for all three.
+    of the three roles is ASKED to is the endpoint's too, under `reasons`; a
+    thinking endpoint that says nothing reasons for the agent and the memory,
+    and not for the recall (see endpoints._REASONS_BY_DEFAULT for why).
 
     AGENT_THINK still wins where it is set, for every role at once: it is a
     run-level override - "this window, the other way" - and a run that wanted
     per-role answers would be writing them in the catalogue instead.
     """
     if _AGENT_THINK in ("on", "1", "true", "yes"):
+        # ON MEANS WHERE REASONING PAYS: the steps and the memory. The recall
+        # still answers at once unless the endpoint itself asks otherwise.
+        # AGENT_THINK=on reached the curator too, which then reasoned on every
+        # turn before the agent could start - MEASURED 2026-09-30: 37 s for one
+        # memory, over two minutes for five, the person watching a spinner.
+        # A variable called AGENT_THINK left in a shell's environment should
+        # not be what makes every question wait.
+        if role == "recall":
+            try:
+                import endpoints
+                return endpoints.reasons_for(_entry_for(role), role)
+            except Exception:
+                return False
         return True
     if _AGENT_THINK in ("off", "0", "false", "no"):
         return False
@@ -565,6 +579,14 @@ MEMORY_SEED = int(os.environ.get("MEMORY_SEED", "") or 42)
 _ANSWER_ROOM = 2000              # tokens kept back for the JSON itself
 _THINK_DEFAULT = max(8000, (MEMORY_MAX_TOKENS - _ANSWER_ROOM) * 4)
 MEMORY_THINK_BUDGET = int(os.environ.get("MEMORY_THINK_BUDGET", "") or _THINK_DEFAULT)
+
+# The recall's own cap, much shorter, for an endpoint told to let the curator
+# reason. The memory faculties run after the turn, where minutes cost nobody a
+# wait; the curator runs before it, with the person watching a status line.
+# Its answer is a few refs, so a reasoning past this length (about a thousand
+# tokens, half a minute at local speeds) has stopped buying anything: it is
+# cut and the call asked again without thinking, as a memory call's is.
+RECALL_THINK_BUDGET = int(os.environ.get("RECALL_THINK_BUDGET", "") or 4000)
 
 
 def current_role() -> str:

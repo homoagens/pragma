@@ -794,6 +794,14 @@ def _status_lines() -> list[tuple[str, str]]:
     else:
         line = "nothing reasons: every call answers at once"
     out.append(("thinking", line))
+    # Said when an environment variable decides it: a setting left in a
+    # shell's environment is otherwise invisible, and it outranks the
+    # catalogue - which is how a curator came to reason on every turn with
+    # nobody having asked it to.
+    forced = str(getattr(cfg, "_AGENT_THINK", "") or "").strip()
+    if forced:
+        out.append(("", f"AGENT_THINK={forced} is set in this window's environment and "
+                        f"overrides the endpoint for the steps and the memory"))
     out.append(("", f"memory calls carry seed {getattr(cfg, 'MEMORY_SEED', 42)}, "
                     f"so a repeated one agrees with itself"))
     # What this project's own calls carry. A profile answers for all of them at
@@ -1491,6 +1499,9 @@ If the turn needed no tools at all, the conclusion is simply your reply.
         # harness shows the first and scrolls the second through its status.
         on_token=renderer.on_token,
         on_reasoning=renderer.on_reasoning,
+        # And while the server is still reading the prompt: the status line
+        # appears when the request goes out, not when the first token does.
+        on_progress=renderer.on_progress,
     )
     _CFG[:] = [cfg]
 

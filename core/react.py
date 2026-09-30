@@ -55,6 +55,9 @@ class AgentConfig:
     stop_event:    Optional[threading.Event] = None  # set() to interrupt the loop
     on_token:      Optional[Callable] = None  # called with each streamed text chunk
     on_reasoning:  Optional[Callable] = None  # called with each reasoning_content chunk
+    # called with (processed, total, cached) prompt tokens while the server
+    # reads the prompt, and once with zeros as the request goes out
+    on_progress:   Optional[Callable] = None
 
 
 def _log_step(log_path: Path, entry: dict):
@@ -230,6 +233,7 @@ def _native_action_text(cfg: AgentConfig, messages, model, temperature,
             stop_event=cfg.stop_event,
             on_token=cfg.on_token, on_reasoning=cfg.on_reasoning,
             template_kwargs=config.agent_template_kwargs(),
+            on_progress=cfg.on_progress,
         )
     except llm_client.ToolsUnsupported as e:
         known.tools_unsupported = True

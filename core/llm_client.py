@@ -749,6 +749,40 @@ def _refused(e) -> bool:
                                   "unrecognized", "response_format", "json_schema"))
 
 
+def _slot_for(base_url, api_key="") -> dict:
+    """{"id_slot": n} when the server has a slot to spare for this role, or {}.
+
+    ONE SLOT, EVERY FACULTY IN IT. A llama.cpp server with one slot holds one
+    prompt in its cache, and the curator's call - every turn, just before the
+    agent's - replaced the conversation with its own. The agent's next call
+    then read the whole conversation again. MEASURED 2026-09-30 on qwen36:
+    after a curator call, 5 921 tokens re-read in 25.8 s with nothing on the
+    screen; the step after it re-read 293.
+
+    With two slots or more, the agent keeps slot 0 and every faculty uses
+    slot 1, so the conversation's cache is never the one evicted. With one,
+    nothing is sent and the server chooses as before. llama.cpp only: a
+    server without /props is not sent the field.
+    """
+    try:
+        if endpoints.slots(base_url, api_key) < 2:
+            return {}
+        return {"id_slot": 0 if endpoints.role_of(current_faculty()) == "agent" else 1}
+    except Exception:
+        return {}
+
+
+def _progress_of(chunk: dict):
+    """(processed, total, cached) from a llama.cpp prompt_progress chunk, or None."""
+    p = chunk.get("prompt_progress")
+    if not isinstance(p, dict):
+        return None
+    try:
+        return int(p.get("processed") or 0), int(p.get("total") or 0), int(p.get("cache") or 0)
+    except (TypeError, ValueError):
+        return None
+
+
 def _open_stream(url, headers, body, timeout, stop_event):
     """requests.post(stream=True), given up at once if a stop comes first.
 
@@ -834,7 +868,11 @@ def _post_streamed(url, headers, payload, timeout, label, stop_event):
     guard = _make_loop_guard()
     # The cap is for the faculties only: the agent may think long on purpose,
     # and its own loop has the step budget and the watchdogs.
-    budget = getattr(config, "MEMORY_THINK_BUDGET", 0) if current_faculty() else 0
+    budget = 0
+    if current_faculty():
+        budget = (getattr(config, "RECALL_THINK_BUDGET", 0)
+                  if endpoints.role_of(current_faculty()) == "recall"
+                  else getattr(config, "MEMORY_THINK_BUDGET", 0))
     try:
         for raw in resp.iter_lines():
             if stop_event is not None and stop_event.is_set():
@@ -864,10 +902,13 @@ def _post_streamed(url, headers, payload, timeout, label, stop_event):
                         pass
                 guard.observe(piece, reasoning)
                 if budget and not content and len(reasoning) > budget:
+                    knob = ("RECALL_THINK_BUDGET"
+                            if budget == getattr(config, "RECALL_THINK_BUDGET", -1)
+                            else "MEMORY_THINK_BUDGET")
                     raise LLMLooped(
                         f"reasoning passed {budget} characters without an answer",
                         said=f"it reasoned past {budget} characters without "
-                             f"starting an answer (MEMORY_THINK_BUDGET)")
+                             f"starting an answer ({knob})")
             text = delta.get("content") or ""
             if text:
                 content += text
@@ -915,6 +956,7 @@ def _call_openai_compatible(messages, model, temperature, max_tokens, timeout, b
     if temperature is not None:
         payload["temperature"] = temperature
     payload.update(_agent_knobs())
+    payload.update(_slot_for(base_url, api_key))
     # The caller's own samplers win over the project's: a memory call that
     # reasons brings the thinking preset and its seed (config.memory_call).
     if sampling:
@@ -984,6 +1026,7 @@ def _stream_openai_compatible(messages, model, temperature, max_tokens, timeout,
     if temperature is not None:
         payload["temperature"] = temperature
     payload.update(_agent_knobs())
+    payload.update(_slot_for(base_url, api_key))
     if template_kwargs:
         payload["chat_template_kwargs"] = template_kwargs
     headers = {"Content-Type": "application/json"}
@@ -1069,7 +1112,8 @@ class ToolsUnsupported(Exception):
 
 
 def _stream_tools_openai_compatible(payload, headers, timeout, base_url,
-                                    stop_event, on_token, on_reasoning):
+                                    stop_event, on_token, on_reasoning,
+                                    on_progress=None):
     """The tool channel over SSE: the same dict call_llm_tools returns, or None.
 
     None means "the stream never started" - a transport error, a status other
@@ -1087,6 +1131,17 @@ def _stream_tools_openai_compatible(payload, headers, timeout, base_url,
     import json as _json
     stop_event = _EitherStop(stop_event)
     payload = dict(payload, stream=True, stream_options={"include_usage": True})
+    # WHILE THE SERVER READS THE PROMPT nothing streams, and on a long
+    # conversation that is tens of seconds of a screen that does not move.
+    # llama.cpp says how far it has got when asked (return_progress); the
+    # caller is told at once that the request is out, and then how far.
+    if on_progress is not None:
+        if endpoints.slots(base_url) > 0:
+            payload["return_progress"] = True
+        try:
+            on_progress(0, 0, 0)
+        except Exception:
+            pass
     try:
         resp = _open_stream(f"{base_url}/chat/completions", headers, payload,
                             timeout, stop_event)
@@ -1127,6 +1182,12 @@ def _stream_tools_openai_compatible(payload, headers, timeout, base_url,
             except ValueError:
                 continue
             usage = chunk.get("usage") or usage
+            progress = _progress_of(chunk) if on_progress is not None else None
+            if progress is not None:
+                try:
+                    on_progress(*progress)
+                except Exception:
+                    pass
             choice = (chunk.get("choices") or [{}])[0]
             delta = choice.get("delta") or {}
             thought = delta.get("reasoning_content") or ""
@@ -1172,7 +1233,8 @@ def _stream_tools_openai_compatible(payload, headers, timeout, base_url,
 def call_llm_tools(messages, tools, model=None, temperature=None,
                    max_tokens=None, timeout=None, base_url=None, api_key=None,
                    stop_event=None, tool_choice="auto",
-                   on_token=None, on_reasoning=None, template_kwargs=None):
+                   on_token=None, on_reasoning=None, template_kwargs=None,
+                   on_progress=None):
     """Ask the model to choose a tool; see _call_llm_tools_once.
 
     template_kwargs is the thinking switch. A refusal with it attached is
@@ -1183,11 +1245,11 @@ def call_llm_tools(messages, tools, model=None, temperature=None,
     args = (messages, tools, model, temperature, max_tokens, timeout,
             base_url, api_key, stop_event, tool_choice, on_token, on_reasoning)
     try:
-        result = _call_llm_tools_once(*args, template_kwargs=tk)
+        result = _call_llm_tools_once(*args, template_kwargs=tk, on_progress=on_progress)
     except ToolsUnsupported:
         if not tk:
             raise
-        result = _call_llm_tools_once(*args, template_kwargs=None)
+        result = _call_llm_tools_once(*args, template_kwargs=None, on_progress=on_progress)
         endpoints.state(url).template_unsupported = True
         return result
     has = bool((result.get("reasoning") or "").strip())
@@ -1199,7 +1261,8 @@ def call_llm_tools(messages, tools, model=None, temperature=None,
 def _call_llm_tools_once(messages, tools, model=None, temperature=None,
                          max_tokens=None, timeout=None, base_url=None, api_key=None,
                          stop_event=None, tool_choice="auto",
-                         on_token=None, on_reasoning=None, template_kwargs=None):
+                         on_token=None, on_reasoning=None, template_kwargs=None,
+                         on_progress=None):
     """Ask the model to choose a tool, and read the choice as structured data.
 
     With on_token or on_reasoning set the reply is streamed and each fragment
@@ -1241,6 +1304,7 @@ def _call_llm_tools_once(messages, tools, model=None, temperature=None,
     # setting: it hands the choice to the server's launch-time default, which
     # is where a model's recommended preset usually already lives.
     payload.update(_agent_knobs())
+    payload.update(_slot_for(base_url, api_key))
     if template_kwargs:
         payload["chat_template_kwargs"] = template_kwargs
     headers = {"Content-Type": "application/json"}
@@ -1251,7 +1315,8 @@ def _call_llm_tools_once(messages, tools, model=None, temperature=None,
     t0 = time.time()
     if on_token is not None or on_reasoning is not None:
         streamed = _stream_tools_openai_compatible(
-            payload, headers, timeout, base_url, stop_event, on_token, on_reasoning)
+            payload, headers, timeout, base_url, stop_event, on_token, on_reasoning,
+            on_progress)
         if streamed is not None:
             usage = streamed.pop("usage", None) or {}
             LAST_STATS = {

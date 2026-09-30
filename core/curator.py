@@ -377,17 +377,26 @@ def _ask_curator(task: str, eps: list[dict], lns: list[dict],
 
 def _human_labels(refs: list[str], eps: list[dict], lns: list[dict]) -> list[str]:
     """Short readable labels for the selected refs (for observability)."""
+    def clip(text: str, n: int) -> str:
+        # At a word, and saying so: "for hot Bologna balcon" read as a typo.
+        text = " ".join(str(text).split())
+        if len(text) <= n:
+            return text
+        cut = text[:n].rsplit(" ", 1)[0] if " " in text[:n] else text[:n]
+        return cut.rstrip(" ,;:.-") + "…"
+
     out = []
     for r in refs:
         if r.startswith("E"):
             i = int(r[1:]) - 1
             if 0 <= i < len(eps):
                 dorm = " (dormant→revived)" if eps[i]["dormant"] else ""
-                out.append((eps[i]["ep"].get("goal", "") or "episode")[:58] + dorm)
+                out.append(clip(eps[i]["ep"].get("goal", "") or "episode", 70) + dorm)
         elif r.startswith("L"):
             i = int(r[1:]) - 1
             if 0 <= i < len(lns):
-                out.append("rule: " + (lns[i]["entry"].get("text", "") or "")[:52])
+                # "belief", as the rest of the screen calls it.
+                out.append("belief: " + clip(lns[i]["entry"].get("text", "") or "", 62))
     return out
 
 

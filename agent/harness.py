@@ -124,6 +124,15 @@ def fold(content: str, width: int, verbose: bool = False) -> list[str]:
     return shown
 
 
+_MARKS = re.compile(r"\*\*|__|`+|(?:^|(?<=\s))#{1,6}\s")
+
+
+def _plain_reasoning(text: str) -> str:
+    """Reasoning as sentences: Markdown's marks taken out, since the panel is
+    plain text and "**Watering Basil**:" read as noise, not emphasis."""
+    return _MARKS.sub("", text)
+
+
 def plural(n: int, one: str, many: str = "") -> str:
     """"1 step", "3 steps": a count and a noun that agree - not "3 step(s)"."""
     n = int(n or 0)
@@ -220,7 +229,14 @@ class _AnswerStream:
             self._render(paragraph)
         self.buf = rest
         tail = rest.splitlines()[-12:]
-        self.live.update(self._text("\n".join(tail)))
+        # Rendered as it is written, not shown raw and rendered at the end:
+        # "**Caveats:**" became "Caveats:" in bold the moment the paragraph
+        # closed, and every paragraph flickered from one to the other.
+        try:
+            from rich.markdown import Markdown
+            self.live.update(Markdown("\n".join(tail)))
+        except Exception:
+            self.live.update(self._text("\n".join(tail)))
 
     def close(self) -> None:
         try:
@@ -358,10 +374,8 @@ class Harness:
         # A faculty's answer, once it has started, replaces its reasoning in
         # the block: the thinking is over and what is being written is what
         # there is to watch. Upright, where the reasoning is in italics.
-        if self._said:
-            body = Text(self._said.strip("\n"), style="bright_black")
-        elif self._tail:
-            body = Text(self._tail, style="italic bright_black")
+        if self._tail:
+            body = Text(_plain_reasoning(self._tail), style="italic bright_black")
         else:
             return self._spinner
         lines = body.wrap(self.console, max(20, self.console.width - 6))
@@ -398,7 +412,13 @@ class Harness:
     # llm_client.STATUS_HOOK: what the spinner would have said, said here.
     def begin(self, who: str) -> None:
         tag = who[1:who.index("]")] if who.startswith("[") and "]" in who else "model"
-        self._show(tag.lower() if tag != "model" else "thinking")
+        tag = tag.lower() if tag != "model" else "thinking"
+        # The faculty said what it is doing just before its call ("curator ·
+        # searching memory for..."); the call's own start used to overwrite
+        # that with the bare name.
+        if self._label.split(" ")[0] == tag.split(" ")[0]:
+            return
+        self._show(tag)
 
     def tick(self, who: str, seconds: float) -> None:
         pass                                # the ticker thread keeps the seconds moving
@@ -407,12 +427,19 @@ class Harness:
         self._hide()
 
     def reasoning(self, chunk: str, who: str) -> None:
-        """A faculty's reasoning, under its own status line.
+        """A faculty's reasoning - shown only with --show-thoughts.
 
-        The same panel the agent's thinking gets, but it keeps the faculty's
-        label and leaves no "thought for" line: the faculty's own summary
-        follows, with its time.
+        It used to scroll under the status line on every turn: the curator
+        weighing "Candidate E1: - Date: today - Goal: ..." for half a minute,
+        which is Pragma's bookkeeping, not an answer to anything asked. The
+        status line says who is working and for how long; the faculty's one
+        line of summary follows. Verbose keeps the old panel.
         """
+        if not self.verbose:
+            if time.monotonic() - self._last_draw >= 0.5:
+                with self._lock:
+                    self._redraw()
+            return
         with self._lock:
             piece = re.sub(r"\s+", " ", chunk)
             if piece.startswith(" ") and self._tail.endswith(" "):
@@ -422,10 +449,17 @@ class Harness:
                 self._redraw()
 
     def answering(self, chunk: str, who: str) -> None:
-        """A faculty's answer as it is written, in the same block, gone with it."""
+        """A faculty's answer is being written - said, not shown.
+
+        The answer is JSON for the program to read, and it was drawn as it
+        came: `{ "selected": ["E1"], "reason": ...` on the screen, which
+        looked like a leak because it was one. The summary line after it is
+        the part meant for a person.
+        """
         with self._lock:
-            self._said = (self._said + chunk)[-THINK_KEEP:]
-            if time.monotonic() - self._last_draw >= 0.1:
+            if not self._label.endswith("deciding"):
+                self._label = self._label.split(" · ")[0] + " · deciding"
+            if time.monotonic() - self._last_draw >= 0.2:
                 self._redraw()
 
     def looped(self, who: str, detail: str) -> None:
@@ -485,6 +519,35 @@ class Harness:
         if time.monotonic() - self._last_draw >= 0.1:
             with self._lock:
                 self._redraw()
+
+    def on_progress(self, processed: int, total: int, cached: int) -> None:
+        """The server reading the prompt, before anything can stream.
+
+        This was the long silence: after the curator, the agent's first call
+        re-read the whole conversation - 25 s on qwen36 for 5 921 tokens -
+        and the screen showed nothing at all until the first token. Now the
+        status line appears as the request goes out, and says how far the
+        reading has got when the server reports it.
+        """
+        new, done = max(0, total - cached), max(0, processed - cached)
+        if total and processed >= total:
+            label = "thinking"
+        elif new >= 400:
+            label = f"reading the conversation · {done:,}/{new:,} tokens"
+        else:
+            label = "reading your message"
+        with self._lock:
+            if self._answer is not None:
+                return
+            # The count moves under a clock that keeps running for as long as
+            # the reading lasts; "thinking" then starts a clock of its own, or
+            # it would claim the reading's seconds as thought.
+            if (self._status is not None and self._label.startswith("reading")
+                    and label.startswith("reading")):
+                self._label = label
+                self._redraw()
+                return
+        self._show(label)
 
     def on_token(self, chunk: str) -> None:
         self._new_call()

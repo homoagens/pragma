@@ -135,14 +135,26 @@ _ROLE_OF_FACULTY = {
 # without consulting the table - which is why the table is kept rather than
 # zeroed when `kind` changes: switching to instruct and back finds the same
 # three answers, instead of three that nobody chose.
+# THE ONE DEFAULT THAT IS NOT "YES". A thinking endpoint that says nothing
+# reasons for the agent and the memory, and NOT for the recall. The curator
+# runs on every turn, in front of the person waiting, and reasoning there buys
+# the same choice at many times the cost: 83 tokens and 8.6 s against 17 and
+# 1.6 s on Qwen3.6, and in a live session on 2026-09-30 one curator call
+# reasoned for over two and a half minutes to choose among two memories and
+# two beliefs, with the conversation waiting behind it. An endpoint that wants
+# a reasoning curator says so - /configure, who reasons - and keeps it.
+_REASONS_BY_DEFAULT = {"agent": True, "recall": False, "memory": True}
+
+
 def reasons_for(entry: dict, role: str = "agent") -> bool:
     """Is `role` asked to reason on this endpoint?"""
     if (entry or {}).get("kind") != "thinking":
         return False
+    role = role if role in ROLES else "agent"
     table = (entry or {}).get("reasons")
     if not isinstance(table, dict):
-        return True
-    return bool(table.get(role if role in ROLES else "agent", True))
+        table = {}
+    return bool(table.get(role, _REASONS_BY_DEFAULT[role]))
 
 
 # WHAT THE HARNESS DOES, as opposed to what a model is. These sit beside the
@@ -186,6 +198,9 @@ class State:
     # chat_template_kwargs is llama.cpp's, not OpenAI's: a server that rejects
     # it is remembered, and the thinking switch is not sent to it again.
     template_unsupported: bool = False
+    # How many slots the server has, from llama.cpp's /props: None until
+    # asked, 0 for a server that has no /props (not llama.cpp). See slots().
+    slots: int | None = None
 
 
 _STATES: dict[str, State] = {}
@@ -560,3 +575,30 @@ def state(base_url: str) -> State:
         if found is None:
             found = _STATES[key] = State()
         return found
+
+
+def slots(base_url: str, api_key: str = "") -> int:
+    """The server's slot count, asked of llama.cpp's /props once per process.
+
+    0 means "not llama.cpp", or not reachable: then nothing llama.cpp-only is
+    sent to it (return_progress, id_slot), because an OpenAI-compatible server
+    that does not know a field may refuse the whole request for it.
+    """
+    known = state(base_url)
+    if known.slots is not None:
+        return known.slots
+    count = 0
+    try:
+        import urllib.request
+        root = base_url.rstrip("/")
+        root = root[:-3] if root.endswith("/v1") else root
+        req = urllib.request.Request(root + "/props")
+        if api_key:
+            req.add_header("Authorization", f"Bearer {api_key}")
+        with urllib.request.urlopen(req, timeout=2) as r:
+            props = json.loads(r.read().decode("utf-8", "replace"))
+        count = int(props.get("total_slots") or 0)
+    except Exception:
+        count = 0
+    known.slots = count
+    return count
