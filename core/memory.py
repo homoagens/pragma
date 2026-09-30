@@ -16,28 +16,81 @@ Respond ONLY with the summary text — no JSON, no prefixes."""
 
 
 def summarize(text, context="conversation", model=None):
-    """Single LLM call to compress text. No loop."""
+    """Single LLM call to compress text. No loop.
+
+    A faculty like the others: named, so it is shown and routed as one, and
+    told in so many words not to reason - config.summary_call says why.
+    """
     messages = [
         {"role": "system", "content": SYSTEM_PROMPT_SUMMARY},
         {"role": "user",
          "content": f"Summarize this {context}, preserving all important facts:\n\n{text}"},
     ]
-    return llm_client.call_llm(
-        messages    = messages,
-        model       = model,
-        # Not 0.0 like the memory faculties and not the session's either: see
-        # config.SUMMARY_TEMPERATURE for why this call is its own case.
-        temperature = config.SUMMARY_TEMPERATURE,
-        max_tokens  = 2048,
-    )
+    how = config.summary_call()
+    with llm_client.faculty("SUMMARIZER"):
+        out = llm_client.call_llm(
+            messages        = messages,
+            model           = model,
+            temperature     = how["temperature"],
+            max_tokens      = 2048,
+            template_kwargs = how["template_kwargs"],
+            sampling        = how["sampling"],
+        )
+    # A summary cut at its budget is still worth having, but the marker that
+    # says so belongs to llm_client, not to the model: it used to reach the
+    # agent's context verbatim, as the first word of the summary. Said in words.
+    marker = llm_client.TRUNCATION_PARTIAL_MARKER
+    if out.startswith(marker):
+        out = out[len(marker):].rstrip() + " [... the summary was cut short here]"
+    return out
+
+
+# What stands in for a summary the summarizer could not write: the opening of
+# each earlier message, the newest kept when they do not all fit.
+_CUT_LINE  = 240
+_CUT_TOTAL = 12000
+
+
+def _cut(msgs, why) -> str:
+    """A summary written without a model: the opening of every message.
+
+    THE RUN GOES ON. The agent loop compresses outside the try that guards the
+    model's own calls, so a summarizer that failed - a timeout, a refused
+    prompt, a reasoning cut short - used to end the run with a traceback and
+    take every step before it along. Losing the detail of old steps is what
+    compressing does anyway; losing the run is not.
+    """
+    lines = []
+    for m in msgs:
+        body = " ".join((m.get("content") or "").split())
+        for tc in (m.get("tool_calls") or []):
+            fn = tc.get("function") or {}
+            call = f"[ACTION] {fn.get('name', '?')}({fn.get('arguments', '')})"
+            body = f"{body} {call}" if body else call
+        if len(body) > _CUT_LINE:
+            body = body[:_CUT_LINE] + "..."
+        lines.append(f"{m.get('role', '?').upper()}: {body}")
+    kept, size = [], 0
+    for line in reversed(lines):
+        if kept and size + len(line) > _CUT_TOTAL:
+            break
+        kept.append(line)
+        size += len(line) + 1
+    kept.reverse()
+    head = (f"(The summarizer failed - {str(why)[:120]} - so this is the opening "
+            f"of each earlier message instead.)")
+    if len(kept) < len(lines):
+        head += f"\n({len(lines) - len(kept)} older messages left out.)"
+    return head + "\n" + "\n".join(kept)
 
 
 def compress(messages, threshold=None, context="conversation", model=None,
              protect=None):
     """
     If the message list exceeds the threshold, compress old messages into a summary.
-    With threshold=0 forces compression regardless of count
-    (useful for character-based threshold — see react.py).
+    With threshold=0 forces compression regardless of count - which is how the
+    agent loop calls it, having decided by size (see react.py). threshold=None
+    means config.MAX_MESSAGES, and does nothing when that is 0, the default.
 
     Always preserves:
       - the system prompt at position 0 (if present)
@@ -55,6 +108,8 @@ def compress(messages, threshold=None, context="conversation", model=None,
     """
     if threshold is None:
         threshold = config.MAX_MESSAGES
+        if threshold <= 0:
+            return messages
     if len(messages) <= threshold:
         return messages
 
@@ -123,7 +178,14 @@ def compress(messages, threshold=None, context="conversation", model=None,
 
     if config.DEBUG:
         print(f"[memory] Compressing {len(to_compress)} messages ({context})...")
-    summary = summarize(text, context, model=model)
+    try:
+        summary = summarize(text, context, model=model)
+    except llm_client.LLMInterrupted:
+        raise                   # a stop is a stop, not a failed summary
+    except Exception as e:
+        if config.DEBUG:
+            print(f"[memory] summarizer failed ({e}); cutting instead.")
+        summary = _cut(to_compress, e)
 
     summary_msg = {
         "role":    "user",

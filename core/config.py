@@ -361,9 +361,10 @@ SERVED_MODEL = ""
 # so the ceiling was entirely ours, and the harnesses we compare against
 # (opencode, pi) do not impose one either.
 #
-# It still has to fit: history compression caps the prompt at MAX_CHARS
-# (~36k tokens of a 64k window), leaving room for a full 16k generation.
-# On a smaller context, lower this together with CONTEXT_WINDOW.
+# It still has to fit: history compression keeps the prompt under
+# COMPRESS_TOKENS, which is never closer to the window than this budget plus
+# a margin, so a full generation always has room. On a smaller context, lower
+# this together with CONTEXT_WINDOW.
 #
 # To reproduce the frozen evaluation corpus, set MAX_TOKENS=4096: that
 # campaign ran on the old budget.
@@ -655,6 +656,30 @@ def memory_call(kind="write") -> dict:
             "sampling": knobs}
 
 
+def summary_call() -> dict:
+    """How the history summarizer thinks and picks its words.
+
+    SAID, NOT INHERITED. This was the one call in the harness that sent no
+    thinking switch, so it did whatever its server had been started to do. On a
+    server that thinks by default it thought - in runs with AGENT_THINK=off too
+    - inside a 2048-token budget. MEASURED in the prompt log of montecucco's
+    qwen36 server (2026-09-24): three summaries reached the agent cut off
+    mid-sentence, with llm_client's truncation marker still in front of them.
+    A server launched with --reasoning off ran the same code without trouble,
+    which is how it went unnoticed.
+
+    Off, whatever the roles are set to: a summary is transcription under a hard
+    budget, where reasoning buys the least and costs the most. The half follows
+    the switch as it does everywhere else - the `instruct` row, general work -
+    except the temperature, which has its own reasons (SUMMARY_TEMPERATURE).
+    """
+    knobs = dict(no_think_knobs("agent"))
+    knobs.pop("temperature", None)
+    return {"temperature": SUMMARY_TEMPERATURE,
+            "template_kwargs": _thinking(False),
+            "sampling": knobs or None}
+
+
 # WHAT YOU MIGHT ASK NEXT, offered under the empty prompt. One short call on
 # the `recall` role after each answer - see core/suggest.py for why it is a
 # faculty and not a second model kept running beside the big one.
@@ -881,11 +906,22 @@ else:
     CONTEXT_WINDOW_SOURCE = "endpoint" if _found else "default"
 
 # Memory compression thresholds (see memory.py).
-# Compression triggers when EITHER threshold is exceeded:
-#   - MAX_MESSAGES: total messages in the list
-#   - MAX_CHARS:    total characters (token proxy; 1 token ≈ 4 chars)
-MAX_MESSAGES     = int(os.environ.get("MAX_MESSAGES", "30"))
-MAX_CHARS        = int(CONTEXT_WINDOW * 4 * 0.55)  # ~55% of context window in chars
+#
+# THE AGENT LOOP COMPRESSES BY SIZE, AS THE SERVER COUNTS IT - not by how many
+# messages there are. It used to be both, and the count always won: at
+# MAX_MESSAGES=30 a run compressed at step 15 and every twelve steps after, when
+# the prompt was 6-8k tokens of a 131k window. MEASURED on the tetris bench
+# (2026-09-30, 30 runs): right after a compression the agent re-read its own
+# files in 45% of its steps, against 27% everywhere else. It had been handed a
+# paraphrase of code it had just written, at 5% of the window, and spent steps
+# getting the code back.
+#
+# COMPRESS_TOKENS (below, beside the live session's line) is the trigger now.
+# MAX_CHARS is only the estimate that stands in before the server has counted
+# anything. MAX_MESSAGES survives as an opt-in ceiling for a server that needs
+# one; 0, the default, means no count at all.
+MAX_MESSAGES     = int(os.environ.get("MAX_MESSAGES", "0"))
+MAX_CHARS        = int(CONTEXT_WINDOW * 4 * 0.55)  # estimate, until the server has counted
 MESSAGES_RECENT  = int(os.environ.get("MESSAGES_RECENT", "6"))
 
 # A ceiling in characters on those recent messages, because MESSAGES_RECENT is
@@ -940,6 +976,12 @@ CHAT_COMPACT_TOKENS = int(os.environ.get(
     "CHAT_COMPACT_TOKENS",
     str(max(1024, min(int(CONTEXT_WINDOW * 0.80),
                       CONTEXT_WINDOW - MAX_TOKENS - CHAT_COMPACT_MARGIN)))))
+
+# The agent loop's own trigger, on the same line and for the same reasons: a
+# batch run summarises its step traffic above this many prompt tokens, and a
+# live turn summarises its own steps (never the conversation before them). See
+# MAX_MESSAGES above for what the old trigger cost.
+COMPRESS_TOKENS = int(os.environ.get("COMPRESS_TOKENS", str(CHAT_COMPACT_TOKENS)))
 
 # How much of what the model SAID survives into the transcript a turn is
 # consolidated from. The batch default is 300 characters, which is right there:

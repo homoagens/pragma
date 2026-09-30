@@ -604,7 +604,7 @@ def _status_lines() -> list[tuple[str, str]]:
     # these three numbers "ctx 31%" reads as "a third of the way to a wall",
     # and the wall is somewhere else entirely.
     if window:
-        prompt_cap = int(getattr(cfg, "MAX_CHARS", 0) / 4)
+        prompt_cap = int(getattr(cfg, "COMPRESS_TOKENS", 0))
         compact_at = int(getattr(cfg, "CHAT_COMPACT_CHARS", 0) / 4)
         answer = int(getattr(cfg, "MAX_TOKENS", 0))
         compact_tokens = int(getattr(cfg, "CHAT_COMPACT_TOKENS", 0))
@@ -616,9 +616,9 @@ def _status_lines() -> list[tuple[str, str]]:
             out.append(("", f"the conversation is consolidated into memory above "
                             f"{compact_at} tokens ({compact_at * 100 // window}%), estimated"))
         if prompt_cap:
-            out.append(("", f"one step of a turn is capped at {prompt_cap} "
-                            f"({prompt_cap * 100 // window}%), estimated, "
-                            f"plus {answer} for the answer"))
+            out.append(("", f"a turn's own steps are summarised above {prompt_cap} "
+                            f"tokens ({prompt_cap * 100 // window}%), counted by the "
+                            f"server, leaving {answer} for the answer"))
 
     # Tools are the only way an action travels, so the line is not about a
     # choice - it is about whether THIS endpoint can carry one, which is the

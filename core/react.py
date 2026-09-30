@@ -320,6 +320,28 @@ def _msg_chars(m: dict) -> int:
     return n
 
 
+# Characters per token for what has been appended since the server last
+# counted the prompt. Pessimistic on purpose: on this model's tokenizer Python
+# runs at 3.16 and a tool observation of JSON and paths at 1.23 (see
+# config.CHAT_COMPACT_TOKENS). Only a step or two of growth is ever estimated
+# this way, so erring high costs, at worst, a compression one step early.
+_CHARS_PER_TOKEN_SINCE = 2
+
+
+def _prompt_tokens(messages, counted) -> Optional[int]:
+    """The next prompt's size in tokens, or None when nothing has been counted.
+
+    `counted` is (prompt tokens the server reported, characters of the list it
+    reported them for). The server's number is exact; only the growth since is
+    estimated.
+    """
+    if counted is None:
+        return None
+    tokens, chars_then = counted
+    grown = sum(_msg_chars(m) for m in messages) - chars_then
+    return tokens + max(0, grown) // _CHARS_PER_TOKEN_SINCE
+
+
 def _call_skill(cfg: AgentConfig, action: str, args: dict) -> str:
     """Execute a skill with error handling. Always returns a string.
 
@@ -407,8 +429,8 @@ def run_agent(cfg: AgentConfig, user_task: str, log_path: Optional[Path] = None,
     blurring them into a summary throws away the very thing consolidation
     exists to keep. A caller that owns the conversation (agent/chat.py) passes
     the length of the history it handed in, so this loop compresses its own
-    step traffic and never the turns before it. Default 0 = compress
-    everything, which is what a batch run wants.
+    step traffic and never the turns before it. The request this run was
+    given is fenced off too, in both cases: see _task_fence.
 
     Returns the final dict (containing one of the final_keys) or None.
     The dict is enriched with: name, forced (bool).
@@ -451,6 +473,14 @@ def run_agent(cfg: AgentConfig, user_task: str, log_path: Optional[Path] = None,
             {"role": "system", "content": system_prompt},
             {"role": "user",   "content": user_task},
         ]
+    # THE TASK IS NEVER SUMMARISED. Compression fenced off the system prompt
+    # and, in a live session, the turns before this one - but not the request
+    # itself, so a few compressions in a row could leave the agent working
+    # from a summary that no longer said what it had been asked. SEEN on
+    # 2026-09-30 with the threshold forced low: the last summary before the
+    # conclusion described the tests and never named the task. The request is
+    # the last message at this point, so the fence is everything up to it.
+    _task_fence = len(messages)
 
     if config.DEBUG:
         console.print(Panel(
@@ -473,6 +503,48 @@ def run_agent(cfg: AgentConfig, user_task: str, log_path: Optional[Path] = None,
     # Local to the run: a batch left over from a previous run must never leak
     # into this one.
     _pending: list[str] = []
+
+    # WHAT THE SERVER LAST COUNTED: (prompt tokens, characters of the list it
+    # counted). None until the first reply, and again after a compression,
+    # when the count describes a list that no longer exists.
+    _counted: Optional[tuple[int, int]] = None
+    # Prompts refused in a row as too long for the window. Reset by any
+    # request that fits.
+    _overflows = 0
+
+    def _fit(msgs, label):
+        """The list, compressed if the next prompt would not fit.
+
+        BY SIZE, AS THE SERVER COUNTS IT: see config.MAX_MESSAGES for what
+        compressing by count cost. Before anything has been counted the
+        character estimate stands in, as it always did.
+
+        ESCALATION ON EVIDENCE. The fence around the task and the conversation
+        before it is a preference, not a guarantee: a protected head plus
+        MESSAGES_RECENT can leave nothing to compress. It used to be dropped whenever the
+        character ESTIMATE stayed high after compressing, which could blur a
+        conversation that fitted on the strength of a guess. Now it goes only
+        when the server has refused the prompt twice running.
+        """
+        nonlocal _counted
+        size = _prompt_tokens(msgs, _counted)
+        if size is not None:
+            over = size > config.COMPRESS_TOKENS
+        else:
+            # A native assistant turn carries its payload in tool_calls, not in
+            # content: counting content alone would make a write_file holding a
+            # whole file look like an empty message.
+            over = sum(_msg_chars(m) for m in msgs) > config.MAX_CHARS
+        if config.MAX_MESSAGES and len(msgs) > config.MAX_MESSAGES:
+            over = True
+        if not (over or _overflows):
+            return msgs
+        fence = None if _overflows >= 2 else _task_fence
+        if config.DEBUG:
+            said = f"~{size} tokens" if size is not None else "estimated"
+            console.print(f"[yellow]Prompt {said} - compressing...[/yellow]")
+        _counted = None
+        return memory.compress(msgs, 0, label, model=model, protect=fence)
 
     def _hash_args(a) -> str:
         try:
@@ -519,39 +591,7 @@ def run_agent(cfg: AgentConfig, user_task: str, log_path: Optional[Path] = None,
 
         if queued is None:
             # ── Memory compression ──────────────────────────────────────
-            messages = memory.compress(messages, config.MAX_MESSAGES,
-                                       f"loop {cfg.name}", model=model,
-                                       protect=protect_prefix or None)
-            # A native assistant turn carries its payload in tool_calls, not in
-            # content: counting content alone would make a write_file holding a
-            # whole file look like an empty message, and compression would fire
-            # far too late.
-            total_chars = sum(_msg_chars(m) for m in messages)
-            if total_chars > config.MAX_CHARS:
-                if config.DEBUG:
-                    console.print(
-                        f"[yellow]Payload {total_chars} chars — compressing...[/yellow]"
-                    )
-                messages = memory.compress(messages, 0, f"loop {cfg.name}",
-                                           model=model,
-                                           protect=protect_prefix or None)
-                # ESCALATION. The fence is a preference, not a guarantee. A
-                # protected head plus MESSAGES_RECENT leaves the first turns of
-                # a step uncompressible, and one step at full output can clear
-                # the whole remaining budget on its own — after which the
-                # request is refused by the server and this loop simply retries
-                # the same oversized prompt until its steps run out. A blurred
-                # conversation is bad; a turn that spins and produces nothing
-                # is worse. So when protecting it was not enough, stop
-                # protecting it. The session's own compaction will rebuild the
-                # history from memory at the end of the turn anyway.
-                if (protect_prefix
-                        and sum(_msg_chars(m) for m in messages) > config.MAX_CHARS):
-                    if config.DEBUG:
-                        console.print("[yellow]Still over budget — dropping the "
-                                      "conversation fence[/yellow]")
-                    messages = memory.compress(messages, 0, f"loop {cfg.name}",
-                                               model=model, protect=None)
+            messages = _fit(messages, f"loop {cfg.name}")
 
         # ── LLM call (skipped entirely when serving a queued read) ───
         try:
@@ -570,9 +610,27 @@ def run_agent(cfg: AgentConfig, user_task: str, log_path: Optional[Path] = None,
                         "Pragma needs for every action. Point the agent role "
                         "at a server that does - /configure.")})
                     return None
+                # The prompt just sent, as the server counted it: the exact
+                # number the next compression decision starts from. Read now,
+                # before any other call - the summarizer's among them - can
+                # write over LAST_STATS.
+                _overflows = 0
+                prompt_now = int((llm_client.LAST_STATS or {}).get("prompt") or 0)
+                if prompt_now:
+                    _counted = (prompt_now, sum(_msg_chars(m) for m in messages))
         except llm_client.LLMInterrupted:
             _emit({"type": "stopped", "content": "Task interrupted by user."})
             return None
+        except llm_client.ContextOverflow:
+            # Refused before any work was done, so this step is the whole cost.
+            # The next one goes out compressed; see _fit for what a second
+            # refusal in a row does.
+            _overflows += 1
+            _emit({"type": "error", "content": (
+                f"The prompt no longer fits the context window (step {step}) "
+                f"- compressing the history and trying again.")})
+            step += 1
+            continue
         except llm_client.LLMLooped as e:
             # Watchdog detected the model is stuck repeating itself inside
             # the <think> block. Abort this turn and inject a recovery hint
@@ -1009,8 +1067,7 @@ def run_agent(cfg: AgentConfig, user_task: str, log_path: Optional[Path] = None,
             f"You must conclude — you cannot request further actions."
         )
     })
-    messages = memory.compress(messages, config.MAX_MESSAGES,
-                               f"forced {cfg.name}", model=model)
+    messages = _fit(messages, f"forced {cfg.name}")
 
     try:
         if cfg.on_token is not None:
