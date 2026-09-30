@@ -350,10 +350,13 @@ def _pool_line(info) -> str:
     CURATOR_CANDIDATES_EPISODES of them. Printing the survivors alone made a
     store of thirty look like a store of ten, and hid the funnel entirely.
     """
-    def part(n, pool, noun):
+    def part(n, pool, one, many):
+        noun = one if (pool if pool > n else n) == 1 else many
         return f"{n} of {pool} {noun}" if pool > n else f"{n} {noun}"
-    return (part(info["n_ep"], info.get("pool_ep", 0), "memories") + " + "
-            + part(info["n_ln"], info.get("pool_ln", 0), "rules"))
+    # "beliefs", as the briefing and /memory call them: the same thing had a
+    # third name here.
+    return (part(info["n_ep"], info.get("pool_ep", 0), "memory", "memories") + " + "
+            + part(info["n_ln"], info.get("pool_ln", 0), "belief", "beliefs"))
 
 
 class _PrettyRenderer:

@@ -48,6 +48,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import subprocess
 import sys
 import threading
@@ -102,7 +103,7 @@ _LEAVING_WORDS = {"/exit", "/quit", "/bye", "/q"}
 # Each entry is (what it runs, one line of help).
 _COMMANDS = {
     "/memory":    ("memory",    ""),      # the views fill the blurb in
-    "/settings":  ("ask:settings", "what this project decides for itself"),
+    "/settings":  ("settings",  "how many steps a turn may take - changed here, kept for the project"),
     "/status":    ("status",    "how this project is set up right now"),
     "/jobs":      ("jobs",      "what the memory is writing in the background"),
     "/configure": ("configure", "point Pragma at an LLM endpoint"),
@@ -113,13 +114,16 @@ _COMMANDS = {
 # The views of the store. The name is the flag mem_map already takes, so the
 # two never disagree about what "beliefs" means.
 _MEMORY_VIEWS = {
-    "map":     "what is in memory now",
-    "beliefs": "what it has concluded",
-    "diff":    "meanings it has revised",
-    "oblio":   "what has faded",
+    "map":     "what is remembered, strongest first",
+    "beliefs": "what it has concluded from it",
     "last":    "the newest episode, in full",
-    "sizes":   "how wordy the store is",
+    "diff":    "meanings it has revised",
+    "dormant": "what has faded out of use",
+    "sizes":   "how much of it can reach a prompt",
 }
+# Old names of the views. "oblio" is what the dormant zone was called before
+# the screen said "dormant" everywhere else.
+_VIEW_ALIASES = {"oblio": "dormant"}
 
 # Done TO a project rather than inside one, so they live on the screen where
 # no project is open. Typed here they say where they went: a habit is worth
@@ -139,6 +143,7 @@ _AT_HOME = {
 # are instead of failing.
 _ALIASES = {"/info": "/help"}
 _ALIASES.update({f"/{view}": f"/memory {view}" for view in _MEMORY_VIEWS})
+_ALIASES.update({f"/{old}": f"/memory {new}" for old, new in _VIEW_ALIASES.items()})
 # /project settings was where these lived; the head is what is matched, so
 # the one entry covers both "/project" and "/project settings".
 _ALIASES.update({"/project": "/settings", "/config": "/configure"})
@@ -149,7 +154,7 @@ _ALIASES.update({"/close": "/exit"})
 def _blurb(name: str) -> str:
     """The help line for a command; a family lists what it takes."""
     if name == "/memory":
-        return " . ".join(_MEMORY_VIEWS)
+        return " · ".join(_MEMORY_VIEWS)
     return _COMMANDS[name][1]
 
 
@@ -371,7 +376,7 @@ def _hint() -> str:
     """
     if _NEXT:
         return ""
-    return "say something, or /help  ·  ctrl+D closes the project"
+    return "say something  ·  /help for the commands  ·  ctrl+D closes the project"
 
 
 def _show_prediction() -> None:
@@ -467,6 +472,135 @@ def _ask(session):
         return session.prompt(ANSI(_prompt())).strip()
 
 
+# The conversation's own AgentConfig, for the commands that change it while it
+# runs. Set once by main(); a list for the same reason _SESSION is one.
+_CFG: list = []
+
+
+def _settings_here() -> None:
+    """/settings, answered in the conversation instead of outside it.
+
+    It used to leave: the chat asked the launcher for its settings page and
+    ended, so the turns were consolidated, the page asked one question - the
+    steps per turn - and a NEW conversation started with none of the context
+    the old one had. Closing a conversation to change one number.
+
+    Now the number is asked here, applied to the next turn, and written to the
+    project's registry entry (MaxSteps), where both launchers read it the next
+    time the project opens.
+    """
+    cfg = _CFG[0] if _CFG else None
+    now = int(getattr(cfg, "max_steps", 0) or _STATE.get("max_steps") or 0)
+    print()
+    _say_dim("  How many actions the agent may take in one turn before it must answer.")
+    _say_dim("  50 suits a conversation; long work on files may need more.")
+    print()
+    while True:
+        try:
+            raw = input(f"  steps per turn [{now}]: ").strip()
+        except (EOFError, KeyboardInterrupt):
+            print()
+            return
+        if not raw or raw == str(now):
+            _say_dim("  unchanged")
+            print()
+            return
+        if raw.isdigit() and 1 <= int(raw) <= 1000:
+            break
+        print("    a number from 1 to 1000")
+    steps = int(raw)
+    if cfg is not None:
+        cfg.max_steps = steps
+    _STATE["max_steps"] = steps
+    if _CHAT_HEADER:
+        _CHAT_HEADER[0] = re.sub(r"\d+ steps per turn", f"{steps} steps per turn",
+                                 _CHAT_HEADER[0])
+    kept = _save_project_setting("MaxSteps", str(steps))
+    print(f"  {steps} steps per turn, from the next turn"
+          + ("" if kept else " - for this conversation only (no project to keep it in)"))
+    print()
+
+
+def _save_project_setting(key: str, value: str) -> bool:
+    """One setting of the open project, in ~/.pragma/registry.json. Never raises."""
+    name = os.environ.get("PRAGMA_PROJECT", "").strip()
+    if not name:
+        return False
+    path = Path.home() / ".pragma" / "registry.json"
+    try:
+        data = json.loads(path.read_text(encoding="utf-8-sig"))
+        entries = data if isinstance(data, list) else [data]
+        found = False
+        for e in entries:
+            if isinstance(e, dict) and e.get("name") == name:
+                e.setdefault("settings", {})[key] = value
+                found = True
+        if not found:
+            return False
+        tmp = path.with_suffix(".tmp")
+        tmp.write_text(json.dumps(entries, indent=2, ensure_ascii=False), encoding="utf-8")
+        os.replace(tmp, path)
+        return True
+    except Exception:
+        return False
+
+
+def _say_dim(text: str) -> None:
+    """One grey line - a hint, not a message."""
+    if sys.stdout.isatty():
+        print(f"\033[38;5;242m{text}\033[0m")
+    else:
+        print(text)
+
+
+class _ctrl_c_stops:
+    """ctrl+C, while a turn runs, asks it to stop; a second one abandons it.
+
+    Without this the key went straight to Python's KeyboardInterrupt, which
+    unwound out of the turn AND out of the conversation: the project closed,
+    and - in the same instant - the launcher above, which got the same signal,
+    died with a traceback. The key everyone presses to stop a reply that has
+    run on was the key that threw them out of Pragma.
+
+    Now the first press sets the turn's stop signal, which every model call
+    checks between the lines of its stream and every step checks before the
+    next one, so the turn ends at the next safe point and the conversation
+    goes on. A second press means "now": KeyboardInterrupt, as before, caught
+    by the loop as a stopped turn rather than a closed project.
+    """
+
+    def __init__(self, stop, renderer):
+        self.stop = stop
+        self.renderer = renderer
+        self.old = None
+
+    def _press(self, *_):
+        if self.stop.is_set():
+            raise KeyboardInterrupt
+        self.stop.set()
+        try:
+            self.renderer.notice(0, "stopping at the next safe point - ctrl+C again to abandon it now")
+        except Exception:
+            pass
+
+    def __enter__(self):
+        import signal
+        try:
+            self.old = signal.signal(signal.SIGINT, self._press)
+        except (ValueError, OSError):       # not the main thread
+            self.old = None
+        return self
+
+    def __exit__(self, *exc):
+        import signal
+        if self.old is not None:
+            try:
+                signal.signal(signal.SIGINT, self.old)
+            except (ValueError, OSError):
+                pass
+        return False
+
+
 def _prompt() -> str:
     """The prompt mark, in the accent. The project's name is on the toolbar."""
     glyph = _RENDERER.g["prompt"] if _RENDERER is not None else ">"
@@ -505,18 +639,14 @@ def _show_chat_header() -> None:
 
 
 def _slash_banner() -> None:
-    """One line under the briefing: what to type, and what a slash is for.
+    """Nothing - the empty prompt says it.
 
-    The briefing is right above it and was read on the way in, so this says
-    the little the briefing cannot: that talking is the default and that the
-    slash commands exist.
+    There used to be a line here ("say something to begin · /memory · /help")
+    and, one line below it, the prompt's own grey hint saying nearly the same
+    thing. Two instructions for one empty line; the one that stays is the one
+    where the cursor is.
     """
-    a, r = _accent(), ("\033[0m" if _accent() else "")
-    print()
-    print(f"  say something to begin"
-          f"   ·   {a}/memory{r} to look at the store"
-          f"   ·   {a}/help{r} for the commands")
-    print()
+    return
 
 
 def _slash_help() -> None:
@@ -528,11 +658,14 @@ def _slash_help() -> None:
         if name in _allowed():
             print(f"    {a}{name:<12}{r}{_blurb(name)}")
     print()
-    print("  /memory takes one of the words above; alone it shows the map.")
+    print("  /memory takes one of the words above; alone it shows what is remembered.")
+    print("  Anything without a slash is a message to the agent.")
+    print()
+    print(f"  {a}ctrl+C{r}  stops a reply that is running; the conversation goes on")
+    print(f"  {a}ctrl+D{r}  closes the project, and what was said goes into memory")
+    print()
     print("  Starting, backing up or removing a project is done where none is")
     print("  open: ctrl+D, then /projects.")
-    print("  Anything without a slash is a message to the agent.")
-    print(f"  {a}ctrl+D{r} closes the project, consolidating what was said.")
     print()
 
 
@@ -581,13 +714,16 @@ def _status_lines() -> list[tuple[str, str]]:
         for role, ep in roles.items():
             p = found.get(ep.base_url, {})
             same = role != "agent" and ep.base_url == agent.base_url
-            out.append((role, f"{ep.name} . {ep.base_url} . {endpoints.status_text(p)}"
-                        if not same else f"{ep.name} . the same endpoint as the agent"))
+            out.append((role, f"{ep.name} · {endpoints.status_text(p)} · "
+                              f"{endpoints.short_url(ep.base_url)}"
+                        if not same else f"{ep.name} · the same endpoint as the agent"))
     except Exception as e:
-        out.append(("endpoint", f"{type(e).__name__}: {str(e)[:90]} . /configure"))
+        out.append(("endpoint", f"{type(e).__name__}: {str(e)[:90]} · /configure"))
     window = int(getattr(cfg, "CONTEXT_WINDOW", 0) or 0)
     source = getattr(cfg, "CONTEXT_WINDOW_SOURCE", "") or "this project"
-    context = f"{window} tokens, from {source}" if window else "unknown"
+    source = {"endpoint": "as the server reports it", "default": "a default - the server was not asked",
+              "declared": "as this project declares it"}.get(source, f"from {source}")
+    context = f"{window} tokens, {source}" if window else "unknown"
     # What the server says it has, when that is not where the number came
     # from. Every compaction threshold is derived from the window in force, so
     # the two disagreeing is worth seeing before a request is refused.
@@ -610,20 +746,20 @@ def _status_lines() -> list[tuple[str, str]]:
         compact_tokens = int(getattr(cfg, "CHAT_COMPACT_TOKENS", 0))
         if compact_tokens:
             out.append(("", f"the conversation is consolidated into memory above "
-                            f"{compact_tokens} tokens ({compact_tokens * 100 // window}%), "
+                            f"{compact_tokens} tokens ({round(compact_tokens * 100 / window)}%), "
                             f"counted by the server"))
         elif compact_at:
             out.append(("", f"the conversation is consolidated into memory above "
-                            f"{compact_at} tokens ({compact_at * 100 // window}%), estimated"))
+                            f"{compact_at} tokens ({round(compact_at * 100 / window)}%), estimated"))
         if prompt_cap:
             out.append(("", f"a turn's own steps are summarised above {prompt_cap} "
-                            f"tokens ({prompt_cap * 100 // window}%), counted by the "
+                            f"tokens ({round(prompt_cap * 100 / window)}%), counted by the "
                             f"server, leaving {answer} for the answer"))
 
     # Tools are the only way an action travels, so the line is not about a
     # choice - it is about whether THIS endpoint can carry one, which is the
     # first thing to look at when nothing happens.
-    line = "tools . the schemas go with every request and the server constrains the arguments"
+    line = "tools · the schemas go with every request and the server constrains the arguments"
     try:
         import endpoints
         import llm_client
@@ -673,16 +809,16 @@ def _status_lines() -> list[tuple[str, str]]:
     except Exception:
         temp = getattr(cfg, "DEFAULT_TEMPERATURE", None)
     if profile:
-        sent = " . ".join(f"{k} {v:g}" for k, v in sorted(knobs.items()) if k != "temperature")
+        sent = " · ".join(f"{k} {v:g}" for k, v in sorted(knobs.items()) if k != "temperature")
         out.append(("sampling", f"{profile}"))
         out.append(("", (f"temperature {temp:g}" if temp is not None else "temperature: the endpoint")
-                    + (f" . {sent}" if sent else "")))
+                    + (f" · {sent}" if sent else "")))
     else:
         extra = [f"{name} {value}" for name, value in
                  (("top_k", getattr(cfg, "TOP_K", None)), ("top_p", getattr(cfg, "TOP_P", None)),
                   ("min_p", getattr(cfg, "MIN_P", None))) if value is not None]
         out.append(("sampling", "the endpoint decides" if temp is None and not extra
-                    else " . ".join([f"temperature {temp}" if temp is not None
+                    else " · ".join([f"temperature {temp}" if temp is not None
                                      else "temperature: the endpoint"] + extra)))
 
     # The store as it stands, from the same summary the briefing is built from.
@@ -707,14 +843,18 @@ def _status_lines() -> list[tuple[str, str]]:
         out.append(("episodes", f"not read - {why}"))
         out.append(("", f"the store itself is at {cfg.EPISODES_DIR}"))
         return out
-    out.append(("episodes", f"{brief['episodes_active']} active, "
-                            f"{brief['episodes_dormant']} dormant, "
-                            f"{brief['beliefs']} beliefs"))
-    away, tau = brief.get("away_days"), brief.get("tau")
+    out.append(("episodes", f"{_harness.plural(brief['episodes_active'], 'episode')} active · "
+                            f"{brief['episodes_dormant']} dormant · "
+                            f"{_harness.plural(brief['beliefs'], 'belief')}"))
+    away = brief.get("away_days")
     half = getattr(cfg, "EPISODE_DECAY_HALF_LIFE_DAYS", 0)
     if away is not None:
-        out.append(("away", f"{away} day(s)" + (f", tau {tau}" if tau is not None else "")
-                    + f", half-life {half:g} days"))
+        # Said the way a person says it; the raw days and tau are in the
+        # briefing's JSON for whoever needs the number.
+        days = float(away)
+        when = ("a few minutes ago" if days < 0.05 else "earlier today" if days < 1
+                else "yesterday" if days < 2 else f"{days:.0f} days ago")
+        out.append(("last here", f"{when} · memories halve in strength every {half:g} days"))
     return out
 
 
@@ -724,13 +864,21 @@ def _show_status() -> bool:
     print()
     print(f"  {a}status{r}")
     print()
+    import shutil
+    import textwrap
+    room = max(30, shutil.get_terminal_size((100, 24)).columns - 1 - 15)
     for label, value in _status_lines():
         if not label and not value:
             print()
             continue
-        print(f"    {grey}{label:<11}{r}{value}")
+        # Wrapped under its own value: a long line used to run past the edge
+        # and continue at column 0, under the labels, as if it were one.
+        parts = textwrap.wrap(str(value), room, break_on_hyphens=False) or [""]
+        print(f"    {grey}{label:<11}{r}{parts[0]}")
+        for more in parts[1:]:
+            print(f"    {'':<11}{more}")
     print()
-    print(f"  {grey}/configure changes the endpoints . /settings the rest{r}")
+    print(f"  {grey}/configure changes the endpoints · /settings the steps per turn{r}")
     print()
     return True
 
@@ -761,13 +909,16 @@ def _run_slash(line: str) -> bool:
     action = _COMMANDS[cmd][0]
     if action == "memory":
         # Bare /memory is the map: the view anyone means when they do not say.
-        view = arg or "map"
+        view = _VIEW_ALIASES.get(arg, arg) or "map"
         if view not in _MEMORY_VIEWS:
             print(f"  /memory takes one of: {', '.join(_MEMORY_VIEWS)}")
             return True
         return _show_memory(view)
     if action == "status":
         return _show_status()
+    if action == "settings":
+        _settings_here()
+        return True
     if action == "help":
         _slash_help()
         return True
@@ -1167,10 +1318,12 @@ def _recall(text: str, cwd, desk_ids: set[str], desk_rules: set[str],
         # return: an opening line followed by nothing reads as a hang. Saying
         # "looked, found nothing" costs one line and is the difference between
         # a faculty that is idle and a faculty that is stuck.
+        empty = not (info.get("pool_ep") or info.get("n_ep")
+                     or info.get("pool_ln") or info.get("n_ln"))
         renderer.faculty("CURATOR",
-                         _pool_line(info) + " → "
-                         "nothing bore on this"
-                         + (f" — {info['reason']}" if info.get("reason") else "")
+                         ("the memory is still empty" if empty
+                          else _pool_line(info) + " → none of them bears on this")
+                         + (f" — {info['reason']}" if info.get("reason") and not empty else "")
                          + took)
         return ""
     desk_ids.update(info["episode_ids"])
@@ -1339,6 +1492,7 @@ If the turn needed no tools at all, the conclusion is simply your reply.
         on_token=renderer.on_token,
         on_reasoning=renderer.on_reasoning,
     )
+    _CFG[:] = [cfg]
 
     history: list | None = None
     session = _make_session()
@@ -1378,11 +1532,10 @@ If the turn needed no tools at all, the conclusion is simply your reply.
     # What /clear puts back, since the briefing above cannot be redrawn from
     # here without starting a second process.
     _CHAT_HEADER[:] = [
-        f"  {_STATE['project']} · talking to {served or 'nothing - the backend is down'}"
+        f"  {_STATE['project']} · talking to {_harness.pretty_model(served) or 'nothing - the backend is down'}"
         f" · memory {'on' if args.memory else 'off'}"
-        f" · max {max_steps} steps per turn",
-        "  ctrl+D closes the project and consolidates what was said"
-        "   ·   ctrl+C the same",
+        f" · {max_steps} steps per turn",
+        "  ctrl+C stops a reply · ctrl+D closes the project and remembers what was said",
     ]
     _slash_banner()
 
@@ -1401,9 +1554,12 @@ If the turn needed no tools at all, the conclusion is simply your reply.
                 _ask_launcher("close")
                 break
             except KeyboardInterrupt:
-                print()
-                _ask_launcher("close")
-                break
+                # ctrl+C at the prompt clears the line; it does not close the
+                # project. It used to, which made the key that stops a reply
+                # into the key that ends the conversation - one press too many
+                # and the evening's context was consolidated and gone.
+                _say_dim("  ctrl+D closes the project")
+                continue
             if not text:
                 continue
             # A slash is a command, not a message. Checked before anything
@@ -1458,21 +1614,34 @@ If the turn needed no tools at all, the conclusion is simply your reply.
             renderer.turn_begin()
             import time as _time
             _t_turn = _time.monotonic()
+            cfg.stop_event = threading.Event()
             try:
-                result = run_agent(
-                    cfg, prompt, on_step=on_step, history=history,
-                    # Everything already in the history is a finished turn.
-                    # The loop may compress its own step traffic; the
-                    # conversation is not its to blur.
-                    protect_prefix=before,
-                )
+                with _ctrl_c_stops(cfg.stop_event, renderer):
+                    result = run_agent(
+                        cfg, prompt, on_step=on_step, history=history,
+                        # Everything already in the history is a finished turn.
+                        # The loop may compress its own step traffic; the
+                        # conversation is not its to blur.
+                        protect_prefix=before,
+                    )
+            except KeyboardInterrupt:
+                result = None           # the second ctrl+C: abandoned at once
             finally:
                 # Whatever ended the turn, nothing may be left spinning.
                 renderer.idle()
-            if result is None:          # interrupted mid-turn
+            if result is None:          # stopped mid-turn
+                # A STOPPED TURN IS NOT A CLOSED PROJECT. It used to be: the
+                # loop broke, the project closed, and the operator who pressed
+                # ctrl+C to stop a reply running on was thrown out of the
+                # conversation. What happened so far is kept for the memory;
+                # the history does not get the half-turn, so the next message
+                # starts from the last one that finished.
                 _append_raw_log(log_path, turn)
                 turns.append(turn)
-                break
+                print()
+                _say_dim("  stopped. Say what to do instead - or ctrl+D closes the project.")
+                print()
+                continue
 
             conclusion = result.get("conclusion", "") or ""
             turn.transcript.append(f"FINAL: {conclusion[:2000]}")

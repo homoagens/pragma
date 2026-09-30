@@ -56,12 +56,30 @@ from pathlib import Path
 REGISTRY = Path.home() / ".pragma" / "registry.json"
 GREY, RESET = "\033[38;5;242m", "\033[0m"
 
+
+def _encodes(text: str) -> bool:
+    try:
+        text.encode(sys.stdout.encoding or "ascii")
+        return True
+    except Exception:
+        return False
+
+
+SEP = " · " if _encodes("·") else " - "
+
 # Order is the order on the page: open before new, because over the life of a
 # project it is opened every day and created once.
+#
+# /open AND /new ARE COMMANDS, not aliases of /projects. The most common thing
+# anyone does on this screen is go back into yesterday's project, and it took
+# three steps: /projects, then "open", then the name. Now the page lists the
+# recent projects and /open takes the name, with tab completing it.
 COMMANDS = {
+    "/open":      "go into a project - /open <name>, tab completes it",
+    "/new":       "start a project",
     "/projects":  "",                     # the actions fill the blurb in
-    "/jobs":      "what the memory is writing in the background, in any project",
-    "/configure": "set up the endpoint",
+    "/jobs":      "what the memory is writing in the background",
+    "/configure": "the model server Pragma talks to",
     "/clear":     "clear the screen",
     "/help":      "this list",
     "/exit":      "leave",
@@ -78,11 +96,12 @@ PROJECT_ACTIONS = {
     "delete":  "remove a project, and the memory it keeps",
 }
 
-# Old names and short ones, offered by nothing: fingers that learned /open
-# keep working, the page stays short.
-ALIASES = {"/q": "/exit", "/quit": "/exit", "/?": "/help", "/project": "/projects"}
-ALIASES.update({f"/{action}": f"/projects {action}" for action in PROJECT_ACTIONS})
-ALIASES.update({"/o": "/projects open", "/n": "/projects new"})
+# Old names and short ones, offered by nothing: fingers that learned them keep
+# working, the page stays short.
+ALIASES = {"/q": "/exit", "/quit": "/exit", "/?": "/help", "/project": "/projects",
+           "/o": "/open", "/n": "/new"}
+ALIASES.update({f"/{action}": f"/projects {action}" for action in PROJECT_ACTIONS
+                if f"/{action}" not in COMMANDS})
 ROOT = Path(__file__).resolve().parent.parent
 
 
@@ -98,8 +117,84 @@ def rows() -> list[tuple[str, str]]:
                 ("/configure", COMMANDS["/configure"]),
                 ("/help", COMMANDS["/help"]),
                 ("/exit", COMMANDS["/exit"])]
-    return [(name, blurb.split(";")[0] or " . ".join(PROJECT_ACTIONS))
-            for name, blurb in COMMANDS.items() if name != "/clear"]
+    shown = ("/open", "/new", "/projects", "/jobs", "/configure", "/exit")
+    return [(name, "backups" + SEP + "delete" + SEP + "the full list"
+             if name == "/projects" else COMMANDS[name]) for name in shown]
+
+
+# How many projects the page lists before saying how many more there are.
+RECENT = 5
+
+
+def _when(stamp: str) -> str:
+    """"2026-09-28T10:00:00Z" -> "2 days ago", as the page says it."""
+    from datetime import datetime, timezone
+    try:
+        then = datetime.strptime(stamp, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
+    except Exception:
+        return "never opened"
+    days = (datetime.now(timezone.utc).date() - then.date()).days
+    if days <= 0:
+        return "today"
+    if days == 1:
+        return "yesterday"
+    if days < 60:
+        return f"{days} days ago"
+    return then.strftime("%d %b %Y")
+
+
+def _home_short(path: str) -> str:
+    """A path with the home folder written as ~, the way a person reads it."""
+    home = str(Path.home())
+    p = str(path or "")
+    return "~" + p[len(home):] if home and p.startswith(home) else p
+
+
+def page(notice: str = "") -> None:
+    """The body of the home page, under the mark: the projects, the commands.
+
+    Drawn here for BOTH launchers. The PowerShell one and the Python one each
+    drew their own copy, with a comment asking whoever changed one to change
+    the other - which is how the two came to disagree about what the page
+    said. Now the page is one function and the launchers draw the mark.
+    """
+    a = accent()
+    grey, reset = (GREY, RESET) if a else ("", "")
+    entries = registry_entries()
+    print()
+    if not entries:
+        print(f"  {grey}No projects yet.{reset}")
+    else:
+        entries.sort(key=lambda e: str(e.get("last_opened") or ""), reverse=True)
+        listed = entries[:RECENT]
+        width = min(24, max(len(str(e["name"])) for e in listed))
+        wheres = [_home_short(str(e.get("workspace") or "")) for e in listed]
+        whens = [_when(str(e.get("last_opened") or "")) for e in listed]
+        # The folder column is as wide as the longest folder, not as wide as
+        # the window: "today" belongs next to its path, not at the far edge.
+        room = max(10, _columns() - 4 - width - 2 - max(len(w) for w in whens) - 3)
+        span = min(room, max(len(w) for w in wheres))
+        for e, where, when in zip(listed, wheres, whens):
+            if len(where) > span:
+                where = "…" + where[-(span - 1):]
+            print(f"  {a}{str(e['name']):<{width}}{reset}  {grey}{where:<{span}}   {when}{reset}")
+        more = len(entries) - RECENT
+        if more > 0:
+            print(f"  {grey}and {more} more - /projects lists them all{reset}")
+    print()
+    for command, blurb in rows():
+        print(f"  {a}{command:<12}{reset}{grey}{blurb}{reset}")
+    if notice:
+        print()
+        print(f"  \033[33m{notice}{reset}" if a else f"  {notice}")
+
+
+def _columns() -> int:
+    try:
+        import shutil
+        return max(40, shutil.get_terminal_size((80, 24)).columns)
+    except Exception:
+        return 80
 
 
 def plugins_dir() -> Path:
@@ -261,8 +356,17 @@ def show_jobs() -> None:
             print("  still working - it carries on without you.")
         print()
     if failed:
+        # The command as THIS system spells it: the Windows one, printed on
+        # Linux, was a line nobody could paste.
+        py = Path(sys.executable)
+        try:
+            py = py.relative_to(ROOT)
+        except ValueError:
+            pass
+        tool = Path("tools") / "pragma_consolidate.py"
         print("  these did not finish. The turns are still in them, so they can be")
-        print("  run again:  venv\\Scripts\\python.exe tools\\pragma_consolidate.py <file>")
+        print(f"  run again, from {ROOT}:")
+        print(f"    {py} {tool} <file>")
         print()
         for project, job in failed:
             when = job.get("finished") or job.get("started") or job.get("created") or ""
@@ -332,13 +436,15 @@ def make_session(extra: dict | None = None):
 
 
 def read_line(session) -> str:
+    """The line, under the same mark the menus and the conversation use."""
+    from pragma_menu import MARK
     a = accent()
     if session is None:
-        return input("  > ")
+        return input(f"  {MARK} ")
     from prompt_toolkit.formatted_text import ANSI
     return session.prompt(
-        ANSI(f"  {a}>{RESET if a else ''} "),
-        placeholder=ANSI(f"{GREY}/help for the commands · ctrl+D to exit{RESET}"))
+        ANSI(f"  {a}{MARK}{RESET if a else ''} "),
+        placeholder=ANSI(f"{GREY}a project's name, or /help{SEP}ctrl+D to exit{RESET}"))
 
 
 def endpoint_lines() -> list[tuple[str, str, bool]]:
@@ -359,10 +465,14 @@ def endpoint_lines() -> list[tuple[str, str, bool]]:
         return [("endpoints", f"catalogue unusable - {e} · /configure", False)]
     found = endpoints.probe_all(list(roles.values()))
 
+    # What is served first, where it is last: the model is what someone came
+    # to check, the address is what they check when it is wrong.
     def text(ep):
         p = found[ep.base_url]
-        body = f"{ep.base_url} · {endpoints.status_text(p)}"
-        return body if p.get("up") else f"{body} · /configure"
+        where = endpoints.short_url(ep.base_url)
+        if p.get("up"):
+            return f"{endpoints.status_text(p)}{SEP}{where}"
+        return f"{where}{SEP}{endpoints.status_text(p)}{SEP}/configure"
 
     if len({ep.base_url for ep in roles.values()}) == 1:
         ep = roles["agent"]
@@ -399,6 +509,12 @@ def main() -> int:
     # as JSON, without a page or a prompt.
     ap.add_argument("--jobs", action="store_true",
                     help="print the memory work in flight as JSON and stop")
+    # The body of the page - the projects and the commands - drawn here for
+    # both launchers, which draw only the mark above it. See page().
+    ap.add_argument("--page", action="store_true",
+                    help="draw the projects and the commands before the prompt")
+    ap.add_argument("--notice", default="",
+                    help="one line to say under the commands (a name not found, ...)")
     args = ap.parse_args()
     if args.jobs:
         print(json.dumps([{"project": p, "step": s} for p, s in memory_jobs()]))
@@ -416,6 +532,8 @@ def main() -> int:
                                   encoding="utf-8")
         return 0
 
+    if args.page:
+        page(args.notice)
     try:
         lines = endpoint_lines()
     except Exception as e:
@@ -423,13 +541,21 @@ def main() -> int:
     a = accent()
     grey = GREY if a else ""
     reset = RESET if a else ""
+    # A line of its own above the endpoint, and the endpoint wrapped under
+    # itself: it used to sit flush under /exit, reading as a sixth command,
+    # and to run past the window's edge onto the next line at column 0.
+    print()
+    from pragma_menu import row
     for label, status, up in lines:
-        colour = ("\033[32m" if up else "\033[33m") if a else ""
-        print(f"  {grey}{label:<12}{reset}{colour}{status}{reset}")
+        row(label, status, "\033[32m" if up else "\033[33m")
     print()
 
+    # What the page says the memory is doing is a photograph taken as it was
+    # drawn. /jobs uses it to know whether the page has gone stale.
+    shown_jobs: list = []
     try:
-        memory_line(memory_jobs(), grey, reset)
+        shown_jobs = memory_jobs()
+        memory_line(shown_jobs, grey, reset)
     except Exception:
         pass
 
@@ -461,10 +587,14 @@ def main() -> int:
         print()
         for project, step in busy:
             print(f"  the memory is still writing - {project}  {GREY if a else ''}{step}{reset}")
-        print("  it finishes on its own. ctrl+D twice, quickly, to leave anyway.")
+        print("  it finishes on its own. /exit or ctrl+D again to leave anyway.")
         print()
         insisted = time.time()
         return True
+
+    def again() -> bool:
+        """Was the way out asked for a moment ago, and held back? Then go."""
+        return time.time() - insisted <= 10.0
 
     while True:
         try:
@@ -472,7 +602,7 @@ def main() -> int:
             # the first line; typed or piped, the command is the same.
             line = read_line(session).lstrip("﻿").strip()
         except (EOFError, KeyboardInterrupt):
-            if time.time() - insisted <= 2.0 or not held_back():
+            if again() or not held_back():
                 return choose("exit")
             continue
         except Exception:
@@ -484,18 +614,33 @@ def main() -> int:
             continue
         if not line:
             continue
+        # A project's name, typed as it is, opens it: the page lists them, and
+        # the name is the thing someone reads there and types back.
+        if not line.startswith("/"):
+            named = next((n for n in project_names() if n.lower() == line.lower()), "")
+            if named:
+                return choose("open", named)
         head, _, rest = line.partition(" ")
         cmd = head.lower() if head.startswith("/") else "/" + head.lower()
-        if cmd in ALIASES:                  # "/new" -> "/projects new"
+        if cmd in ALIASES:                  # "/delete" -> "/projects delete"
             cmd, _, more = ALIASES[cmd].partition(" ")
             rest = (more + " " + rest).strip() if more else rest
         if cmd == "/help":
             show_help(extra)
         elif cmd == "/jobs":
             show_jobs()
+            # The page said the memory was writing when it was drawn. If that
+            # has finished, the line is now wrong, and it stays on the screen
+            # being wrong - so the page is drawn again, saying so.
+            try:
+                if shown_jobs and not memory_jobs():
+                    return choose("clear", "the memory has finished writing")
+            except Exception:
+                pass
         elif cmd == "/exit":
-            # Typed, not a keystroke: it says what is happening and stays.
-            if not held_back():
+            # Typed, not a keystroke: it says what is happening and stays -
+            # and a second /exit goes, as a second ctrl+D does.
+            if again() or not held_back():
                 return choose("exit")
         elif cmd == "/projects":
             action, _, name = rest.strip().partition(" ")

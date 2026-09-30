@@ -173,6 +173,17 @@ def brief(store: Path, since: str = "") -> dict:
         if not ok:
             _why = str(detail).split("—")[0].split(" - ")[0].strip()[:76]
         out["backend"] = "up" if ok else f"down - {_why}"
+        # The same, said for a person: the page shows this, the record keeps
+        # `serving` exactly as the server reported it. Computed here so both
+        # launchers draw the same words.
+        try:
+            import endpoints as _ep
+            shown = _ep.display_model(out["serving"])
+            if out["n_ctx"]:
+                shown += f" · {_ep.human_tokens(out['n_ctx'])} context"
+            out["serving_display"] = shown
+        except Exception:
+            out["serving_display"] = out["serving"]
     except Exception as e:
         out["serving"] = ""
         out["backend"] = f"unknown - {type(e).__name__}"

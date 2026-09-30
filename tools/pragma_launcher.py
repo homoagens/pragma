@@ -33,9 +33,11 @@ a store written by the Windows launcher opens here and the other way round.
 
 from __future__ import annotations
 
+import contextlib
 import json
 import os
 import shutil
+import signal
 import subprocess
 import sys
 import zipfile
@@ -48,7 +50,8 @@ sys.path[:0] = [str(ROOT), str(ROOT / "core"), str(ROOT / "tools")]
 import pragma_home as home                     # noqa: E402  the home prompt, shared
 # The arrows, the digits, the first letter, ctrl+D: one menu, every page that
 # offers a choice - this one and /configure.
-from pragma_menu import accent, ask, clear, confirm, menu, pick, read_key, say   # noqa: E402,F401
+from pragma_menu import (SEP, accent, ask, clear, confirm, menu, pause,   # noqa: E402,F401
+                         pick, read_key, row, say, title)
 
 REGISTRY = Path.home() / ".pragma" / "registry.json"
 PROJECTS = Path.home() / ".pragma" / "projects"
@@ -160,11 +163,11 @@ def terminal_lines(fallback: int = 40) -> int:
 
 
 # What the page needs under the mark before the prompt has somewhere to sit:
-# the project count, the commands, the endpoint, whatever the memory is
-# writing, and the six lines prompt_toolkit keeps free for its completion
-# menu. Below this the terminal scrolls, and what goes off the top is the
-# mark - which is how it comes to be half drawn.
-ROOM_FOR_THE_MARK = 28
+# the commands, the endpoint, whatever the memory is writing, and the lines
+# prompt_toolkit keeps free for its completion menu - plus one line for each
+# project listed, which home_page() adds. Below this the terminal scrolls, and
+# what goes off the top is the mark - which is how it comes to be half drawn.
+ROOM_FOR_THE_MARK = 26
 
 
 def logo(compact: bool | None = None) -> None:
@@ -188,8 +191,8 @@ def logo(compact: bool | None = None) -> None:
     except Exception:
         glyph = {"F": "#", "T": "#", "B": "#"}
     print()
-    for row in LOGO:
-        print(f"  {a}" + "".join(glyph.get(c, c) for c in row) + r)
+    for line in LOGO:
+        print(f"  {a}" + "".join(glyph.get(c, c) for c in line) + r)
 
 
 
@@ -231,14 +234,48 @@ def touch_opened(name: str) -> None:
     write_registry(entries)
 
 
+@contextlib.contextmanager
+def child_owns_ctrl_c():
+    """While a child runs in this window, ctrl+C is the child's.
+
+    The terminal sends ctrl+C to every process in the foreground group, and
+    that is this launcher as well as the conversation it started. The
+    conversation stops a reply with it; the launcher, waiting in
+    subprocess.run, took it as its own and died with a traceback - so ctrl+C
+    during an answer threw the operator out of Pragma altogether, and left the
+    conversation without its parent. MEASURED in tmux, 2026-09-30.
+
+    A handler that does nothing, not SIG_IGN: an ignored signal stays ignored
+    across exec, and the child would inherit a ctrl+C that no longer reaches
+    it. A handler is reset to the default in the child, which then does with
+    the key what it means to do.
+    """
+    try:
+        old = signal.signal(signal.SIGINT, lambda *_: None)
+    except (ValueError, OSError):       # not the main thread: nothing to guard
+        yield
+        return
+    try:
+        yield
+    finally:
+        signal.signal(signal.SIGINT, old)
+
+
 def brief(entry: dict, env: dict) -> dict:
     store = Path(entry.get("memory") or "") / "episodes"
     try:
-        done = subprocess.run([sys.executable, str(ROOT / "tools" / "pragma_brief.py"), str(store)],
-                              capture_output=True, text=True, env=env, timeout=120)
+        with child_owns_ctrl_c():
+            done = subprocess.run([sys.executable, str(ROOT / "tools" / "pragma_brief.py"), str(store)],
+                                  capture_output=True, text=True, env=env, timeout=120)
         return json.loads(done.stdout or "{}")
     except Exception as e:
         return {"ok": False, "error": f"{type(e).__name__}: {str(e)[:120]}"}
+
+
+def _n(count, one: str, many: str = "") -> str:
+    """"1 episode", "3 episodes": a count with its noun agreeing."""
+    count = int(count or 0)
+    return f"{count} {one if count == 1 else (many or one + 's')}"
 
 
 def show_brief(entry: dict, data: dict) -> None:
@@ -250,38 +287,37 @@ def show_brief(entry: dict, data: dict) -> None:
     g = GREY if a else ""
     logo()
     print()
-    print(f"   {g}{datetime.now().strftime('%A %d %B, %H:%M')}{r}")
+    print(f"  {a}{entry['name']}{r}   {g}{datetime.now().strftime('%A %d %B, %H:%M')}{r}")
     print()
-    print(f"  {g}{'project':<10}{r}{entry['name']}")
     if not data.get("ok"):
-        print(f"  {g}{'memory':<10}{r}\033[33m{data.get('error', 'unreadable')}{r}" if a
-              else f"  memory    {data.get('error', 'unreadable')}")
+        row("memory", str(data.get("error", "unreadable")), ESC + "[33m")
         print()
         return
-    memory = (f"{data['episodes_active']} episodes active, {data['episodes_dormant']} dormant, "
-              f"{data['beliefs']} beliefs")
+    memory = SEP.join([_n(data.get("episodes_active"), "episode") + " active",
+                       f"{int(data.get('episodes_dormant') or 0)} dormant",
+                       _n(data.get("beliefs"), "belief")])
     away = data.get("away_days")
     if away is not None:
-        memory += "   last here " + ("today" if away < 1 else "1 day" if away < 2 else f"{away:.0f} days")
-    print(f"  {g}{'memory':<10}{r}{memory}")
+        memory += SEP + "last here " + ("today" if away < 1 else "yesterday" if away < 2
+                                        else f"{away:.0f} days ago")
+    row("memory", memory)
 
     up = data.get("backend") == "up"
-    serving = data.get("serving") or ("up (model not reported)" if up else "")
     if up:
-        print(f"  {g}{'serving':<10}{r}\033[32m{serving}{r}" if a else f"  serving   {serving}")
+        row("serving", data.get("serving_display") or data.get("serving")
+            or "up (the model is not reported)", ESC + "[32m")
     else:
-        print(f"  {g}{'serving':<10}{r}\033[31mbackend down{r}" if a else "  serving   backend down")
         why = str(data.get("backend", "")).replace("down - ", "")
-        if why and why != "up":
-            print(f"            {g}{why}{r}")
-        print(f"            {g}/configure to point it elsewhere{r}")
+        row("serving", "the model server is down" + (f" - {why}" if why and why != "up" else ""),
+            ESC + "[31m")
+        row("", "/configure points Pragma at another one")
 
     attention = []
     if int(data.get("working") or 0) > 0:
         attention.append(f"the memory is writing {data.get('working_note') or 'a session'}"
                          " - the counts above will move")
     if int(data.get("jobs_failed") or 0) > 0:
-        attention.append(f"{data['jobs_failed']} consolidation(s) did not finish - /jobs")
+        attention.append(_n(data["jobs_failed"], "consolidation") + " did not finish - /jobs")
     window, served = int(data.get("context_window") or 0), int(data.get("n_ctx") or 0)
     if window and data.get("context_source") != "endpoint" and served and served < window:
         attention.append(f"context {window} tokens, but the server has {served} - requests will be refused")
@@ -289,22 +325,22 @@ def show_brief(entry: dict, data: dict) -> None:
         if not role.get("up"):
             attention.append(f"{role['role']} endpoint {role['name']} - {role['status']} - /configure")
     for line in attention:
-        print(f"            \033[33m{line}{r}" if a else f"            {line}")
+        row("", line, ESC + "[33m")
 
     news = []
     if int(data.get("went_dormant_n") or 0) > 0:
-        news.append(f"{data['went_dormant_n']} episode(s) went dormant")
+        news.append(_n(data["went_dormant_n"], "episode") + " went dormant")
     for revised in data.get("revised") or []:
-        news.append(f'belief revised - "{revised}"')
+        news.append(f'a belief was revised - "{revised}"')
     if int(data.get("fading") or 0) > 0:
-        news.append(f"{data['fading']} episode(s) close to fading")
+        news.append(_n(data["fading"], "episode") + " close to fading")
     if data.get("last_goal"):
         news.append("last time you were on: " + data["last_goal"])
     if news:
         print()
-        print(f"  {g}Since you left{r}")
+        say("  since you left", "dim")
         for line in news:
-            print(f"    {line}")
+            row("", line, indent=2, width=2)
     print()
 
 
@@ -319,7 +355,8 @@ def talk(entry: dict, env: dict) -> str:
     argv = [sys.executable, "-m", "agent.chat", "--cwd", str(entry.get("workspace") or Path.cwd()), "--memory"]
     if steps:
         argv += ["--max-steps", steps]
-    subprocess.run(argv, cwd=str(ROOT), env=env)
+    with child_owns_ctrl_c():
+        subprocess.run(argv, cwd=str(ROOT), env=env)
     want = ""
     if request.exists():
         try:
@@ -333,38 +370,30 @@ def talk(entry: dict, env: dict) -> str:
 # ── the pages ─────────────────────────────────────────────────────────────────
 
 def choices_page(entry: dict) -> None:
-    """The decisions that change how a project feels, asked one at a time.
-    Enter keeps what is in brackets, ctrl+D stops. The same three questions as
-    Invoke-ProjectChoices on Windows - the two that used to be here, whether
-    the agent reasons and how it samples, are the endpoint's now."""
+    """What a project decides for itself: how many steps a turn may take.
+
+    Everything else a project used to decide - whether the agent reasons, how
+    it samples, whether Pragma guesses your next question - belongs to the
+    endpoint now, in /configure. The conversation asks this same question
+    itself with /settings, without leaving; this page is for the launcher's
+    own way in.
+    """
     name = entry["name"]
+    title("Settings", name)
     print()
-    say(f"  choices for '{name}'", "accent")
-    say("  enter keeps the value in brackets . ctrl+D stops", "dim")
-
-    def current(key, default=""):
-        return str((by_name(name).get("settings") or {}).get(key, default) or default)
-
+    say("  How many actions the agent may take in one turn before it must", "dim")
+    say(f"  answer. {DEFAULT_STEPS} suits a conversation; long work on files may need more.", "dim")
     print()
-    say("  Whether anything reasons, how it samples, and whether Pragma", "dim")
-    say("  guesses your next question belong to /configure - once, for", "dim")
-    say("  every project. There the thinking is said role by role: the", "dim")
-    say("  steps, the recall, the memory.", "dim")
-    print()
-    print("  steps per turn - how many actions the agent may take before it must answer")
-    say(f"    {DEFAULT_STEPS} suits a conversation; long tasks on files may need more", "dim")
-    shown = current("MaxSteps", DEFAULT_STEPS)
+    shown = str((by_name(name).get("settings") or {}).get("MaxSteps", DEFAULT_STEPS) or DEFAULT_STEPS)
     while True:
-        value = ask("steps per turn", shown)
-        if value is None:
+        value = ask("steps per turn", shown, hint="enter keeps it · ctrl+D goes back")
+        if value is None or value == shown:
             return
-        if value == shown:
-            break
         if value.isdigit() and 1 <= int(value) <= 1000:
             save_setting(name, "MaxSteps", value)
-            break
+            say(f"  {value} steps per turn", "good")
+            return
         say("    a number from 1 to 1000", "warn")
-    print()
 
 
 def backups_page(entry: dict) -> None:
@@ -372,9 +401,10 @@ def backups_page(entry: dict) -> None:
     folder = store.parent / "backups" / entry["name"]
     folder.mkdir(parents=True, exist_ok=True)
     zips = sorted(folder.glob("memory_*.zip"), reverse=True)
-    what = pick(f"backups of '{entry['name']}'",
-                ["take a snapshot now"] + [z.name for z in zips],
-                ["the whole store, zipped beside it"] + [f"{z.stat().st_size / 1024:.0f} KB" for z in zips])
+    title("Backups", entry["name"])
+    what = pick("", ["take a snapshot now"] + [z.name for z in zips],
+                ["the whole memory, zipped beside it"]
+                + [f"restore this one · {z.stat().st_size / 1024:.0f} KB" for z in zips])
     if what is None:
         return
     if what == 0:
@@ -388,13 +418,22 @@ def backups_page(entry: dict) -> None:
             for item in store.rglob("*"):
                 if item.is_file() and "backups" not in item.parts:
                     zf.write(item, item.relative_to(store).as_posix())
-        say(f"  backup: {dest}  ({dest.stat().st_size / 1024:.0f} KB)", "good")
+        print()
+        say(f"  snapshot taken  ({dest.stat().st_size / 1024:.0f} KB)", "good")
+        say(f"  {dest}", "dim")
+        print()
+        pause()
         return
     chosen = zips[what - 1]
-    say(f"  restoring {chosen.name} over the store at {store}", "warn")
-    say("  what is there now is replaced. A snapshot of it is taken first.", "dim")
-    if (ask("type the project name to confirm") or "") != entry["name"]:
+    print()
+    say(f"  Restore {chosen.name}?", "warn")
+    say(f"  The memory at {store} is replaced by it.", "dim")
+    say("  A snapshot of what is there now is taken first.", "dim")
+    print()
+    if (ask("type the project name to confirm", hint="ctrl+D goes back") or "") != entry["name"]:
         say("  nothing touched", "good")
+        print()
+        pause()
         return
     safety = folder / f"memory_before_restore_{datetime.now().strftime('%Y-%m-%d_%H%M%S')}.zip"
     with zipfile.ZipFile(safety, "w", zipfile.ZIP_DEFLATED) as zf:
@@ -407,64 +446,93 @@ def backups_page(entry: dict) -> None:
         shutil.rmtree(item) if item.is_dir() else item.unlink()
     with zipfile.ZipFile(chosen) as zf:
         zf.extractall(store)
-    say(f"  restored. The store as it was is in {safety.name}", "good")
+    say(f"  restored. The memory as it was is in {safety.name}", "good")
+    print()
+    pause()
+
+
+def suggested_workspace(name: str) -> Path:
+    """Where a new project's folder is offered: here, unless here is a bad idea.
+
+    It was always the folder the launcher was started in - which, started from
+    a shortcut or a fresh terminal, is the home folder: the agent would have
+    been handed the whole of it. Now the current folder is offered only when it
+    looks like a project's own, and a folder named after the project, in the
+    home folder, otherwise.
+    """
+    here, home = Path.cwd().resolve(), Path.home().resolve()
+    taken = {str(Path(e.get("workspace") or "").resolve()) for e in read_registry()
+             if e.get("workspace")}
+    if (here == home or here == Path(here.anchor) or here == ROOT or ROOT in here.parents
+            or str(here) in taken or here in home.parents):
+        return home / name
+    return here
 
 
 def new_project() -> dict | None:
-    name = ask("name of the project", hint="letters, digits, - and _")
-    if name is None:
-        return None
-    name = name.strip()
-    if not name or not all(c.isalnum() or c in "-._" for c in name):
-        say("  that is not a usable name", "warn")
-        return None
-    if by_name(name):
-        say(f"  there is already a project called '{name}'", "warn")
-        return None
-    workspace = ask("workspace - the folder the agent works in", str(Path.cwd()))
-    if workspace is None:
-        return None
-    ws = Path(workspace).expanduser().resolve()
+    title("New project")
+    print()
+    say("  A project is a folder the agent works in, and a memory of its own.", "dim")
+    print()
+    while True:
+        name = ask("name", hint="letters, digits, - and _ · ctrl+D goes back")
+        if name is None:
+            return None
+        name = name.strip()
+        if not name or not all(c.isalnum() or c in "-._" for c in name):
+            say("    letters, digits, - and _ only", "warn")
+            continue
+        if by_name(name):
+            say(f"    there is already a project called '{name}'", "warn")
+            continue
+        break
+    while True:
+        workspace = ask("folder", str(suggested_workspace(name)))
+        if workspace is None:
+            return None
+        ws = Path(workspace).expanduser().resolve()
+        if ws.exists() and not ws.is_dir():
+            say(f"    that is a file, not a folder: {ws}", "warn")
+            continue
+        if ROOT == ws or ROOT in ws.parents:
+            say("    not inside Pragma's own source: the agent must never edit itself", "warn")
+            continue
+        break
     # A FOLDER THAT IS NOT THERE YET is the normal way to start a project, not
     # a mistake: you name where the work will go before there is any. So it is
     # offered, not refused - and still offered rather than made silently,
     # because a typed path with a typo in it would otherwise become a folder
     # nobody meant to create.
-    if ws.exists() and not ws.is_dir():
-        say(f"  that is a file, not a folder: {ws}", "warn")
-        return None
     if not ws.exists():
-        if not confirm(f"{ws} does not exist. Create it?", "yes, create it"):
+        if not confirm(f"{ws} does not exist yet. Create it?", "yes, create it"):
             return None
         try:
             ws.mkdir(parents=True, exist_ok=True)
         except OSError as e:
             say(f"  cannot create it: {e.strerror or e}", "warn")
+            pause()
             return None
-    if ROOT == ws or ROOT in ws.parents:
-        say("  not inside Pragma's own source: the agent must never edit itself", "warn")
-        return None
     store = PROJECTS / name
     (store / "episodes").mkdir(parents=True, exist_ok=True)
     entry = {"name": name, "workspace": str(ws), "memory": str(store),
              "last_opened": "", "settings": dict(NEW_PROJECT_SETTINGS)}
     write_registry(read_registry() + [entry])
-    say(f"  project '{name}'", "good")
-    say(f"        workspace  {ws}", "dim")
-    say(f"        memory     {store}", "dim")
-    choices_page(entry)
     return by_name(name)
 
 
-def open_project(suggested: dict | None = None) -> dict | None:
+def open_project(heading: str = "Open a project") -> dict | None:
+    """A project chosen from the list, or None. With one project there is
+    nothing to choose: it is the answer."""
     entries = read_registry()
     if not entries:
         say("  no projects yet - /new starts one", "dim")
         return None
+    if len(entries) == 1:
+        return entries[0]
     entries.sort(key=lambda e: str(e.get("last_opened") or ""), reverse=True)
-    names = [e["name"] for e in entries]
-    notes = [f"{e.get('workspace', '')}" for e in entries]
-    chosen = pick("open which project", names, notes)
+    title(heading)
+    chosen = pick("", [e["name"] for e in entries],
+                  [home._home_short(str(e.get("workspace", ""))) for e in entries])
     return entries[chosen] if chosen is not None else None
 
 
@@ -485,8 +553,9 @@ def delete_project(entry: dict | None = None) -> dict | None:
     if not entries:
         say("  no projects to delete", "dim")
         return entry
-    chosen = pick("delete which project", [e["name"] for e in entries],
-                  [str(e.get("workspace") or "") for e in entries])
+    title("Delete a project")
+    chosen = pick("", [e["name"] for e in entries],
+                  [home._home_short(str(e.get("workspace") or "")) for e in entries])
     if chosen is None:
         return entry
     doomed = entries[chosen]
@@ -495,14 +564,12 @@ def delete_project(entry: dict | None = None) -> dict | None:
     episodes = len(list((store / "episodes").glob("ep_*.json"))) if there else 0
     backups = store.parent / "backups" / doomed["name"]
 
-    clear()
-    print()
-    say(f"  Delete '{doomed['name']}'", "bad")
+    title("Delete a project", doomed["name"])
     print()
     say("  This removes, for good:", "dim")
     if there:
         print(f"    the memory        {store}")
-        print(f"                      {episodes} episode(s), and every belief drawn from them")
+        print(f"                      {_n(episodes, 'episode')}, and every belief drawn from them")
     else:
         # A page that says "this removes the memory" about a folder that is
         # not there is how someone comes away sure a store was deleted when
@@ -521,7 +588,8 @@ def delete_project(entry: dict | None = None) -> dict | None:
     print()
     if (ask("type the project name to confirm", hint="ctrl+D goes back") or "") != doomed["name"]:
         say("  not deleted", "good")
-        ask("", hint="enter to go back")
+        print()
+        pause()
         return entry
     write_registry([e for e in read_registry() if e["name"] != doomed["name"]])
     gone = True
@@ -536,22 +604,25 @@ def delete_project(entry: dict | None = None) -> dict | None:
         say(f"  '{doomed['name']}' removed from the registry. There was no store to delete.", "good")
     else:
         say(f"  '{doomed['name']}' deleted" + ("" if gone else " from the registry"), "good")
-    ask("", hint="enter to go back")
+    print()
+    pause()
     return None if (entry and entry["name"] == doomed["name"]) else entry
 
 
 # ── the loop ──────────────────────────────────────────────────────────────────
 
-def home_prompt() -> tuple[str, str]:
-    """The shared home prompt, as a (action, argument). It draws the endpoints,
-    the memory being written, the plugins, and reads the line."""
+def home_prompt(notice: str = "") -> tuple[str, str]:
+    """The shared home prompt, as a (action, argument). It draws the body of
+    the page - projects, commands, endpoints, the memory at work, the plugins -
+    and reads the line. The mark above it is drawn by home_page()."""
     out = Path.home() / ".pragma" / f"home-{os.getpid()}.json"
     out.parent.mkdir(parents=True, exist_ok=True)
     out.unlink(missing_ok=True)
     argv = sys.argv
     probe = os.environ.get("PRAGMA_NO_ENDPOINT_PROBE")
     try:
-        sys.argv = ["pragma_home", "--out", str(out)]
+        sys.argv = ["pragma_home", "--out", str(out), "--page"] + (
+            ["--notice", notice] if notice else [])
         home.main()
     finally:
         sys.argv = argv
@@ -571,40 +642,27 @@ def home_prompt() -> tuple[str, str]:
 
 def home_page() -> None:
     clear()
-    logo()
-    print()
-    n = len(read_registry())
-    say(f"  {'No projects yet.' if not n else '1 project' if n == 1 else f'{n} projects'}", "dim")
-    print()
-    a, r = accent(), (RESET if accent() else "")
-    # From the prompt's own rows, so a command added there appears here
-    # without a second list to remember - and so an empty registry offers
-    # only what makes sense on it.
-    for command, blurb in home.rows():
-        print(f"  {a}{command:<12}{r}{GREY if a else ''}{blurb}{r}")
+    listed = min(len(read_registry()), home.RECENT)
+    logo(terminal_lines() < ROOM_FOR_THE_MARK + listed)
 
 
 def projects_page() -> dict | None:
     """Everything that is done TO a project: four words, and the list of
-    projects under the first of them.
-
-    The page listed the projects itself at first, which put two questions on
-    one screen - which project, and what to do with it - and meant the list
-    had to be read before the word you wanted was visible.
+    projects under the one that needs it.
 
     Returns the project to open, or None to stay at home.
     """
+    at = 0
     while True:
-        clear()
-        print()
-        say("  projects", "accent")
+        title("Projects")
         # Up to the semicolon: what the word does. What comes after it is how
         # to type the same thing at the prompt, which is not news on a page
         # that is already offering it.
         chosen = pick("", list(home.PROJECT_ACTIONS),
-                      [blurb.split(";")[0] for blurb in home.PROJECT_ACTIONS.values()])
+                      [blurb.split(";")[0] for blurb in home.PROJECT_ACTIONS.values()], at)
         if chosen is None:
             return None
+        at = chosen
         action = list(home.PROJECT_ACTIONS)[chosen]
         if action == "open":
             entry = open_project()
@@ -617,31 +675,24 @@ def projects_page() -> dict | None:
         elif action == "delete":
             delete_project()
         elif action == "backups":
-            entry = open_project()
+            entry = open_project("Back up which project?")
             if entry:
                 backups_page(entry)
-                ask("", hint="enter to go back")
 
 
 def configure_page() -> None:
-    subprocess.run([sys.executable, str(ROOT / "tools" / "pragma_configure.py")], cwd=str(ROOT))
+    with child_owns_ctrl_c():
+        subprocess.run([sys.executable, str(ROOT / "tools" / "pragma_configure.py")], cwd=str(ROOT))
 
 
-def main() -> int:
-    for stream in (sys.stdout, sys.stderr):
-        try:
-            stream.reconfigure(encoding="utf-8", errors="replace")
-        except Exception:
-            pass
+def run() -> int:
     entry: dict | None = None
     notice = ""
     while True:
         if entry is None:
             home_page()
-            if notice:
-                say(f"  {notice}", "warn")
-                notice = ""
-            action, arg = home_prompt()
+            action, arg = home_prompt(notice)
+            notice = ""
             if action in ("exit", ""):
                 clear()
                 return 0
@@ -656,14 +707,13 @@ def main() -> int:
             elif action == "delete":
                 delete_project()
             elif action == "backups":
-                chosen = by_name(arg) if arg else open_project()
+                chosen = by_name(arg) if arg else open_project("Back up which project?")
                 if chosen:
                     backups_page(chosen)
-                    ask("", hint="enter to go back")
             elif action == "configure":
                 configure_page()
             elif action == "clear":
-                pass
+                notice = arg
             continue
 
         # A project is open: its briefing, then its conversation.
@@ -675,16 +725,12 @@ def main() -> int:
         if want == "refresh":
             continue
         if want == "settings":
-            clear()
             choices_page(entry)
             entry = by_name(entry["name"]) or entry
-            ask("", hint="enter to go back")
         elif want == "backups":
-            clear()
             backups_page(entry)
-            ask("", hint="enter to go back")
         elif want == "switch":
-            chosen = open_project(entry)
+            chosen = open_project()
             entry = chosen or entry
         elif want == "new":
             entry = new_project() or entry
@@ -692,6 +738,22 @@ def main() -> int:
             entry = delete_project(entry)
         else:                                   # close, or the conversation ended
             entry = None
+
+
+def main() -> int:
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            stream.reconfigure(encoding="utf-8", errors="replace")
+        except Exception:
+            pass
+    try:
+        return run()
+    except KeyboardInterrupt:
+        # The last line of defence, not the way out: every page takes ctrl+C
+        # as "back". Whatever still reaches here leaves quietly - a traceback
+        # is not a goodbye.
+        print()
+        return 130
 
 
 if __name__ == "__main__":

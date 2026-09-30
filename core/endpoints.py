@@ -461,16 +461,59 @@ def probe_all(eps: list[Endpoint], timeout: float = 3.0) -> dict[str, dict]:
     return results
 
 
+def display_model(served: str, quant: bool = True) -> str:
+    """A served model's name as a person reads it, for the screen only.
+
+        "Qwen3.6-35B-A3B-MTP-GGUF:UD-Q5_K_M" -> "Qwen3.6-35B-A3B-MTP (UD-Q5_K_M)"
+
+    The packaging word goes and the quantisation moves into brackets: the
+    name is the model, the rest is how it was shipped. Provenance - the
+    episodes, the bench, the banners' raw field - keeps the name exactly as
+    the server reported it; this is only what is drawn.
+    """
+    name, _, q = str(served or "").partition(":")
+    for tail in ("-GGUF", "_GGUF", ".GGUF", "-gguf", "_gguf", ".gguf"):
+        if name.endswith(tail):
+            name = name[: -len(tail)]
+    if not name:
+        return ""
+    return f"{name} ({q})" if (q and quant) else name
+
+
+def human_tokens(n: int) -> str:
+    """131072 -> "128k", 100000 -> "100k", 900 -> "900": a window's size as said."""
+    n = int(n or 0)
+    if n < 1000:
+        return str(n)
+    return f"{n // 1024}k" if n % 1024 == 0 else f"{round(n / 1000)}k"
+
+
 def status_text(p: dict) -> str:
-    """One line: "connected - Qwen3.8-27B · 1 slot x 65536" or what went wrong."""
+    """One line: "Qwen3.8-27B (Q4_K_M) · 64k context", or what went wrong.
+
+    It said "connected - Qwen3.8-27B-GGUF:Q4_K_M · 1 slot x 65536 tokens",
+    which is the server's vocabulary rather than the reader's, and long
+    enough to wrap on every page that drew it. Whether it is up is said by
+    the colour it is drawn in, and by the words when it is not.
+    """
     if not p.get("up"):
         return p.get("error") or "not connected"
-    parts = [p["served"]] if p.get("served") else []
+    parts = [display_model(p["served"])] if p.get("served") else ["connected"]
     if p.get("n_ctx"):
-        slots = p.get("slots") or 0
-        window = f"{p['n_ctx']} tokens"
-        parts.append(f"{slots} slot{'s' if slots != 1 else ''} x {window}" if slots else window)
-    return "connected" + (" - " + " · ".join(parts) if parts else "")
+        parts.append(f"{human_tokens(p['n_ctx'])} context")
+    slots = int(p.get("slots") or 0)
+    if slots > 1:
+        parts.append(f"{slots} slots")
+    return " · ".join(parts)
+
+
+def short_url(url: str) -> str:
+    """"http://127.0.0.1:8290/v1" -> "127.0.0.1:8290": the address, not the API."""
+    u = str(url or "")
+    for head in ("http://", "https://"):
+        if u.startswith(head):
+            u = u[len(head):]
+    return u[:-3] if u.endswith("/v1") else u.rstrip("/")
 
 
 def for_role(role: str) -> Endpoint:

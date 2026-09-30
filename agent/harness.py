@@ -124,11 +124,26 @@ def fold(content: str, width: int, verbose: bool = False) -> list[str]:
     return shown
 
 
+def plural(n: int, one: str, many: str = "") -> str:
+    """"1 step", "3 steps": a count and a noun that agree - not "3 step(s)"."""
+    n = int(n or 0)
+    return f"{n} {one if n == 1 else (many or one + 's')}"
+
+
+def pretty_model(served: str, quant: bool = False) -> str:
+    """The model's name as the screen shows it - see endpoints.display_model."""
+    try:
+        import endpoints
+        return endpoints.display_model(served, quant=quant)
+    except Exception:
+        return str(served or "")
+
+
 def summary_line(steps: int, tools: int, seconds: float, out_tokens: int,
                  ctx_pct: int | None, touched: list[str], dot: str) -> str:
-    parts = [f"{steps} step(s)" if steps != 1 else "1 step"]
+    parts = [plural(steps, "step")]
     if tools:
-        parts.append(f"{tools} tool(s)" if tools != 1 else "1 tool")
+        parts.append(plural(tools, "tool"))
     parts.append(f"{seconds:.0f}s")
     if out_tokens:
         parts.append(f"{out_tokens / 1000:.1f}k tok" if out_tokens >= 1000 else f"{out_tokens} tok")
@@ -149,16 +164,16 @@ def toolbar(state: dict) -> list:
     """
     dot = ("class:toolbar.dim", "  ·  ")
     out = [("class:toolbar", f" {state.get('project') or 'no project'}")]
-    model = state.get("model")
+    model = pretty_model(state.get("model") or "")
     if model:
-        out += [dot, ("class:toolbar.dim", str(model)[:40])]
+        out += [dot, ("class:toolbar.dim", model[:40])]
     ctx = state.get("ctx")
     if ctx is not None:
         style = "class:toolbar.warn" if ctx >= 80 else "class:toolbar.dim"
         out += [dot, (style, f"ctx {ctx}%")]
     out += [dot, ("class:toolbar.dim", "memory on" if state.get("memory") else "memory off")]
     turns = state.get("turns") or 0
-    out += [dot, ("class:toolbar.dim", f"{turns} turn(s)" if turns != 1 else "1 turn")]
+    out += [dot, ("class:toolbar.dim", plural(turns, "turn") if turns else "no turns yet")]
     writing = state.get("writing")
     if writing:
         out += [dot, ("class:toolbar.warn", f"writing {writing}")]
@@ -611,15 +626,14 @@ class Harness:
         self._close_answer()
         self._end_thinking()
         self._hide()
-        t = Text(f"  {self.g['bad']} ", style="bold red")
-        t.append(str(content)[:600], style="red")
-        self.console.print(t)
+        self._hanging(Text(f"  {self.g['bad']} ", style="bold red"),
+                      Text(str(content)[:600], style="red"))
 
     def notice(self, step, content):
         from rich.text import Text
         self._hide()
-        self.console.print(Text(f"  {self.g['note']} " + " ".join(str(content).split())[:300],
-                                style="italic bright_black"))
+        self._hanging(Text(f"  {self.g['note']} ", style="italic bright_black"),
+                      Text(" ".join(str(content).split())[:300], style="italic bright_black"))
 
     def conclusion(self, forced, elapsed, text):
         from rich.text import Text
@@ -641,16 +655,30 @@ class Harness:
     def faculty_running(self, tag, note):
         self._show(f"{tag.lower()} {self.g['dot']} {note.rstrip('.… ')}")
 
+    def _hanging(self, lead, body) -> None:
+        """`lead` then `body`, the body wrapping under itself - never at column 0.
+
+        A faculty's line carries the curator's reason, which is a sentence of
+        its own; printed as one Text it ran past the edge and the terminal
+        carried the rest to the left margin, under the marks.
+        """
+        from rich.table import Table
+        grid = Table.grid(padding=0)
+        grid.add_column(no_wrap=True)
+        grid.add_column(overflow="fold")
+        grid.add_row(lead, body)
+        self.console.print(grid)
+
     def faculty(self, tag, summary, details=None):
         from rich.text import Text
         self._hide()
         color = FACULTY_COLOR.get(tag, "magenta")
-        t = Text(f"  {self.g['fac']} ", style=self.accent)
-        t.append(f"{tag.lower()}  ", style=f"bold {color}")
-        t.append(str(summary), style="bright_black")
-        self.console.print(t)
+        lead = Text(f"  {self.g['fac']} ", style=self.accent)
+        lead.append(f"{tag.lower()}  ", style=f"bold {color}")
+        self._hanging(lead, Text(str(summary), style="bright_black"))
         for d in details or []:
-            self.console.print(Text(f"      {self.g['dot']} {d}", style="bright_black"))
+            self._hanging(Text(f"      {self.g['dot']} ", style="bright_black"),
+                          Text(str(d), style="bright_black"))
 
     def stats(self, line):
         pass                                # gathered into the closing line

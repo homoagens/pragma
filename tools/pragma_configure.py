@@ -116,6 +116,16 @@ def grey(text: str) -> str:
     return f"{GREY}{text}{RESET}" if accent() else text
 
 
+def indented(text: str, colour: str = "", indent: int = 4) -> None:
+    """A line of the page under an endpoint's name, wrapped under itself."""
+    import shutil
+    import textwrap
+    room = max(20, shutil.get_terminal_size((100, 24)).columns - 1 - indent)
+    paint = colour if (colour and sys.stdout.isatty()) else ""
+    for part in textwrap.wrap(text, room, break_on_hyphens=False) or [""]:
+        print(" " * indent + (f"{paint}{part}{RESET}" if paint else part))
+
+
 # -- the page -----------------------------------------------------------------
 
 def role_target(cat: dict, role: str) -> tuple[str, bool]:
@@ -149,7 +159,7 @@ def nature(entry: dict) -> str:
     kind, work = entry.get("kind"), entry.get("work")
     if not kind and not work and not entry.get("sampling"):
         return "not tuned yet - what it is, and how it samples"
-    words = f"{kind or 'kind not set'} . {work or 'general'}"
+    words = f"{kind or 'kind not set'} · {work or 'general'}"
     # Said only when it is news. A thinking endpoint that reasons for all
     # three is what "thinking" already means, and repeating it on every line
     # would bury the case that differs.
@@ -157,9 +167,9 @@ def nature(entry: dict) -> str:
     if who and who != "all three":
         words += f" ({who} reason)" if who != "nobody" else " (nobody reasons)"
     if not entry.get("sampling"):
-        return f"{words} . the server's own numbers"
+        return f"{words} · the server's own numbers"
     sent = knob_text(endpoints.sampling_row(entry))
-    return f"{words} . {sent}" if sent else f"{words} . the server's own numbers"
+    return f"{words} · {sent}" if sent else f"{words} · the server's own numbers"
 
 
 def step(crumbs: str = "") -> None:
@@ -222,9 +232,12 @@ def show(state: dict, crumbs: str = "") -> None:
         a = accent()
         serves = roles_of(cat, ep.name)
         print(f"  {a}{ep.name}{off()}" + (f"   {grey(serves)}" if serves else ""))
-        print(f"    {ok_bad(p.get('up'))}{endpoints.status_text(p)}{off()}   "
-              + grey(ep.base_url + tail))
-        print("    " + grey(nature(entry)))
+        # Three lines, each wrapped under itself: what answers there, where it
+        # is, what it is. They were two, and both ran past a 100-column window
+        # onto the next line at column 0.
+        indented(endpoints.status_text(p), ok_bad(p.get("up")))
+        indented(endpoints.short_url(ep.base_url) + tail, GREY if accent() else "")
+        indented(nature(entry), GREY if accent() else "")
     told = state.pop("note", "")
     if told:
         print()
@@ -280,7 +293,11 @@ def which(cat: dict, question: str, crumbs: str = "") -> str | None:
         return names[0]
     step(crumbs)
     notes = [nature(cat["endpoints"][n]) for n in names]
-    i = pick(question, names, notes)
+    # The cursor starts on the endpoint the agent uses: that is the one most
+    # questions here are about, and alphabetical order put a server that was
+    # switched off under it instead.
+    agent = role_target(cat, "agent")[0]
+    i = pick(question, names, notes, names.index(agent) if agent in names else 0)
     return None if i is None else names[i]
 
 

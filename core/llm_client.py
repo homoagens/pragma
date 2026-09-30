@@ -749,6 +749,40 @@ def _refused(e) -> bool:
                                   "unrecognized", "response_format", "json_schema"))
 
 
+def _open_stream(url, headers, body, timeout, stop_event):
+    """requests.post(stream=True), given up at once if a stop comes first.
+
+    The streamed calls checked the stop signal between the lines of the
+    stream - and there are no lines until the server has read the whole
+    prompt, which on a long conversation is tens of seconds. ctrl+C pressed
+    in that window said "stopping" and then waited for the first token.
+    MEASURED 2026-09-30: twenty seconds between the key and the stop.
+
+    The request now waits in a thread of its own while this one watches the
+    signal. A stop abandons it: the caller gets LLMInterrupted at once, and the
+    connection closes when the abandoned response is dropped, which is when
+    the server stops working on it.
+    """
+    holder: dict = {}
+
+    def go():
+        try:
+            holder["resp"] = requests.post(url, headers=headers, json=body,
+                                           stream=True, timeout=(10, timeout))
+        except Exception as e:                  # handed back to the caller below
+            holder["exc"] = e
+
+    t = threading.Thread(target=go, daemon=True)
+    t.start()
+    while t.is_alive():
+        if stop_event is not None and stop_event.is_set():
+            raise LLMInterrupted("LLM call aborted by stop signal")
+        t.join(timeout=0.1)
+    if "exc" in holder:
+        raise holder["exc"]
+    return holder["resp"]
+
+
 def _post_streamed(url, headers, payload, timeout, label, stop_event):
     """The request as a stream: (message, finish, usage, seconds), or None.
 
@@ -768,7 +802,7 @@ def _post_streamed(url, headers, payload, timeout, label, stop_event):
     body = dict(payload, stream=True, stream_options={"include_usage": True})
     t0 = time.time()
     try:
-        resp = requests.post(url, headers=headers, json=body, stream=True, timeout=(10, timeout))
+        resp = _open_stream(url, headers, body, timeout, stop_event)
     except requests.RequestException:
         return None
     if resp.status_code in (400, 422):
@@ -1054,8 +1088,8 @@ def _stream_tools_openai_compatible(payload, headers, timeout, base_url,
     stop_event = _EitherStop(stop_event)
     payload = dict(payload, stream=True, stream_options={"include_usage": True})
     try:
-        resp = requests.post(f"{base_url}/chat/completions", headers=headers,
-                             json=payload, stream=True, timeout=(10, timeout))
+        resp = _open_stream(f"{base_url}/chat/completions", headers, payload,
+                            timeout, stop_event)
     except requests.RequestException:
         return None
     if resp.status_code in (400, 422):

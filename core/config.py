@@ -293,7 +293,7 @@ def agent_profile() -> tuple[str, dict]:
     if not knobs:
         return "", {}
     where = agent_endpoint_name()
-    return f"{kind} . {work}" + (f" ({where})" if where else ""), knobs
+    return f"{kind} · {work}" + (f" ({where})" if where else ""), knobs
 
 
 def sampling_extras():
