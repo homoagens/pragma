@@ -84,6 +84,89 @@ if ($env:PRAGMA_ACCENT -match '^\d{1,3};\d{1,3};\d{1,3}$') {
     $script:Accent = $env:PRAGMA_ACCENT
 }
 
+# The separator between the parts of a line, and a count with its noun. The
+# middle dot is made at run time so this file stays ASCII; a console without
+# virtual-terminal support gets a dash.
+$script:Dot = if ($script:UseVT) { " " + [char]0x00B7 + " " } else { " - " }
+
+function script:Format-Count($n, [string]$one, [string]$many = "") {
+    $k = 0
+    try { $k = [int]$n } catch { }
+    if (-not $many) { $many = $one + "s" }
+    if ($k -eq 1) { return "1 $one" }
+    return "$k $many"
+}
+
+function script:Write-Row([string]$label, [string]$text, [string]$colour = "", [int]$width = 12) {
+    # One `label  value` line, the value wrapped under itself. Write-Host lets
+    # the console break a long line at its last column and carry the rest to
+    # column 0, under the labels; this breaks it at words instead. The same
+    # shape as pragma_menu.row() on the Python side.
+    $lead = "  " + $label.PadRight($width)
+    $room = 80
+    try { $room = [Math]::Max(20, [Console]::WindowWidth - 1 - $lead.Length) } catch { }
+    $words = @("$text" -split '\s+' | Where-Object { $_ -ne '' })
+    $lines = @()
+    $cur = ""
+    foreach ($w in $words) {
+        if ($cur.Length -eq 0) { $cur = $w }
+        elseif (($cur.Length + 1 + $w.Length) -le $room) { $cur = $cur + " " + $w }
+        else { $lines += $cur; $cur = $w }
+    }
+    $lines += $cur
+    for ($i = 0; $i -lt $lines.Count; $i++) {
+        if ($i -eq 0) { Write-Host $lead -ForegroundColor DarkGray -NoNewline }
+        else { Write-Host ("".PadRight($lead.Length)) -NoNewline }
+        if ($colour) { Write-Host $lines[$i] -ForegroundColor $colour }
+        else { Write-Host $lines[$i] }
+    }
+}
+
+
+# --- ctrl+C belongs to the child ----------------------------------------------
+# The console sends ctrl+C to every process attached to it: the conversation
+# and this launcher alike. The conversation stops a reply with it and carries
+# on; PowerShell took the same key as an order to stop the script that started
+# the conversation, and the launcher was gone - the operator was left at the
+# PowerShell prompt the moment the conversation ended. MEASURED 2026-09-30 with
+# a real CTRL_C_EVENT: the child handled it and finished normally, and the
+# script that ran it never reached its next line.
+#
+# While a child owns the window, a native handler answers ctrl+C for this
+# process and PowerShell's own handler is never asked. The child is a process
+# of its own and gets the key exactly as before. A handler, not the "ignore"
+# flag: the flag is inherited by children, and the conversation would lose the
+# key that stops a reply.
+$script:CtrlCReady = $null
+
+function script:Enter-ChildWindow {
+    if ($null -eq $script:CtrlCReady) {
+        $script:CtrlCReady = $false
+        try {
+            if (-not ('PragmaCtrlC' -as [type])) {
+                Add-Type -ErrorAction Stop -TypeDefinition @"
+using System;
+using System.Runtime.InteropServices;
+public static class PragmaCtrlC {
+    public delegate bool Handler(uint ctrlType);
+    [DllImport("kernel32.dll")] static extern bool SetConsoleCtrlHandler(Handler h, bool add);
+    static readonly Handler keep = new Handler(Swallow);
+    static bool Swallow(uint t) { return t == 0; }
+    public static void Hold() { SetConsoleCtrlHandler(keep, true); }
+    public static void Release() { SetConsoleCtrlHandler(keep, false); }
+}
+"@
+            }
+            $script:CtrlCReady = $true
+        } catch { }
+    }
+    if ($script:CtrlCReady) { try { [PragmaCtrlC]::Hold() } catch { } }
+}
+
+function script:Exit-ChildWindow {
+    if ($script:CtrlCReady) { try { [PragmaCtrlC]::Release() } catch { } }
+}
+
 function script:Paint([string]$text, [string]$role) {
     # Returns the text ready to print: wrapped in escapes where they work,
     # untouched where they do not, so every caller is one line either way.
@@ -186,11 +269,14 @@ function script:Get-Brief($entry) {
         # usage error - on a project that had never been opened, which is
         # exactly the first one anyone sees. It looked like a memory with
         # nothing in it.
-        if ($since) {
-            $json = & $script:Python $script:BriefScript $store --since $since 2>$null
-        } else {
-            $json = & $script:Python $script:BriefScript $store 2>$null
-        }
+        Enter-ChildWindow
+        try {
+            if ($since) {
+                $json = & $script:Python $script:BriefScript $store --since $since 2>$null
+            } else {
+                $json = & $script:Python $script:BriefScript $store 2>$null
+            }
+        } finally { Exit-ChildWindow }
         if (-not $json) { return $null }
         return ($json | ConvertFrom-Json)
     } catch { return $null }
@@ -272,40 +358,45 @@ function script:Show-Brief($entry, $brief) {
     #
     # Colour carries meaning here and nowhere else: grey labels, green for a
     # server that answers, yellow for what wants you, red for what is broken.
+    # The same page as show_brief() in pragma_launcher.py, line for line.
     Write-Host ""
     Show-Logo
     Write-Host ""
+    Write-Host "  " -NoNewline
+    if ($script:UseVT) { Write-Host (Paint $entry.name 'accent') -NoNewline }
+    else { Write-Host $entry.name -NoNewline -ForegroundColor Magenta }
     Write-Host ("   " + (Get-Date -Format "dddd d MMMM, HH:mm")) -ForegroundColor DarkGray
     Write-Host ""
-    Write-Host "  project   " -ForegroundColor DarkGray -NoNewline
-    Write-Host $entry.name
     if ($brief -and $brief.ok) {
-        $mem = "{0} episodes active, {1} dormant, {2} beliefs" -f `
-               $brief.episodes_active, $brief.episodes_dormant, $brief.beliefs
+        $mem = (Format-Count $brief.episodes_active "episode") + " active" + $script:Dot +
+               "$([int]$brief.episodes_dormant) dormant" + $script:Dot +
+               (Format-Count $brief.beliefs "belief")
         if ($null -ne $brief.away_days) {
             $away = if ($brief.away_days -lt 1) { "today" }
-                    elseif ($brief.away_days -lt 2) { "1 day" }
-                    else { "{0:N0} days" -f $brief.away_days }
-            $mem = $mem + ("   last here " + $away)
+                    elseif ($brief.away_days -lt 2) { "yesterday" }
+                    else { "{0:N0} days ago" -f $brief.away_days }
+            $mem = $mem + $script:Dot + "last here " + $away
         }
-        Write-Host "  memory    " -ForegroundColor DarkGray -NoNewline
-        Write-Host $mem
+        Write-Row "memory" $mem
 
         # Whether there is anything to talk to is the one thing worth finding
         # without reading. Keyed on the backend state rather than on the model
         # name: a server that answers without reporting a model is up.
         $isUp = ($brief.backend -eq "up")
-        Write-Host "  serving   " -ForegroundColor DarkGray -NoNewline
         if ($isUp) {
-            $what = if ($brief.serving) { $brief.serving } else { "up (model not reported)" }
-            Write-Host $what -ForegroundColor Green
-        } else {
-            Write-Host "backend down" -ForegroundColor Red
-            $why = "$($brief.backend)" -replace '^down - ', ''
-            if ($why -and $why -ne "up") {
-                Write-Host ("            " + $why) -ForegroundColor DarkGray
+            $what = "up (the model is not reported)"
+            if ($brief.PSObject.Properties.Name -contains 'serving_display' -and $brief.serving_display) {
+                $what = $brief.serving_display
+            } elseif ($brief.serving) {
+                $what = $brief.serving
             }
-            Write-Host "            /configure to point it elsewhere" -ForegroundColor DarkGray
+            Write-Row "serving" $what "Green"
+        } else {
+            $why = "$($brief.backend)" -replace '^down - ', ''
+            $say = "the model server is down"
+            if ($why -and $why -ne "up") { $say = $say + " - " + $why }
+            Write-Row "serving" $say "Red"
+            Write-Row "" "/configure points Pragma at another one"
         }
 
         # WHAT WANTS YOU. Nothing here on an ordinary day; one line each when
@@ -318,7 +409,7 @@ function script:Show-Brief($entry, $brief) {
         if ($brief.PSObject.Properties.Name -contains 'jobs_failed' -and [int]$brief.jobs_failed -gt 0) {
             # Never silent. The turns are still in the job file, so this is
             # recoverable - but only if it is said.
-            $attention += ("{0} consolidation(s) did not finish - /jobs" -f $brief.jobs_failed)
+            $attention += ((Format-Count $brief.jobs_failed "consolidation") + " did not finish - /jobs")
         }
         # THE WINDOW IN FORCE, when the server disagrees with it. Every
         # compaction threshold is derived from that number, so a wrong one does
@@ -344,32 +435,28 @@ function script:Show-Brief($entry, $brief) {
                 if (-not $r.up) { $attention += ("{0} endpoint {1} - {2} - /configure" -f $r.role, $r.name, $r.status) }
             }
         }
-        foreach ($line in $attention) {
-            Write-Host "            " -NoNewline
-            Write-Host $line -ForegroundColor Yellow
-        }
+        foreach ($line in $attention) { Write-Row "" $line "Yellow" }
 
         # SINCE YOU LEFT. The memory's own news, which is the other half of
         # what a briefing is for.
         $lines = @()
         if ($brief.went_dormant_n -gt 0) {
-            $lines += "{0} episode(s) went dormant" -f $brief.went_dormant_n
+            $lines += (Format-Count $brief.went_dormant_n "episode") + " went dormant"
         }
         if ($brief.revised_n -gt 0) {
-            foreach ($r in $brief.revised) { $lines += "belief revised - `"$r`"" }
+            foreach ($r in $brief.revised) { $lines += "a belief was revised - `"$r`"" }
         }
         if ($brief.fading -gt 0) {
-            $lines += "{0} episode(s) close to fading" -f $brief.fading
+            $lines += (Format-Count $brief.fading "episode") + " close to fading"
         }
         if ($brief.last_goal) { $lines += "last time you were on: " + $brief.last_goal }
         if ($lines.Count) {
             Write-Host ""
-            Write-Host "  Since you left" -ForegroundColor DarkGray
-            foreach ($l in $lines) { Write-Host "    $l" }
+            Write-Host "  since you left" -ForegroundColor DarkGray
+            foreach ($l in $lines) { Write-Row "" $l "" 2 }
         }
     } elseif ($brief -and -not $brief.ok) {
-        Write-Host "  memory    " -ForegroundColor DarkGray -NoNewline
-        Write-Host $brief.error -ForegroundColor Yellow
+        Write-Row "memory" "$($brief.error)" "Yellow"
     }
     Write-Host ""
 }
@@ -1276,9 +1363,9 @@ function script:Invoke-BackupMenu($entry) {
         $root = Get-BackupRoot $entry
         $n = 0
         if (Test-Path $root) { $n = @(Get-ChildItem -Path $root -Filter "*.zip").Count }
-        Write-Host "    memory     $($entry.memory)" -ForegroundColor DarkGray
-        Write-Host "    workspace  $($entry.workspace)" -ForegroundColor DarkGray
-        Write-Host "    snapshots  $n in $root" -ForegroundColor DarkGray
+        Write-Row "memory" "$($entry.memory)" "DarkGray"
+        Write-Row "workspace" "$($entry.workspace)" "DarkGray"
+        Write-Row "snapshots" ("$n in " + $root) "DarkGray"
         Write-Host ""
         $items = @(
             [pscustomobject]@{ key = 'b'; label = "snapshot both        the memory and the workspace"; action = 'both' }
@@ -1335,21 +1422,25 @@ function script:Invoke-ProjectsPage($suggested) {
         } elseif ($c.action -eq 'delete') {
             Invoke-DeleteProject $null | Out-Null
         } elseif ($c.action -eq 'backups') {
-            $which = Invoke-OpenProject $null
+            $which = Invoke-OpenProject $null "Back up which project?"
             if ($which) { Invoke-BackupMenu $which }
         }
     }
 }
 
-function script:Invoke-OpenProject($preferred) {
+function script:Invoke-OpenProject($preferred, [string]$title = "Open a project") {
     # The project list, whether it was reached from the home screen or from
     # /switch inside a conversation. One function because they are the same
     # question, and two copies of it would have drifted the first time one grew
-    # a column.
+    # a column. The title says what the choice is FOR: backups used to ask
+    # "Open a project" and then not open anything.
     $entries = @(Read-Registry)
+    # With one project there is nothing to choose: it is the answer, as it is
+    # on the Python side.
+    if ($entries.Count -eq 1) { return $entries[0] }
     New-Page
     Write-Host ""
-    Write-Accent "  Open a project"
+    Write-Accent "  $title"
     Write-Host ""
     if ($entries.Count -eq 0) {
         # An empty list rather than a different screen. The home menu offers
@@ -1380,46 +1471,58 @@ function script:Invoke-OpenProject($preferred) {
     return $p.entry
 }
 
+function script:Get-SuggestedWorkspace([string]$name) {
+    # Where a new project's folder is offered: here, unless here is a bad idea.
+    # It was always the current folder - which, from a shortcut or a fresh
+    # terminal, is the home folder, and the agent would have been handed all
+    # of it. The same rule as suggested_workspace() in pragma_launcher.py.
+    $here = (Get-Location).Path.TrimEnd('\')
+    $homeDir = "$env:USERPROFILE".TrimEnd('\')
+    $repo = "$($script:RepoRoot)".TrimEnd('\')
+    $taken = @(Read-Registry | ForEach-Object { "$($_.workspace)".TrimEnd('\') })
+    $bad = ($here -eq $homeDir) -or ($here -match '^[A-Za-z]:$') -or
+           ($here -eq $repo) -or $here.StartsWith($repo + '\') -or
+           ($taken -contains $here) -or $homeDir.StartsWith($here + '\')
+    if ($bad) { return (Join-Path $homeDir $name) }
+    return $here
+}
+
 function script:Invoke-NewProject {
-    # A project IS a folder, so the folder is asked first and the name follows
-    # from it. The first version asked for a name with no folder in sight, which
-    # put the abstract half before the concrete one.
+    # The name first, then the folder - offered from the name. The same order
+    # and the same questions as the Python launcher: a project is created the
+    # same way on both systems. It opens as soon as it exists; how many steps a
+    # turn may take is /settings, asked later if it ever matters.
     New-Page
     Write-Host ""
     Write-Accent "  New project"
     Write-Host ""
-    Write-Host "  A project is one folder the agent works in, plus a memory of" -ForegroundColor DarkGray
-    Write-Host "  its own that Pragma keeps elsewhere." -ForegroundColor DarkGray
+    Write-Host "  A project is a folder the agent works in, and a memory of its own." -ForegroundColor DarkGray
     Write-Host "  ctrl+D goes back" -ForegroundColor DarkGray
     Write-Host ""
 
-    $here = (Get-Location).Path
-    $ws = Read-Line "  folder  [$here]: "
-    if ($null -eq $ws) { return $null }
-    if (-not $ws) { $ws = $here }
-    $ws = $ws.Trim('"').Trim()
-    if (-not (Test-Path $ws)) {
-        Write-Host ""
-        $mk = Read-Line "  '$ws' does not exist. Create it? [y/N]: "
-        if ($mk -notmatch '^[yYsS]') { Write-Host ""; return $null }
-        try { New-Item -ItemType Directory -Force -Path $ws -ErrorAction Stop | Out-Null }
-        catch {
-            Write-Host "  could not create it: $($_.Exception.Message)" -ForegroundColor Red
-            Wait-Key; return $null
+    while ($true) {
+        $name = Read-Line "  name: "
+        if ($null -eq $name) { return $null }
+        $name = $name.Trim()
+        if ($name -and $name -notmatch '^[A-Za-z0-9._-]+$') {
+            Write-Host "    letters, digits, - and _ only" -ForegroundColor Yellow
+            continue
         }
+        if ($name -and (Get-EntryByName $name)) {
+            Write-Host "    there is already a project called '$name'" -ForegroundColor Yellow
+            continue
+        }
+        if ($name) { break }
     }
-
-    $leaf = Split-Path -Leaf ($ws.TrimEnd('\','/'))
-    $name = Read-Line "  name    [$leaf]: "
-    if ($null -eq $name) { return $null }
-    if (-not $name) { $name = $leaf }
+    $offer = Get-SuggestedWorkspace $name
+    $ws = Read-Line "  folder [$offer]: "
+    if ($null -eq $ws) { return $null }
+    if (-not $ws) { $ws = $offer }
+    $ws = $ws.Trim('"').Trim()
 
     Write-Host ""
     $entry = New-Project $name $ws
     if (-not $entry) { Wait-Key; return $null }
-    # The same choices /settings offers, while the project is new: enter takes
-    # the recommended one each time, so creating a project stays three Enters.
-    Invoke-ProjectChoices $entry
     $fresh = Get-EntryByName $entry.name
     if ($fresh) { return $fresh }
     return $entry
@@ -1526,36 +1629,29 @@ function script:Invoke-MenuLoop($suggested) {
             # and inside a chat.
             New-Page
             Write-Host ""
-            Show-Logo
-            Write-Host ""
             $n = @(Read-Registry).Count
-            if ($n -eq 0) { Write-Host "  No projects yet." -ForegroundColor DarkGray }
-            elseif ($n -eq 1) { Write-Host "  1 project" -ForegroundColor DarkGray }
-            else { Write-Host ("  {0} projects" -f $n) -ForegroundColor DarkGray }
-            Write-Host ""
-            # What is done TO a project - open it, start one, back one up,
-            # remove one - is one family, because from here that is the only
-            # kind of thing there is to do. With nothing registered the family
-            # would be four doors onto an empty room, so the page offers /new
-            # and the endpoint you will need anyway. The Linux launcher builds
-            # the same rows from pragma_home.rows(); keep the two in step.
-            $rows = if ($n -eq 0) {
-                @(@("/new",       "start your first project"),
-                  @("/configure", "set up the endpoint"),
-                  @("/help",      "what each command does"),
-                  @("/exit",      "leave"))
+            # The eight-row mark only where the window can hold it and the
+            # page under it: the projects listed, the commands, the endpoint.
+            $tall = 40
+            try { $tall = [Console]::WindowHeight } catch { }
+            if ($tall -lt (26 + [Math]::Min($n, 5))) { Show-Logo -Compact; Write-Host "" }
+            else { Show-Logo }
+            $homeTool = Join-Path $PSScriptRoot "pragma_home.py"
+            if ((Test-Path $script:Python) -and (Test-Path $homeTool)) {
+                # The projects and the commands are pragma_home.py's to draw
+                # (--page), for this launcher and the Python one alike: two
+                # copies of the page, kept "in step" by a comment, had drifted.
+                $script:HomeNotice = $notice
             } else {
-                @(@("/projects",  "open . new . backups . delete"),
-                  @("/jobs",      "what the memory is writing"),
-                  @("/configure", "set up the endpoint"),
-                  @("/help",      "what each command does"),
-                  @("/exit",      "leave"))
+                # No Python to ask: the bare page, so the launcher still opens.
+                Write-Host ""
+                foreach ($row in @(@("/open", "go into a project"), @("/new", "start a project"),
+                                   @("/configure", "the model server"), @("/exit", "leave"))) {
+                    Write-Host ("  " + (Paint ("{0,-12}" -f $row[0]) 'accent') + (Paint $row[1] 'dim'))
+                }
+                Write-Host ""
+                if ($notice) { Write-Host "  $notice" -ForegroundColor Yellow; Write-Host "" }
             }
-            foreach ($row in $rows) {
-                Write-Host ("  " + (Paint ("{0,-12}" -f $row[0]) 'accent') + (Paint $row[1] 'dim'))
-            }
-            Write-Host ""
-            if ($notice) { Write-Host "  $notice" -ForegroundColor Yellow; Write-Host "" }
             $notice = ""
 
             # Called as a statement and read back from a variable, never as
@@ -1590,12 +1686,14 @@ function script:Invoke-MenuLoop($suggested) {
                 # the page lists them all and $null is what "none of them" means.
                 Invoke-DeleteProject $null | Out-Null
             } elseif ($cmd -eq 'backups') {
-                $which = if ($arg) { Get-EntryByName $arg } else { Invoke-OpenProject $null }
+                $which = if ($arg) { Get-EntryByName $arg } else { Invoke-OpenProject $null "Back up which project?" }
                 if ($which) { Invoke-BackupMenu $which }
             } elseif ($cmd -eq 'configure') {
                 Invoke-Configure
             } elseif ($cmd -eq 'clear') {
-                # Nothing to do here: the loop draws the page again on a clean screen.
+                # The loop draws the page again on a clean screen, with what
+                # the prompt wanted said on it ("the memory has finished").
+                $notice = $arg
             } elseif ($cmd -notin @('help', '?')) {
                 $notice = "'/$cmd' is not a command here. Try /projects, /configure or /exit."
             }
@@ -1614,7 +1712,8 @@ function script:Invoke-MenuLoop($suggested) {
         # global: is not decoration. Inside this module `pragma` is the
         # launcher's own function, which has no -Chat; the session script's is
         # the one dot-sourced into the global scope.
-        global:pragma -Chat
+        Enter-ChildWindow
+        try { global:pragma -Chat } finally { Exit-ChildWindow }
 
         $want = ""
         if (Test-Path $req) {
@@ -1720,7 +1819,8 @@ function script:Invoke-Configure {
     } else {
         # The page is its own loop and ends when you leave it, with ctrl+D or
         # /done, so there is nothing left to pause on afterwards.
-        & $script:Python $tool
+        Enter-ChildWindow
+        try { & $script:Python $tool } finally { Exit-ChildWindow }
         return
     }
     Write-Host ""
@@ -1774,7 +1874,12 @@ function script:Read-HomeCommand {
     Remove-Item -LiteralPath $out -Force -ErrorAction SilentlyContinue
     $tool = Join-Path $PSScriptRoot "pragma_home.py"
     if ((Test-Path $script:Python) -and (Test-Path $tool)) {
-        & $script:Python $tool --out $out
+        # --page: the projects and the commands are drawn by pragma_home.py
+        # for both launchers, so the two pages cannot drift apart again.
+        $pageArgs = @('--out', $out, '--page')
+        if ($script:HomeNotice) { $pageArgs += @('--notice', $script:HomeNotice) }
+        Enter-ChildWindow
+        try { & $script:Python $tool @pageArgs } finally { Exit-ChildWindow }
         if (Test-Path $out) {
             try {
                 $r = Get-Content -Raw $out | ConvertFrom-Json

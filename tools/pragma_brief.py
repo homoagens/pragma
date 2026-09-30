@@ -224,7 +224,12 @@ def main() -> int:
     except Exception as e:                       # never block the launcher
         data = {"store": str(store), "ok": False,
                 "error": f"{type(e).__name__}: {str(e)[:160]}"}
-    sys.stdout.write(json.dumps(data, ensure_ascii=False))
+    # ASCII on the wire, every other character escaped. PowerShell reads a
+    # native command's output in the console's OEM code page, so raw UTF-8
+    # arrived as mojibake: the middle dot drawn as a box corner, and every
+    # accented letter of an Italian goal or belief mangled in the Windows
+    # briefing. An escape means the same thing in any code page.
+    sys.stdout.write(json.dumps(data, ensure_ascii=True))
     return 0
 
 

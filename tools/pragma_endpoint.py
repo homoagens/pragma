@@ -116,7 +116,9 @@ def main() -> int:
     sending.update(config.sampling_extras())
     out["sending"] = sending
 
-    sys.stdout.write(json.dumps(out, ensure_ascii=False))
+    # ASCII on the wire: PowerShell reads it in the OEM code page. See the
+    # same line in pragma_brief.py.
+    sys.stdout.write(json.dumps(out, ensure_ascii=True))
     return 0
 
 

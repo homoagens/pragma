@@ -346,12 +346,18 @@ def read_key() -> str:
     if os.name == "nt":
         import msvcrt
         try:
+            # Waited for in short steps rather than inside getwch(): Python
+            # only runs its ctrl+C handler between calls, and getwch() blocks
+            # until a key comes - so ctrl+C on a Windows menu did nothing
+            # until the NEXT key was pressed.
+            while not msvcrt.kbhit():
+                time.sleep(0.02)
             ch = msvcrt.getwch()
+            if ch in ("\x00", "\xe0"):      # a special key arrives as two
+                return {"H": "up", "P": "down", "G": "home", "O": "end",
+                        "I": "pageup", "Q": "pagedown"}.get(msvcrt.getwch(), "")
         except KeyboardInterrupt:
             return "back"
-        if ch in ("\x00", "\xe0"):          # a special key arrives as two
-            return {"H": "up", "P": "down", "G": "home", "O": "end",
-                    "I": "pageup", "Q": "pagedown"}.get(msvcrt.getwch(), "")
         return {"\r": "enter", "\n": "enter",
                 "\x04": "back", "\x1b": "back", "\x03": "back"}.get(ch, ch.lower())
     import select as _select

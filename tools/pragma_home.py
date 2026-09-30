@@ -658,6 +658,14 @@ def main() -> int:
             if code:
                 print(f"  ({cmd} ended with code {code})")
                 print()
+        elif not line.startswith("/"):
+            # A bare word is read as a project's name, so that is what the
+            # answer is about - "bad is not a command", cut at the first
+            # space, answered a question nobody had asked.
+            names = project_names()
+            print(f"  no project is called '{line}'."
+                  + (" /open lists them, /new starts one." if names else " /new starts one."))
+            print()
         else:
             print(f"  {head} is not a command here. /help lists them.")
             print()

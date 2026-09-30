@@ -120,7 +120,7 @@ def fold(content: str, width: int, verbose: bool = False) -> list[str]:
     shown = [(ln if len(ln) <= room else ln[:room - 1] + "…") for ln in lines[:limit]]
     left = len(lines) - len(shown)
     if left > 0:
-        shown.append(f"… +{left} line(s), {len(text):,} chars")
+        shown.append(f"… {plural(left, 'more line')}, {len(text):,} characters in all")
     return shown
 
 
@@ -577,12 +577,16 @@ class Harness:
         if plain and self._call["streamed"] == 0 and not _PLACEHOLDER_NOTE.match(plain):
             self.console.print()
             self.console.print(Text("  " + " ".join(plain.split())[:600]))
-        t = Text(f"  {self.g['tool']} ", style=self.accent)
-        t.append(name, style="bold")
+        # The tool and its arguments, the arguments wrapping under themselves:
+        # a long path used to carry on at column 0, under the marks.
+        lead = Text(f"  {self.g['tool']} ", style=self.accent)
+        lead.append(name, style="bold")
         shown = _kv(args)
         if shown:
-            t.append("  " + shown, style="bright_black")
-        self.console.print(t)
+            lead.append("  ")
+            self._hanging(lead, Text(shown, style="bright_black"))
+        else:
+            self.console.print(lead)
         if remark:
             self.console.print(Text("    " + remark.group(0).strip("[]"), style="italic bright_black"))
         if name != "ask_user":
@@ -647,9 +651,8 @@ class Harness:
         if forced:
             self.console.print(Text(f"  {self.g['note']} step budget exhausted - the answer was forced",
                                     style="yellow"))
-        mark = Text(f"  {self.g['ok']} ", style="green")
-        mark.append(line, style="bright_black")
-        self.console.print(mark)
+        self._hanging(Text(f"  {self.g['ok']} ", style="green"),
+                      Text(line, style="bright_black"))
         self.console.print()
 
     def faculty_running(self, tag, note):
