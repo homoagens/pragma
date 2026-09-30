@@ -119,6 +119,40 @@ class LLMLooped(Exception):
         self.said = said or "the reasoning had to be cut short"
 
 
+class ContextOverflow(RuntimeError):
+    """The server refused the prompt as longer than its context window.
+
+    Its own exception because every other reading of that refusal was wrong.
+    On the tool channel a 400 was taken to mean "this endpoint has no tools":
+    the run ended with that message and the endpoint stayed marked unusable for
+    the rest of the process. On a faculty call it set off three more attempts
+    with fewer fields, each refused for the same reason. A prompt that does not
+    fit is answered with a shorter prompt, and only the caller holding the
+    history can make one.
+    """
+
+
+def _overflowed(e) -> bool:
+    """Does this error say the prompt did not fit the window?
+
+    llama.cpp types it (exceed_context_size_error, HTTP 400, sent before any
+    work is done); OpenAI-compatible servers say it in words. Read from the
+    exception's text and from the body of the response it carries, because a
+    requests HTTPError names the status and the URL but not what the server
+    said.
+    """
+    text = str(e)
+    try:
+        text += " " + (e.response.text or "")[:500]
+    except Exception:
+        pass
+    text = text.lower()
+    return any(s in text for s in (
+        "exceed_context_size", "exceeds the available context",
+        "larger than the max context", "context_length_exceeded",
+        "maximum context length"))
+
+
 # Marker prepended to text that came back as a truncated partial. The agent
 # loop strips it back off but uses its presence to know the response was
 # cut mid-stream — useful for synthesizing a 'this was truncated' note
@@ -904,6 +938,16 @@ def _stream_openai_compatible(messages, model, temperature, max_tokens, timeout,
             headers=headers, json=payload,
             stream=True, timeout=timeout,
         ) as resp:
+            # Read here, while the response is still open: once raised, the
+            # error names the status and nothing of what the server said.
+            if resp.status_code in (400, 422):
+                body = ""
+                try:
+                    body = resp.text[:300]
+                except Exception:
+                    pass
+                if _overflowed(body):
+                    raise ContextOverflow(body)
             resp.raise_for_status()
             for line in resp.iter_lines():
                 if stop_event and stop_event.is_set():
@@ -993,6 +1037,8 @@ def _stream_tools_openai_compatible(payload, headers, timeout, base_url,
         except Exception:
             pass
         resp.close()
+        if _overflowed(body):
+            raise ContextOverflow(body)
         raise ToolsUnsupported(f"{resp.status_code} {body}")
     if (resp.status_code != 200
             or "text/event-stream" not in (resp.headers.get("Content-Type") or "")):
@@ -1160,6 +1206,8 @@ def _call_llm_tools_once(messages, tools, model=None, temperature=None,
     except LLMInterrupted:
         raise
     except Exception as e:
+        if _overflowed(e):
+            raise ContextOverflow(str(e)[:300]) from e
         # A 400/422 on a payload that only differs by `tools` is the endpoint
         # telling us it does not support them.
         msg = str(e).lower()
@@ -1278,6 +1326,10 @@ def call_llm(messages, model=None, temperature=None, max_tokens=None, timeout=No
             except (LLMInterrupted, LLMLooped):
                 raise
             except Exception as e:
+                # Before the degrading: dropping the template or the schema
+                # cannot make a prompt shorter.
+                if _overflowed(e):
+                    raise ContextOverflow(str(e)[:300]) from e
                 if not _refused(e):
                     raise
                 last = e
