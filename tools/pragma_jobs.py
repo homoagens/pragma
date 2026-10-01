@@ -223,27 +223,98 @@ def prune(store: Path | None = None, keep_failed: int = 5) -> None:
 # Following a job is the same act from the conversation and from the home
 # screen, so it lives here, with the jobs, and both call it.
 
+def _keyboard():
+    """Keys one at a time and unechoed while a job is watched, where the
+    terminal needs asking for that. Does nothing where it cannot."""
+    try:
+        from pragma_menu import keyboard
+        return keyboard()
+    except Exception:
+        import contextlib
+        return contextlib.nullcontext()
+
+
 def stop_key() -> bool:
     """Has someone asked to stop watching? Ctrl+D, Escape or q.
 
     Read without waiting, because the caller is in a display loop and must not
     block on a keypress that may never come. Ctrl+C arrives as an exception
     instead and is handled where the loop is.
+
+    On POSIX this used to answer False always: the line on the screen said
+    "ctrl+D to leave it to itself" and only ctrl+C did anything.
     """
-    if os.name != "nt":
-        return False
     try:
-        import msvcrt
-        while msvcrt.kbhit():
-            ch = msvcrt.getch()
-            if ch in (b"\x04", b"\x03", b"\x1b", b"q", b"Q"):
-                return True
+        if os.name == "nt":
+            import msvcrt
+            while msvcrt.kbhit():
+                ch = msvcrt.getch()
+                if ch in (b"\x04", b"\x03", b"\x1b", b"q", b"Q"):
+                    return True
+            return False
+        import select
+        if not sys.stdin.isatty():
+            return False
+        fd = sys.stdin.fileno()
+        typed = b""
+        while select.select([fd], [], [], 0)[0]:
+            ch = os.read(fd, 1)
+            if not ch:
+                return True                 # end of input is a way of leaving
+            typed += ch
+            if len(typed) > 64:
+                break
+        # An arrow key is an escape followed by more, and is not a request to
+        # leave; Escape on its own is.
+        return (b"\x04" in typed or typed == b"\x1b"
+                or typed.lower().strip() == b"q")
     except Exception:
         return False
-    return False
 
 
-def watch(path, job: dict) -> None:
+def hold(text: str = "ctrl+D to go back") -> None:
+    """What was watched stays on the screen until it is dismissed.
+
+    A job followed from the home screen used to be wiped the moment it ended:
+    the page noticed its own "memory is writing" line had gone stale and drew
+    itself again, over the lines you were in the middle of reading.
+    """
+    try:
+        if not (sys.stdin.isatty() and sys.stdout.isatty()):
+            return
+    except Exception:
+        return
+    print(f"  \033[38;5;242m{text}\033[0m")
+    try:
+        from pragma_menu import read_key
+    except Exception:
+        try:
+            input()
+        except (EOFError, KeyboardInterrupt):
+            pass
+        return
+    try:
+        with _keyboard():
+            while read_key() not in ("back", "enter", "q"):
+                pass
+    except KeyboardInterrupt:
+        pass
+
+
+def _rest(log: list, shown: int) -> list:
+    """The lines of a log that vanished before they were printed."""
+    return [line for line in log[shown:] if line]
+
+
+def _ending(job: dict) -> str:
+    state = job.get("status")
+    if state == "done":
+        n = len(job.get("episodes") or [])
+        return f"done - {n} episode{'s' if n != 1 else ''} written."
+    return f"{state} - {str(job.get('error', ''))[:100]}"
+
+
+def watch(path, job: dict) -> str:
     """Follow one running job the way the foreground used to read.
 
     The faculties are the same and they take the same minute; what changed is
@@ -251,6 +322,10 @@ def watch(path, job: dict) -> None:
     dumped: each line appears as its faculty finishes, and the one in flight
     carries a second count, because forty seconds of nothing moving is
     indistinguishable from a worker that has died.
+
+    Returns "left" when the watcher walked away, and otherwise how the job
+    ended - so the caller knows whether there is an ending on the screen to
+    leave standing.
     """
     shown = 0
     started = time.time()
@@ -264,18 +339,21 @@ def watch(path, job: dict) -> None:
         repaint = False
     if repaint:
         try:
-            return _watch_live(path, job)
+            with _keyboard():
+                return _watch_live(path, job)
         except ImportError:
             pass
     while True:
         fresh = read(path)
         if not fresh and shown:
             # The worker finished and cleaned up after itself. A job file that
-            # has gone is the success case, and the log already on screen is
-            # the whole of what there was to see.
-            print()
+            # has gone is the success case; what it last said is printed from
+            # the copy read before it went.
+            for line in _rest(job.get("log") or [], shown):
+                print("\r" + " " * last_len + "\r  " + line[:100])
+                last_len = 0
             print("  done.")
-            return
+            return "done"
         job = fresh or job
         log = job.get("log") or []
         for line in log[shown:-1] if len(log) > shown else []:
@@ -295,18 +373,14 @@ def watch(path, job: dict) -> None:
         if stop_key():
             print("\r" + " " * last_len + "\r"
                   "  still working - it carries on without you.")
-            return
+            return "left"
         time.sleep(0.5)
 
-    state = job.get("status")
-    if state == "done":
-        n = len(job.get("episodes") or [])
-        print(f"  done - {n} episode(s) written.")
-    else:
-        print(f"  {state} - {str(job.get('error', ''))[:100]}")
+    print("  " + _ending(job))
+    return str(job.get("status") or "done")
 
 
-def _watch_live(path, job: dict) -> None:
+def _watch_live(path, job: dict) -> str:
     """watch() on a terminal: the step in flight with its seconds, and under it
     the last lines of what the faculty is thinking - the same block the
     conversation draws for the agent."""
@@ -339,8 +413,10 @@ def _watch_live(path, job: dict) -> None:
             fresh = read(path)
             if not fresh and shown:
                 live.stop()
+                for line in _rest(job.get("log") or [], shown):
+                    console.print("  " + line[:100], highlight=False)
                 console.print("  done.")
-                return
+                return "done"
             job = fresh or job
             log = job.get("log") or []
             for line in log[shown:-1] if len(log) > shown else []:
@@ -354,14 +430,11 @@ def _watch_live(path, job: dict) -> None:
             if stop_key():
                 live.stop()
                 console.print("  still working - it carries on without you.")
-                return
+                return "left"
             time.sleep(0.5)
 
-    state = job.get("status")
-    if state == "done":
-        console.print(f"  done - {len(job.get('episodes') or [])} episode(s) written.")
-    else:
-        console.print(f"  {state} - {str(job.get('error', ''))[:100]}")
+    console.print("  " + _ending(job))
+    return str(job.get("status") or "done")
 
 
 # --- the lock -----------------------------------------------------------------

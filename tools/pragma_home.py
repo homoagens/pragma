@@ -349,12 +349,20 @@ def show_jobs() -> None:
         print(f"  {project} - {job.get('note') or 'a session'}   ctrl+D to leave it to itself"
               + (f"   (also writing: {others})" if others else ""))
         print()
+        ended = "left"
         try:
-            jobs.watch(Path(job["_path"]), job)
+            ended = jobs.watch(Path(job["_path"]), job)
         except KeyboardInterrupt:
             print()
             print("  still working - it carries on without you.")
         print()
+        # It ended while being watched: what it said stays where it is until
+        # it is dismissed. The page behind is about to be drawn again - its
+        # own "memory is writing" line is stale now - and that used to happen
+        # at once, taking the lines being read with it.
+        if ended != "left" and not failed:
+            jobs.hold("ctrl+D to go back")
+            print()
     if failed:
         # The command as THIS system spells it: the Windows one, printed on
         # Linux, was a line nobody could paste.

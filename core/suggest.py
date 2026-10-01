@@ -16,8 +16,9 @@ care about pays for the thing you do not.
 
 So it is one short call of its own, after the answer is on the screen, on the
 `recall` role - the one already meant to be fast, and the one /configure lets
-you tell not to reason. It never blocks the prompt: the line comes back
-immediately and the guess arrives into it, or does not.
+you tell not to reason. The prompt waits for it - a second or two, and
+ctrl+C skips it. It used to come back at once with the guess arriving into
+it, and a line begun in that second was drawn over: see agent/chat.py.
 
 ONE guess, not a list. A list is a menu, and a menu where you are about to
 type is something to read before you can start. This is meant to be the line

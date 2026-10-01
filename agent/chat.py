@@ -193,8 +193,7 @@ def _ask_launcher(action: str) -> bool:
 # by the prompt: rebinding a module global from another thread is the kind of
 # thing that works until it does not.
 _NEXT: list[str] = []
-# The live prompt, so the suggester can wake it when the guess arrives after
-# the line was already drawn - which is the normal case, not the exception.
+# The live prompt. A list for the reason _NEXT is one.
 _SESSION: list = []
 
 
@@ -290,7 +289,6 @@ def _make_session():
         from prompt_toolkit.completion import Completer
         from prompt_toolkit.history import InMemoryHistory
 
-        from prompt_toolkit.auto_suggest import AutoSuggest, Suggestion
         from prompt_toolkit.filters import Condition
         from prompt_toolkit.key_binding import KeyBindings
 
@@ -298,19 +296,6 @@ def _make_session():
         # get_completions wins the lookup and the class cannot be built.
         class _C(_SlashCompleter, Completer):
             pass
-
-        class _Predicted(AutoSuggest):
-            """The guess, in grey, on an empty line and nowhere else.
-
-            An auto-suggestion on a line with something typed on it would be
-            prompt_toolkit completing your sentence, which is a different and
-            much more annoying thing than offering you the whole line.
-            """
-
-            def get_suggestion(self, buff, document):
-                if document.text or not _NEXT:
-                    return None
-                return Suggestion(_NEXT[0])
 
         kb = KeyBindings()
 
@@ -328,13 +313,19 @@ def _make_session():
                 return
             buff.insert_text(_NEXT[0])
 
+        @kb.add("right", filter=Condition(
+            lambda: bool(_NEXT) and not session.default_buffer.text))
+        def _take_right(event):
+            """The arrow that takes a grey line in every shell takes this one."""
+            event.current_buffer.insert_text(_NEXT[0])
+
         # The toolbar is the part of a harness that does not scroll away:
         # project, model, how full the context is, whether a consolidation
         # is being written. Drawn by prompt_toolkit under the prompt, from
         # _STATE, which the loop keeps current.
         session = PromptSession(completer=_C(), history=InMemoryHistory(),
                                 complete_while_typing=True, reserve_space_for_menu=6,
-                                auto_suggest=_Predicted(), key_bindings=kb,
+                                key_bindings=kb,
                                 bottom_toolbar=lambda: _harness.toolbar(_STATE),
                                 style=_harness.prompt_style())
         _SESSION[:] = [session]
@@ -368,67 +359,78 @@ def _suggesting(cfg) -> bool:
 
 
 def _hint() -> str:
-    """What the empty line offers: say something, or step back out.
+    """What the empty line shows, in grey: the guess when there is one, and
+    otherwise what can be done here.
 
-    Nothing while a guess is on the line. The placeholder and the grey
-    suggestion are drawn in the same place, so both at once is two sentences
-    on top of each other - and the guess is the more useful of the two.
+    The guess IS the placeholder. It used to be a prompt_toolkit suggestion,
+    which is computed when the text changes - so on a line nobody had typed
+    on yet it had to be pushed in from the suggester's thread. Grey text on
+    an empty line is exactly what a placeholder is: it is there when the line
+    is drawn, it goes with the first key, and tab takes it.
     """
     if _NEXT:
-        return ""
+        return _NEXT[0]
     return "say something  ·  /help for the commands  ·  ctrl+D closes the project"
 
 
-def _show_prediction() -> None:
-    """Put the guess on a prompt that is already waiting, and repaint it.
+class _no_typing:
+    """Keys pressed while the block runs go nowhere: not echoed, not kept.
 
-    The ordinary case, not the exception: the line is drawn as soon as the
-    answer ends, and the guess arrives a second or two later. Without this it
-    would sit in _NEXT until the NEXT prompt, which is a guess about the wrong
-    turn.
-
-    invalidate() is documented thread-safe; touching the buffer from this
-    thread is not, so the assignment is handed to the prompt's own loop when
-    there is one to hand it to.
+    For the moments when the screen is busy and the prompt is not up yet. On
+    a POSIX terminal a key typed then is echoed on top of whatever is being
+    drawn and is still waiting when the prompt appears; on Windows it is not
+    echoed but waits the same way. Either way the line you get is not the
+    line you typed. ctrl+C is not a key in this sense: it still interrupts.
     """
-    if not _SESSION or not _NEXT:
-        return
-    session = _SESSION[0]
-    try:
-        from prompt_toolkit.auto_suggest import Suggestion
-        app = session.app
-        if app is None or not app.is_running:
-            return
 
-        def put():
+    def __enter__(self):
+        self.saved = None
+        if os.name != "nt":
             try:
-                buff = session.default_buffer
-                if not buff.text:
-                    buff.suggestion = Suggestion(_NEXT[0])
+                import termios
+                if sys.stdin.isatty():
+                    fd = sys.stdin.fileno()
+                    self.saved = termios.tcgetattr(fd)
+                    quiet = termios.tcgetattr(fd)
+                    quiet[3] &= ~termios.ECHO
+                    termios.tcsetattr(fd, termios.TCSANOW, quiet)
             except Exception:
-                pass
+                self.saved = None
+        return self
 
-        loop = getattr(app, "_loop", None) or getattr(app, "loop", None)
-        if loop is not None:
-            loop.call_soon_threadsafe(put)
-        else:
-            put()
-        app.invalidate()
-    except Exception:
-        pass
+    def __exit__(self, *_exc):
+        try:
+            if os.name == "nt":
+                import msvcrt
+                while msvcrt.kbhit():
+                    msvcrt.getwch()
+            elif self.saved is not None:
+                import termios
+                fd = sys.stdin.fileno()
+                termios.tcflush(fd, termios.TCIFLUSH)
+                termios.tcsetattr(fd, termios.TCSANOW, self.saved)
+        except Exception:
+            pass
+        return False
 
 
-def _suggest_later(asked: str, answered: str) -> None:
-    """Guess the next question, off the critical path. Never raises.
+# Which guess is being waited for. A worker whose number is no longer this
+# one has been given up on, and what it brings back is dropped.
+_GUESS = [0]
+_GUESSING: list = []
+
+
+def _suggest_start(asked: str, answered: str) -> None:
+    """Start guessing the next question. Never raises.
 
     Started as soon as the answer is on the screen and BEFORE the memory
     faculties: a server with one slot serves one call at a time, and behind a
-    consolidation this would arrive long after the line was already typed.
-
-    The thread is a daemon and nothing waits on it. If it is slow the prompt
-    is simply drawn without suggestions; if it finishes first they are there.
+    consolidation this would arrive long after it was wanted.
     """
     _NEXT.clear()
+    _GUESSING.clear()
+    _GUESS[0] += 1
+    mine = _GUESS[0]
     try:
         import suggest
         if not suggest.enabled():
@@ -441,15 +443,45 @@ def _suggest_later(asked: str, answered: str) -> None:
             got = suggest.next_question(asked, answered)
         except Exception:
             return
-        if not got:
-            return
-        _NEXT[:] = [got]
-        _show_prediction()
+        if got and _GUESS[0] == mine:
+            _NEXT[:] = [got]
 
     try:
-        threading.Thread(target=work, daemon=True).start()
+        t = threading.Thread(target=work, daemon=True)
+        t.start()
+        _GUESSING[:] = [t]
     except Exception:
         pass
+
+
+def _suggest_wait(renderer) -> None:
+    """Hold the prompt until the guess is there, or is given up on.
+
+    THE PROMPT USED TO COME BACK AT ONCE and the guess arrived into it a
+    second later. That was the design - never make anyone wait for a
+    suggestion - and it did not survive typing: a line begun in that second
+    had a grey sentence pushed under it and a status line drawn through it,
+    because two things were writing to one row. The guess takes a second or
+    two; for that long the prompt is simply not there yet, nothing typed is
+    kept, and the status line says what is happening. ctrl+C skips it, and a
+    guess that arrives after being skipped is thrown away rather than pushed
+    into a line someone is already typing on. Whoever is in a hurry turns the
+    prediction off, in /configure.
+    """
+    worker = _GUESSING[0] if _GUESSING else None
+    _GUESSING.clear()
+    if worker is None or not worker.is_alive():
+        return
+    try:
+        with _no_typing():
+            renderer.faculty_running("SUGGESTER", "guessing your next line - ctrl+C skips")
+            while worker.is_alive():
+                worker.join(0.1)
+    except KeyboardInterrupt:
+        _GUESS[0] += 1                  # whatever it brings back is not wanted
+        _NEXT.clear()
+    finally:
+        renderer.idle()
 
 
 def _ask(session):
@@ -458,9 +490,8 @@ def _ask(session):
         return input(_prompt()).strip()
     from prompt_toolkit.formatted_text import ANSI
 
-    # A CALLABLE, not a string. The guess usually arrives a second after the
-    # line is drawn, and a placeholder fixed at draw time would still be
-    # sitting under it when it did - two greys in the same place.
+    # A callable, so the hint is decided when the line is drawn: with a
+    # guess on the line there is none, or two greys share one place.
     def placeholder():
         return ANSI("\033[38;5;242m" + _hint() + "\033[0m")
 
@@ -774,7 +805,8 @@ def _status_lines() -> list[tuple[str, str]]:
     # out what IS on, is a line to skip past every time.
     if _suggesting(cfg):
         out.append(("prediction", "the line you will probably type next, in grey"
-                                  " on the prompt  (one recall call per turn)"))
+                                  " on the prompt; tab takes it  (one recall call"
+                                  " per turn, and the prompt waits for it)"))
     # One switch per role: the endpoint says whether the model it runs can
     # reason, and which of the three roles is asked to. Named here rather than
     # summarised, because "thinking is on" stopped being a whole answer the
@@ -1673,7 +1705,7 @@ If the turn needed no tools at all, the conclusion is simply your reply.
             # What you might ask next, started here - after the answer is on
             # the screen and before the consolidation below, which on a
             # one-slot server would otherwise be queued in front of it.
-            _suggest_later(text, conclusion)
+            _suggest_start(text, conclusion)
 
             # Compaction happens BETWEEN turns, never inside one: a turn that
             # is still running has no finished experience to consolidate, and
@@ -1695,6 +1727,10 @@ If the turn needed no tools at all, the conclusion is simply your reply.
                         cwd, renderer)
                     desk_ids.clear()      # those blocks are gone from context
                     desk_rules.clear()
+
+            # The prompt comes back with the guess already on it, or without
+            # one - never with one arriving under your fingers.
+            _suggest_wait(renderer)
     except KeyboardInterrupt:
         print()
 
