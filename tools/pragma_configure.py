@@ -18,15 +18,17 @@ none of it is a project's setting - it is written here, once, beside the
 address, and every project that talks to that endpoint inherits it.
 
     add      a server: its address, its name, what it is, how it samples
-    use      one endpoint for all three roles - the usual setup
+    use      one endpoint for every role - the usual setup
     roles    a different endpoint per role
     tune     what the model is, what it is for, and the knobs it sends
     edit     address, model name, API key
     remove   an endpoint no role needs
     test     ask every endpoint again
 
-The three roles are agent (the conversation), recall (the CURATOR, before each
-turn) and memory (the faculties that write episodes and beliefs).
+The four roles are agent (the conversation), recall (the CURATOR, before each
+turn), memory (the faculties that write episodes and beliefs) and critic (the
+CRITIC, which judges the work before it is delivered). A role nobody assigns
+follows the agent.
 
 TUNING HAS THREE WAYS IN, because the three are different amounts of knowing:
 
@@ -75,6 +77,7 @@ ROLE_BLURB = {
     "agent":  "the conversation",
     "recall": "the CURATOR, before each turn",
     "memory": "episodes and beliefs, in the background",
+    "critic": "the CRITIC, before the answer is delivered",
 }
 KIND_BLURB = {
     "thinking": "it reasons before it answers: slower, better on problems",
@@ -84,13 +87,14 @@ WORK_BLURB = {
     "general": "conversation, reading, reasoning about a problem",
     "coding":  "writing and fixing code: cooler, less wandering",
 }
-# WHO REASONS. The three roles endpoints.py routes by, said in terms of what
+# WHO REASONS. The roles endpoints.py routes by, said in terms of what
 # the person actually waits for. Only shown for a thinking endpoint: an
 # instruct one has nothing to switch.
 ROLE_BLURB = {
     "agent":  "the steps of the conversation: reading, editing, running",
     "recall": "choosing what to bring back from memory, every turn",
     "memory": "writing and revising what is remembered, after the turn",
+    "critic": "judging the work against what was asked, before the answer",
 }
 KNOB_BLURB = {
     "temperature":      "how far from the most likely word it will go",
@@ -903,12 +907,12 @@ def reasons_text(entry: dict) -> str:
         return ""
     on = [r for r in endpoints.ROLES if endpoints.reasons_for(entry, r)]
     if len(on) == len(endpoints.ROLES):
-        return "all three"
+        return "all of them"
     return ", ".join(on) if on else "nobody"
 
 
 def who_reasons(entry: dict, name: str) -> bool:
-    """Three switches, one per role. Written only when they differ from the
+    """One switch per role. Written only when they differ from the
     default - the agent and the memory reason, the recall answers at once -
     so an endpoint that takes the default has no `reasons` key at all.
     """
@@ -921,7 +925,7 @@ def who_reasons(entry: dict, name: str) -> bool:
     while True:
         step(f"endpoints > tune > {name} > who reasons")
         print()
-        print("  " + grey("This model reasons. Each of the three can be asked"))
+        print("  " + grey("This model reasons. Each role can be asked"))
         print("  " + grey("to use it, or to answer at once instead."))
         rows = [f"{role:<8}{'reasons' if endpoints.reasons_for(entry, role) else 'answers at once'}"
                 for role in endpoints.ROLES]
@@ -1041,7 +1045,7 @@ def cmd_add(state: dict) -> bool:
             cat["roles"][role] = name
     save(state)
     tune(state, name)
-    state["note"] = (f"{name} added - the first endpoint, so all three roles use it"
+    state["note"] = (f"{name} added - the first endpoint, so every role uses it"
                      if first else f"{name} added")
     return True
 
@@ -1062,14 +1066,14 @@ def cmd_use(state: dict) -> bool:
     print()
     print("  " + grey(cat["endpoints"][name].get("url", "")))
     what = choose("What should it serve?",
-                  [("everything", "all three roles - what most setups are")]
+                  [("everything", "every role - what most setups are")]
                   + [(r, ROLE_BLURB[r]) for r in endpoints.ROLES],
                   roles_of(cat, name).split(" ")[0] if roles_of(cat, name) else "")
     if not what:
         return False
     for role in (endpoints.ROLES if what == "everything" else (what,)):
         cat["roles"][role] = name
-    state["note"] = (f"all three roles now use {name}" if what == "everything"
+    state["note"] = (f"every role now uses {name}" if what == "everything"
                      else f"{what} now uses {name}")
     return True
 
@@ -1168,20 +1172,34 @@ ENDPOINT_ACTIONS = [
     ("edit", "address, model name, API key", cmd_edit),
 ]
 
-def cmd_prediction(state: dict) -> bool:
+def _flip(state: dict, key: str) -> bool:
     """One press, on or off. No page of its own: it is one answer."""
     cat = state["cat"]
     opts = dict(cat.get("options") or {})
-    now = bool(opts.get("prediction", False))
-    if now:
-        opts.pop("prediction", None)     # off is the default: say nothing
+    if opts.get(key, False):
+        opts.pop(key, None)              # off is the default: say nothing
     else:
-        opts["prediction"] = True
+        opts[key] = True
     if opts:
         cat["options"] = opts
     else:
         cat.pop("options", None)
     return True
+
+
+def cmd_prediction(state: dict) -> bool:
+    return _flip(state, "prediction")
+
+
+def cmd_critic(state: dict) -> bool:
+    return _flip(state, "critic")
+
+
+# What each switch IS, beside its name - the row says it, not a page.
+OPTION_BLURB = {
+    "prediction": "the line you will probably type next, in grey; tab takes it",
+    "critic":     "the work checked against your request before it is delivered",
+}
 
 
 # What changes the SET of endpoints, the way in to the three above, and the
@@ -1191,6 +1209,7 @@ ACTIONS = [
     ("remove",    "one no role needs", cmd_remove),
     ("endpoints", "use, tune, edit", None),
     ("prediction", "", cmd_prediction),
+    ("critic", "", cmd_critic),
 ]
 
 
@@ -1291,12 +1310,12 @@ def main() -> int:
         # The prediction row says what it IS, not what pressing it does: a
         # menu where some rows are verbs and one is a promise is a menu you
         # have to read twice. Enter flips it, like every other switch here.
-        on = bool((cat.get("options") or {}).get("prediction"))
+        opts = cat.get("options") or {}
         labels, blurbs = [], []
         for name, blurb, _h in ACTIONS:
-            if name == "prediction":
-                labels.append(f"prediction  {'on' if on else 'off'}")
-                blurbs.append("the line you will probably type next, in grey; tab takes it")
+            if name in OPTION_BLURB:
+                labels.append(f"{name:<12}{'on' if opts.get(name) else 'off'}")
+                blurbs.append(OPTION_BLURB[name])
             else:
                 labels.append(name)
                 blurbs.append(blurb)

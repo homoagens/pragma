@@ -867,11 +867,12 @@ def _post_streamed(url, headers, payload, timeout, label, stop_event):
     content, reasoning, finish, usage = "", "", "", {}
     guard = _make_loop_guard()
     # The cap is for the faculties only: the agent may think long on purpose,
-    # and its own loop has the step budget and the watchdogs.
+    # and its own loop has the step budget and the watchdogs. The recall and
+    # the critic both speak with the person waiting, so both get the short one.
     budget = 0
     if current_faculty():
         budget = (getattr(config, "RECALL_THINK_BUDGET", 0)
-                  if endpoints.role_of(current_faculty()) == "recall"
+                  if endpoints.role_of(current_faculty()) in ("recall", "critic")
                   else getattr(config, "MEMORY_THINK_BUDGET", 0))
     try:
         for raw in resp.iter_lines():

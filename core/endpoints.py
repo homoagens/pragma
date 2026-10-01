@@ -83,7 +83,11 @@ from pathlib import Path
 import config
 
 DEFAULT_BASE_URL = "http://127.0.0.1:8080/v1"
-ROLES = ("agent", "recall", "memory")
+# The critic is a role of its own so that it CAN be moved, not because it
+# should be: unassigned, it follows the agent, and the same model judging what
+# it produced - invoked apart, with another mandate - is the design. Another
+# model in that seat is an experiment, and this is what makes it one setting.
+ROLES = ("agent", "recall", "memory", "critic")
 
 # WHAT A MODEL IS, AND WHAT IT IS FOR. Both are properties of the server, not
 # of a project: the machine at the end of the address is running one model,
@@ -93,7 +97,7 @@ ROLES = ("agent", "recall", "memory")
 #   kind      thinking | instruct   what the model is
 #   work      general  | coding     what this endpoint is used for
 #   sampling  the four rows those two words index, each a set of knobs
-#   reasons   which of the three roles actually reasons on it
+#   reasons   which of the roles actually reasons on it
 #
 # The knobs are the ones MEASURED to arrive (llama.cpp, 2026-09-21). There is
 # no `repetition_penalty` in the list on purpose: that is the HuggingFace
@@ -116,15 +120,16 @@ _ROLE_OF_FACULTY = {
     # reads the turn that just ended and answers at once, under a schema. It
     # belongs where the curator is, on the role you are free to keep fast.
     "SUGGESTER":      "recall",
+    "CRITIC":         "critic",
 }
 
 
 # WHO REASONS, ROLE BY ROLE. `kind` says whether the model CAN reason;
-# `reasons` says which of the three roles is asked to. A model that reasons
+# `reasons` says which of the roles is asked to. A model that reasons
 # reasons for everyone unless this says otherwise, so an endpoint written
 # before this existed behaves exactly as it did.
 #
-# It is not one switch because the three roles do different work, and the
+# It is not one switch because the roles do different work, and the
 # difference has been measured: on Qwen3.6 a curator picking fragments under a
 # schema cost 83 completion tokens and 8.6s reasoning, and 17 tokens and 1.6s
 # without, FOR THE SAME ANSWER. The curator runs on every turn, so that is the
@@ -143,7 +148,12 @@ _ROLE_OF_FACULTY = {
 # reasoned for over two and a half minutes to choose among two memories and
 # two beliefs, with the conversation waiting behind it. An endpoint that wants
 # a reasoning curator says so - /configure, who reasons - and keeps it.
-_REASONS_BY_DEFAULT = {"agent": True, "recall": False, "memory": True}
+#
+# The critic answers at once too, for the same reason: it speaks at the end of
+# a turn, with the person waiting for the answer it is judging, and the bench
+# says time is what a run runs out of. Whether its judgement is worth the
+# seconds of reasoning is a question for the bench, asked as its own arm.
+_REASONS_BY_DEFAULT = {"agent": True, "recall": False, "memory": True, "critic": False}
 
 
 def reasons_for(entry: dict, role: str = "agent") -> bool:
@@ -163,7 +173,8 @@ def reasons_for(entry: dict, role: str = "agent") -> bool:
 # a switch that means the same thing in every project belongs on it.
 #
 #   prediction  the line you will probably type next, grey on the prompt
-OPTIONS = ("prediction",)
+#   critic      the work judged against the request before it is delivered
+OPTIONS = ("prediction", "critic")
 
 
 def option(name: str, default: bool = False) -> bool:

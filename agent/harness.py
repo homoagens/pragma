@@ -64,6 +64,7 @@ FACULTY_COLOR = {
     "CURATOR": "magenta", "AGENT": "cyan", "CONSOLIDATOR": "green",
     "ABSTRACTOR": "blue", "RECONSOLIDATOR": "bright_magenta",
     "FORGETTING": "yellow", "SEGMENTER": "bright_cyan", "COMPACTOR": "bright_black",
+    "CRITIC": "bright_yellow",
 }
 
 # Notes the native channel writes when the model said nothing before a call.
@@ -719,6 +720,11 @@ class Harness:
         self.console.print()
 
     def faculty_running(self, tag, note):
+        # The critic speaks right after the answer has been written, and the
+        # answer still open on the screen would swallow the status line: a
+        # review of twenty seconds with nothing to show it was happening.
+        self._close_answer()
+        self._end_thinking()
         self._show(f"{tag.lower()} {self.g['dot']} {note.rstrip('.… ')}")
 
     def _hanging(self, lead, body) -> None:
@@ -737,7 +743,11 @@ class Harness:
 
     def faculty(self, tag, summary, details=None):
         from rich.text import Text
+        self._close_answer()
         self._hide()
+        # What streams after this is a new call: a critic that sends the work
+        # back is followed by more steps, not by more of the same answer.
+        self._boundary = True
         color = FACULTY_COLOR.get(tag, "magenta")
         lead = Text(f"  {self.g['fac']} ", style=self.accent)
         lead.append(f"{tag.lower()}  ", style=f"bold {color}")

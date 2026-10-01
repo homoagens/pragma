@@ -808,22 +808,34 @@ def _status_lines() -> list[tuple[str, str]]:
         out.append(("prediction", "the line you will probably type next, in grey"
                                   " on the prompt; tab takes it  (one recall call"
                                   " per turn, and the prompt waits for it)"))
+    try:
+        critic_on = cfg.critic_on()
+    except Exception:
+        critic_on = False
+    if critic_on:
+        rounds = int(getattr(cfg, "CRITIC_MAX_ROUNDS", 2))
+        out.append(("critic", "checks each turn that changed something against what you"
+                              f" asked, before the answer; sends it back up to {rounds}"
+                              f" time{'s' if rounds != 1 else ''}"))
     # One switch per role: the endpoint says whether the model it runs can
-    # reason, and which of the three roles is asked to. Named here rather than
+    # reason, and which of the roles is asked to. Named here rather than
     # summarised, because "thinking is on" stopped being a whole answer the
     # day a curator could be told to answer at once on a thinking endpoint.
     # Asked for explicitly on every call, so it means the same against a
     # server that thinks by default and one that does not.
+    roles = ("agent", "recall", "memory") + (("critic",) if critic_on else ())
     try:
-        who = [r for r in ("agent", "recall", "memory") if cfg.thinking_for(r)]
+        who = [r for r in roles if cfg.thinking_for(r)]
     except Exception:
-        who = ["agent", "recall", "memory"] if getattr(cfg, "AGENT_THINK", False) else []
+        who = ["agent", "memory"] if getattr(cfg, "AGENT_THINK", False) else []
     _SAYS = {"agent": "the steps", "recall": "the recall",
-             "memory": "the memory faculties"}
-    if len(who) == 3:
-        line = "the steps, the recall and the memory faculties reason before they answer"
+             "memory": "the memory faculties", "critic": "the critic"}
+    named = [_SAYS[r] for r in who]
+    if len(who) == len(roles):
+        line = "every role reasons before it answers"
     elif who:
-        line = " and ".join(_SAYS[r] for r in who) + " reason before answering; the rest answer at once"
+        line = (", ".join(named[:-1]) + " and " + named[-1] if len(named) > 1 else named[0]) \
+            + " reason before answering; the rest answer at once"
     else:
         line = "nothing reasons: every call answers at once"
     out.append(("thinking", line))
@@ -1667,6 +1679,9 @@ If the turn needed no tools at all, the conclusion is simply your reply.
                         # The loop may compress its own step traffic; the
                         # conversation is not its to blur.
                         protect_prefix=before,
+                        # The critic holds the work to what was typed, not to
+                        # the recalled memory standing in front of it.
+                        request=text,
                     )
             except KeyboardInterrupt:
                 result = None           # the second ctrl+C: abandoned at once

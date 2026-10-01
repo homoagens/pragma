@@ -21,6 +21,7 @@
 
 import json
 import threading
+import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable, Optional
@@ -29,6 +30,7 @@ from rich.console import Console
 from rich.panel import Panel
 
 import config
+import critic
 import endpoints
 import llm_client
 import memory
@@ -438,7 +440,8 @@ def _call_skill(cfg: AgentConfig, action: str, args: dict) -> str:
 def run_agent(cfg: AgentConfig, user_task: str, log_path: Optional[Path] = None,
               on_step: Optional[Callable] = None,
               history: Optional[list] = None,
-              protect_prefix: int = 0) -> Optional[dict]:
+              protect_prefix: int = 0,
+              request: Optional[str] = None) -> Optional[dict]:
     """
     Start the ReAct loop.
     cfg       : AgentConfig
@@ -447,7 +450,10 @@ def run_agent(cfg: AgentConfig, user_task: str, log_path: Optional[Path] = None,
     on_step   : optional callback called at each loop event.
                 Signature: on_step(event: dict) where event always has "type" and "content".
                 Types: "thought" | "action" | "observation" | "final" | "error" | "start"
+                       | "faculty_running" | "faculty" (the critic, with "tag")
     protect_prefix : messages at the head that compression may not touch.
+    request   : the user's own words, when user_task carries more (the recalled
+                memory in front of them). What the critic holds the work to.
 
     `protect_prefix` draws the line between two jobs that look alike and are
     not. Inside one turn, too many tool observations is a summarising problem
@@ -508,6 +514,24 @@ def run_agent(cfg: AgentConfig, user_task: str, log_path: Optional[Path] = None,
     # conclusion described the tests and never named the task. The request is
     # the last message at this point, so the fence is everything up to it.
     _task_fence = len(messages)
+
+    # THE CRITIC'S MATERIAL, kept apart from `messages` because compression
+    # rewrites those: what each step did and got back, whole, and - through
+    # checkpoint - each file as it was before this turn first touched it.
+    # Read once: a switch flipped in /configure applies from the next turn.
+    _critic_on = config.critic_on()
+    _ledger: list[dict] = []
+    _reviews: list = []
+    _t_start = time.time()
+    try:
+        import checkpoint
+        checkpoint.begin_turn()
+    except Exception:
+        checkpoint = None
+
+    def _workspace():
+        root = checkpoint.root() if checkpoint else None
+        return root or Path.cwd()
 
     if config.DEBUG:
         console.print(Panel(
@@ -799,6 +823,47 @@ def run_agent(cfg: AgentConfig, user_task: str, log_path: Optional[Path] = None,
 
         # ── FINAL — one of the final_keys is present ──────────────────
         final_key = next((k for k in cfg.final_keys if k in response), None)
+        if final_key and _critic_on and critic.touched_world(_ledger):
+            # ── THE CRITIC, between the answer and its delivery ──────────
+            # critic.py judges; this table decides, so that neither does the
+            # other's job. accept delivers. revise sends the work back while
+            # send-backs remain, and past them delivers with what is still
+            # open written under the answer. ask_user delivers with the
+            # critic's question. A critic that could not judge delivers the
+            # answer as it stands - as it was before there was a critic.
+            claim = str(response.get(final_key, "") or "")
+            sends = sum(1 for r in _reviews if r.verdict == "revise")
+            most = max(0, int(getattr(config, "CRITIC_MAX_ROUNDS", 2)))
+            if not _reviews:
+                critic.snapshot_workspace(_workspace(),
+                                          getattr(config, "CRITIC_SNAPSHOT_DIR", ""))
+            _emit({"type": "faculty_running", "tag": "CRITIC",
+                   "content": "checking the work against the request"})
+            try:
+                rv = critic.review(
+                    request or user_task, claim, _ledger,
+                    checkpoint.turn_before() if checkpoint else {},
+                    _workspace(), _t_start, round_no=len(_reviews) + 1,
+                    previous=_reviews[-1] if _reviews else None,
+                    stop_event=cfg.stop_event)
+            except llm_client.LLMInterrupted:
+                _emit({"type": "stopped", "content": "Task interrupted by user."})
+                return None
+            _reviews.append(rv)
+            line, details = critic.summary(rv, sends, most)
+            _emit({"type": "faculty", "tag": "CRITIC", "content": line,
+                   "details": details, "review": rv.as_dict()})
+            if log_path is not None:
+                _log_step(log_path, {"step": step, "critic": rv.as_dict()})
+            if rv.verdict == "revise" and sends < most:
+                messages.append({"role": "assistant", "content": claim})
+                messages.append({"role": "user",
+                                 "content": critic.sent_back(rv, sends + 1, most)})
+                step += 1
+                continue
+            note = critic.closing_note(rv, sends)
+            if note:
+                response[final_key] = claim + note
         if final_key:
             final_data = {k: response[k] for k in response if k != "thought"}
             if config.DEBUG:
@@ -811,6 +876,8 @@ def run_agent(cfg: AgentConfig, user_task: str, log_path: Optional[Path] = None,
                 _log_step(log_path, {"step": step, **response})
             response["name"]     = cfg.name
             response["forced"]   = False
+            if _reviews:
+                response["critic"] = [r.as_dict() for r in _reviews]
             # The answer joins the conversation before it is handed back.
             # Without this the history keeps every user turn and none of the
             # replies, so a live session shows the model a run of unanswered
@@ -937,6 +1004,8 @@ def run_agent(cfg: AgentConfig, user_task: str, log_path: Optional[Path] = None,
         if config.DEBUG:
             console.print(Panel(observation, title="OBSERVATION", style="cyan"))
         _emit({"type": "observation", "content": observation, "step": step})
+        _ledger.append({"step": step, "action": action, "args": args,
+                        "observation": observation})
 
         if log_path is not None:
             _log_step(log_path, {
@@ -1139,6 +1208,8 @@ def run_agent(cfg: AgentConfig, user_task: str, log_path: Optional[Path] = None,
         _log_step(log_path, {"step": max_steps + 1, **response, "forced": True})
     response["name"]     = cfg.name
     response["forced"]   = True
+    if _reviews:
+        response["critic"] = [r.as_dict() for r in _reviews]
     # Same as the clean exit: a forced verdict is still what the agent said,
     # and a session that continues after one must see it.
     messages.append({"role": "assistant",

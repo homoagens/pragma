@@ -33,6 +33,16 @@ _MANIFEST = "manifest.json"
 _session_dir: Path | None = None
 _root: Path | None = None
 
+# THE TURN, beside the session. The session keeps each file as it was before
+# the FIRST edit of the session, which is what `revert` needs. The critic needs
+# something else: the file as it was before THIS turn, so that what it is shown
+# is what this turn did and nothing older - in a conversation, the session is
+# every turn since the project opened. Held in memory only (a turn touches a
+# handful of files), reset by begin_turn(), never written anywhere.
+_TURN_CAP = 200_000              # characters; a larger file is not diffed
+UNREADABLE = "\0"                # before-text of a file too large or not text
+_turn: dict[str, str | None] | None = None
+
 
 def begin_session(workspace: str, session_id: str = "") -> Path | None:
     """Open a checkpoint session for `workspace`. Returns its directory."""
@@ -49,6 +59,41 @@ def begin_session(workspace: str, session_id: str = "") -> Path | None:
     except Exception:
         _root = _session_dir = None
         return None
+
+
+def root() -> Path | None:
+    """The workspace the open session belongs to, or None."""
+    return _root
+
+
+def begin_turn() -> None:
+    """Start remembering files as they are before this turn's first edit."""
+    global _turn
+    _turn = {}
+
+
+def turn_before() -> dict[str, str | None]:
+    """{relative path: its text before this turn, None if it did not exist}.
+
+    UNREADABLE stands for a file that existed but is too large or not text.
+    """
+    return dict(_turn or {})
+
+
+def _remember_turn(p: Path, rel: str) -> None:
+    if _turn is None or rel in _turn:
+        return
+    if not p.is_file():
+        _turn[rel] = None
+        return
+    try:
+        if p.stat().st_size > _TURN_CAP:
+            _turn[rel] = UNREADABLE
+            return
+        raw = p.read_bytes()
+        _turn[rel] = UNREADABLE if b"\0" in raw[:4096] else raw.decode("utf-8", "replace")
+    except Exception:
+        _turn[rel] = UNREADABLE
 
 
 def _slug(rel: str) -> str:
@@ -94,6 +139,7 @@ def snapshot(path: str) -> None:
             rel = p.relative_to(_root).as_posix()
         except ValueError:
             return          # outside the workspace: not ours to restore
+        _remember_turn(p, rel)
         m = _load_manifest()
         if rel in m:
             return          # already captured before the first edit

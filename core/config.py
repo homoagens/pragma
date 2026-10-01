@@ -241,7 +241,7 @@ def thinking_for(role: str = "agent") -> bool:
 
     The endpoint knows whether the model CAN: it is running one model and that
     model either reasons or does not, which is `kind` in the catalogue. Which
-    of the three roles is ASKED to is the endpoint's too, under `reasons`; a
+    of the roles is ASKED to is the endpoint's too, under `reasons`; a
     thinking endpoint that says nothing reasons for the agent and the memory,
     and not for the recall (see endpoints._REASONS_BY_DEFAULT for why).
 
@@ -256,8 +256,9 @@ def thinking_for(role: str = "agent") -> bool:
         # turn before the agent could start - MEASURED 2026-09-30: 37 s for one
         # memory, over two minutes for five, the person watching a spinner.
         # A variable called AGENT_THINK left in a shell's environment should
-        # not be what makes every question wait.
-        if role == "recall":
+        # not be what makes every question wait. The critic is the same
+        # case at the other end of the turn.
+        if role in ("recall", "critic"):
             try:
                 import endpoints
                 return endpoints.reasons_for(_entry_for(role), role)
@@ -590,7 +591,7 @@ RECALL_THINK_BUDGET = int(os.environ.get("RECALL_THINK_BUDGET", "") or 4000)
 
 
 def current_role() -> str:
-    """Which of the three roles is making the call happening right now.
+    """Which of the roles is making the call happening right now.
 
     Read from the faculty llm_client has named for this thread, through the
     same map endpoints.py routes by - so "which endpoint answers this" and
@@ -729,6 +730,49 @@ def suggest_next() -> bool:
         return endpoints.option("prediction", False)
     except Exception:
         return False
+
+
+# THE CRITIC: the work judged against the request before it is delivered, by
+# a call of its own that did not do the work (core/critic.py).
+#
+# OFF unless asked for, like the prediction, and asked for in the same place:
+# /configure, once for the machine. Off because it is not free - one more call
+# at the end of every turn that changed something, several thousand tokens of
+# evidence for the server to read - and whether it pays for that is what the
+# bench is for. CRITIC=on|off overrides it for one run, which is how the bench
+# measures both arms on one machine.
+_CRITIC_RAW = os.environ.get("CRITIC", "").strip().lower()
+
+
+def critic_on() -> bool:
+    """Does the critic judge the work before it is delivered?"""
+    if _CRITIC_RAW in ("on", "1", "true", "yes"):
+        return True
+    if _CRITIC_RAW in ("off", "0", "false", "no"):
+        return False
+    try:
+        import endpoints
+        return endpoints.option("critic", False)
+    except Exception:
+        return False
+
+
+# How many times the critic may send the same turn back. The bound is for the
+# critic that is too severe - the drift that paralyses, as the permissive one
+# is the drift that lets everything through: past the bound, the answer is
+# delivered with the objections still standing, shown.
+CRITIC_MAX_ROUNDS = int(os.environ.get("CRITIC_MAX_ROUNDS", "") or 2)
+
+# What the critic is shown, in characters: the request, the record of what was
+# done, the diffs and the answer. About six thousand tokens - on a one-slot
+# llama.cpp at ~250 tokens/s that is some twenty seconds of reading, which is
+# the price of every review and the reason it is not larger.
+CRITIC_EVIDENCE_CHARS = int(os.environ.get("CRITIC_EVIDENCE_CHARS", "") or 24000)
+
+# For the bench only: where to copy the workspace at the FIRST delivery, before
+# the critic speaks. Up to that moment a run with the critic is the same run as
+# one without, so the copy is the no-critic result of the same run.
+CRITIC_SNAPSHOT_DIR = os.environ.get("PRAGMA_CRITIC_SNAPSHOT", "").strip()
 
 
 # write_file emits a soft warning in the observation when content exceeds

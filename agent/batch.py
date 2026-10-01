@@ -467,6 +467,7 @@ class _PrettyRenderer:
         "CURATOR": "magenta", "AGENT": "cyan", "CONSOLIDATOR": "green",
         "ABSTRACTOR": "blue", "RECONSOLIDATOR": "bright_magenta",
         "FORGETTING": "yellow", "SEGMENTER": "bright_cyan",
+        "CRITIC": "bright_yellow",
     }
 
     def faculty_running(self, tag, note):
@@ -596,6 +597,17 @@ def _make_on_step(renderer, obs_limit: int, transcript: list[str],
             # it is control flow, not something that happened in the work,
             # and the episode built from the transcript should not carry it.
             renderer.notice(step, str(ev.get("content", "")))
+        elif t == "faculty_running":
+            renderer.faculty_running(ev.get("tag", ""), str(ev.get("content", "")))
+        elif t == "faculty":
+            # The critic's judgement IS something that happened in the work:
+            # an answer sent back for a missing requirement is exactly the
+            # kind of surprise an episode is written to keep.
+            tag = ev.get("tag", "")
+            details = [str(d) for d in (ev.get("details") or [])]
+            renderer.faculty(tag, str(ev.get("content", "")), details)
+            transcript.append(f"{tag}: {ev.get('content', '')}"
+                              + (" | " + "; ".join(details) if details else ""))
         # "start" and unknown types: noise, skip.
 
     return on_step
@@ -845,7 +857,8 @@ confirmed mid-task. Therefore:
     try:
         result = run_agent(cfg, full_task, log_path=log_path,
                            on_step=_make_on_step(renderer, args.obs_limit,
-                                                 transcript))
+                                                 transcript),
+                           request=task)
     except KeyboardInterrupt:
         _err("Interrupted.")
         return 1

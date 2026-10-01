@@ -845,10 +845,12 @@ function script:Show-Endpoint($ep) {
     }
     Write-Host ("    url       {0}" -f $ep.endpoint)
     # With an endpoint catalogue this page is the agent's endpoint; the roles
-    # say where the other two are, and /configure is where they change.
+    # say where the others are, and /configure is where they change.
     if ($ep.PSObject.Properties.Name -contains 'roles' -and $ep.roles) {
         $parts = @()
-        foreach ($role in @('agent', 'recall', 'memory')) { $parts += ("{0} {1}" -f $role, $ep.roles.$role) }
+        foreach ($role in @('agent', 'recall', 'memory', 'critic')) {
+            if ($ep.roles.$role) { $parts += ("{0} {1}" -f $role, $ep.roles.$role) }
+        }
         Write-Host ("    roles     {0}" -f ($parts -join ' . ')) -ForegroundColor DarkGray
         Write-Host "              this page shows the agent's endpoint; /configure changes the roles" -ForegroundColor DarkGray
     }
