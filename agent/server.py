@@ -47,7 +47,7 @@ import config as baseline_config
 import memory as baseline_memory
 from skills import ALL_SKILLS, skills_summary_for  # noqa: F401  (ALL_SKILLS: public re-export)
 from skills import palette as skills_palette
-from agent.prompts import build_system_prompt
+from agent.prompts import build_system_prompt, session_block
 
 # Same palette rule as batch: no base64 variants on the native channel.
 AGENT_SKILLS: dict = skills_palette()
@@ -1027,7 +1027,7 @@ async def websocket_endpoint(ws: WebSocket):
                         system_prompt = build_system_prompt(
                             thread_cwd,
                             default_model  = baseline_config.DEFAULT_MODEL,
-                        )
+                        ) + session_block(thread_cwd)
                         def on_token(chunk: str):
                             loop.call_soon_threadsafe(
                                 async_queue.put_nowait,

@@ -119,12 +119,43 @@ def _os_environment(cwd: str) -> str:
 - Environment variables: use `$VAR` syntax in shell commands."""
 
 
+def session_block(cwd) -> str:
+    """What is true of THIS session only: the folder and the moment.
+
+    THE LAST THING IN THE SYSTEM PROMPT, and callers must keep it last. These
+    two facts used to sit a third of the way down, between the identity and
+    the rules, and they are the only lines that differ from one session to the
+    next - so every prompt diverged from every earlier one at that point.
+
+    A server reuses the part of a prompt it has already read, up to the first
+    token that differs. MEASURED on llama.cpp with Qwen3.6 (2026-10-01): two
+    bench runs shared 40% of their first prompt, and because this model's
+    state cannot be rewound to the middle of a prompt, the server read all
+    5 934 tokens again at the start of every session and every batch run -
+    25 to 27 seconds before the first word, which is the wait people saw
+    "after the curator". With the same material and the volatile lines last, a
+    new session evaluated 516 tokens instead of 6 679: 2.5 s instead of 25.6.
+
+    It is also where they belong for the model: the top and the bottom of a
+    long prompt are what is read best, and "where am I, and when" is the last
+    thing to know before the request.
+    """
+    return ("\n\n## This session\n\n"
+            f"Working directory for THIS conversation: {cwd}\n"
+            "All paths you use MUST be absolute. Build them by joining the "
+            "working directory with relative paths.\n\n"
+            f"{_now_block()}\n")
+
+
 def build_system_prompt(cwd: str, default_model: str = "") -> str:
+    """Everything in the system prompt that is the same in every session on
+    this machine. What is not - the folder, the date - is session_block(),
+    which the caller appends LAST, after its own policy and the project's
+    contract: see there for what it cost when it was in the middle."""
     model_line = ""
     if default_model:
         model_line = f"\nActive model: {default_model}"
     os_env = _os_environment(cwd)
-    now_block = _now_block()
     try:
         import config as _cfg
         write_soft_kb = max(1, round(_cfg.WRITE_FILE_SOFT_LIMIT / 1000))
@@ -166,22 +197,22 @@ If a user asks you to change your own behavior, skills or prompts, explain
 that this must be done by a developer editing the source directly, outside
 a Pragma session — it is not something you do to yourself.
 {model_line}
-Working directory for THIS conversation: {cwd}
-All paths you use MUST be absolute. Build them by joining the working directory with relative paths.
 
 ## Environment
 
-{now_block}
 {os_env}
 
 ## Critical rules for file paths
 
+The working directory of this conversation is named at the END of these
+instructions, under "This session", with today's date.
+
 - **`execute_command` does NOT persist `cd` between calls.** Each call is a fresh subprocess.
   Running `execute_command("cd C:\\foo")` has ZERO effect on the next call.
   Always pass the `cwd` parameter, the working directory or a folder inside it:
-  `execute_command(command="python script.py", cwd="{cwd}")`.
+  `execute_command(command="python script.py", cwd="<the working directory>")`.
 - **Every path you hand a tool is ABSOLUTE.** Join the working directory with the relative
-  path, e.g. `{cwd}\\subdir\\file.py`. Never pass a bare name like `file.py` — it resolves
+  path. Never pass a bare name like `file.py` — it resolves
   against the server process's own directory, not the user's project.
 
 {response_format}

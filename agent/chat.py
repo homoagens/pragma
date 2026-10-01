@@ -72,7 +72,8 @@ from agent.batch import (                  # noqa: E402
     _pool_line,
     _make_on_step,
 )
-from agent.prompts import build_system_prompt, project_contract  # noqa: E402
+from agent.prompts import (build_system_prompt, project_contract,  # noqa: E402
+                           session_block)
 from agent import harness as _harness       # noqa: E402
 
 # The renderer of the conversation in progress, for the one caller that is
@@ -1484,7 +1485,7 @@ If the turn needed no tools at all, the conclusion is simply your reply.
 
     system_prompt = build_system_prompt(
         str(cwd), default_model=baseline_config.DEFAULT_MODEL,
-    ) + chat_policy + project_contract(cwd)
+    ) + chat_policy + project_contract(cwd) + session_block(cwd)
 
     global _RENDERER
     renderer = _harness.Harness(

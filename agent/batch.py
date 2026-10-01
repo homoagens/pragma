@@ -69,7 +69,7 @@ import config as baseline_config
 import llm_client
 from react import AgentConfig, run_agent
 from skills import palette as skills_palette
-from agent.prompts import build_system_prompt, project_contract
+from agent.prompts import build_system_prompt, project_contract, session_block
 
 
 # ── output helpers ────────────────────────────────────────────────────────────
@@ -793,6 +793,9 @@ confirmed mid-task. Therefore:
     # it identically: a standing rule that applied in batch but not in a
     # live session would be worse than no rule at all.
     system_prompt += project_contract(cwd)
+    # Last, and it has to stay last: the only lines that change from one run
+    # to the next. See agent.prompts.session_block for what the order costs.
+    system_prompt += session_block(cwd)
 
     if args.memory:
         # The knowledge zone is composed by the curator (an LLM invocation),
