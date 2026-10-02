@@ -39,7 +39,8 @@ from json_parser import extract_json
 
 _SYSTEM = """You read the last exchange of a conversation between a person and
 an assistant, and you write the ONE line the PERSON is most likely to type
-next.
+next. A few earlier exchanges may come first: they show where the conversation
+is going, and the line you write follows from the LAST one.
 
 YOU ARE WRITING AS THE PERSON, NOT AS THE ASSISTANT. What you write goes
 straight into their input box, so it has to be in their voice: they say "I"
@@ -85,6 +86,41 @@ ASKED_CHARS = 700
 ANSWERED_CHARS = 1400
 MAX_CHARS = 90
 
+# THE END OF AN ANSWER IS WHERE THE NEXT LINE COMES FROM. A long answer closes
+# on the offer or the question ("shall I ...?"), and cut from the front that
+# is exactly the part that was thrown away. So a long answer keeps its opening
+# and its close, and loses the middle.
+ANSWER_HEAD = 400
+
+# WHERE THE CONVERSATION WAS GOING. One exchange read alone is guessed at as
+# if it were the first; a few of the ones before it, a line or two each, give
+# the direction for a few hundred tokens.
+EARLIER = 3
+EARLIER_ASKED = 200
+EARLIER_ANSWERED = 300
+
+
+def _ends(text: str, limit: int, head: int) -> str:
+    """`text` within `limit` characters: its opening and its close."""
+    if len(text) <= limit:
+        return text
+    return text[:head].rstrip() + "\n[...]\n" + text[-(limit - head):].lstrip()
+
+
+def _earlier(pairs) -> str:
+    """The exchanges before this one, oldest first, each cut short."""
+    out = []
+    for asked, answered in list(pairs or [])[-EARLIER:]:
+        asked = " ".join(str(asked or "").split())
+        answered = " ".join(str(answered or "").split())
+        if not asked or not answered:
+            continue
+        out.append(f"PERSON: {asked[:EARLIER_ASKED]}\n"
+                   f"ASSISTANT: {_ends(answered, EARLIER_ANSWERED, EARLIER_ANSWERED // 2)}")
+    if not out:
+        return ""
+    return "EARLIER IN THE CONVERSATION (for direction only):\n" + "\n\n".join(out) + "\n\n"
+
 # A SUGGESTION HAS A SHELF LIFE. The harness's own timeout is generous because
 # a consolidation is worth waiting for; this is not. A guess that arrives after
 # the line has been typed is worth nothing, and against a server that accepts
@@ -101,7 +137,7 @@ def enabled() -> bool:
         return False
 
 
-def next_question(asked: str, answered: str, model=None) -> str:
+def next_question(asked: str, answered: str, model=None, earlier=()) -> str:
     """The one thing the person is likeliest to type next, or "" - never raises.
 
     ONE, not a list. A list is a menu, and a menu on the input line is a thing
@@ -121,8 +157,9 @@ def next_question(asked: str, answered: str, model=None) -> str:
     # and then a whole exchange can arrive at the reply having slipped back
     # into the voice it usually speaks in. Measured the hard way - it offered
     # "How can I help you today?".
-    payload = (f"THE PERSON SAID:\n{asked[:ASKED_CHARS]}\n\n"
-               f"THE ASSISTANT ANSWERED:\n{answered[:ANSWERED_CHARS]}\n\n"
+    payload = (f"{_earlier(earlier)}"
+               f"THE PERSON SAID:\n{asked[:ASKED_CHARS]}\n\n"
+               f"THE ASSISTANT ANSWERED:\n{_ends(answered, ANSWERED_CHARS, ANSWER_HEAD)}\n\n"
                f"Now write the next line THE PERSON types. Their voice, not "
                f"the assistant's.")
     try:

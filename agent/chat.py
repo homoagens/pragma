@@ -419,6 +419,7 @@ class _no_typing:
 # one has been given up on, and what it brings back is dropped.
 _GUESS = [0]
 _GUESSING: list = []
+_EXCHANGES: list = []
 
 
 def _suggest_start(asked: str, answered: str) -> None:
@@ -432,6 +433,12 @@ def _suggest_start(asked: str, answered: str) -> None:
     _GUESSING.clear()
     _GUESS[0] += 1
     mine = _GUESS[0]
+    # The exchanges before this one, for the direction of the conversation.
+    # Kept whether or not the guess is on, so turning it on mid-conversation
+    # does not start it blind.
+    earlier = list(_EXCHANGES)
+    _EXCHANGES.append((asked, answered))
+    del _EXCHANGES[:-3]
     try:
         import suggest
         if not suggest.enabled():
@@ -441,7 +448,7 @@ def _suggest_start(asked: str, answered: str) -> None:
 
     def work():
         try:
-            got = suggest.next_question(asked, answered)
+            got = suggest.next_question(asked, answered, earlier=earlier)
         except Exception:
             return
         if got and _GUESS[0] == mine:
