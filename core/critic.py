@@ -81,12 +81,21 @@ and the changes are the evidence.
    unverified  it may be done, but nothing in the record shows it. A claim
                with no step behind it ("I verified it runs" with no run in the
                record) is unverified.
+   Evidence must show the behaviour the requirement names, not merely that
+   something ran. A command that exited cleanly, a file that parses, a test
+   of the parts, show that much and no more. Ask what the user would see if
+   the requirement did NOT hold, and whether the record rules that out: a
+   program that must keep working over time, respond to input or produce a
+   particular result is met only by a step that observed exactly that. If no
+   step did, it is unverified, however sound the code looks.
 3. Give a verdict:
    accept      every requirement is met; or what is left unverified cannot be
                checked from here, and the answer says so honestly
    revise      something is missing, or unverified and still checkable. Put
                the next action in "proposal": what to run, change or check -
-               one or two actions, specific enough to carry out
+               one or two actions, specific enough to carry out. When the
+               gap is a missing observation, name the observation: what to
+               run and what its output must show
    ask_user    the request can be read two ways and the work took one of them;
                only the user can settle it. Put the question in "proposal"
 4. "aside" is optional: something the work produced outside the request that
