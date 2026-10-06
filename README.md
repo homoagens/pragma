@@ -178,9 +178,10 @@ anything is still being written, and the way out holds once to tell you so.
 
 ## Documentation
 
-[`docs/`](docs/README.md) has the rest. Start with [your first
-project](docs/tutorial/first-project.md), ten minutes from an empty screen to
-a memory that came back. Then there are guides for single tasks — connecting
+**<https://homoagens.github.io/pragma/>** has the rest, with a menu and a
+search; the same pages are in [`docs/`](docs/README.md). Start with [your
+first project](docs/tutorial/first-project.md), ten minutes from an empty
+screen to a memory that came back. Then there are guides for single tasks — connecting
 a model, writing rules the agent must follow, moving a project — every
 [command](docs/reference/commands.md) and every
 [setting](docs/reference/configuration.md) with its default, and [how Pragma
