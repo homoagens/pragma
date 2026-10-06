@@ -21,9 +21,11 @@ venv/
 .venv/
 env/
 
-# The documentation site: its own environment, and what a build writes
+# The documentation site: its own environment, what a build writes, and what
+# a build downloads once to serve with it
 .venv-docs/
 site/
+.cache/
 
 # Skills in testing (wip_ prefix — rename folder to publish)
 core/skills/wip_*/

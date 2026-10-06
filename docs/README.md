@@ -84,18 +84,27 @@ commit as the change it describes.
 ## Reading them as a site
 
 The pages read on GitHub as they are. For a menu and a search, the same files
-build into a site with [MkDocs](https://www.mkdocs.org) and the
+are published as a site at <https://homoagens.github.io/pragma/>, rebuilt on
+every push to `master` that touches them
+([`docs.yml`](../.github/workflows/docs.yml)).
+
+The site is built with [MkDocs](https://www.mkdocs.org) and the
 [Material](https://squidfunk.github.io/mkdocs-material/) theme, both open
-source. In any Python environment other than Pragma's own:
+source. To have it on your own machine, in any Python environment other than
+Pragma's own:
 
 ```
 pip install -r docs/requirements.txt
 mkdocs serve
 ```
 
-and open <http://127.0.0.1:8000>. It redraws a page when its file is saved.
-`mkdocs build --strict` writes the site into `site/` and fails on a link that
-points nowhere.
+and open <http://127.0.0.1:8000/pragma/>. It redraws a page when its file is
+saved. `mkdocs build --strict` writes the site into `site/` and fails on a
+link that points nowhere.
+
+A page of the site asks nothing of any other server: the fonts are the
+reader's own, and the library that draws the diagrams is downloaded when the
+site is built and served with it.
 
 [`mkdocs.yml`](../mkdocs.yml) holds the menu, so a new page is listed there;
 the check above fails on one that is not. On the site, a link to a file of the

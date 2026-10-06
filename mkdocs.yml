@@ -1,13 +1,17 @@
-# The documentation as a site: `mkdocs serve`, then http://127.0.0.1:8000
+# The documentation as a site: `mkdocs serve`, then http://127.0.0.1:8000/pragma/
 #
 # The pages are the Markdown under docs/, which reads on GitHub as it is. This
 # file adds the menu, the search and the theme, and nothing a page depends on:
 # take it away and the documentation is still all there.
 #
 # What it needs is in docs/requirements.txt, and is not needed to run Pragma.
+#
+# It is published at the address below on every push to master that touches
+# the documentation: see .github/workflows/docs.yml.
 
 site_name: Pragma
 site_description: A local agent with a memory that forgets.
+site_url: https://homoagens.github.io/pragma/
 repo_url: https://github.com/homoagens/pragma
 repo_name: homoagens/pragma
 edit_uri: ""
@@ -90,6 +94,11 @@ extra_css:
 
 plugins:
   - search
+  # Nothing is fetched from anyone when a page is read. The one library the
+  # theme would load from a public server - the one that draws the diagrams -
+  # is downloaded when the site is built and served with it. The copy is kept
+  # in .cache/, so only the first build needs the network.
+  - privacy
 
 markdown_extensions:
   - toc:

@@ -1,0 +1,71 @@
+name: Docs site
+
+# Builds the documentation as a site and publishes it on GitHub Pages:
+#
+#     https://homoagens.github.io/pragma/
+#
+# The pages are the Markdown under docs/, which already reads on GitHub as it
+# is. This adds nothing to them: it runs `mkdocs build` and hands the result
+# to Pages. The build is strict, so a link that points nowhere stops the
+# publication instead of going out with it.
+#
+# Needs, once, in the repository's settings: Pages > Source > GitHub Actions.
+
+on:
+  push:
+    branches: [master]
+    # Only when the site could have changed. The reference pages are generated
+    # from the code, but they are committed, so a change to the code that
+    # matters here arrives as a change under docs/.
+    paths:
+      - "docs/**"
+      - "mkdocs.yml"
+      - ".github/workflows/docs.yml"
+  # And by hand, from the Actions tab.
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# One publication at a time, and never one cut short by the next.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+
+      - name: Install what builds the site
+        run: |
+          pip install --upgrade pip
+          pip install -r docs/requirements.txt
+
+      - name: Build, strictly
+        run: |
+          mkdocs build --strict
+
+      - name: Hand the site to Pages
+        uses: actions/upload-pages-artifact@v5
+        with:
+          path: site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Publish
+        id: deployment
+        uses: actions/deploy-pages@v5
