@@ -45,7 +45,8 @@
 #   - A PRAGMA.md file in the workspace root (user-authored instructions,
 #     e.g. standing authorizations) is ALWAYS injected when present — it is
 #     the project contract, not memory, so it doesn't need --memory.
-#   - Temperature defaults to 0.0 for reproducible runs (the UI uses 0.2).
+#   - Temperature is DEFAULT_TEMPERATURE unless --temperature names one;
+#     unset, the endpoint decides. Say 0.0 for a run that must repeat itself.
 
 from __future__ import annotations
 
@@ -655,8 +656,8 @@ def main() -> int:
     # to could not be read by anyone: setting DEFAULT_TEMPERATURE had no effect
     # and no way to find out why. Two defaults, and the invisible one won.
     parser.add_argument("--temperature", type=float, default=None,
-                        help="sampling temperature (default: DEFAULT_TEMPERATURE, "
-                             "itself 0.0 for reproducible runs)")
+                        help="sampling temperature (default: DEFAULT_TEMPERATURE; "
+                             "unset, the endpoint decides)")
     parser.add_argument("--obs-limit", type=int, default=600,
                         help="max chars of each observation printed to stdout "
                              "(0 = unlimited; the --log file always gets the "
