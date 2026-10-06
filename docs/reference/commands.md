@@ -95,10 +95,10 @@ An endpoint serves one or more of four roles:
 
 | Role | The calls it answers |
 |---|---|
-| `agent` | the steps of the conversation: reading, editing, running |
-| `recall` | choosing what to bring back from memory, every turn |
-| `memory` | writing and revising what is remembered, after the turn |
-| `critic` | judging the work against what was asked, before the answer |
+| `agent` | the conversation |
+| `recall` | the CURATOR, before each turn |
+| `memory` | episodes and beliefs, in the background |
+| `critic` | the CRITIC, before the answer is delivered |
 
 ## Keys
 

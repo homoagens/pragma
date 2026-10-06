@@ -90,7 +90,12 @@ WORK_BLURB = {
 # WHO REASONS. The roles endpoints.py routes by, said in terms of what
 # the person actually waits for. Only shown for a thinking endpoint: an
 # instruct one has nothing to switch.
-ROLE_BLURB = {
+#
+# A table of its own, under its own name. It was a second ROLE_BLURB, and a
+# second assignment to a name replaces the first: the `use` page, which asks
+# what an endpoint SERVES, had been showing these lines about waiting ever
+# since, and the table written for it above was shown nowhere.
+REASONS_BLURB = {
     "agent":  "the steps of the conversation: reading, editing, running",
     "recall": "choosing what to bring back from memory, every turn",
     "memory": "writing and revising what is remembered, after the turn",
@@ -929,7 +934,7 @@ def who_reasons(entry: dict, name: str) -> bool:
         print("  " + grey("to use it, or to answer at once instead."))
         rows = [f"{role:<8}{'reasons' if endpoints.reasons_for(entry, role) else 'answers at once'}"
                 for role in endpoints.ROLES]
-        i = pick("", rows, [ROLE_BLURB[r] for r in endpoints.ROLES], at)
+        i = pick("", rows, [REASONS_BLURB[r] for r in endpoints.ROLES], at)
         if i is None:
             return changed
         at = i
