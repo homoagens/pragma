@@ -1,0 +1,13 @@
+# What builds these pages as a site. Not needed to run Pragma: keep it out of
+# Pragma's own environment.
+#
+#     pip install -r docs/requirements.txt
+#     mkdocs serve
+#
+# Both are open source: MkDocs 1.x is BSD-2-Clause, the theme is MIT.
+#
+# MkDocs is held below 2 on purpose. 2.0 is a rewrite the theme does not run
+# on, with another configuration format, and nothing here should start using
+# it because an install happened to find it.
+mkdocs>=1.6,<2
+mkdocs-material>=9.7,<10

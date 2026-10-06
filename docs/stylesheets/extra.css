@@ -1,0 +1,10 @@
+/* The one thing the theme does not do for these pages.
+
+   The first column of a reference table is a name - a variable, a command, a
+   skill - and a name is one word. Left alone, a narrow column breaks it in
+   the middle (PRAGMA_ENDPOINT / S), which is the one place a reader must not
+   have to reassemble what they came to copy. The table scrolls sideways on a
+   small screen instead. */
+.md-typeset table:not([class]) td:first-child code {
+  white-space: nowrap;
+}

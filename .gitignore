@@ -21,6 +21,10 @@ venv/
 .venv/
 env/
 
+# The documentation site: its own environment, and what a build writes
+.venv-docs/
+site/
+
 # Skills in testing (wip_ prefix — rename folder to publish)
 core/skills/wip_*/
 
@@ -38,6 +42,7 @@ MANUAL.md
 research/
 
 # IDE
+.claude/
 .vscode/
 .idea/
 .obsidian/

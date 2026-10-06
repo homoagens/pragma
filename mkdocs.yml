@@ -1,0 +1,90 @@
+# The documentation as a site: `mkdocs serve`, then http://127.0.0.1:8000
+#
+# The pages are the Markdown under docs/, which reads on GitHub as it is. This
+# file adds the menu, the search and the theme, and nothing a page depends on:
+# take it away and the documentation is still all there.
+#
+# What it needs is in docs/requirements.txt, and is not needed to run Pragma.
+
+site_name: Pragma
+site_description: A local agent with a memory that forgets.
+repo_url: https://github.com/homoagens/pragma
+repo_name: homoagens/pragma
+edit_uri: ""
+copyright: Copyright &copy; 2026 Homo Agens. AGPL-3.0-or-later.
+
+docs_dir: docs
+site_dir: site
+
+# Every page has to be listed here to appear in the menu. `python docs/build.py
+# --check` fails on one that is not, so a page cannot be written and then lost.
+nav:
+  - Home: README.md
+  - Reference:
+      - Commands: reference/commands.md
+      - Configuration: reference/configuration.md
+      - Skills: reference/skills.md
+  - Explanation:
+      - Architecture: explanation/architecture.md
+
+# The tooling that lives beside the pages is not part of the site.
+exclude_docs: |
+  *.py
+  __pycache__/
+  requirements.txt
+
+# Links that leave docs/ are pointed at the repository: see the file.
+hooks:
+  - docs/site_hooks.py
+extra:
+  repo_branch: master
+
+theme:
+  name: material
+  language: en
+  # No font is fetched from anyone: the reader's own is used.
+  font: false
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: deep purple
+      accent: deep purple
+      toggle:
+        icon: material/weather-night
+        name: Dark
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: deep purple
+      accent: deep purple
+      toggle:
+        icon: material/weather-sunny
+        name: Light
+  features:
+    - navigation.sections
+    - navigation.top
+    - toc.follow
+    - search.highlight
+    - content.code.copy
+
+extra_css:
+  - stylesheets/extra.css
+
+plugins:
+  - search
+
+markdown_extensions:
+  - toc:
+      permalink: true
+  # The diagrams are Mermaid, as on GitHub.
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
+
+# A strict build (`mkdocs build --strict`) fails on any of these.
+validation:
+  omitted_files: warn
+  absolute_links: warn
+  unrecognized_links: warn
+  anchors: warn

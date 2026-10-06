@@ -32,6 +32,13 @@ jobs:
         run: |
           ruff check .
 
+      # The reference pages are generated from the code. This fails when one
+      # has fallen behind it, when a setting has no description, or when a
+      # link in the docs points nowhere. To fix: python docs/build.py
+      - name: Docs are up to date
+        run: |
+          python docs/build.py --check
+
       - name: Server imports
         run: |
           PYTHONPATH=core:. python -c "
