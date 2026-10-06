@@ -36,6 +36,20 @@ for _p in (str(_ROOT), str(_ROOT / "core"), str(_ROOT / "tools")):
     if _p not in sys.path:
         sys.path.insert(0, _p)
 
+# THE STORE IS WHERE THE JOB IS. A job lives in <store>/jobs/, and that store
+# is the one its episodes belong to. Started by a conversation this held by
+# inheritance: the project's environment named the store. Run BY HAND - which
+# is how /jobs says to recover a job that did not finish - there is no such
+# environment, the configuration fell back to ~/.pragma, and the episodes were
+# written to a folder no project reads, after which the job deleted itself as
+# done. So the store is taken from the job's own path, and it has to be said
+# here: the configuration reads it when it is imported, two lines down.
+if __name__ == "__main__":
+    _named = [a for a in sys.argv[1:] if not a.startswith("-")]
+    if _named and Path(_named[0]).expanduser().resolve().parent.name == "jobs":
+        os.environ["PRAGMA_DATA_DIR"] = str(
+            Path(_named[0]).expanduser().resolve().parent.parent)
+
 import pragma_jobs as jobs       # noqa: E402
 
 
@@ -143,19 +157,42 @@ class _JobHook:
         self.r._add(f"[{who or 'MEMORY'}] {detail} - asked again without thinking")
 
 
+def _say(line: str) -> None:
+    """One line for whoever ran this by hand. A detached worker has nobody
+    listening and may have nowhere to write: that must never be an error."""
+    try:
+        print(line, flush=True)
+    except Exception:
+        pass
+
+
 def run(path: Path) -> int:
     job = jobs.read(path)
     if not job:
+        _say(f"{path}: not a job file")
         return 2
-    if job.get("status") not in ("pending", "abandoned", "failed"):
+    # WHAT THE FILE SAYS IS NOT ALWAYS WHAT IS TRUE. A worker that dies cannot
+    # write that it died, so its job goes on saying "running" for ever. The
+    # list corrects that as it reads - a job whose process is gone reads as
+    # abandoned - and on purpose not in the file. It has to be corrected the
+    # same way here: without it, the one job /jobs tells you to run again by
+    # hand was the one this refused, and it left with exit code 0 and not a
+    # word, as if it had worked.
+    status = ("abandoned" if jobs._abandoned(dict(job, _path=str(path)))
+              else job.get("status"))
+    if status not in ("pending", "abandoned", "failed"):
         # Running, or finished successfully. Re-running one of those would
         # consolidate the same turns twice; the store's own session_id guard
         # would catch most of it, but "most" is not a thing to rely on for
         # memory.
         #
-        # A FAILED job is different, and is the case /jobs tells you to run by
-        # hand: nothing of it reached the store, the turns are still in it, and
-        # the whole reason the file was kept is that it can be tried again.
+        # A FAILED or ABANDONED job is different, and is the case /jobs tells
+        # you to run by hand: nothing of it reached the store, the turns are
+        # still in it, and the whole reason the file was kept is that it can
+        # be tried again.
+        _say(f"{path.name}: {status or 'unreadable'} - nothing to do"
+             + (f" (process {job.get('pid')} is working on it)"
+                if status == "running" else ""))
         return 0
 
     store = Path(path).parent.parent
@@ -165,6 +202,7 @@ def run(path: Path) -> int:
         job["error"] = "another consolidation held the store for too long"
         job["finished"] = _utc()
         jobs.write(path, job)
+        _say(f"failed - {job['error']}")
         return 1
 
     try:
@@ -212,6 +250,14 @@ def run(path: Path) -> int:
         job["pid"] = 0
         jobs.write(path, job)
         lock.release()
+
+    if job.get("status") == "done":
+        n = len(job.get("episodes") or [])
+        _say(f"done - {n} episode{'' if n == 1 else 's'} written to {store / 'episodes'}"
+             if n else "done - nothing in it was worth keeping")
+    else:
+        _say(f"failed - {job.get('error') or 'no reason recorded'}")
+        _say(f"the turns are still in {path}")
 
     try:
         # A beat before clearing up. /jobs follows a running job by polling the
