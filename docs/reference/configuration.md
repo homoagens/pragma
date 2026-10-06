@@ -184,6 +184,7 @@ Written for the conversation it starts. Listed so that nobody sets them by hand.
 | Variable | Default | What it is | Read in |
 |---|---|---|---|
 | `PRAGMA_DEBUG` | unset | `1` prints diagnostic output. | [`core/config.py`](../../core/config.py) |
+| `PRAGMA_LOOK` | unset | `classic` draws a turn the way it was drawn before: the name of each tool, its arguments and its output. Unset, the turn is a ledger. | [`agent/chat.py`](../../agent/chat.py) |
 | `PRAGMA_ALLOW_SELF_MODIFY` | unset | `true` lets a session write inside Pragma's own repository, which is otherwise refused. | [`core/config.py`](../../core/config.py) |
 | `PRAGMA_CLOCK` | unset | Freezes the clock the memory reads at an ISO instant. | [`core/clock.py`](../../core/clock.py) |
 | `PRAGMA_CLOCK_OFFSET` | unset | Shifts that clock by a number of seconds. | [`core/clock.py`](../../core/clock.py) |

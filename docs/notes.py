@@ -293,6 +293,9 @@ CONFIG = {
     # -- dev --------------------------------------------------------------
     "PRAGMA_DEBUG": ("dev",
         "`1` prints diagnostic output."),
+    "PRAGMA_LOOK": ("dev",
+        "`classic` draws a turn the way it was drawn before: the name of each tool, "
+        "its arguments and its output. Unset, the turn is a ledger."),
     "PRAGMA_ALLOW_SELF_MODIFY": ("dev",
         "`true` lets a session write inside Pragma's own repository, which is otherwise refused."),
     "PRAGMA_CLOCK": ("dev",

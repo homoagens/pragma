@@ -1507,7 +1507,17 @@ If the turn needed no tools at all, the conclusion is simply your reply.
     ) + chat_policy + project_contract(cwd) + session_block(cwd)
 
     global _RENDERER
-    renderer = _harness.Harness(
+    # A turn is drawn as a ledger: see agent/ledger.py. PRAGMA_LOOK=classic
+    # gives back the look it replaced, which agent/harness.py still draws. A
+    # look that cannot be loaded falls back to that one without a word: how
+    # the screen is drawn must never be why a conversation does not start.
+    look = _harness.Harness
+    if os.environ.get("PRAGMA_LOOK", "").strip().lower() != "classic":
+        try:
+            from agent.ledger import Ledger as look
+        except Exception:
+            look = _harness.Harness
+    renderer = look(
         verbose=args.show_thoughts,
         context_window=getattr(baseline_config, "CONTEXT_WINDOW", 0),
         envelope=False)
