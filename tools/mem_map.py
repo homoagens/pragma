@@ -280,8 +280,8 @@ def _say(text):
 def _bar(value, cells=8):
     """A strength from 0 to 1 as a short bar, where the console can draw one."""
     try:
-        "█░".encode(sys.stdout.encoding or "ascii")
-        full, empty = "█", "░"
+        "▮▯".encode(sys.stdout.encoding or "ascii")
+        full, empty = "▮", "▯"
     except Exception:
         full, empty = "#", "."
     value = max(0.0, min(1.0, float(value or 0)))

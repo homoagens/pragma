@@ -12,30 +12,38 @@ of a turn are shown.
     python -m agent.ledger          a turn replayed with no model, to look at
 
 WHY "LEDGER". A ledger is a book of entries, one line each, in columns that
-never move: when, what was done, to what, and how it came out. That is what a
-turn is drawn as here - a record of what happened to the world, to be read
-down a column - and not as a conversation with a tool.
+never move. That is what a turn is drawn as here - a record of what happened
+to the world, to be read down a column - and not as a talk with a tool.
 
 WHAT IS DIFFERENT. The classic look draws a tool call the way a debugger
 would: the name of the function, its arguments, then what it returned. That
 is the vocabulary every agent in a terminal uses, and it describes the
-machinery. This draws what happened instead:
+machinery. This draws what happened instead, and three things only:
 
-    +0:17  ▌ ran      pytest -q                          exit 1   3.1s
-               test_json_flag   KeyError: 'total'
+      | ran      pytest -q                              exit 1
+                 FAILED test_report.py::test_json - KeyError: 'total'
+      | changed  report.py                               +1 -1
+      | ran      pytest -q                             8 passed
 
-- A VERB, NOT A FUNCTION. `ran`, `read`, `changed`, `wrote`: one column that
-  says what was done, then what it was done to, then how it went.
+- A VERB, NOT A FUNCTION. `ran`, `read`, `changed`, `wrote`: what was done,
+  then what it was done to, then how it went. Nothing else is on the line.
 - THE OUTCOME IS A MARK IN THE MARGIN. Grey when nothing is worth saying, red
   when it failed, green when a command succeeded. Colour is spent so rarely
   that a red mark is seen from across the room.
 - WHAT WENT FINE FADES. The last few steps are bright; as newer ones arrive
   the older ones dim, and the scrollback keeps them as one quiet line each.
   A failure does not fade, and keeps the one line that says why.
-- WHAT WAS RECALLED HAS ITS OWN VOICE: the accent colour and the bar of
-  strength that /memory draws. It is the one thing here no other harness has.
-- TIME IS SHOWN. Every step carries the moment it started, and the turn
-  closes on a bar of where the seconds went: recall, the model, the tools.
+- WHAT WAS RECALLED HAS ITS OWN VOICE: the accent colour, whether it is a
+  `memory:` or a `belief:`, and the bar of strength that /memory draws. It
+  is the one thing here no other harness has.
+
+WHAT WAS TAKEN OUT, and why it stays out. A first version also put a clock
+in front of every step and closed the turn on a bar of where its seconds
+went. Read by the person it was made for, it was "a mix of things": six
+items on a line, and a bar that was one colour whenever the model took all
+the time, which is nearly always. A step says how long it took only when it
+was long enough to notice, and the turn closes on the plain line it always
+had.
 
 HOW THE FADING WORKS. Lines already printed cannot be recoloured, so the
 newest steps are not printed: they are held in the live region the status
@@ -45,10 +53,10 @@ good only when it leaves that window - already in the tone it will keep.
 WHAT THE MODEL SAYS ON THE WAY. A model often writes a sentence before it
 acts ("now I'll run the tests"), and until the next event nobody can tell
 that sentence from the beginning of the answer. So text is held as it
-arrives. If a tool call follows, it was a remark: it takes its place in the
-ledger, in italics, and fades with the steps around it. If it grows past a
-couple of lines, or the turn ends on it, it was the answer, and it is handed
-to the answer stream to be drawn as one.
+arrives, and shown while it is written the way reasoning is. If a tool call
+follows, it was a remark: the step says what was done, and the remark goes
+as the reasoning goes. If it grows past a couple of lines, or the turn ends
+on it, it was the answer, and it is handed to the answer stream.
 """
 
 from __future__ import annotations
@@ -59,14 +67,34 @@ import sys
 import time
 
 try:
-    from agent.harness import (Harness, _PLACEHOLDER_NOTE, _TOOLS_REQUESTED,
-                               _plain_reasoning, plural, tame)
+    from agent.harness import Harness, _plain_reasoning, plural, tame
 except ImportError:                      # run from inside agent/
-    from harness import (Harness, _PLACEHOLDER_NOTE, _TOOLS_REQUESTED,  # type: ignore
-                         _plain_reasoning, plural, tame)
+    from harness import Harness, _plain_reasoning, plural, tame  # type: ignore
 
 # How many finished steps stay in the live window, brightest last.
 WINDOW = 4
+
+# A step's line stops here however wide the terminal is: what was done and
+# how it went are read together, not from opposite edges of the screen.
+LINE = 80
+
+# Seconds a step must have taken before the line says how long it took.
+SLOW = 2.0
+
+# The mark in the margin: one per step, and SEEN as one per step. It was a
+# half block, and block characters are made to tile - one on each line and
+# they fuse into a single bar down the screen, so five steps read as one
+# stripe. A tall rectangle has air above and below it. It was chosen by eye,
+# out of the ones `python -m agent.ledger --marks` draws, in the terminal
+# where Pragma is used: which one looks right depends on the font.
+MARK = "▮"
+# The bar of strength is the same rectangle, eight times: filled for what is
+# held, hollow for what is not. Hollow rather than dimmed, so that the bar
+# still reads where there is no colour to tell the two apart.
+HELD, FADED = "▮", "▯"
+MARKS = (("■", "square"), ("▪", "small square"), ("▮", "tall rectangle"),
+         ("▖", "low quarter block"), ("●", "dot"), ("▸", "arrow"),
+         ("▌", "half block - the first one, which fuses"))
 
 # Text the model writes is taken for a remark until it is longer than this,
 # or shows any of the marks of an answer: a second paragraph, a list, a
@@ -93,11 +121,6 @@ VERBS = {
 _TELLING = re.compile(r"^\s*(FAILED|ERROR|E\s{2,}|fatal:|error:|Traceback)|"
                       r"\b\w*(Error|Exception)\b\s*:", re.IGNORECASE)
 _RETURNCODE = re.compile(r"^returncode:\s*(-?\d+)", re.MULTILINE)
-
-
-def _clock(seconds: float) -> str:
-    seconds = max(0, int(seconds))
-    return f"+{seconds // 60}:{seconds % 60:02d}"
 
 
 def _lines(text: str) -> int:
@@ -148,18 +171,16 @@ class Ledger(Harness):
         self._pending: dict | None = None
         self._holding = False
         self._remark = ""
-        self._spent = {"recall": 0.0, "tools": 0.0}
-        self._recall_since = 0.0
         self._strength: dict[str, float] = {}
         super().__init__(*args, **kwargs)
-        marks = "▌█░━−"
+        marks = MARK + HELD + FADED + "−"
         try:
             marks.encode(getattr(self.console, "encoding", None) or sys.stdout.encoding or "utf-8")
             poor = self.legacy
         except Exception:
             poor = True
-        self.m = ({"stripe": "|", "full": "#", "empty": "-", "bar": "=", "minus": "-"} if poor
-                  else {"stripe": "▌", "full": "█", "empty": "░", "bar": "━", "minus": "−"})
+        self.m = ({"stripe": "|", "full": "#", "empty": "-", "minus": "-"} if poor
+                  else {"stripe": MARK, "full": HELD, "empty": FADED, "minus": "−"})
         # Three tones for three ages. A console with sixteen colours has one
         # grey, so there the fade is two steps instead of three.
         self.tones = (("", "bright_black", "bright_black") if poor
@@ -304,82 +325,75 @@ class Ledger(Harness):
         return {"word": f"exit {code}", "ok": False, "why": why,
                 "mark": "bad", "took": took}
 
-    # ── drawing an entry ────────────────────────────────────────────────────
+    # ── drawing a step ──────────────────────────────────────────────────────
 
-    def _rows(self, entry: dict, age: int) -> list:
-        """An entry as rich lines. `age` 0 is the newest; older is dimmer."""
+    def _rows(self, step: dict, age: int) -> list:
+        """A step as rich lines. `age` 0 is the newest; older is dimmer.
+
+        Three things on a line and no more: what was done, what to, how it
+        went. The line stops at LINE columns however wide the terminal is, so
+        the outcome sits where the eye already is and not at the far edge.
+        """
         from rich.text import Text
-        width = max(40, self.console.width)
-        fixed = 2 + 5 + 2 + 2 + 9                      # margin, clock, gap, mark, verb
-        quiet = self.tones[-1]
-        if entry.get("kind") == "remark":
-            # What the model said on the way: under the marks, in italics, two
-            # lines at most. It is context for the steps, not a step.
-            tone = self.tones[min(age, len(self.tones) - 1)]
-            body = Text(entry["text"], style=f"italic {tone}".strip())
-            lines = body.wrap(self.console, max(20, width - 9 - 1))
-            shown = list(lines[:2])
-            if len(lines) > 2:
-                shown[-1] = Text(shown[-1].plain.rstrip()[:max(1, width - 12)] + "…",
-                                 style=f"italic {tone}".strip())
-            return [Text(" " * 9).append_text(ln) for ln in shown]
-        failed = entry["ok"] is False
+        width = min(max(40, self.console.width), LINE)
+        lead = 2 + 2 + 9                               # margin, mark, verb
+        failed = step["ok"] is False
         tone = "" if failed else self.tones[min(age, len(self.tones) - 1)]
-        mark = {"bad": "red", "good": "green"}.get(entry["mark"], quiet)
-        word = entry["word"]
-        tail = f"  {entry['took']:.1f}s" if entry.get("took") is not None else ""
-        room = width - fixed - len(word) - len(tail) - 3
-        what = entry["what"]
+        quiet = self.tones[-1]
+        mark = {"bad": "red", "good": "green"}.get(step["mark"], quiet)
+        word = step["word"]
+        # How long it took is said only when it was long enough to notice.
+        took = step.get("took")
+        long = f"{took:.0f}s" if took is not None and took >= SLOW else ""
+        right = len(word) + (2 + len(long) if long else 0)
+        room = width - lead - right - 2
+        what = step["what"]
         if room < 10:
-            word, tail, room = "", "", width - fixed - 1
+            word, long, room = "", "", width - lead
         if len(what) > room:
             what = what[:max(1, room - 1)] + "…"
         line = Text("  ")
-        line.append(_clock(entry["at"]), style=quiet)
-        line.append("  ")
         line.append(self.m["stripe"] + " ", style=mark)
-        line.append(f"{entry['verb']:<8} ", style=tone)
-        line.append(what.ljust(room), style=tone)
+        line.append(f"{step['verb']:<8} ", style=tone)
+        line.append(what.ljust(room) if word else what, style=tone)
         if word:
             line.append("  ")
-            line.append(word, style=("red" if failed else "green" if entry["mark"] == "good"
-                                     and age == 0 else tone))
-            line.append(tail, style=quiet)
+            line.append(word, style=("red" if failed else tone))
+            if long:
+                line.append("  " + long, style=quiet)
         rows = [line]
-        for why in entry["why"]:
-            rows.append(Text(" " * fixed + why[:max(10, width - fixed - 1)], style="red"))
+        for why in step["why"]:
+            rows.append(Text(" " * lead + why[:max(10, self.console.width - lead - 1)],
+                             style="red"))
         return rows
 
-    @staticmethod
-    def _ages(entries: list[dict]) -> list[int]:
-        """How old each entry is: the number of steps that came after it."""
-        ages, later = [], 0
-        for entry in reversed(entries):
-            ages.append(later)
-            if entry.get("kind") != "remark":
-                later += 1
-        return ages[::-1]
-
-    def _commit(self, entries: list[dict], aged: bool) -> None:
-        """Print entries for good. `aged`: they left the window, so in the
-        tone they keep; otherwise as they stood, newest brightest."""
-        ages = self._ages(entries)
-        for entry, age in zip(entries, ages):
-            for row in self._rows(entry, len(self.tones) - 1 if aged else age):
+    def _commit(self, steps: list[dict], aged: bool) -> None:
+        """Print steps for good. `aged`: they left the window, so in the tone
+        they keep; otherwise as they stood, newest brightest."""
+        n = len(steps)
+        for i, step in enumerate(steps):
+            age = len(self.tones) - 1 if aged else (n - 1 - i)
+            for row in self._rows(step, age):
                 self.console.print(row)
 
     # ── the live window ─────────────────────────────────────────────────────
 
     def _renderable(self):
         from rich.console import Group
+        from rich.padding import Padding
         from rich.text import Text
-        entries = list(self._steps)
+        steps = list(self._steps)
         rows = []
-        for entry, age in zip(entries, self._ages(entries)):
-            rows += self._rows(entry, age)
+        for i, step in enumerate(steps):
+            rows += self._rows(step, len(steps) - 1 - i)
         if self._remark.strip():
-            said = Text(" ".join(self._remark.split()))
-            rows += list(said.wrap(self.console, max(20, self.console.width - 2)))[-4:]
+            # Text that may be the answer and may be a remark: shown while it
+            # is written, the way reasoning is, and kept only if it is the
+            # answer.
+            said = Text(" ".join(_plain_reasoning(self._remark).split()),
+                        style=f"italic {self.tones[-1]}")
+            lines = said.wrap(self.console, max(20, self.console.width - 6))
+            rows.append(Padding(Group(*lines[-3:]), (0, 0, 0, 4)))
         if self._label:
             base = super()._renderable()
             return Group(*rows, base) if rows else base
@@ -422,11 +436,11 @@ class Ledger(Harness):
         printed as that.
         """
         with self._lock:
-            entries, self._steps = self._steps, []
+            steps, self._steps = self._steps, []
             said, self._remark = self._remark, ""
             self._holding = False
         super()._hide()
-        self._commit(entries, aged=False)
+        self._commit(steps, aged=False)
         if said.strip():
             from rich.markdown import Markdown
             self.console.print()
@@ -476,16 +490,16 @@ class Ledger(Harness):
         self._flush()
         super().error(step, content)
 
+    def conclusion(self, forced, elapsed, text):
+        self._flush()
+        super().conclusion(forced, elapsed, text)
+
     def turn_begin(self) -> None:
         super().turn_begin()
         self._steps = []
         self._pending = None
         self._holding = False
         self._remark = ""
-        self._spent = {"recall": 0.0, "tools": 0.0}
-        self._recall_since = 0.0
-        self._failed = 0
-        self._last_run_ok: bool | None = None
 
     # ── the renderer interface ──────────────────────────────────────────────
 
@@ -495,23 +509,15 @@ class Ledger(Harness):
             return super().action(step, name, args)
         self._close_answer()
         self._turn["tools"] += 1
-        note, self._note = self._note, ""
-        plain = _TOOLS_REQUESTED.sub("", note or "").strip()
+        self._note = ""
         verb, what = self._describe(name, args or {})
         with self._lock:
-            # A tool call follows, so what was held was a remark on the way.
-            # Its Markdown marks go: the line is plain italics, and `name`
-            # drawn with its backticks read as noise.
-            said, self._remark = " ".join(_plain_reasoning(self._remark).split()), ""
-            if not said and plain and self._call["streamed"] == 0 \
-                    and not _PLACEHOLDER_NOTE.match(plain):
-                said = " ".join(plain.split())[:600]     # a server that could not stream it
-            if said:
-                self._steps.append({"kind": "remark", "text": said})
+            # A tool call follows, so what was held was a remark on the way
+            # to it. The step says what was done; the remark is let go.
+            self._remark = ""
             self._holding = True
             self._pending = {"name": name, "args": args or {}, "verb": verb, "what": what,
-                             "t0": time.monotonic(),
-                             "at": time.monotonic() - self._turn.get("t0", time.monotonic())}
+                             "t0": time.monotonic()}
         self._show(f"{verb} {what}"[:max(20, self.console.width - 12)])
 
     def observation(self, step, content, limit):
@@ -519,38 +525,18 @@ class Ledger(Harness):
         if pending is None:
             return super().observation(step, content, limit)
         took = time.monotonic() - pending["t0"]
-        self._spent["tools"] += took
         how = self._outcome(pending["name"], pending["args"], content, took)
-        done = {"at": pending["at"], "verb": pending["verb"], "what": pending["what"], **how}
-        if done["ok"] is False:
-            self._failed += 1
-        if pending["name"] == "execute_command":
-            self._last_run_ok = done["ok"]
-        leaving: list[dict] = []
+        done = {"verb": pending["verb"], "what": pending["what"], **how}
         with self._lock:
             self._steps.append(done)
-            # The window is WINDOW steps. What leaves it is the oldest step,
-            # together with anything said before it.
-            while sum(1 for e in self._steps if e.get("kind") != "remark") > WINDOW:
-                gone = self._steps.pop(0)
-                leaving.append(gone)
-                if gone.get("kind") != "remark":
-                    break
+            leaving, self._steps = self._steps[:-WINDOW], self._steps[-WINDOW:]
         self._commit(leaving, aged=True)
         self._hide()
-
-    def faculty_running(self, tag, note):
-        if tag == "CURATOR":
-            self._recall_since = time.monotonic()
-        super().faculty_running(tag, note)
 
     def faculty(self, tag, summary, details=None):
         if self.verbose:
             return super().faculty(tag, summary, details)
         if tag == "CURATOR":
-            if self._recall_since:
-                self._spent["recall"] += time.monotonic() - self._recall_since
-                self._recall_since = 0.0
             self.recalled([(str(d), self._strength_of(str(d))) for d in details or []],
                           str(summary))
             return
@@ -571,9 +557,11 @@ class Ledger(Harness):
     def recalled(self, items: list, summary: str = "") -> None:
         """What memory brought to this turn, in its own colour.
 
-        `items` is [(label, strength or None)]. With nothing recalled, one
-        quiet line says so: a faculty that looked and found nothing is not a
-        faculty that did not look.
+        `items` is [(label, strength or None)]. Each line says which of the
+        two things it is - `memory:` for an episode, something that happened,
+        `belief:` for what was concluded from several - then how strongly it
+        is held. With nothing recalled, one quiet line says so: a faculty
+        that looked and found nothing is not a faculty that did not look.
         """
         from rich.text import Text
         self._close_answer()
@@ -581,12 +569,17 @@ class Ledger(Harness):
         self._boundary = True
         quiet = self.tones[-1]
         if not items:
+            # "1 memory + 0 beliefs → none of them bears on this — why · 2s"
+            # is the curator's whole account. Here it is the verdict alone.
             said = re.sub(r"\s*·\s*\d+s\s*$", "", summary).strip()
+            said = re.sub(r"^.*?→\s*", "", said).split(" — ")[0].strip()
             self.console.print(Text(f"  recalled  {said or 'nothing'}", style=quiet))
             return
         self.console.print()
         width = max(40, self.console.width)
         for i, (label, strength) in enumerate(items):
+            if not label.startswith("belief: "):
+                label = "memory: " + label
             line = Text("  ")
             line.append("recalled  " if i == 0 else " " * 10, style=self.accent)
             if strength is None:
@@ -637,53 +630,6 @@ class Ledger(Harness):
         self._strength[label] = found
         return found
 
-    def conclusion(self, forced, elapsed, text):
-        from rich.text import Text
-        self._flush()
-        self._close_answer()
-        seconds = elapsed or (time.monotonic() - self._turn.get("t0", time.monotonic()))
-        touched = sorted(set(self._files()) - set(self._turn.get("files") or []))
-        quiet, soft = self.tones[-1], self.tones[1]
-        self.console.print()
-        if forced:
-            self.console.print(Text(f"  {self.g['note']} step budget exhausted - the answer was forced",
-                                    style="yellow"))
-        # Where the seconds went. The model's share is what is left once the
-        # recall and the tools are taken out: it is the only one of the three
-        # the harness does not time directly.
-        recall = min(seconds, self._spent["recall"])
-        tools = min(max(0.0, seconds - recall), self._spent["tools"])
-        model = max(0.0, seconds - recall - tools)
-        cells = 24
-        shares = [recall, model, tools]
-        widths = [round(cells * s / seconds) if seconds > 0 else 0 for s in shares]
-        for i, share in enumerate(shares):                # a share that exists is seen
-            if share > 0.5 and widths[i] == 0:
-                widths[i] = 1
-        widths[1] = max(0, cells - widths[0] - widths[2])
-        line = Text("  ")
-        line.append(f"{seconds:.0f}s", style=soft)
-        line.append("  ")
-        for share, style in zip(widths, (self.accent, soft, quiet)):
-            line.append(self.m["bar"] * share, style=style)
-        parts = [plural(self._turn.get("steps", 0), "step")]
-        if self._failed:
-            parts.append(f"{self._failed} failed" + (", repaired" if self._last_run_ok else ""))
-        pct = self.ctx_pct()
-        if pct is not None:
-            parts.append(f"ctx {pct}%" if pct else "ctx <1%")
-        if touched:
-            parts.append("touched " + ", ".join(touched[:3])
-                         + (f" +{len(touched) - 3}" if len(touched) > 3 else ""))
-        line.append("  " + f" {self.g['dot']} ".join(parts), style=soft)
-        self.console.print(line)
-        legend = Text(" " * (2 + len(f"{seconds:.0f}s") + 2))
-        legend.append("recall", style=self.accent)
-        legend.append(f" {self.g['dot']} model", style=soft)
-        legend.append(f" {self.g['dot']} tools", style=quiet)
-        self.console.print(legend)
-        self.console.print()
-
 
 # ── a turn to look at, with no model behind it ───────────────────────────────
 
@@ -703,11 +649,9 @@ def demo(fast: bool = False) -> None:
     r.turn_begin()
     r.faculty_running("CURATOR", "searching memory for what bears on this…")
     wait(2.2)
-    r._spent["recall"] += time.monotonic() - r._recall_since
-    r._recall_since = 0.0
     r.end()
     r.recalled([("Every script starts with a one-line docstring", 0.62),
-                ("Tests live in tests/ and run with pytest -q", 0.41)])
+                ("belief: Tests live in tests/ and run with pytest -q", 0.41)])
 
     def step(name, args, result, think=1.4, work=0.6, say=""):
         r.begin("")
@@ -754,5 +698,35 @@ def demo(fast: bool = False) -> None:
     r._ticking = False
 
 
+def marks() -> None:
+    """The same four steps under each candidate mark, to choose by eye."""
+    from rich.console import Console
+    from rich.text import Text
+    console = Console(highlight=False)
+    r = Ledger(console=console)
+    r._ticking = False
+    steps = [
+        {"verb": "read", "what": "report.py", "word": "141 lines", "ok": True,
+         "why": [], "mark": "plain"},
+        {"verb": "ran", "what": "pytest -q", "word": "exit 1", "ok": False,
+         "why": [], "mark": "bad"},
+        {"verb": "changed", "what": "report.py", "word": "+1 −1", "ok": True,
+         "why": [], "mark": "plain"},
+        {"verb": "ran", "what": "pytest -q", "word": "8 passed", "ok": True,
+         "why": [], "mark": "good"},
+    ]
+    for n, (glyph, name) in enumerate(MARKS, 1):
+        console.print()
+        console.print(Text(f"  {n}. {name}", style="bold"))
+        r.m["stripe"] = glyph
+        for i, step in enumerate(steps):
+            for row in r._rows(step, len(steps) - 1 - i):
+                console.print(row)
+    console.print()
+
+
 if __name__ == "__main__":
-    demo(fast="--fast" in sys.argv)
+    if "--marks" in sys.argv:
+        marks()
+    else:
+        demo(fast="--fast" in sys.argv)
