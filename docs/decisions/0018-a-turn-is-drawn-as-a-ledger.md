@@ -39,6 +39,18 @@ They were taken out: a line carries three items, a step says how long it
 took only when that was long enough to notice, and the turn closes on the
 plain line it always had.
 
+A real turn then showed what was still in the way. Every stretch of
+reasoning left a line saying how long it had lasted, five in a turn of five
+steps. A command's outcome was the last line it had printed, whatever that
+was: a file's permissions, cut off at the column's edge. And two short
+paragraphs written before a tool call were printed across the steps as
+though they were the reply. So reasoning leaves nothing behind; a command
+says how much it printed, or its verdict when it is a test runner's; text is
+the answer only when it is long, or is a list, a heading, a table or a block
+of code; and one blank line stands between the blocks of a turn — what was
+recalled, the steps, the answer, the line that closes it — and none inside
+one.
+
 ## Consequences
 
 - The newest steps live in a region of the screen that is redrawn, and are
