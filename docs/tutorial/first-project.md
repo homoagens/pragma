@@ -101,13 +101,12 @@ Watch the turn happen:
 ```text
   recalled  the memory is still empty
 
-  +0:03  ▌ wrote    squares.py                                     +2
-  +0:04  ▌ ran      python3 squares.py                       10 lines  0.0s
+  ▮ wrote    squares.py                                                  +2
+  ▮ ran      python3 squares.py                                    10 lines
 
 Done. squares.py prints the first ten square numbers, and it ran successfully.
 
-  7s  ━━━━━━━━━━━━━━━━━━━━━━━━  3 steps · ctx 4% · touched squares.py
-      recall · model · tools
+  ✓ 3 steps · 2 tools · 7s · 166 tok · ctx 4% · touched squares.py
 ```
 
 Four things, top to bottom.
@@ -115,19 +114,17 @@ Four things, top to bottom.
 **`recalled`** is the memory being asked whether it holds anything that bears
 on your request. It is empty, and says so.
 
-Then **one line for each thing done**, in columns that never move: when it
-started, counted from your message; what was done, as a verb; what it was
-done to; and how it came out. `wrote squares.py +2` is a file of two lines.
-`ran python3 squares.py` printed ten. The mark in the margin is green for a
-command that succeeded and red for anything that failed, and a failure keeps,
-under it, the line that says why. While the turn runs, the newest lines are
-the brightest and the older ones fade.
+Then **one line for each thing done**, and three things on each: what was
+done, as a verb; what it was done to; and how it came out. `wrote squares.py
++2` is a file of two lines. `ran python3 squares.py` printed ten. The mark in
+the margin is green for a command that succeeded and red for anything that
+failed, and a failure keeps, under it, the line that says why. While the turn
+runs, the newest lines are the brightest and the older ones fade.
 
 Then **the answer**.
 
-The last line is the receipt: how long the turn took and where the time went
-— recalling, the model thinking and writing, the tools running — then how
-many steps, how full the context is, and which files were touched.
+The last line is the receipt: how many steps, how long, how full the context
+is, and which files were touched.
 
 The file is really there, in the folder you chose.
 
@@ -190,21 +187,19 @@ Write fib.py that prints the first ten Fibonacci numbers.
 ```
 
 ```text
-  recalled  █████░░░  Enforce one-line docstring convention for all project scripts
+  recalled  ▮▮▮▮▮▯▯▯  memory: Enforce one-line docstring convention for all project scripts
 
-         I'll write fib.py in the current working directory.
-  +0:06  ▌ wrote    fib.py                                        +13
-         Now let me run it to verify:
-  +0:08  ▌ ran      python3 fib.py                           10 lines  0.0s
+  ▮ wrote    fib.py                                                     +13
+  ▮ ran      python3 fib.py                                        10 lines
 
 fib.py prints the first ten Fibonacci numbers. The script follows the
 project's one-line docstring convention.
 ```
 
-This time `recalled` has something: the episode, and a bar for how strongly
-it is held. Pragma found it, judged that it bears on this request, and put it
-in front of the agent. The lines in between the steps are the agent saying
-what it is about to do.
+This time `recalled` has something. `memory:` says it is an episode, a thing
+that happened; a `belief:` would be something concluded from several of them.
+The bar is how strongly it is held. Pragma found it, judged that it bears on
+this request, and put it in front of the agent.
 
 Open `fib.py`: it starts with a docstring nobody asked for this time.
 
@@ -214,7 +209,7 @@ Type `/memory`:
 
 ```text
   what is remembered   1 episode active · 0 dormant
-    █████░░░ 0.62  Enforce one-line docstring convention for all project scripts
+    ▮▮▮▮▮▯▯▯ 0.62  Enforce one-line docstring convention for all project scripts
 
   Strength is how readily a memory comes back. It halves every 30 days unless
   the memory is recalled, and below 0.15 the memory goes dormant.

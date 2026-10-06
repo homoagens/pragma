@@ -15,24 +15,29 @@ failed weighed the same as the nineteen that had not.
 
 ## Decision
 
-A turn is drawn as a ledger: one line for each thing done, in columns that
-do not move — when, what was done, to what, and how it came out.
+A turn is drawn as a ledger: one line for each thing done, and three things
+on a line — what was done, to what, and how it came out.
 
 - A verb, not the name of a function: `ran`, `read`, `changed`, `wrote`.
 - The outcome is a mark in the margin. Colour is never a background, and is
   used so rarely that a red mark is seen at once.
 - What went fine fades as newer steps arrive. A failure does not, and keeps
   the one line that says why.
-- What memory recalled is drawn in its own colour, with how strongly it is
-  held.
-- Time is shown: when each step started, and at the end where the seconds
-  of the turn went.
+- What memory recalled is drawn in its own colour: whether it is a memory or
+  a belief, and how strongly it is held.
 
 A sentence the model writes before it acts is held until the next event
-says what it was. Followed by a tool call it was a remark, and takes its
-place in the ledger; otherwise it was the answer.
+says what it was. Followed by a tool call it was a remark, and goes the way
+its reasoning goes; otherwise it was the answer.
 
 The look it replaced is kept, behind `PRAGMA_LOOK=classic`.
+
+The first version, the same day, also put a clock in front of every step,
+kept the model's remarks between the steps, and closed the turn on a bar of
+where its seconds had gone. Used for an hour, it read as a mix of things.
+They were taken out: a line carries three items, a step says how long it
+took only when that was long enough to notice, and the turn closes on the
+plain line it always had.
 
 ## Consequences
 

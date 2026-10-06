@@ -81,13 +81,13 @@ leaving. **ctrl+D** closes the project and hands the conversation to the
 memory; a second one, at home, leaves.
 
 While a turn runs you watch it happen, drawn as a ledger: one line for each
-thing done — when, what, to what, and how it came out. The newest lines are
-bright and the older ones fade; a failure stays red, with the line that says
-why. What memory recalled is shown first, in its own colour, with how
-strongly it is held. Under it all, one status line says who is working and
-for how long, with the model's reasoning scrolling beneath while it lasts.
-The turn closes on where its seconds went: recalling, the model, the tools.
-The reasoning goes when it is over. The answer stays.
+thing done — what, to what, and how it came out. The newest lines are bright
+and the older ones fade; a failure stays red, with the line that says why.
+What memory recalled is shown first, in its own colour: whether it is a
+memory or a belief, and how strongly it is held. Under it all, one status
+line says who is working and for how long, with the model's reasoning
+scrolling beneath while it lasts, and a last line counts the steps, the tools
+and the seconds. The reasoning goes when it is over. The answer stays.
 
 ---
 
