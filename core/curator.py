@@ -162,9 +162,61 @@ _CURATOR_SCHEMA = {
 
 _WORD = re.compile(r"\w+", flags=re.UNICODE)
 
+# Words that say nothing about what a sentence is about, in the two languages
+# this has been used in. They used to count as matches like any other, and on
+# real stores they were most of the matches: of 82 episodes, "how did we fix
+# the ssh connection problem?" matched 34, and 32 of those on "the";
+# "riprendiamo il gioco del tris" matched 10, every one of them on "del" and
+# none on "tris". Which seven episodes reached the curator was decided by
+# articles. A language that is not here is matched as before: nothing is taken
+# out of it.
+_EMPTY_WORDS = frozenset("""
+the and for are but not you all any can had her was one our out has him his
+how its may now who did she too yes yet nor own off that with have this will
+your from they been were each which their what about would there could other
+into than then them these some when where does doing also just very here such
+only over more most much many should those while being both because after
+before again between through during without within under above below same few
+why whom whose shall might must upon onto ever every either neither though
+although unless until since still already always never let don didn doesn isn
+aren wasn weren won wouldn couldn shouldn hasn haven hadn
+
+che chi cui non per con una uno del dei degli della delle dello dell nel nei
+negli nella nelle nello nell sul sui sugli sulla sulle sullo sull dal dai dagli
+dalla dalle dallo dall col coi gli lui lei loro noi voi mio mia miei mie tuo
+tua tuoi tue suo sua suoi sue nostro nostra nostri nostre vostro vostra vostri
+vostre come cosa dove quando quanto quanta quanti quante quale quali perché
+perche poi più piu anche ancora già gia solo sono sei siamo siete era ero eri
+erano essere stato stata stati state sarà sara sia siano fosse hai abbiamo
+avete hanno aveva avevo avevi avevamo avevano avere questo questa questi queste
+quello quella quelli quelle quel quei quegli tra fra sta sto stai stiamo stanno
+stava allora quindi però pero oppure ecco molto molta molti molte poco poca
+pochi poche tutto tutta tutti tutte ogni altro altra altri altre alla alle allo
+agli all alcuni alcune qui qua ora mentre senza sotto sopra dentro fuori dopo
+prima durante contro verso fino così cosi cioè cioe ciò cio nulla niente
+""".split())
+
+
+def _singular(word: str) -> str:
+    """A word without its English plural, so that "scripts" finds "script".
+
+    Both sides of a comparison go through this, so it only has to be the same
+    on both, not right: "status" is left alone, and a word it mangles is
+    mangled the same way in the request and in the memory.
+    """
+    if len(word) > 4 and word.endswith("ies"):
+        return word[:-3] + "y"
+    if len(word) > 4 and word.endswith(("sses", "xes", "ches", "shes", "zes")):
+        return word[:-2]
+    if len(word) > 3 and word.endswith("s") and not word.endswith(("ss", "us", "is")):
+        return word[:-1]
+    return word
+
 
 def _tokens(s: str) -> set[str]:
-    return {w.lower() for w in _WORD.findall(s) if len(w) > 2}
+    """The words of a text that a search can go by."""
+    return {_singular(w) for w in (w.lower() for w in _WORD.findall(s or ""))
+            if len(w) > 2 and w not in _EMPTY_WORDS}
 
 
 def _truncate(text: str, limit: int) -> str:
@@ -184,8 +236,7 @@ def _episode_text(ep: dict) -> str:
 # ── Stage 1: prefilter (read-only) ────────────────────────────────────────────
 
 def _episode_candidates(task: str, workspace: str,
-                        exclude_ids: set[str] | None = None,
-                        require_match: bool = False) -> tuple[list[dict], int]:
+                        exclude_ids: set[str] | None = None) -> tuple[list[dict], int]:
     """Candidate episodes for one request, best first, and how many were weighed.
 
     The second number is what the store actually holds for this request. The
@@ -245,18 +296,22 @@ def _episode_candidates(task: str, workspace: str,
                 seen.add(id(c["ep"]))
         return out, len(scored)
     # Nothing keyword-relevant — offer the most recent as candidates and let
-    # the curator decide (it will usually return an empty desk). One task is
-    # worth that call: the opening question of a session often shares no words
-    # with anything stored ("what do you know about me?" matches nothing) and
-    # is exactly when the past is wanted most.
+    # the curator decide (it will usually return an empty desk). The opening
+    # question of a session often shares no words with anything stored ("what
+    # do you know about me?" matches nothing) and is exactly when the past is
+    # wanted most.
     #
-    # `require_match` refuses that fallback. A live session curates once per
-    # turn, and paying an LLM call on every turn to be told the desk is empty
-    # is the whole latency budget of a conversation. There the fallback is
-    # allowed on the first turn and refused afterwards, so the curator wakes
-    # for a genuine change of subject rather than for the passage of time.
-    if require_match:
-        return [], len(scored)
+    # ON EVERY TURN, NOT ONLY THE FIRST. A conversation used to be refused
+    # this after its first turn, to save the call: paying a model on every
+    # turn to be told the desk is empty was the latency budget of a
+    # conversation. Two things made that the wrong trade. The call was not
+    # saved - beliefs are offered whether or not a word matches, so a store
+    # with one belief left to offer called the curator anyway, with the
+    # episodes withheld. And what was withheld was the most ordinary question
+    # there is: on a real store "di cosa abbiamo parlato ieri?" was offered no
+    # episode at all from the second turn on, while the same words, said as
+    # the opening line, were offered the latest ones. What is already on the
+    # desk is not offered again (exclude_ids), so this does not repeat itself.
     scored.sort(key=lambda c: c["ep"].get("ts", ""), reverse=True)
     return scored[:n], len(scored)
 
@@ -612,7 +667,6 @@ def _placed(refs: list[str], eps: list[dict],
 def curate_knowledge_detailed(task: str, workspace: str = "", model=None,
                               exclude_ids: set[str] | None = None,
                               exclude_rules: set[str] | None = None,
-                              require_match: bool = False,
                               no_reinforce: set[str] | None = None) -> dict:
     """Compose the knowledge zone and report what the curator did.
 
@@ -641,8 +695,7 @@ def curate_knowledge_detailed(task: str, workspace: str = "", model=None,
     if not task or not task.strip():
         info["empty"] = True
         return info
-    eps, pool_ep = _episode_candidates(task, workspace, exclude_ids,
-                                       require_match)
+    eps, pool_ep = _episode_candidates(task, workspace, exclude_ids)
     lns, pool_ln = _learning_candidates(task, exclude_rules)
     info["n_ep"], info["n_ln"] = len(eps), len(lns)
     info["pool_ep"], info["pool_ln"] = pool_ep, pool_ln

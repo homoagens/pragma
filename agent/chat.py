@@ -1433,10 +1433,12 @@ def _recall(text: str, cwd, desk_ids: set[str], desk_rules: set[str],
     it twice: salience would then measure how long a conversation ran rather
     than what mattered in it. `desk_ids` is what makes recall idempotent.
 
-    WHY THE FIRST TURN IS SPECIAL. With no keyword match the curator is offered
-    the most recent episodes instead — worth one LLM call at the opening, where
-    the question is usually about the past itself and shares no words with it
-    ("what do you know about me?"), and not worth one on every later turn.
+    WHEN NO WORD MATCHES the curator is offered the most recent episodes
+    instead, on every turn. It used to be on the first only, where the
+    question is usually about the past itself and shares no words with it
+    ("what do you know about me?") - but "what did we do yesterday?" is asked
+    at turn five as well, and there it was offered nothing. See
+    curator._episode_candidates.
 
     Failure is silent by design: a session must not die because recall did.
     """
@@ -1456,7 +1458,7 @@ def _recall(text: str, cwd, desk_ids: set[str], desk_rules: set[str],
         info = curator.curate_knowledge_detailed(
             text, workspace=str(cwd),
             exclude_ids=desk_ids, exclude_rules=desk_rules,
-            require_match=not first_turn, no_reinforce=reinforced)
+            no_reinforce=reinforced)
         took = f" · {_time.monotonic() - _t0:.0f}s"
     except Exception as e:
         renderer.faculty("CURATOR", f"recall unavailable — {e}")
