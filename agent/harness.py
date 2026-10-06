@@ -469,6 +469,18 @@ class Harness:
         self.console.print(Text(f"  {self.g['note']} {who.lower()}: {detail} "
                                 f"- asked again without thinking", style="yellow"))
 
+    def warning(self, text: str) -> None:
+        """What the model client has to say to the person, in mid-call.
+
+        Printed by the console that owns the live region, so it lands above
+        the region and stays there. The client used to print it itself, past
+        this console, and it landed inside: the next redraw wiped the words
+        and left a stray line where they had been.
+        """
+        from rich.text import Text
+        self._hanging(Text(f"  {self.g['note']} ", style="yellow"),
+                      Text(" ".join(str(text).split()), style="yellow"))
+
     def pause(self) -> None:
         """Give the screen back for a question; resume() takes it again."""
         with self._lock:

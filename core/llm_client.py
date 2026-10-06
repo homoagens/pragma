@@ -462,11 +462,33 @@ def _interruptible_post(url, headers, payload, timeout, stop_event):
 # looped(who, detail) is told when a reasoning went in circles and the call
 # was asked again without thinking. The conversation's harness shows the first
 # under its status line; the background worker writes both into the job.
+# warning(text) is told what this module has to say to the person at the
+# screen: see _warn.
 STATUS_HOOK = None
 
 
 def _hook(name):
     return getattr(STATUS_HOOK, name, None) if STATUS_HOOK is not None else None
+
+
+def _warn(text: str) -> None:
+    """Say something to the person at the terminal, in the middle of a call.
+
+    Through whoever owns the screen, when someone does. This module printed
+    its warnings itself, with a console of its own, and a conversation keeps
+    a region of the screen that it redraws: the line landed inside it. The
+    next redraw wiped the words - a warning said once, and never read - and
+    left a stray line where they had been.
+    """
+    told = _hook("warning")
+    if told:
+        try:
+            told(text)
+            return
+        except Exception:
+            pass
+    from rich.text import Text
+    _console.print(Text(text, style="yellow"))
 
 
 def _post_with_retry(url, headers, payload, timeout, label, stop_event=None):
@@ -553,9 +575,7 @@ def _post_with_retry(url, headers, payload, timeout, label, stop_event=None):
                     and transport < 2):
                 transport += 1
                 wait = 1 if transport == 1 else 3
-                _console.print(
-                    f"[yellow][llm_client] connection lost — retrying in "
-                    f"{wait}s ({transport}/2)[/yellow]")
+                _warn(f"connection lost — retrying in {wait}s ({transport}/2)")
                 time.sleep(wait)
                 continue
             raise exc
@@ -564,10 +584,7 @@ def _post_with_retry(url, headers, payload, timeout, label, stop_event=None):
             break
         attempt += 1
         wait = 30 * attempt
-        _console.print(
-            f"[yellow][llm_client] 502 — waiting {wait}s and retrying "
-            f"({attempt}/5)...[/yellow]"
-        )
+        _warn(f"the server answered 502 — waiting {wait}s and retrying ({attempt}/5)")
         # Sleep in small slices so stop is responsive during backoff
         slept = 0.0
         while slept < wait:
@@ -705,31 +722,45 @@ def _warn_if_still_thinking(template_kwargs, msg):
     if not (msg.get("reasoning_content") or "").strip():
         return
     _NOTHINK_IGNORED[0] = True
-    _console.print(
-        "[yellow]Pragma asked this model NOT to reason, but it returned a "
-        "thinking block anyway: its template reads neither key. Calls are as "
-        "slow as if the switch were on.[/yellow]")
+    _warn("Pragma asked this model NOT to reason, but it returned a "
+          "thinking block anyway: its template reads neither key. Calls are as "
+          "slow as if the switch were on.")
 
 
 _THINK_IGNORED = [False]
+_THINK_SEEN = [False]       # reasoning has come back, once, when it was asked for
+_THINK_MISSED = [0]         # calls that asked for it and got none, so far
+_THINK_MISSES = 3
 
 
 def _warn_if_not_thinking(template_kwargs, has_reasoning: bool) -> None:
-    """Say it once when the model was asked to reason and did not.
+    """Say it once when the model is asked to reason and does not.
 
     The mirror of _warn_if_still_thinking. A template that does not read the
     key accepts it in silence, so the only witness is the reply: no reasoning
     where reasoning was asked for.
+
+    One reply is not a witness, though. A model that reasons is free not to on
+    a step it finds obvious, and this fired on the first such step: a model
+    that had reasoned one call earlier was reported as not honouring the
+    switch. So it takes three calls that asked and got nothing, and none
+    before them that got something: a model that has reasoned once has read
+    the key.
     """
-    if _THINK_IGNORED[0] or has_reasoning or not template_kwargs:
+    if _THINK_IGNORED[0] or _THINK_SEEN[0] or not template_kwargs:
         return
     if not any(v is True for v in template_kwargs.values()):
         return
+    if has_reasoning:
+        _THINK_SEEN[0] = True
+        return
+    _THINK_MISSED[0] += 1
+    if _THINK_MISSED[0] < _THINK_MISSES:
+        return
     _THINK_IGNORED[0] = True
-    _console.print(
-        "[yellow]Pragma asked the model to reason (enable_thinking), but no "
-        "reasoning came back: this model or its template may not honour the "
-        "switch, or return its reasoning inside the answer.[/yellow]")
+    _warn("Pragma asked the model to reason (enable_thinking), but no "
+          "reasoning came back: this model or its template may not honour the "
+          "switch, or return its reasoning inside the answer.")
 
 
 def _template_for(base_url, template_kwargs):
