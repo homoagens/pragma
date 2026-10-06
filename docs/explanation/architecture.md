@@ -75,8 +75,8 @@ Two optional faculties sit at the end of a turn, both off unless turned on in
 ([`core/critic.py`](../../core/critic.py)), and a guess at the line you will
 type next ([`core/suggest.py`](../../core/suggest.py)).
 
-[`agent/harness.py`](../../agent/harness.py) is what all of this looks like
-on screen while it happens.
+[`agent/ledger.py`](../../agent/ledger.py) is what all of this looks like on
+screen while it happens.
 
 ## What happens when you close a project
 
@@ -171,7 +171,8 @@ The short version. [Files](../reference/files.md) has what is inside each.
 | File | What it is |
 |---|---|
 | [`chat.py`](../../agent/chat.py) | A live conversation: the turns, the commands, handing over to memory. |
-| [`harness.py`](../../agent/harness.py) | What a conversation looks like on screen. |
+| [`ledger.py`](../../agent/ledger.py) | What a turn looks like on screen: one line for each thing done. |
+| [`harness.py`](../../agent/harness.py) | What `ledger.py` is built on — the status line, the answer as it is written — and the look it replaced. |
 | [`prompts.py`](../../agent/prompts.py) | The agent's system prompt. |
 | [`batch.py`](../../agent/batch.py) | One task, start to finish. |
 | [`server.py`](../../agent/server.py) | The server behind the browser interface. |

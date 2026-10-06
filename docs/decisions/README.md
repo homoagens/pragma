@@ -30,6 +30,7 @@ the file that makes them.
 | 15 | 2026-10-01 | [The folder and the date go last in the prompt](0015-the-folder-and-the-date-go-last.md) | accepted |
 | 16 | 2026-10-06 | [The reference is generated from the code](0016-the-reference-is-generated-from-the-code.md) | accepted |
 | 17 | 2026-10-06 | [The Linux terminal comes first](0017-the-linux-terminal-comes-first.md) | accepted |
+| 18 | 2026-10-06 | [A turn is drawn as a ledger](0018-a-turn-is-drawn-as-a-ledger.md) | accepted |
 
 ## Adding one
 

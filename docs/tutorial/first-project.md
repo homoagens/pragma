@@ -99,24 +99,35 @@ Create a file squares.py that prints the first ten square numbers, then run it.
 Watch the turn happen:
 
 ```text
-  ◆ curator  the memory is still empty · 0s
-  ● write_file  path="/home/you/first/squares.py", content="for i in range(1, 11):\n    print(i * i)\n"
-    ⎿ OK: written 40 bytes to /home/you/first/squares.py
-  ● execute_command  command="python3 /home/you/first/squares.py"
-    ⎿ returncode: 0
-      stdout:
-      1
-      4
-      … 8 more lines, 49 characters in all
-Done. Created squares.py and ran it — output is the first ten square numbers.
-  ✓ 3 steps · 2 tools · 30s · 166 tok · ctx 4% · touched squares.py
+  recalled  the memory is still empty
+
+  +0:03  ▌ wrote    squares.py                                     +2
+  +0:04  ▌ ran      python3 squares.py                       10 lines  0.0s
+
+Done. squares.py prints the first ten square numbers, and it ran successfully.
+
+  7s  ━━━━━━━━━━━━━━━━━━━━━━━━  3 steps · ctx 4% · touched squares.py
+      recall · model · tools
 ```
 
-Four things, top to bottom. The **curator** looked in the memory for anything
-that bears on your request and found it empty. Each **●** is a tool the agent
-called, with what came back folded to a few lines. Then the **answer**. The
-last line is the receipt: how many steps, how long, how full the context is,
-and which files were touched.
+Four things, top to bottom.
+
+**`recalled`** is the memory being asked whether it holds anything that bears
+on your request. It is empty, and says so.
+
+Then **one line for each thing done**, in columns that never move: when it
+started, counted from your message; what was done, as a verb; what it was
+done to; and how it came out. `wrote squares.py +2` is a file of two lines.
+`ran python3 squares.py` printed ten. The mark in the margin is green for a
+command that succeeded and red for anything that failed, and a failure keeps,
+under it, the line that says why. While the turn runs, the newest lines are
+the brightest and the older ones fade.
+
+Then **the answer**.
+
+The last line is the receipt: how long the turn took and where the time went
+— recalling, the model thinking and writing, the tools running — then how
+many steps, how full the context is, and which files were touched.
 
 The file is really there, in the folder you chose.
 
@@ -179,14 +190,23 @@ Write fib.py that prints the first ten Fibonacci numbers.
 ```
 
 ```text
-  ◆ curator  1 memory + 0 beliefs → recalled 1 · 5s
-      · Enforce one-line docstring convention for all project scripts
-  ● write_file  path="/home/you/first/fib.py", content=""""Print the first ten Fibonacci numbers."""\n\na, b = 0, 1…"
+  recalled  █████░░░  Enforce one-line docstring convention for all project scripts
+
+         I'll write fib.py in the current working directory.
+  +0:06  ▌ wrote    fib.py                                        +13
+         Now let me run it to verify:
+  +0:08  ▌ ran      python3 fib.py                           10 lines  0.0s
+
+fib.py prints the first ten Fibonacci numbers. The script follows the
+project's one-line docstring convention.
 ```
 
-The curator found the episode, judged that it bears on this request, and put
-it in front of the agent. The new file starts with a docstring nobody asked
-for this time.
+This time `recalled` has something: the episode, and a bar for how strongly
+it is held. Pragma found it, judged that it bears on this request, and put it
+in front of the agent. The lines in between the steps are the agent saying
+what it is about to do.
+
+Open `fib.py`: it starts with a docstring nobody asked for this time.
 
 ## 8. Look at what it holds
 
@@ -208,7 +228,7 @@ One memory, and how strongly it is held. `/memory last` shows it in full, and
 ## What you have seen
 
 - A **project** is a folder plus a memory kept apart from it.
-- A **turn** is recall, then tools, then an answer.
+- A **turn** is recall, then what was done, line by line, then an answer.
 - **Closing** a project is what turns a conversation into memory, and not all
   of it is kept.
 - The next conversation starts **without the transcript and with the
