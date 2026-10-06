@@ -241,6 +241,36 @@ class Ledger(Harness):
         home = os.path.expanduser("~")
         return ("~" + path[len(home):]) if path.startswith(home) else path
 
+    def _inside(self, text: str) -> str:
+        """A line with the workspace's paths said from inside the workspace.
+
+        A file in it is its name, and the workspace itself is `.` - taken out
+        and nothing put back, `find /the/workspace -type f` read "find  -type
+        f". For what a command was, and for the line that says why something
+        failed: "file already exists at fib.py", not at the whole path.
+        """
+        root = self._root()
+        text = re.sub(re.escape(root) + r"[/\\](?=[^\s\"';|&])", "", text)
+        return re.sub(re.escape(root) + r"[/\\]?(?![\w.-])", ".", text)
+
+    @staticmethod
+    def _before(path) -> tuple[bool, str | None]:
+        """(is there a file at `path`, what it holds) before it is written.
+
+        The text is None when there is no file, and when there is one too
+        large to be worth comparing line by line.
+        """
+        try:
+            path = str(path or "")
+            if not path or not os.path.isfile(path):
+                return False, None
+            if os.path.getsize(path) > 200_000:
+                return True, None
+            with open(path, encoding="utf-8", errors="replace") as fh:
+                return True, fh.read()
+        except Exception:
+            return False, None
+
     def _describe(self, name: str, args: dict) -> tuple[str, str]:
         """(verb, what it was done to) for a call."""
         args = args or {}
@@ -252,12 +282,7 @@ class Ledger(Harness):
             # said in front of every line it is noise, so it is not said.
             command = re.sub(r"^cd\s+[\"']?" + re.escape(root) + r"[/\\]?[\"']?\s*(&&|;)\s*",
                              "", command)
-            # A path inside the workspace is said from inside it, and the
-            # workspace itself is `.` - taken out and nothing put back, `find
-            # /the/workspace -type f` read "find  -type f".
-            command = re.sub(re.escape(root) + r"[/\\](?=[^\s\"';|&])", "", command)
-            command = re.sub(re.escape(root) + r"[/\\]?(?![\w.-])", ".", command)
-            return verb, command
+            return verb, self._inside(command)
         if name == "web_search":
             return verb, f'"{args.get("query", "")}"'
         if name == "web_fetch":
@@ -274,8 +299,13 @@ class Ledger(Harness):
         target = (args.get("path") or args.get("image_path") or args.get("file") or "")
         return verb, self._near(target) or name
 
-    def _outcome(self, name: str, args: dict, text: str, took: float) -> dict:
-        """How a call went: a word or two, whether it failed, and why."""
+    def _outcome(self, name: str, args: dict, text: str, took: float,
+                 before: str | None = None) -> dict:
+        """How a call went: a word or two, whether it failed, and why.
+
+        `before` is what the file held when the call was made, for a call
+        that writes a whole file over one that was there.
+        """
         args = args or {}
         text = tame(text if isinstance(text, str) else str(text))
         head = text.lstrip()
@@ -283,7 +313,7 @@ class Ledger(Harness):
             return self._ran(text, took)
         if head.upper().startswith("ERROR"):
             why = " ".join(head.split("\n", 1)[0].split())
-            why = re.sub(r"^ERROR:?\s*", "", why, flags=re.IGNORECASE)
+            why = self._inside(re.sub(r"^ERROR:?\s*", "", why, flags=re.IGNORECASE))
             return {"word": "refused" if "refused" in why[:40] else "failed",
                     "ok": False, "why": [why], "mark": "bad"}
         word = ""
@@ -305,7 +335,15 @@ class Ledger(Harness):
                 pass
             word = plural(count, "line")
         elif name == "write_file":
-            word = f"+{_lines(str(args.get('content', '')))}"
+            new = str(args.get("content", ""))
+            if before is None:
+                word = f"+{_lines(new)}"
+            else:
+                # Written over a file that was there: what it gained and what
+                # it lost, as for a change - "+4" alone read as four lines
+                # added to it.
+                added, removed = _delta(before, new)
+                word = f"+{added} {self.m['minus']}{removed}"
         elif name == "replace_in_file":
             added, removed = _delta(str(args.get("old", "")), str(args.get("new", "")))
             word = f"+{added} {self.m['minus']}{removed}"
@@ -354,7 +392,7 @@ class Ledger(Harness):
         body = [" ".join(ln.split()) for ln in (out + "\n" + err).splitlines() if ln.strip()]
         summary = [ln for ln in body if re.match(r"(FAILED|ERROR)\b", ln)]
         named = [ln for ln in body if _TELLING.search(ln) and not ln.startswith("Traceback")]
-        why = summary[-2:] or named[-1:] or body[-1:]
+        why = [self._inside(ln) for ln in summary[-2:] or named[-1:] or body[-1:]]
         return {"word": f"exit {code}", "ok": False, "why": why,
                 "mark": "bad", "took": took}
 
@@ -617,13 +655,23 @@ class Ledger(Harness):
         self._turn["tools"] += 1
         self._note = ""
         verb, what = self._describe(name, args or {})
+        before = None
+        if name == "write_file":
+            # Asked to write over a file that is there, it is not writing a
+            # file: four `wrote fib.py` in a row read as one file made four
+            # times. Looked at now, while the old one is still on the disk.
+            there, before = self._before((args or {}).get("path"))
+            if there and str((args or {}).get("overwrite", "")).lower() in ("true", "1", "yes"):
+                verb = "rewrote"
+            else:
+                before = None
         with self._lock:
             # A tool call follows, so what was held was a remark on the way
             # to it. The step says what was done; the remark is let go.
             self._remark = ""
             self._holding = True
             self._pending = {"name": name, "args": args or {}, "verb": verb, "what": what,
-                             "t0": time.monotonic()}
+                             "before": before, "t0": time.monotonic()}
         self._show(f"{verb} {what}"[:max(20, self.console.width - 12)])
 
     def observation(self, step, content, limit):
@@ -631,7 +679,8 @@ class Ledger(Harness):
         if pending is None:
             return super().observation(step, content, limit)
         took = time.monotonic() - pending["t0"]
-        how = self._outcome(pending["name"], pending["args"], content, took)
+        how = self._outcome(pending["name"], pending["args"], content, took,
+                            before=pending.get("before"))
         done = {"verb": pending["verb"], "what": pending["what"], **how}
         with self._lock:
             self._steps.append(done)
