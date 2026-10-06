@@ -201,6 +201,28 @@ def prompt_style():
     })
 
 
+class _Block:
+    """A piece of Markdown that starts on its own first line.
+
+    rich opens a list on a blank line. In the middle of a document that is
+    the space above the list; at the top of one it is a blank line too many,
+    and a reply that began with a list had two above it.
+    """
+
+    def __init__(self, text: str):
+        from rich.markdown import Markdown
+        self.markdown = Markdown(text)
+
+    def __rich_console__(self, console, options):
+        from rich.segment import Segment
+        lines = console.render_lines(self.markdown, options, pad=False)
+        while lines and not "".join(s.text for s in lines[0]).strip():
+            lines.pop(0)
+        for line in lines:
+            yield from line
+            yield Segment.line()
+
+
 class _AnswerStream:
     """The reply as the model writes it, one finished paragraph at a time.
 
@@ -209,6 +231,11 @@ class _AnswerStream:
     region as rendered Markdown and stays there. Re-rendering the whole reply
     on every token was the alternative, and past one screen of text it
     fights the terminal's scrollback.
+
+    Printed one at a time, the paragraphs have to be set apart here: each is
+    a document of its own to the renderer, which puts nothing between two
+    documents. They used to follow one another with no space at all - except
+    above a list, where the renderer's own blank line happened to fall.
     """
 
     def __init__(self, console, legacy: bool):
@@ -217,6 +244,7 @@ class _AnswerStream:
         self.console = console
         self.buf = ""
         self.chars = 0
+        self.printed = False            # a paragraph is on the screen already
         self._text = Text
         self.live = Live(Text(""), console=console, refresh_per_second=12,
                          transient=True, vertical_overflow="visible")
@@ -229,15 +257,17 @@ class _AnswerStream:
         for paragraph in done:
             self._render(paragraph)
         self.buf = rest
-        tail = rest.splitlines()[-12:]
+        tail = "\n".join(rest.splitlines()[-12:])
         # Rendered as it is written, not shown raw and rendered at the end:
         # "**Caveats:**" became "Caveats:" in bold the moment the paragraph
         # closed, and every paragraph flickered from one to the other.
         try:
-            from rich.markdown import Markdown
-            self.live.update(Markdown("\n".join(tail)))
+            from rich.console import Group
+            body = _Block(tail)
+            self.live.update(Group(self._text(""), body)
+                             if self.printed and tail.strip() else body)
         except Exception:
-            self.live.update(self._text("\n".join(tail)))
+            self.live.update(self._text(tail))
 
     def close(self) -> None:
         try:
@@ -249,10 +279,12 @@ class _AnswerStream:
         self.buf = ""
 
     def _render(self, paragraph: str) -> None:
-        from rich.markdown import Markdown
         if not paragraph.strip():
             return
-        self.console.print(Markdown(paragraph.strip("\n")))
+        if self.printed:
+            self.console.print()
+        self.console.print(_Block(paragraph.strip("\n")))
+        self.printed = True
 
     @staticmethod
     def _split(text: str) -> tuple[list[str], str]:
@@ -691,7 +723,6 @@ class Harness:
         self.console.print(Text("  -> " + text, style="yellow"))
 
     def final(self, step, content):
-        from rich.markdown import Markdown
         self._close_answer()
         self._hide()
         self._note = ""
@@ -699,7 +730,7 @@ class Harness:
         # stream delivers the whole reply here, rendered the same way.
         if self._call["streamed"] == 0 and content:
             self.console.print()
-            self.console.print(Markdown(str(content)))
+            self.console.print(_Block(str(content)))
 
     def error(self, step, content):
         from rich.text import Text
