@@ -1,8 +1,9 @@
 # Architecture
 
 What the pieces of Pragma are, what happens between a line you type and the
-answer, and which file does what. This page says *where*; the reasons for
-each choice are written at the top of the file that implements it.
+answer, and which file does what. This page says *where*. The reasons are in
+two places: the larger choices in the [decisions](../decisions/README.md),
+the smaller ones at the top of the file that implements them.
 
 ## The pieces
 
@@ -48,10 +49,11 @@ flowchart TD
 2. **Recall.** [`core/curator.py`](../../core/curator.py) gathers candidates
    from the project's memory and one model call chooses which are worth
    showing. What it chose is placed in front of your message.
-3. **The prompt is assembled.** The system prompt comes from
-   [`agent/prompts.py`](../../agent/prompts.py), followed by the workspace's
-   `PRAGMA.md` if there is one. The [skills](../reference/skills.md) are
-   offered to the model as tools.
+3. **The request is put together.** The system prompt was built when the
+   project opened, from [`agent/prompts.py`](../../agent/prompts.py) and the
+   workspace's `PRAGMA.md` if there is one; [Prompts](../reference/prompts.md)
+   lists its parts. After it come the conversation so far and your message.
+   The [skills](../reference/skills.md) are offered to the model as tools.
 4. **The loop.** [`core/react.py`](../../core/react.py) calls the model. The
    reply is either a tool call or the answer. A tool call runs the skill, what
    it returned goes back to the model, and the loop repeats until there is an
@@ -93,9 +95,10 @@ The conversation files a job and exits. The memory worker picks it up:
    has been contradicted often enough is reworded.
 
 The job is a file. A worker that dies leaves it behind with the turns still
-inside, and `/jobs` shows it. A conversation that grows too long for the
-context window goes through the same steps for its older turns, without
-closing.
+inside, `/jobs` shows it, and it can be
+[run again](../how-to/recover-unfinished-memory.md). A conversation that
+grows too long for the context window goes through the same steps for its
+older turns, without closing.
 
 ## Which server answers which call
 
@@ -106,17 +109,24 @@ roles — `agent`, `recall`, `memory`, `critic` — and the catalogue written by
 `/configure` says which endpoint serves each role, whether it reasons, and
 how it samples. With one endpoint, it serves all four.
 
-## Three ways in
+## The ways in
 
-| Way in | Start it with | Entry point |
-|---|---|---|
-| The terminal, which is the interface | `pragma` | [`tools/pragma_launcher.py`](../../tools/pragma_launcher.py) on Linux and macOS, [`tools/Pragma.psm1`](../../tools/Pragma.psm1) on Windows; both start [`agent/chat.py`](../../agent/chat.py) |
-| One task, no interaction | `python -m agent.batch --task "..." --cwd DIR` | [`agent/batch.py`](../../agent/batch.py) |
-| The browser, a preview that has not kept up with the terminal | `python -m agent.run` | [`agent/run.py`](../../agent/run.py), then [`agent/server.py`](../../agent/server.py) and [`interface-web/`](../../interface-web) |
+| Way in | Start it with | Entry point | Where it stands |
+|---|---|---|---|
+| The terminal on Linux | `pragma` | [`tools/pragma_launcher.py`](../../tools/pragma_launcher.py), then [`agent/chat.py`](../../agent/chat.py) | where Pragma is developed and tested |
+| The terminal on Windows | `pragma`, in PowerShell | [`tools/Pragma.psm1`](../../tools/Pragma.psm1), then [`agent/chat.py`](../../agent/chat.py) | follows Linux |
+| One task, no interaction | `python -m agent.batch --task "..." --cwd DIR` | [`agent/batch.py`](../../agent/batch.py) | the same code everywhere |
+| The browser | `python -m agent.run` | [`agent/run.py`](../../agent/run.py), then [`agent/server.py`](../../agent/server.py) and [`interface-web/`](../../interface-web) | the old interface, not being worked on |
 
-All three run the same loop, the same skills and the same memory.
+The first three run the same loop, the same skills and the same memory. The
+browser interface runs the same loop and the same skills and has not followed
+the rest: it does not read `PRAGMA.md`, and it does not write episodes.
+[Three interfaces, and where each stands](interfaces.md) has what differs
+between them.
 
 ## Where state lives
+
+The short version. [Files](../reference/files.md) has what is inside each.
 
 | What | Where | Who writes it |
 |---|---|---|
@@ -125,10 +135,10 @@ All three run the same loop, the same skills and the same memory.
 | A project's episodes | `~/.pragma/projects/NAME/episodes/`, with `dormant/` inside it | the memory worker |
 | A project's beliefs | `~/.pragma/projects/NAME/learnings.json` | the memory worker |
 | Memory work in flight, or that failed | `~/.pragma/projects/NAME/jobs/` | the conversation and the worker |
-| Snapshots of a project's memory | `~/.pragma/projects/backups/NAME/` | `/projects backups` |
+| Snapshots of a project's memory | `~/.pragma/projects/backups/NAME/`, or `~/.pragma/backups/NAME/` on Windows | `/projects backups` |
 | Plugins of the home screen | `~/.pragma/plugins/NAME/plugin.json` | you |
-| Rules the agent must follow in a project | `PRAGMA.md` in the workspace | you; the agent is refused |
-| The transcript of the open conversation | `.pragma_session.jsonl` in the workspace | the conversation |
+| [Rules](../how-to/write-project-rules.md) the agent must follow in a project | `PRAGMA.md` in the workspace | you; the agent is refused |
+| What was said in every conversation held there | `.pragma_session.jsonl` in the workspace | the conversation |
 | Undo copies of edited files | `.pragma_checkpoints/` in the workspace | the loop |
 | Defaults for the whole machine | `.env` in the repository | you |
 | Threads of the browser interface | `~/.pragma/threads/` | the server |
@@ -193,4 +203,5 @@ All three run the same loop, the same skills and the same memory.
 | [`pragma-gui.bat`](../../pragma-gui.bat) | The browser interface, on Windows. |
 | [`.env.example`](../../.env.example) | The few settings a new installation needs. |
 | [`interface-web/`](../../interface-web) | The browser interface: one page, one script, one stylesheet. |
-| [`docs/`](../README.md) | These pages. |
+| [`docs/`](../README.md) | These pages, and the program that generates the reference. |
+| [`mkdocs.yml`](../../mkdocs.yml) | The menu and the theme of these pages as a site. |

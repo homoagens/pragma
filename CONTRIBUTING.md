@@ -51,8 +51,13 @@ Open a GitHub issue with:
 
 1. Fork the repo and create a branch from `master`
 2. Make your changes
-3. Make sure the CI checks pass (see below)
-4. Open a PR with a short description of what and why
+3. Try them in the terminal on **Linux**: that is where Pragma is developed
+   and tested. The Windows terminal is aligned afterwards, and the browser
+   interface is not being worked on for now — see [where each interface
+   stands](docs/explanation/interfaces.md). If a change touches something
+   both launchers draw, say in the PR whether the Windows side was done too
+4. Make sure the CI checks pass (see below)
+5. Open a PR with a short description of what and why
 
 **CI checks that run automatically:**
 - Python syntax on all `.py` files
@@ -78,10 +83,16 @@ After adding, renaming or removing a setting, a command or a skill:
 python docs/build.py
 ```
 
-and commit what it wrote. A new setting also needs one line in
-[`docs/notes.py`](docs/notes.py) saying what it is for; the build names the
-one that is missing. [docs/README.md](docs/README.md) has the rest, including
-how to read the pages as a site.
+and commit what it wrote. A new setting or a new prompt also needs one line
+in [`docs/notes.py`](docs/notes.py) saying what it is for; the build names
+the one that is missing.
+
+A change that settles how Pragma is built — not a fix, a choice — gets a
+short record in [`docs/decisions/`](docs/decisions/README.md): the situation,
+what was decided, what follows.
+
+[docs/README.md](docs/README.md) has the rest, including how to read the
+pages as a site.
 
 ---
 

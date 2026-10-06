@@ -20,12 +20,31 @@ site_dir: site
 # --check` fails on one that is not, so a page cannot be written and then lost.
 nav:
   - Home: README.md
+  - Tutorial:
+      - Your first project: tutorial/first-project.md
+  - How-to:
+      - Connect a model: how-to/connect-a-model.md
+      - Use a model on another machine: how-to/use-a-model-on-another-machine.md
+      - Write rules for a project: how-to/write-project-rules.md
+      - Back up and restore memory: how-to/back-up-and-restore-memory.md
+      - Move a project: how-to/move-a-project.md
+      - Recover unfinished memory: how-to/recover-unfinished-memory.md
+      - Run one task: how-to/run-one-task.md
   - Reference:
       - Commands: reference/commands.md
       - Configuration: reference/configuration.md
       - Skills: reference/skills.md
+      - Prompts: reference/prompts.md
+      - Files: reference/files.md
   - Explanation:
       - Architecture: explanation/architecture.md
+      - Three interfaces: explanation/interfaces.md
+  - Decisions: decisions/README.md
+
+# The decision records are reached from their list, which is generated: a new
+# one does not have to be added here.
+not_in_nav: |
+  /decisions/0*.md
 
 # The tooling that lives beside the pages is not part of the site.
 exclude_docs: |
@@ -75,6 +94,10 @@ plugins:
 markdown_extensions:
   - toc:
       permalink: true
+  # A numbered list that starts at 3 is step 3, as on GitHub. Without this
+  # every list restarts at 1 and "the folder you copied in step 3" points at
+  # the wrong line.
+  - sane_lists
   # The diagrams are Mermaid, as on GitHub.
   - pymdownx.superfences:
       custom_fences:

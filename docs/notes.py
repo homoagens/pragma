@@ -5,16 +5,20 @@
 """The hand-written half of the generated reference.
 
 docs/build.py reads the code for what the code knows - which variables are
-read, their defaults, the commands, the skills - and reads THIS file for what
-it cannot know: what a variable is for, in one line.
+read, their defaults, the commands, the skills, where each prompt is - and
+reads THIS file for what it cannot know: what a variable or a prompt is for,
+in one line.
 
 The two are checked against each other. A variable the code reads and this
 file does not describe stops the build, and so does a description of a
-variable nothing reads any more. That check is the reason the descriptions
-live here and not in a page someone edits by hand.
+variable nothing reads any more; the same holds for the prompts. That check
+is the reason the descriptions live here and not in a page someone edits by
+hand.
 
 One line each. A reference says what a thing is; the reasons are in the
-comment beside the variable, in the file the page links to.
+comment beside it, in the file the page links to.
+
+Also here: the few sentences that open and close a generated page.
 """
 
 # What the page says before the tables.
@@ -303,6 +307,98 @@ CONFIG = {
 
 # Read from the environment by the code, and not Pragma's own.
 NOT_PRAGMA = {"TERM"}
+
+
+# ── the decisions ────────────────────────────────────────────────────────────
+
+DECISIONS_INTRO = """\
+One short record for each decision that shaped Pragma: what the situation
+was, what was decided, and what follows from it. They are here so that a
+choice which looks odd today can be traced to the problem it answered —
+before someone undoes it and meets the problem again.
+
+The reasons for smaller choices are in the code, in the comment at the top of
+the file that makes them.
+"""
+
+DECISIONS_OUTRO = """\
+## Adding one
+
+Copy the newest record, give it the next number, and write the three parts.
+Keep it to a screen. Then run `python docs/build.py`, which adds it to the
+list above.
+
+A record is not rewritten once it is true. A decision that changes gets a
+*new* record saying which one it replaces, and the old one changes only its
+status line, to `superseded by N`. What was decided and why stays readable
+for as long as the code that came out of it is around.
+"""
+
+
+# ── the prompts ──────────────────────────────────────────────────────────────
+
+PROMPTS_INTRO = """\
+Every instruction Pragma gives a model is written in the code, in English,
+and this is where each one is. To read one, open the file.
+
+A call is made in one of four roles, and the role decides which server
+answers it: see [Architecture](../explanation/architecture.md#which-server-answers-which-call).
+"""
+
+PROMPTS_OUTRO = """\
+The agent's prompt is not one string. It is put together when a conversation
+or a run starts: `build_system_prompt`, then what the way of running adds,
+then the project's rules, then `session_block`.
+
+The loop also speaks to the model in its own voice while a turn runs — when
+the step budget is spent, when a call keeps failing the same way. Those lines
+are in [`core/react.py`](../../core/react.py), beside the code that sends
+them.
+"""
+
+# "file:name" -> (the role its calls are made in, what it is for).
+# A string at the top of a module whose name says it is a prompt must be here:
+# the build stops on one that is not. The ones built by a function are listed
+# by hand, and the build checks that the name still exists.
+PROMPTS = {
+    "agent/prompts.py:build_system_prompt": ("agent",
+        "The agent's system prompt: what it is, how it works in a folder, how it answers. "
+        "The same for every way of running Pragma."),
+    "agent/chat.py:chat_policy": ("agent",
+        "Added in a conversation: how to answer a person across many turns."),
+    "agent/prompts.py:project_contract": ("agent",
+        "Carries the workspace's `PRAGMA.md` into the prompt, with what it overrides."),
+    "agent/prompts.py:session_block": ("agent",
+        "The folder and the date. Last, so that everything before it is the same "
+        "from one session to the next."),
+    "core/memory.py:SYSTEM_PROMPT_SUMMARY": ("agent",
+        "Summarises the older steps of a turn that has grown too long."),
+    "core/skills/ask_user/skill.py:_ASK_SYSTEM": ("agent",
+        "Words a question for the person, where the question is not asked by ending the turn."),
+    "agent/server.py:_SUMMARIZE_SYSTEM": ("agent",
+        "The browser interface's summary of a thread that has grown too long."),
+
+    "core/curator.py:_CURATOR_SYSTEM": ("recall",
+        "Chooses, before a turn, what the memory holds that is worth showing."),
+    "core/suggest.py:_SYSTEM": ("recall",
+        "Guesses the line you will type next. Optional."),
+
+    "core/segmenter.py:_SYSTEM": ("memory",
+        "Decides which turns of a conversation are worth keeping."),
+    "core/skills/episode_consolidate/skill.py:_EPISODE_SYSTEM": ("memory",
+        "Writes an episode from what was kept."),
+    "core/skills/episode_consolidate/skill.py:_SEMANTIC_SYSTEM": ("memory",
+        "Draws beliefs from what recurs across episodes."),
+    "core/reconsolidate.py:_EPISODIC_SYSTEM": ("memory",
+        "Revises what an earlier episode is taken to mean."),
+    "core/reconsolidate.py:_SEMANTIC_SYSTEM": ("memory",
+        "Rewords a belief that has been contradicted."),
+    "core/skills/session_reflect/skill.py:_REFLECT_SYSTEM": ("memory",
+        "A reflection pass over a finished task."),
+
+    "core/critic.py:_SYSTEM": ("critic",
+        "Checks the work of a turn against what was asked. Optional."),
+}
 
 # What the keyboard does. Not in any table the code keeps, so it is written
 # here; the commands themselves are read from the code.

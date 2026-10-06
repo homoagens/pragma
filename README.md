@@ -15,7 +15,7 @@
 <p align="center">
   <a href="./LICENSE"><img src="https://img.shields.io/badge/license-AGPL--3.0-5c6bc0?style=flat-square" alt="License"></a>
   <img src="https://img.shields.io/badge/python-3.10%2B-3776ab?style=flat-square" alt="Python 3.10+">
-  <img src="https://img.shields.io/badge/platform-Windows%20%C2%B7%20Linux%20%C2%B7%20macOS-0078d4?style=flat-square" alt="Windows, Linux, macOS">
+  <img src="https://img.shields.io/badge/platform-Linux%20%C2%B7%20Windows%20%C2%B7%20macOS-0078d4?style=flat-square" alt="Linux, Windows, macOS">
   <img src="https://img.shields.io/badge/runs%20on-llama.cpp-f97316?style=flat-square" alt="llama.cpp">
 </p>
 
@@ -36,20 +36,20 @@ month and it tells you what it still holds and what has gone quiet.
 
 ## Install
 
-**Windows**
-
-```bat
-git clone https://github.com/homoagens/pragma.git
-cd pragma
-.\install.ps1
-```
-
 **Linux and macOS**
 
 ```bash
 git clone https://github.com/homoagens/pragma.git
 cd pragma
 ./install.sh
+```
+
+**Windows**
+
+```bat
+git clone https://github.com/homoagens/pragma.git
+cd pragma
+.\install.ps1
 ```
 
 ## Run
@@ -90,13 +90,24 @@ when it is over. The answer stays.
 
 ## Requirements
 
-Windows, Linux or macOS, and **Python 3.10 or newer** installed system-wide.
+Linux, Windows or macOS, and **Python 3.10 or newer** installed system-wide.
 The installer builds Pragma its own environment, so nothing is added to that
 Python. (On Debian and Ubuntu, `sudo apt install python3-venv` first: they
 ship the standard library without the part that builds one.)
 
-The screens are the same everywhere. Windows runs them from PowerShell, the
-rest from `./pragma`; a memory store written on one opens on the other.
+**Pragma is developed in the terminal on Linux, and everything is tested
+there.** That is the interface this page and the documentation describe, and
+where new work lands first.
+
+- **Windows** has the same two screens, run from PowerShell. It is brought
+  into line with Linux after each round of changes, so it can be a step
+  behind.
+- **macOS** runs the Linux launcher, and is not what Pragma is tested on.
+- **The browser interface** is the old one: see [below](#the-browser-interface).
+
+A memory written on one system can be read on another.
+[Three interfaces, and where each stands](docs/explanation/interfaces.md)
+lists what differs between them.
 
 You also need a model being served on an **OpenAI-compatible endpoint** —
 [llama.cpp](https://github.com/ggml-org/llama.cpp/releases), LM Studio, Ollama
@@ -167,27 +178,33 @@ anything is still being written, and the way out holds once to tell you so.
 
 ## Documentation
 
-[`docs/`](docs/README.md) has the rest: [how Pragma is put
-together](docs/explanation/architecture.md) and which file does what, every
-[command](docs/reference/commands.md), every
-[setting](docs/reference/configuration.md) with its default, and the
-[tools](docs/reference/skills.md) the agent is given.
+[`docs/`](docs/README.md) has the rest. Start with [your first
+project](docs/tutorial/first-project.md), ten minutes from an empty screen to
+a memory that came back. Then there are guides for single tasks — connecting
+a model, writing rules the agent must follow, moving a project — every
+[command](docs/reference/commands.md) and every
+[setting](docs/reference/configuration.md) with its default, and [how Pragma
+is put together](docs/explanation/architecture.md), with which file does
+what.
 
 ---
 
-## GUI
+## The browser interface
 
-A browser interface exists and still runs:
+A browser interface exists and still runs. From the folder Pragma is
+installed in:
 
-```bat
-.\pragma-gui.bat
+```bash
+venv/bin/python -m agent.run
 ```
 
-(Windows only, like the batch file says.)
+or `.\pragma-gui.bat` on Windows. It opens at `http://localhost:8006`.
 
-It opens at `http://localhost:8006`. **In development and behind the terminal:**
-it predates the harness and has not been kept up with it, so treat it as a
-preview rather than a second way to work.
+**It is the old interface, and it is not being worked on for now.** It
+predates the terminal and has not followed it: it has threads instead of
+projects, it does not read a project's `PRAGMA.md`, and it does not write
+episodes. Treat it as a view of an earlier Pragma rather than a second way to
+work.
 
 ---
 
