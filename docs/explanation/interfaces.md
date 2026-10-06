@@ -42,7 +42,7 @@ What the Windows launcher does with code of its own is where it can differ:
 | What | On Linux | On Windows |
 |---|---|---|
 | Snapshots of a project's memory | `~/.pragma/projects/backups/<name>/`, the memory only | `~/.pragma/backups/<name>/`, the memory, the workspace or both, in another layout. [Details](../how-to/back-up-and-restore-memory.md) |
-| A project's own settings | the steps per turn, from `/settings` | the same, plus `pragma -Set <key> <value>` for the others |
+| A project's own settings | the steps per turn and how much is recalled, from `/settings` | the same page, not yet looked at there, plus `pragma -Set <key> <value>` for the others |
 | The tools the agent is given | 14: reading and searching are left to the shell | all 20. [Which ones](../reference/skills.md) |
 | Installing | `./install.sh` | `.\install.ps1` |
 

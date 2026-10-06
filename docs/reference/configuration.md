@@ -114,6 +114,10 @@ What stops a model that is repeating itself.
 | `CURATOR_CANDIDATES_LEARNINGS` | `8` | Beliefs offered to that choice. *Project setting `CuratorLearnings`.* | [`core/config.py`](../../core/config.py) |
 | `CURATOR_CANDIDATES_RECENT` | `3` | Of the episodes offered, how many are simply the most recent. *Project setting `CuratorRecent`.* | [`core/config.py`](../../core/config.py) |
 | `CURATOR_MAX_FRAGMENTS` | `6` | Most fragments that may be placed in front of the agent for one turn. *Project setting `CuratorFragments`.* | [`core/config.py`](../../core/config.py) |
+| `CURATOR_OFFERED_EPISODES` | unset | `few`, `medium` or `many`: how many episodes are offered to that choice, said in a word. Set, it decides `CURATOR_CANDIDATES_EPISODES` and `CURATOR_CANDIDATES_RECENT`. `/settings` in a project sets it. *Project setting `RecallMemoriesOffered`.* | [`core/config.py`](../../core/config.py) |
+| `CURATOR_OFFERED_LEARNINGS` | unset | The same, for beliefs: set, it decides `CURATOR_CANDIDATES_LEARNINGS`. *Project setting `RecallBeliefsOffered`.* | [`core/config.py`](../../core/config.py) |
+| `CURATOR_TAKEN_EPISODES` | unset | `few`, `medium` or `many`: how readily episodes are taken from what was offered. Unset is `few`, and with both kinds at `few` recall is what it has always been. *Project setting `RecallMemoriesTaken`.* | [`core/config.py`](../../core/config.py) |
+| `CURATOR_TAKEN_LEARNINGS` | unset | The same, for beliefs. *Project setting `RecallBeliefsTaken`.* | [`core/config.py`](../../core/config.py) |
 | `MEMORY_NARRATIVE_CHARS` | `400` | Characters shown of what a recalled episode records. | [`core/config.py`](../../core/config.py) |
 | `MEMORY_INTERPRETATION_CHARS` | `200` | Characters shown of what a recalled episode is taken to mean. | [`core/config.py`](../../core/config.py) |
 | `EPISODES_RECALL_TOP_K` | `3` | Episodes returned when the choice above is switched off. | [`core/config.py`](../../core/config.py) |

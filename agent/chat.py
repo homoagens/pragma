@@ -104,7 +104,7 @@ _LEAVING_WORDS = {"/exit", "/quit", "/bye", "/q"}
 # Each entry is (what it runs, one line of help).
 _COMMANDS = {
     "/memory":    ("memory",    ""),      # the views fill the blurb in
-    "/settings":  ("settings",  "how many steps a turn may take - changed here, kept for the project"),
+    "/settings":  ("settings",  "how many steps a turn may take, and how much the memory brings to one"),
     "/status":    ("status",    "how this project is set up right now"),
     "/jobs":      ("jobs",      "what the memory is writing in the background"),
     "/configure": ("configure", "point Pragma at an LLM endpoint"),
@@ -516,18 +516,104 @@ def _ask(session):
 _CFG: list = []
 
 
+def _project_settings() -> dict:
+    """What the open project has decided for itself, as the registry has it."""
+    name = os.environ.get("PRAGMA_PROJECT", "").strip()
+    try:
+        data = json.loads((Path.home() / ".pragma" / "registry.json").read_text(encoding="utf-8-sig"))
+        for e in data if isinstance(data, list) else [data]:
+            if isinstance(e, dict) and e.get("name") == name:
+                return dict(e.get("settings") or {})
+    except Exception:
+        pass
+    return {}
+
+
+# A project's words for how much its memory brings to a turn, and config's.
+_RECALL_KEYS = {"RecallMemoriesOffered": "offered_episodes",
+                "RecallBeliefsOffered": "offered_learnings",
+                "RecallMemoriesTaken": "taken_episodes",
+                "RecallBeliefsTaken": "taken_learnings"}
+
+
+def _recall_says() -> str:
+    """How much is offered to a recall and how readily it takes, in a line."""
+    cfg = baseline_config
+    offered = getattr(cfg, "RECALL_OFFERED", {})
+
+    def level(set_to: str, number: int, table: dict) -> str:
+        if set_to:
+            return set_to
+        return next((k for k, v in table.items() if v == number), str(number))
+
+    def taken(name: str) -> str:
+        return getattr(cfg, name, "") or "few"
+
+    return (f"memories: "
+            f"{level(getattr(cfg, 'CURATOR_OFFERED_EPISODES', ''), cfg.CURATOR_CANDIDATES_EPISODES, offered.get('episodes', {}))}"
+            f" offered, {taken('CURATOR_TAKEN_EPISODES')} taken · beliefs: "
+            f"{level(getattr(cfg, 'CURATOR_OFFERED_LEARNINGS', ''), cfg.CURATOR_CANDIDATES_LEARNINGS, offered.get('learnings', {}))}"
+            f" offered, {taken('CURATOR_TAKEN_LEARNINGS')} taken")
+
+
 def _settings_here() -> None:
-    """/settings, answered in the conversation instead of outside it.
+    """/settings, answered without closing the conversation.
 
     It used to leave: the chat asked the launcher for its settings page and
     ended, so the turns were consolidated, the page asked one question - the
     steps per turn - and a NEW conversation started with none of the context
     the old one had. Closing a conversation to change one number.
 
-    Now the number is asked here, applied to the next turn, and written to the
-    project's registry entry (MaxSteps), where both launchers read it the next
-    time the project opens.
+    The page is the launcher's own, opened from here as /configure is, and
+    what it wrote to the project's registry entry is applied when it comes
+    back: the steps and the recall are both read at each turn, so the next one
+    runs the new way. Outside a project there is nowhere to keep a setting,
+    and the one question that matters for a single conversation is asked here.
     """
+    tool = _ROOT / "tools" / "pragma_launcher.py"
+    name = os.environ.get("PRAGMA_PROJECT", "").strip()
+    if not name or not tool.is_file():
+        return _steps_here()
+    try:
+        subprocess.run([sys.executable, str(tool), "--settings", name], check=False)
+    except Exception as e:
+        print(f"  {type(e).__name__}: {str(e)[:120]}")
+        return
+    _new_page()
+    _show_chat_header()
+    settings = _project_settings()
+    cfg = _CFG[0] if _CFG else None
+    said = []
+    steps = str(settings.get("MaxSteps", "")).strip()
+    now = int(getattr(cfg, "max_steps", 0) or _STATE.get("max_steps") or 0)
+    if steps.isdigit() and int(steps) != now:
+        if cfg is not None:
+            cfg.max_steps = int(steps)
+        _STATE["max_steps"] = int(steps)
+        if _CHAT_HEADER:
+            _CHAT_HEADER[0] = re.sub(r"\d+ steps per turn", f"{steps} steps per turn",
+                                     _CHAT_HEADER[0])
+        said.append(f"{steps} steps per turn")
+    before = _recall_says()
+    try:
+        # "" where the project says nothing: back to what Pragma comes with.
+        baseline_config.set_recall(**{arg: str(settings.get(key, "") or "")
+                                      for key, arg in _RECALL_KEYS.items()})
+    except Exception as e:
+        print(f"  the recall was not changed - {type(e).__name__}: {str(e)[:100]}")
+    if _recall_says() != before:
+        said.append(_recall_says())
+    if said:
+        for line in said:
+            print(f"  {line}")
+        _say_dim("  from the next turn")
+    else:
+        _say_dim("  unchanged")
+    print()
+
+
+def _steps_here() -> None:
+    """The steps per turn, asked on the spot: a conversation with no project."""
     cfg = _CFG[0] if _CFG else None
     now = int(getattr(cfg, "max_steps", 0) or _STATE.get("max_steps") or 0)
     print()
@@ -915,6 +1001,8 @@ def _status_lines() -> list[tuple[str, str]]:
         when = ("a few minutes ago" if days < 0.05 else "earlier today" if days < 1
                 else "yesterday" if days < 2 else f"{days:.0f} days ago")
         out.append(("last here", f"{when} · memories halve in strength every {half:g} days"))
+    # "recalls", not "recall": that word is a role's row, higher up.
+    out.append(("recalls", _recall_says()))
     return out
 
 
@@ -938,7 +1026,8 @@ def _show_status() -> bool:
         for more in parts[1:]:
             print(f"    {'':<11}{more}")
     print()
-    print(f"  {grey}/configure changes the endpoints · /settings the steps per turn{r}")
+    print(f"  {grey}/configure changes the endpoints · /settings the steps per turn "
+          f"and how much is recalled{r}")
     print()
     return True
 

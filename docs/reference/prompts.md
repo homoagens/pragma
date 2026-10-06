@@ -26,6 +26,7 @@ answers it: see [Architecture](../explanation/architecture.md#which-server-answe
 | Prompt | In | What it is for |
 |---|---|---|
 | `_CURATOR_SYSTEM` | [`core/curator.py`](../../core/curator.py) | Chooses, before a turn, what the memory holds that is worth showing. |
+| `_curator_system` | [`core/curator.py`](../../core/curator.py) | The same instructions, with the paragraph on how much to take rewritten for a project that asked its recall to take more than a few. |
 | `_SYSTEM` | [`core/suggest.py`](../../core/suggest.py) | Guesses the line you will type next. Optional. |
 
 ## Sent in the `memory` role

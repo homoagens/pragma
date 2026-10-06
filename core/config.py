@@ -1245,6 +1245,79 @@ BATCH_SEGMENT = (os.environ.get("BATCH_SEGMENT", "").strip().lower()
 # Cap on how many fragments the curator may place on the desk.
 CURATOR_MAX_FRAGMENTS = int(os.environ.get("CURATOR_MAX_FRAGMENTS", "6"))
 
+# ── How much a recall is offered, and how much of it it may take ──
+# The numbers above, said the way a person would say them. For each of the two
+# kinds of thing the memory holds - episodes and beliefs - there are two
+# questions: how many are put in front of the curator, and how readily it takes
+# them. Each is answered few, medium or many.
+#
+# UNSET, NOTHING HERE APPLIES and recall is what it has always been: the
+# numbers above, and a curator told to be strict. In these words that is
+# `medium` for what is offered and `few` for what is taken, and setting those
+# two words gives the same thing back.
+#
+# WHY THE SECOND QUESTION IS NOT A NUMBER. There was a cap already, and it was
+# never what kept a recall small: with thirteen things in a store and all
+# thirteen offered, the curator took two, because what it is told is "an empty
+# desk beats a noisy one". So `medium` and `many` change what it is told, kind
+# by kind, and the number that goes with each is only a ceiling. With both
+# kinds at `few` nothing is told differently and the ceiling is the old one,
+# CURATOR_MAX_FRAGMENTS in all.
+RECALL_LEVELS = ("few", "medium", "many")
+RECALL_OFFERED = {
+    "episodes":  {"few": 5, "medium": 10, "many": 20},
+    "recent":    {"few": 2, "medium": 3,  "many": 5},     # of those, the latest
+    "learnings": {"few": 4, "medium": 8,  "many": 16},
+}
+RECALL_TAKEN = {"few": 3, "medium": 5, "many": 8}
+
+
+def _recall_level(value) -> str:
+    value = str(value or "").strip().lower()
+    return value if value in RECALL_LEVELS else ""
+
+
+CURATOR_OFFERED_EPISODES  = _recall_level(os.environ.get("CURATOR_OFFERED_EPISODES", ""))
+CURATOR_OFFERED_LEARNINGS = _recall_level(os.environ.get("CURATOR_OFFERED_LEARNINGS", ""))
+CURATOR_TAKEN_EPISODES    = _recall_level(os.environ.get("CURATOR_TAKEN_EPISODES", ""))
+CURATOR_TAKEN_LEARNINGS   = _recall_level(os.environ.get("CURATOR_TAKEN_LEARNINGS", ""))
+
+# What the three numbers were before a word had its say, to go back to.
+_RECALL_NUMBERS = (CURATOR_CANDIDATES_EPISODES, CURATOR_CANDIDATES_RECENT,
+                   CURATOR_CANDIDATES_LEARNINGS)
+
+
+def set_recall(offered_episodes=None, offered_learnings=None,
+               taken_episodes=None, taken_learnings=None) -> None:
+    """Set the recall's levels, now. None leaves one as it is; "" unsets it.
+
+    At import this applies what the environment said. A conversation calls it
+    again when /settings changes one, so the next turn recalls the new way and
+    nothing has to be closed for it.
+    """
+    global CURATOR_OFFERED_EPISODES, CURATOR_OFFERED_LEARNINGS
+    global CURATOR_TAKEN_EPISODES, CURATOR_TAKEN_LEARNINGS
+    global CURATOR_CANDIDATES_EPISODES, CURATOR_CANDIDATES_RECENT, CURATOR_CANDIDATES_LEARNINGS
+    if offered_episodes is not None:
+        CURATOR_OFFERED_EPISODES = _recall_level(offered_episodes)
+    if offered_learnings is not None:
+        CURATOR_OFFERED_LEARNINGS = _recall_level(offered_learnings)
+    if taken_episodes is not None:
+        CURATOR_TAKEN_EPISODES = _recall_level(taken_episodes)
+    if taken_learnings is not None:
+        CURATOR_TAKEN_LEARNINGS = _recall_level(taken_learnings)
+    episodes, recent, learnings = _RECALL_NUMBERS
+    if CURATOR_OFFERED_EPISODES:
+        episodes = RECALL_OFFERED["episodes"][CURATOR_OFFERED_EPISODES]
+        recent = RECALL_OFFERED["recent"][CURATOR_OFFERED_EPISODES]
+    if CURATOR_OFFERED_LEARNINGS:
+        learnings = RECALL_OFFERED["learnings"][CURATOR_OFFERED_LEARNINGS]
+    CURATOR_CANDIDATES_EPISODES, CURATOR_CANDIDATES_RECENT = episodes, recent
+    CURATOR_CANDIDATES_LEARNINGS = learnings
+
+
+set_recall()
+
 # How much of a recalled episode is actually shown, per field. These two are
 # ALSO quoted to the consolidator and the reconsolidator when they write, so
 # the writer and the reader agree on a length: before, the consolidator

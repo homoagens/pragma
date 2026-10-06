@@ -194,6 +194,17 @@ CONFIG = {
         "Of the episodes offered, how many are simply the most recent."),
     "CURATOR_MAX_FRAGMENTS": ("recall",
         "Most fragments that may be placed in front of the agent for one turn."),
+    "CURATOR_OFFERED_EPISODES": ("recall",
+        "`few`, `medium` or `many`: how many episodes are offered to that choice, said in a word. "
+        "Set, it decides `CURATOR_CANDIDATES_EPISODES` and `CURATOR_CANDIDATES_RECENT`. "
+        "`/settings` in a project sets it."),
+    "CURATOR_OFFERED_LEARNINGS": ("recall",
+        "The same, for beliefs: set, it decides `CURATOR_CANDIDATES_LEARNINGS`."),
+    "CURATOR_TAKEN_EPISODES": ("recall",
+        "`few`, `medium` or `many`: how readily episodes are taken from what was offered. "
+        "Unset is `few`, and with both kinds at `few` recall is what it has always been."),
+    "CURATOR_TAKEN_LEARNINGS": ("recall",
+        "The same, for beliefs."),
     "MEMORY_NARRATIVE_CHARS": ("recall",
         "Characters shown of what a recalled episode records."),
     "MEMORY_INTERPRETATION_CHARS": ("recall",
@@ -383,6 +394,9 @@ PROMPTS = {
 
     "core/curator.py:_CURATOR_SYSTEM": ("recall",
         "Chooses, before a turn, what the memory holds that is worth showing."),
+    "core/curator.py:_curator_system": ("recall",
+        "The same instructions, with the paragraph on how much to take rewritten for a "
+        "project that asked its recall to take more than a few."),
     "core/suggest.py:_SYSTEM": ("recall",
         "Guesses the line you will type next. Optional."),
 

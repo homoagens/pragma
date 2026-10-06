@@ -90,6 +90,14 @@ Set-SessionEnv "CURATOR_CANDIDATES_EPISODES"  (Cfg "CuratorEpisodes"  "")
 Set-SessionEnv "CURATOR_CANDIDATES_RECENT"    (Cfg "CuratorRecent"    "")
 Set-SessionEnv "CURATOR_CANDIDATES_LEARNINGS" (Cfg "CuratorLearnings" "")
 Set-SessionEnv "CURATOR_MAX_FRAGMENTS"        (Cfg "CuratorFragments" "")
+# The same funnel in words - few, medium or many - for what a recall is
+# offered and for how readily it takes, memories and beliefs apart. A word
+# decides over the numbers above. The Linux launcher has a page for these
+# (/settings); here they are set with: pragma -Set RecallMemoriesTaken many
+Set-SessionEnv "CURATOR_OFFERED_EPISODES"  (Cfg "RecallMemoriesOffered" "")
+Set-SessionEnv "CURATOR_OFFERED_LEARNINGS" (Cfg "RecallBeliefsOffered"  "")
+Set-SessionEnv "CURATOR_TAKEN_EPISODES"    (Cfg "RecallMemoriesTaken"   "")
+Set-SessionEnv "CURATOR_TAKEN_LEARNINGS"   (Cfg "RecallBeliefsTaken"    "")
 # Sampling. Temperature is always sent by Pragma, so leaving it empty falls
 # back to the repository default (0.0) and NOT to the server's. The other three
 # are only sent when set here: empty really does mean "the server decides",
@@ -546,6 +554,8 @@ function global:pragma {
         Remove-Item Env:SKILL_MAX_TOKENS, Env:MEMORY_MAX_TOKENS, Env:LLM_TIMEOUT -ErrorAction SilentlyContinue
         Remove-Item Env:CURATOR_CANDIDATES_EPISODES, Env:CURATOR_CANDIDATES_RECENT -ErrorAction SilentlyContinue
         Remove-Item Env:CURATOR_CANDIDATES_LEARNINGS, Env:CURATOR_MAX_FRAGMENTS -ErrorAction SilentlyContinue
+        Remove-Item Env:CURATOR_OFFERED_EPISODES, Env:CURATOR_OFFERED_LEARNINGS -ErrorAction SilentlyContinue
+        Remove-Item Env:CURATOR_TAKEN_EPISODES, Env:CURATOR_TAKEN_LEARNINGS -ErrorAction SilentlyContinue
         Write-Host "off - defaults restored for this window"
         return
     }

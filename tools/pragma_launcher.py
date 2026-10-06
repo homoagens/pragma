@@ -50,8 +50,8 @@ sys.path[:0] = [str(ROOT), str(ROOT / "core"), str(ROOT / "tools")]
 import pragma_home as home                     # noqa: E402  the home prompt, shared
 # The arrows, the digits, the first letter, ctrl+D: one menu, every page that
 # offers a choice - this one and /configure.
-from pragma_menu import (SEP, accent, ask, clear, confirm, menu, pause,   # noqa: E402,F401
-                         pick, read_key, row, say, title)
+from pragma_menu import (SEP, accent, ask, choose, clear, confirm, menu,   # noqa: E402,F401
+                         pause, pick, read_key, row, say, title)
 
 REGISTRY = Path.home() / ".pragma" / "registry.json"
 PROJECTS = Path.home() / ".pragma" / "projects"
@@ -70,9 +70,36 @@ ENV_OF = {
     "CuratorRecent": "CURATOR_CANDIDATES_RECENT",
     "CuratorLearnings": "CURATOR_CANDIDATES_LEARNINGS",
     "CuratorFragments": "CURATOR_MAX_FRAGMENTS",
+    "RecallMemoriesOffered": "CURATOR_OFFERED_EPISODES",
+    "RecallBeliefsOffered": "CURATOR_OFFERED_LEARNINGS",
+    "RecallMemoriesTaken": "CURATOR_TAKEN_EPISODES",
+    "RecallBeliefsTaken": "CURATOR_TAKEN_LEARNINGS",
     "Temperature": "DEFAULT_TEMPERATURE", "TopK": "TOP_K", "TopP": "TOP_P", "MinP": "MIN_P",
 }
 NEW_PROJECT_SETTINGS: dict[str, str] = {}
+
+# What a recall is offered and what it may take, each few, medium or many. The
+# numbers are config's (RECALL_OFFERED, RECALL_TAKEN), repeated here because
+# this page is drawn without importing it; what is written under a level is
+# what the page says, and the only place it is said.
+RECALL = {
+    "RecallMemoriesOffered": ("memories offered", "medium", [
+        ("few", "the 5 that fit the request best, 2 of them simply the latest"),
+        ("medium", "10, 3 of them the latest"),
+        ("many", "20, 5 of them the latest - a slower recall")]),
+    "RecallBeliefsOffered": ("beliefs offered", "medium", [
+        ("few", "the 4 that fit the request best"),
+        ("medium", "8"),
+        ("many", "16 - a slower recall")]),
+    "RecallMemoriesTaken": ("memories taken", "few", [
+        ("few", "only what would change the next step"),
+        ("medium", "everything that bears on the request, up to 5"),
+        ("many", "anything on its subject, up to 8")]),
+    "RecallBeliefsTaken": ("beliefs taken", "few", [
+        ("few", "only what would change the next step"),
+        ("medium", "everything that bears on the request, up to 5"),
+        ("many", "anything on its subject, up to 8")]),
+}
 
 # The step budget a project runs at when it has never said. It is not a setting
 # of the machine but an argument of the conversation, so config's own default
@@ -369,30 +396,80 @@ def talk(entry: dict, env: dict) -> str:
 
 # ── the pages ─────────────────────────────────────────────────────────────────
 
-def choices_page(entry: dict) -> None:
-    """What a project decides for itself: how many steps a turn may take.
+def choices_page(entry: dict) -> bool:
+    """What a project decides for itself: how many steps a turn may take, and
+    how much its memory brings to one.
 
     Everything else a project used to decide - whether the agent reasons, how
     it samples, whether Pragma guesses your next question - belongs to the
-    endpoint now, in /configure. The conversation asks this same question
-    itself with /settings, without leaving; this page is for the launcher's
-    own way in.
+    endpoint now, in /configure. The conversation opens this same page with
+    /settings, without closing: see main().
+
+    Returns whether anything was changed.
     """
     name = entry["name"]
-    title("Settings", name)
+    changed = False
+    at = 0
+    while True:
+        settings = (by_name(name) or entry).get("settings") or {}
+        steps = str(settings.get("MaxSteps", "") or DEFAULT_STEPS)
+        keys = ["MaxSteps"] + list(RECALL)
+        options, notes = ["steps per turn"], [steps]
+        for key, (label, default, levels) in RECALL.items():
+            level = str(settings.get(key, "") or default)
+            options.append(label)
+            notes.append(f"{level}{SEP}{dict(levels).get(level, '')}")
+        title("Settings", name)
+        chosen = pick("", options, notes, at)
+        if chosen is None:
+            return changed
+        at = chosen
+        key = keys[chosen]
+        if key == "MaxSteps":
+            changed = steps_question(name, steps) or changed
+            continue
+        label, default, levels = RECALL[key]
+        now = str(settings.get(key, "") or default)
+        title("Settings", f"{name} > {label}")
+        print()
+        for line in RECALL_SAYS["Offered" if key.endswith("Offered") else "Taken"]:
+            say(f"  {line}", "dim")
+        level = choose("", levels, now)
+        if level is None or level == now:
+            continue
+        # The level a project has never chosen is not written down: absent
+        # means "as Pragma comes", and stays that if what Pragma comes with
+        # ever changes.
+        save_setting(name, key, "" if level == default else level)
+        changed = True
+
+
+# What the two questions about a recall mean, said once above the three levels.
+RECALL_SAYS = {
+    "Offered": ("Before a turn, the memory is searched for what fits the request, and",
+                "the best of it is offered to the model that decides what to recall.",
+                "More offered is a wider search and a slower recall."),
+    "Taken": ("Of what it is offered, the model takes what it judges worth putting",
+              "in front of the agent. This is how readily it takes. What is taken",
+              "stays there for the rest of the conversation, and a memory that is",
+              "recalled fades more slowly."),
+}
+
+
+def steps_question(name: str, shown: str) -> bool:
+    """Ask for the steps per turn. Whether the number was changed."""
+    title("Settings", f"{name} > steps per turn")
     print()
     say("  How many actions the agent may take in one turn before it must", "dim")
     say(f"  answer. {DEFAULT_STEPS} suits a conversation; long work on files may need more.", "dim")
     print()
-    shown = str((by_name(name).get("settings") or {}).get("MaxSteps", DEFAULT_STEPS) or DEFAULT_STEPS)
     while True:
         value = ask("steps per turn", shown, hint="enter keeps it · ctrl+D goes back")
         if value is None or value == shown:
-            return
+            return False
         if value.isdigit() and 1 <= int(value) <= 1000:
             save_setting(name, "MaxSteps", value)
-            say(f"  {value} steps per turn", "good")
-            return
+            return True
         say("    a number from 1 to 1000", "warn")
 
 
@@ -747,6 +824,15 @@ def main() -> int:
         except Exception:
             pass
     try:
+        if len(sys.argv) == 3 and sys.argv[1] == "--settings":
+            # One page and back: what an open conversation runs for /settings,
+            # so that changing a setting does not mean closing it. 0 when
+            # something was changed, 3 when nothing was - /configure's codes.
+            entry = by_name(sys.argv[2])
+            if entry is None:
+                print(f"  No project named '{sys.argv[2]}'.")
+                return 2
+            return 0 if choices_page(entry) else 3
         return run()
     except KeyboardInterrupt:
         # The last line of defence, not the way out: every page takes ctrl+C

@@ -73,6 +73,72 @@ Respond with ONLY a JSON object:
 If nothing is truly relevant, return an empty "selected" list."""
 
 
+# ── How readily it takes ──────────────────────────────────────────────────────
+# The paragraph above that says "be strict" is what keeps a recall small, far
+# more than any cap does: seen on a real store, thirteen fragments offered and
+# two taken. A project may ask for more of one kind, or of both
+# (config.CURATOR_TAKEN_EPISODES, config.CURATOR_TAKEN_LEARNINGS), and then
+# that paragraph is replaced by one that says how much to take of each.
+#
+# With nothing asked - or `few` for both, which is the same thing - the prompt
+# is _CURATOR_SYSTEM to the letter and the cap is the one it always had.
+_STRICT = """Select ONLY the fragments that probably change the quality of the next step —
+pertinence, not "it might help". Order the selection from most to least
+useful. Be strict: an empty desk beats a noisy one. A dormant fragment is
+worth selecting only if it is genuinely relevant to THIS task."""
+
+_TAKE_SAYS = {
+    "few": ('be strict. Take only those that probably change the quality of the '
+            'next step — pertinence, not "it might help". None at all is better '
+            'than a noisy one.'),
+    "medium": ("take every one that bears on this task, not only the best: what "
+               "was decided or learned about this kind of work, and how the user "
+               "wants it done. Leave out those that merely share a subject with it."),
+    "many": ("be generous. Take every one that touches the subject of this task, "
+             "or the way the user works on tasks like it. Leave out only those "
+             "that are about something else."),
+}
+
+_BY_KIND = """Select the fragments that belong on the desk for THIS task, and order the
+selection from most to least useful. How much to take is not the same for the
+two kinds:
+
+  EPISODES: {episodes} At most {n_episodes}.
+  RULES: {rules} At most {n_rules}.
+
+Of two fragments that say the same thing, take one. A dormant fragment is
+worth selecting only if it is genuinely relevant to THIS task."""
+
+
+def _taken() -> tuple[str, str]:
+    """(how readily episodes are taken, how readily rules are): few, medium, many."""
+    def level(name: str) -> str:
+        value = str(getattr(config, name, "") or "").strip().lower()
+        return value if value in _TAKE_SAYS else "few"
+    return level("CURATOR_TAKEN_EPISODES"), level("CURATOR_TAKEN_LEARNINGS")
+
+
+def _caps() -> tuple[int, int] | None:
+    """Most episodes and most rules that may be taken, or None for the one cap
+    there has always been - CURATOR_MAX_FRAGMENTS, of either kind."""
+    episodes, rules = _taken()
+    if episodes == "few" and rules == "few":
+        return None
+    table = getattr(config, "RECALL_TAKEN", {"few": 3, "medium": 5, "many": 8})
+    return int(table[episodes]), int(table[rules])
+
+
+def _curator_system() -> str:
+    """The curator's instructions, for how readily this project wants it to take."""
+    caps = _caps()
+    if caps is None or _STRICT not in _CURATOR_SYSTEM:
+        return _CURATOR_SYSTEM
+    episodes, rules = _taken()
+    return _CURATOR_SYSTEM.replace(_STRICT, _BY_KIND.format(
+        episodes=_TAKE_SAYS[episodes], n_episodes=caps[0],
+        rules=_TAKE_SAYS[rules], n_rules=caps[1]))
+
+
 # Enforced on the native protocol. A curator reply that fails to parse costs
 # the whole curation: the caller falls back to deterministic top-k and the
 # model's judgment is discarded for that session.
@@ -326,7 +392,7 @@ def _ask_curator(task: str, eps: list[dict], lns: list[dict],
         with llm_client.faculty("CURATOR"):
             raw = llm_client.call_llm(
                 messages=[
-                    {"role": "system", "content": _CURATOR_SYSTEM},
+                    {"role": "system", "content": _curator_system()},
                     {"role": "user",   "content": payload},
                 ],
                 model=model,
@@ -365,13 +431,25 @@ def _ask_curator(task: str, eps: list[dict], lns: list[dict],
             if u in ("substantive", "procedural"):
                 uses[str(r).strip().upper()] = u
     out, seen = [], set()
-    for r in sel:
-        r = str(r).strip().upper()
-        if r in valid and r not in seen:
-            out.append(r)
-            seen.add(r)
-        if len(out) >= cap:
-            break
+    caps = _caps()
+    if caps is None:
+        for r in sel:
+            r = str(r).strip().upper()
+            if r in valid and r not in seen:
+                out.append(r)
+                seen.add(r)
+            if len(out) >= cap:
+                break
+    else:
+        # Asked for more of one kind or of both: each has a ceiling of its
+        # own, so that many of one cannot crowd the other off the desk.
+        room = {"E": caps[0], "L": caps[1]}
+        for r in sel:
+            r = str(r).strip().upper()
+            if r in valid and r not in seen and room[r[0]] > 0:
+                room[r[0]] -= 1
+                out.append(r)
+                seen.add(r)
     return out, reason, {r: u for r, u in uses.items() if r in seen}
 
 
@@ -499,7 +577,12 @@ def _fallback(eps: list[dict], lns: list[dict], workspace: str,
     cap = getattr(config, "CURATOR_MAX_FRAGMENTS", 6)
     refs = [f"E{i}" for i in range(1, len(eps) + 1)]
     refs += [f"L{i}" for i in range(1, len(lns) + 1)]
-    refs = refs[:cap]
+    caps = _caps()
+    if caps is None:
+        refs = refs[:cap]
+    else:
+        refs = ([f"E{i}" for i in range(1, min(len(eps), caps[0]) + 1)]
+                + [f"L{i}" for i in range(1, min(len(lns), caps[1]) + 1)])
     return _assemble(refs, eps, lns, workspace, no_reinforce), refs
 
 

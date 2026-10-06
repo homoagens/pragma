@@ -38,7 +38,7 @@ Alone it opens the page; followed by one of these it goes straight there.
 | Command | What it does |
 |---|---|
 | `/memory` | look at the store: `map`, `beliefs`, `last`, `diff`, `dormant`, `sizes` |
-| `/settings` | how many steps a turn may take - changed here, kept for the project |
+| `/settings` | how many steps a turn may take, and how much the memory brings to one |
 | `/status` | how this project is set up right now |
 | `/jobs` | what the memory is writing in the background |
 | `/configure` | point Pragma at an LLM endpoint |
