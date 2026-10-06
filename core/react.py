@@ -437,6 +437,28 @@ def _call_skill(cfg: AgentConfig, action: str, args: dict) -> str:
         return f"ERROR executing {action}: {e}"
 
 
+def _forced_answer(text: str, final_keys) -> dict:
+    """What the model said when it was told to conclude, as a final response.
+
+    It is asked for a JSON object with one of the final keys, and out of
+    steps it concludes however it likes: prose, prose with a list in it, a
+    bare array. The parser hands a list back for the last two, and the code
+    that followed called .get on it - a turn that had done its work ended in a
+    traceback over the shape of its last line. Prose with no JSON at all was
+    no better: the parse raised, and the turn returned nothing.
+
+    Whatever is not an object carrying a final key IS the answer, as written.
+    """
+    try:
+        response = extract_json(text)
+    except Exception:
+        response = None
+    if isinstance(response, dict) and any(k in response for k in final_keys):
+        return response
+    said = (text or "").replace(llm_client.TRUNCATION_PARTIAL_MARKER, "").strip()
+    return {final_keys[0]: said}
+
+
 def run_agent(cfg: AgentConfig, user_task: str, log_path: Optional[Path] = None,
               on_step: Optional[Callable] = None,
               history: Optional[list] = None,
@@ -1185,7 +1207,6 @@ def run_agent(cfg: AgentConfig, user_task: str, log_path: Optional[Path] = None,
                 stop_event=cfg.stop_event,
                 template_kwargs=config.agent_template_kwargs(),
             )
-        response = extract_json(text)
     except llm_client.LLMInterrupted:
         _emit({"type": "stopped", "content": "Task interrupted by user."})
         return None
@@ -1193,6 +1214,7 @@ def run_agent(cfg: AgentConfig, user_task: str, log_path: Optional[Path] = None,
         if config.DEBUG:
             console.print(f"[red]Forced verdict failed: {e}[/red]")
         return None
+    response = _forced_answer(text, cfg.final_keys)
 
     thought = response.get("thought", "")
     if config.DEBUG:
