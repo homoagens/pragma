@@ -6,10 +6,11 @@
 Every setting is an environment variable. Where its value comes from:
 
 - **The project's own settings**, for the variables marked *project setting*.
-  They are asked when a project is made and kept in
-  `~/.pragma/registry.json`. Opening a project sets each of them from there
-  and clears whatever the shell held, so a value left over from another
-  project cannot leak in.
+  They are kept in `~/.pragma/registry.json`, one set per project, and a
+  project that has never set one has none. Opening a project sets each of them
+  from there and clears whatever the shell held, so a value left over from
+  another project cannot leak in. On Windows `pragma -Set <key> <value>`
+  writes one; the steps a turn may take are asked by `/settings` everywhere.
 - **The shell** the launcher was started from, for every other variable.
 - **`.env`** in the repository root, for anything neither of those named.
   See [`.env.example`](../../.env.example).

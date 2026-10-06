@@ -13,7 +13,7 @@
 
 WHY THESE PAGES ARE GENERATED. A list of settings written by hand is right on
 the day it is written. The code reads ninety-odd environment variables and the
-example file named three of them; the commands had been reorganised twice
+example file named thirteen of them; the commands had been reorganised twice
 since anyone listed them. What the code already knows - which variables it
 reads and their defaults, which commands exist, which skills are offered - is
 therefore read FROM the code, every time, and CI runs --check so that a page

@@ -5,7 +5,7 @@
 # agent/server.py — FastAPI server for Pragma
 #
 # Architecture:
-#   - Threads persisted on disk (configurable directory, default C:\tmp\Pragma)
+#   - Threads persisted on disk, in the data folder (~/.pragma/threads)
 #   - Each thread has its own cwd, conversation_history, and message list
 #   - REST API for creating/listing/loading/deleting/updating threads
 #   - WebSocket /ws?thread_id=XXX: activates a thread and works on it

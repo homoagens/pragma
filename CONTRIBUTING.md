@@ -28,9 +28,12 @@ core/skills/
 - The function name must match the folder name exactly (e.g. folder `send_email` → function `send_email`)
 - Use late imports inside the function body to avoid circular loading
 - Return a string always — on error return `"ERROR: ..."` instead of raising
-- The first line of `README.md` (before `---`) becomes the skill summary in the agent's system prompt
+- The first line under the title of `README.md` is what the model is told the tool does. Keep it on **one line**: a sentence wrapped over two reaches the model cut in half
 
-A fully documented template is in `core/skills/_template/`.
+A fully documented template is in `core/skills/_template/`. The skills that
+exist, and which of them the agent is offered, are listed in
+[docs/reference/skills.md](docs/reference/skills.md); that page is generated,
+so run `python docs/build.py` after adding one.
 
 ---
 
@@ -40,7 +43,7 @@ Open a GitHub issue with:
 - What you did
 - What you expected
 - What happened instead (paste the error or a screenshot)
-- Your setup: OS, Python version, Ollama version, model name
+- Your setup: OS, Python version, the model server and its version (llama.cpp, LM Studio, Ollama, vLLM), and the model
 
 ---
 
@@ -53,17 +56,39 @@ Open a GitHub issue with:
 
 **CI checks that run automatically:**
 - Python syntax on all `.py` files
+- `ruff check .` passes
+- The generated documentation is up to date, and no link in the docs is broken
 - Server imports without errors
-- Skill loader finds and loads all skills
+- Skill loader finds and loads all skills, and offers the agent the right ones
+- No `.env` is tracked
 
 No LLM calls are made in CI — tests that require a running model are out of scope.
+
+---
+
+## Documentation
+
+The pages are in [`docs/`](docs/README.md), in English, and a change to what
+Pragma does goes in the same commit as the page that describes it.
+
+The reference pages are generated from the code and are not edited by hand.
+After adding, renaming or removing a setting, a command or a skill:
+
+```
+python docs/build.py
+```
+
+and commit what it wrote. A new setting also needs one line in
+[`docs/notes.py`](docs/notes.py) saying what it is for; the build names the
+one that is missing. [docs/README.md](docs/README.md) has the rest, including
+how to read the pages as a site.
 
 ---
 
 ## Code style
 
 - Python 3.10+
-- No external formatter enforced, but keep it readable
+- `ruff check .` must pass; the rules are in [`ruff.toml`](ruff.toml). No formatter is enforced beyond that, but keep it readable
 - Imports at the top of files, except inside skill functions (late imports are intentional)
 - English for code, comments, docstrings, and prompts
 - No emoji in code or comments

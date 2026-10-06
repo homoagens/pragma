@@ -63,12 +63,14 @@ pragma
 
 That is the whole interface, and it is **two screens**.
 
-**Home** says what your model is serving and whether it answers, names any
-memory still being written, and takes `/projects`, `/jobs`, `/configure` and
-`/exit`. `/projects` is everything done *to* a project — open one, start one,
-snapshot or restore its memory, remove it — and `/configure` points Pragma at
-your endpoint, giving each role (the agent, recall, the memory) its own if you
-want. On a machine with no projects yet the page says `/new` and nothing else.
+**Home** says what your model is serving and whether it answers, lists your
+recent projects, names any memory still being written, and takes `/open`,
+`/new`, `/projects`, `/jobs`, `/configure` and `/exit`. `/open` goes straight
+back into a project by name. `/projects` is everything done *to* a project —
+open one, start one, snapshot or restore its memory, remove it — and
+`/configure` points Pragma at your endpoint, giving each role its own if you
+want. On a machine with no projects yet the page offers `/new` and little
+else.
 
 **A project** opens on a briefing — what your memory holds, what changed while
 you were away, what wants attention — and then you talk. What is there is what
@@ -98,16 +100,19 @@ rest from `./pragma`; a memory store written on one opens on the other.
 
 You also need a model being served on an **OpenAI-compatible endpoint** —
 [llama.cpp](https://github.com/ggml-org/llama.cpp/releases), LM Studio, Ollama
-or vLLM. Everything here is developed against **Qwen3.6 27B · Q5** on
-llama.cpp, with `-np 2` so a background consolidation never blocks your turn.
+or vLLM. Everything here is developed against **Qwen3.6 35B-A3B · Q5** on
+llama.cpp, with a 131072-token context and one slot (`-c 131072 -np 1`). With
+one slot, a consolidation running in the background and your next turn wait
+for each other; `-np 2` lets them run side by side, each with half the
+context.
 
 ---
 
 ## Projects
 
-A project is **one folder you work in** plus **a memory of its own**. `new
-project` on the home screen makes one, and `/new` does the same from inside a
-conversation.
+A project is **one folder you work in** plus **a memory of its own**. `/new`
+on the home screen makes one: it asks for a name and a folder, and nothing
+else.
 
 The folder is the workspace: the agent reads and writes there. The memory lives
 apart, under `~/.pragma/projects/<name>` — never inside your folder, because a
@@ -119,17 +124,18 @@ one.
 applies, on every task, without competing with anything the agent remembers.
 
 **What the endpoint decides** is what the model is, and it is set once for the
-whole machine in `/configure`: whether it reasons, which of the three roles —
-the agent's steps, the recall, the memory faculties — are asked to use that
+whole machine in `/configure`: whether it reasons, which of the roles — the
+agent's steps, the recall, the memory faculties — are asked to use that
 reasoning, and the sampling numbers each of them travels with. They belong to
 the server because the server is running the model, and every project talking
 to it inherits them.
 
-**What each project decides for itself** is asked when you make one and changed
-later from `/settings`: how much the curator may put on the desk each turn, how
-big a context and an answer may be, and how many steps a turn may take. These
-live in the registry, not in the repository, so two projects on one machine can
-disagree.
+**What each project decides for itself** is how many steps a turn may take,
+asked by `/settings` and kept with the project. A project can also carry its
+own context window, its own budgets and its own limits on what is recalled:
+the [configuration reference](docs/reference/configuration.md) marks which
+settings those are. They live in the registry, not in the repository, so two
+projects on one machine can disagree.
 
 ---
 
@@ -156,6 +162,16 @@ inside a project or from the home screen, and names the faculty at work: the
 segmenter deciding what was worth keeping, the consolidator writing the
 episode, the abstractor distilling beliefs. The next briefing says whether
 anything is still being written, and the way out holds once to tell you so.
+
+---
+
+## Documentation
+
+[`docs/`](docs/README.md) has the rest: [how Pragma is put
+together](docs/explanation/architecture.md) and which file does what, every
+[command](docs/reference/commands.md), every
+[setting](docs/reference/configuration.md) with its default, and the
+[tools](docs/reference/skills.md) the agent is given.
 
 ---
 

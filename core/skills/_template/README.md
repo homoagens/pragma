@@ -1,6 +1,6 @@
 # my_skill
 
-One-line description of what the skill does (used in SKILLS_SUMMARY — keep it under 15 words).
+One-line description of what the skill does (the model reads this as the tool's description — one line, under 15 words).
 
 ---
 
@@ -42,4 +42,4 @@ The transformed text as a string, or `"ERROR: <reason>"` if the input is invalid
 3. Update `README.md` with real documentation
 4. Restart Pragma — the loader picks it up automatically
 
-The skill appears in `SKILLS_SUMMARY` (system prompt) and is accessible via `get_skill_details`.
+The skill is then offered to the agent as a tool: the line under the title is its description, the function's signature its parameters. Run `python docs/build.py` so that it appears in `docs/reference/skills.md`.
