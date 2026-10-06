@@ -1,8 +1,6 @@
 # git_status
 
-Show the state of the git repository: current branch, position relative to
-upstream, and which files are staged, modified or untracked, plus the last few
-commits.
+Show the state of the git repository: current branch, position relative to upstream, and which files are staged, modified or untracked, plus the last few commits.
 
 **Read-only.** This skill never stages, commits, pushes or discards anything.
 Committing is a decision for the user; use `execute_command` only if the user

@@ -1,8 +1,6 @@
 # replace_in_files
 
-Deterministic find-and-replace across many files at once — the multi-file
-counterpart of `replace_in_file`. Renaming a symbol project-wide costs one call
-instead of one per file.
+Deterministic find-and-replace across many files at once — the multi-file counterpart of `replace_in_file`. Renaming a symbol project-wide costs one call instead of one per file.
 
 ---
 
