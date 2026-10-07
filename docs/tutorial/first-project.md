@@ -154,17 +154,21 @@ The conversation is being turned into memory in the background. Type `/jobs`
 to see it:
 
 ```text
-  Jobs  what the memory is writing in the background
+  Jobs  first › this session
 
-  ❯ first   writing · segmenter · deciding what was worth keeping
+  segmenter       2 turns -> 1 episode (1 dropped)
+  ⠼ consolidator · writing the episode  12s
+
+  ❯ back   it goes on writing without you
+    stop   end it now - what was said stays in the job, to write later or let go
 ```
 
-Press Enter on it, and Enter again on `watch`, to follow it step by step:
+That page is the work itself, drawn as it happens: a line for each step that
+has finished, and the one in flight with its seconds. Leave it open. When the
+work ends, the page says how:
 
 ```text
-  Jobs  first › this session › watch
-
-  ctrl+D goes back, and it carries on
+  Jobs  first › this session
 
   segmenter       2 turns -> 1 episode (1 dropped)
   consolidator    Every script in this project starts with a one-line docstring

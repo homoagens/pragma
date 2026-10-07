@@ -15,38 +15,42 @@ The briefing of the project says so the next time you open it:
   1 consolidation did not finish - /jobs
 ```
 
-and `/jobs`, from the home screen or from inside a project, lists what is
-waiting:
-
-```text
-  Jobs  what the memory is writing in the background
-
-  ❯ first   abandoned · whatever was writing it is gone
-```
-
-`abandoned` means the process that was doing the work is gone. `failed` means
-it stopped with an error, which the line names. `stopped by hand` means you
-stopped it yourself, from this same list.
-
-## Run it again
-
-Each piece of unfinished work still holds the turns it was working on. Make
-sure the model server answers, press Enter on the line, and choose:
+and `/jobs`, from the home screen or from inside a project, opens the work
+that is waiting:
 
 ```text
   Jobs  first › this session
 
-  ❯ log         what it did, and how it ended
-    run again   start writing it again
+  segmenter       2 turns -> 1 episode (1 dropped)
+
+  ✗ abandoned · whatever was writing it is gone
+    the turns are still in it: /home/you/.pragma/projects/first/jobs/job_20261001T142451Z_480.json
+
+  ❯ run again   start writing it again
     discard     delete it - what was said in it never becomes memory
 ```
 
-`run again` starts it and follows it. It takes about as long as closing a
-project does, and ends by saying what it wrote. The job is then gone — one
-that finishes deletes itself — and `/jobs` goes back to saying there is
-nothing.
+The page is the job: what it had done when it stopped, how it ended, and
+under that what can be done with it. `abandoned` means the process that was
+doing the work is gone. `failed` means it stopped with an error, which the
+line names. `stopped by hand` means you stopped it yourself.
 
-The same can be done by hand, with the file that `log` names:
+When more than one is waiting — from the home screen, that is every
+project's — `/jobs` lists them first, each line saying where its job stands.
+Enter opens one, and **ctrl+D** comes back to the list.
+
+## Run it again
+
+Each piece of unfinished work still holds the turns it was working on. Make
+sure the model server answers, and press Enter on `run again`.
+
+The page stays where it is and follows the work: a line for each step as it
+finishes, the one in flight with its seconds. It takes about as long as
+closing a project does, and ends by saying what it wrote. The job is then
+gone — one that finishes deletes itself — and `/jobs` goes back to saying
+there is nothing.
+
+The same can be done by hand, with the file the page names:
 
 ```
 cd /home/you/pragma
@@ -60,14 +64,17 @@ job, the command says so and does nothing.
 ## Or let it go
 
 If the conversation was not worth keeping — a test, a false start — choose
-`discard`. Nothing else refers to it. Its turns never become memory, and the
-rest of the memory is untouched.
+`discard`. It asks first. Nothing else refers to the job: its turns never
+become memory, and the rest of the memory is untouched.
 
 ## Stop one that is being written
 
-A memory being written is on the same list, as `writing`. Enter on it offers
-`watch` and `stop`. `stop` ends it there: what it had already written stays
-written, and what was said stays in the job, to run again later or discard.
+The page of a memory that is being written has two rows, `back` and `stop`.
+`stop` ends the work there: what it had already written stays written, and
+what was said stays in the job. The page then offers what it offers for any
+job that did not finish — `run again`, or `discard`.
+
+`back`, like **ctrl+D**, only leaves the page. The work goes on.
 
 ## Why it is kept at all
 

@@ -221,88 +221,6 @@ def prune(store: Path | None = None, keep_failed: int = 5) -> None:
             pass
 
 
-# --- watching -----------------------------------------------------------------
-# Following a job is the same act from the conversation and from the home
-# screen, so it lives here, with the jobs, and both call it.
-
-def _keyboard():
-    """Keys one at a time and unechoed while a job is watched, where the
-    terminal needs asking for that. Does nothing where it cannot."""
-    try:
-        from pragma_menu import keyboard
-        return keyboard()
-    except Exception:
-        import contextlib
-        return contextlib.nullcontext()
-
-
-def stop_key() -> bool:
-    """Has someone asked to stop watching? Ctrl+D, Escape or q.
-
-    Read without waiting, because the caller is in a display loop and must not
-    block on a keypress that may never come. Ctrl+C arrives as an exception
-    instead and is handled where the loop is.
-
-    On POSIX this used to answer False always: the line on the screen said
-    "ctrl+D to leave it to itself" and only ctrl+C did anything.
-    """
-    try:
-        if os.name == "nt":
-            import msvcrt
-            while msvcrt.kbhit():
-                ch = msvcrt.getch()
-                if ch in (b"\x04", b"\x03", b"\x1b", b"q", b"Q"):
-                    return True
-            return False
-        import select
-        if not sys.stdin.isatty():
-            return False
-        fd = sys.stdin.fileno()
-        typed = b""
-        while select.select([fd], [], [], 0)[0]:
-            ch = os.read(fd, 1)
-            if not ch:
-                return True                 # end of input is a way of leaving
-            typed += ch
-            if len(typed) > 64:
-                break
-        # An arrow key is an escape followed by more, and is not a request to
-        # leave; Escape on its own is.
-        return (b"\x04" in typed or typed == b"\x1b"
-                or typed.lower().strip() == b"q")
-    except Exception:
-        return False
-
-
-def hold(text: str = "ctrl+D to go back") -> None:
-    """What was watched stays on the screen until it is dismissed.
-
-    A job followed from the home screen used to be wiped the moment it ended:
-    the page noticed its own "memory is writing" line had gone stale and drew
-    itself again, over the lines you were in the middle of reading.
-    """
-    try:
-        if not (sys.stdin.isatty() and sys.stdout.isatty()):
-            return
-    except Exception:
-        return
-    print(f"  \033[38;5;242m{text}\033[0m")
-    try:
-        from pragma_menu import read_key
-    except Exception:
-        try:
-            input()
-        except (EOFError, KeyboardInterrupt):
-            pass
-        return
-    try:
-        with _keyboard():
-            while read_key() not in ("back", "enter", "q"):
-                pass
-    except KeyboardInterrupt:
-        pass
-
-
 # --- what a job says, as it is read -------------------------------------------
 # The log of a job is lines of text - "[ABSTRACTOR] 2 new beliefs" and, under
 # it and indented, what it has to add - because a file a person may have to
@@ -321,6 +239,9 @@ def hold(text: str = "ctrl+D to go back") -> None:
 #
 # It used to be the log itself, brackets and capitals, printed as it came:
 # what a worker writes for a file is not what a person watching wants to read.
+#
+# The same lines are drawn for a job being written and for one that has ended:
+# the page of a job is the job, and what can be done with it is under it.
 
 NAME = 16                        # the column a faculty's name stands in
 _LINE = re.compile(r"^\[([A-Z][A-Z0-9 /]*)\]\s*(.*)$", re.DOTALL)
@@ -361,7 +282,9 @@ def _look():
     from agent.harness import GLYPHS, GLYPHS_LEGACY, accent_hex
     console = Console(highlight=False)
     poor = bool(getattr(console, "legacy_windows", False))
+    colours = console.color_system if console.is_terminal else None
     return console, {"accent": accent_hex(), "g": GLYPHS_LEGACY if poor else GLYPHS, "poor": poor,
+                     "colours": "standard" if colours == "windows" else colours,
                      "tones": ("", "bright_black", "bright_black") if poor else ("", "grey66", "grey42")}
 
 
@@ -416,7 +339,10 @@ def _closing(look: dict, job: dict, said: list[dict], elapsed: float, gone: bool
         line.append(f"{what} {dot} {_seconds(job, elapsed)}s", style=look["tones"][2])
         return [line]
     line = Text(f"  {look['g']['bad']} ", style="red")
-    why = str(job.get("error") or "no reason recorded")[:160]
+    # A job nobody is writing any more has no error to quote: it did not fail,
+    # it was left. "no reason recorded" made that sound like a fault of the log.
+    nobody = "whatever was writing it is gone" if state == "abandoned" else "no reason recorded"
+    why = str(job.get("error") or nobody)[:160]
     # "stopped - stopped by hand" says it twice.
     line.append(why if state == "stopped" else f"{state} {dot} {why}", style=look["tones"][1])
     return [line, Text(f"    the turns are still in it: {job.get('_path') or ''}", style=look["tones"][2])]
@@ -430,129 +356,113 @@ def show_idle(everywhere: bool = False) -> None:
                        style=look["tones"][2]))
 
 
-def watch(path, job: dict) -> str:
-    """Follow one running job the way the foreground used to read.
+_SPIN = ("⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏", "|/-\\")
 
-    The faculties are the same and they take the same minute; what changed is
-    that you are no longer held there. So the log is FOLLOWED rather than
-    dumped: each faculty's line appears as it finishes, and the one in flight
-    is on the status line with its seconds, because forty seconds of nothing
-    moving is indistinguishable from a worker that has died.
 
-    Returns "left" when the watcher walked away, and otherwise how the job
-    ended - so the caller knows whether there is an ending on the screen to
-    leave standing.
+def _drawn(look: dict, parts: list, width: int) -> list[str]:
+    """What rich would print, as lines: the page redraws itself, and has to
+    know how many lines it is made of."""
+    import io
+    from rich.console import Console
+    out = io.StringIO()
+    console = Console(file=out, force_terminal=bool(look["colours"]), color_system=look["colours"],
+                      width=width, highlight=False, legacy_windows=False)
+    for part in parts:
+        console.print(part)
+    return out.getvalue().splitlines()
+
+
+class _Following:
+    """One job, read again each time the page is drawn.
+
+    The faculties are the same ones the foreground used to run, and they take
+    the same minute: what each has finished stays as a line, and the one in
+    flight is a status line with its seconds - forty seconds of nothing moving
+    is indistinguishable from a worker that has died.
     """
-    # Repainting needs a terminal to repaint on. Piped to a file, a status
-    # line is four hundred copies of the same sentence.
-    try:
-        live = sys.stdout.isatty()
-    except Exception:
-        live = False
-    with (_keyboard() if live else _nothing()):
-        return _watch(path, job, live)
 
+    def __init__(self, path, job: dict):
+        self.path = Path(path)
+        self.job = dict(job, _path=str(path))
+        self.gone = False               # it finished, and cleared up after itself
+        self.missed = 0
+        self.opened = time.time()
+        self.step, self.since = None, time.time()
+        self.console, self.look = _look()
 
-def _nothing():
-    import contextlib
-    return contextlib.nullcontext()
+    def read(self) -> dict:
+        fresh = read(self.path)
+        if fresh:
+            self.missed, self.gone = 0, False
+            self.job = dict(fresh, _path=str(self.path))
+            if _abandoned(self.job):
+                self.job["status"] = "abandoned"
+        else:
+            # A job file that has gone is the success case: the worker deletes
+            # it when the memory is written. (One empty read can be the file
+            # between two writes; two are not.)
+            self.missed += 1
+            if self.missed >= 2 and not self.gone:
+                self.gone = True
+                self.job.setdefault("started", "")
+                self.job["finished"] = _utc()      # for the closing line's seconds
+        return self.job
 
+    def state(self) -> str:
+        if self.gone:
+            return "done"
+        return str(self.job.get("status") or "")
 
-def _watch(path, job: dict, live: bool) -> str:
-    from rich.console import Group
-    from rich.live import Live
-    from rich.padding import Padding
-    from rich.spinner import Spinner
-    from rich.text import Text
-
-    console, look = _look()
-    dot = look["g"]["dot"]
-    spinner = Spinner("line" if look["poor"] else "dots", text="", style=look["accent"])
-    started = time.time()
-    printed = 0                         # entries already on the screen for good
-    step, since = None, time.time()     # the step in flight, and since when
-    job = dict(job, _path=str(path))
-
-    def block(label: str, embedding: str, thinking: str):
-        """The status: who is at work and for how long; under it the embedding
-        server when it is the one working, then the end of the reasoning."""
-        spinner.update(text=Text(f"{label}  {int(time.time() - since)}s", style="bright_black"))
-        under = []
-        if embedding:
-            under.append(Padding(Text(embedding[:max(20, console.width - 8)], style="bright_black"),
-                                 (0, 0, 0, 2)))
-        if thinking:
-            body = Text(" ".join(thinking.split()), style=f"italic {look['tones'][2]}")
-            lines = body.wrap(console, max(20, console.width - 10))
-            under.append(Padding(Group(*lines[-4:]), (0, 0, 0, 4)))
-        return Padding(Group(spinner, *under) if under else spinner, (0, 0, 0, 2))
-
-    def settle(said: list[dict], out) -> None:
-        nonlocal printed
-        done = [e for e in said if not e["running"]]
-        for e in done[printed:]:
+    def lines(self) -> list[str]:
+        from rich.text import Text
+        look, job = self.look, self.job
+        dot = look["g"]["dot"]
+        width = max(30, self.console.width - 2)
+        said = entries(job.get("log"))
+        state = self.state()
+        parts = []
+        for e in said:
+            if e["running"]:
+                continue
             # What a job failed of is its closing line; said there, it is not
             # said twice.
             if e["tag"] == "ERROR" and e["text"] and e["text"] in str(job.get("error") or ""):
                 continue
-            out.print(_entry(look, e))
-        printed = len(done)
-
-    def follow(screen) -> tuple[str, dict, list[dict]]:
-        nonlocal job, step, since
-        missed = 0
-        while True:
-            fresh = read(path)
-            if not fresh:
-                # The worker finished and cleaned up after itself: a job file
-                # that has gone is the success case. What it last said is
-                # printed from the copy read before it went. (One empty read
-                # can be the file between two writes; two are not.)
-                missed += 1
-                if missed >= 2:
-                    said = entries(job.get("log"))
-                    settle(said, screen.console if screen else console)
-                    return "gone", job, said
-                time.sleep(0.2)
-                continue
-            missed = 0
-            job = dict(fresh, _path=str(path))
-            said = entries(job.get("log"))
-            settle(said, screen.console if screen else console)
-            if job.get("status") not in ("pending", "running"):
-                return str(job.get("status")), job, said
-            if screen:
-                at = said[-1] if said and said[-1]["running"] else None
-                key = (len(said), bool(job.get("answer")))
-                if key != step:
-                    step, since = key, time.time()
-                if at is None:
-                    label = "starting" if not said else f"{said[-1]['tag'].lower()} {dot} working"
-                elif job.get("answer"):
-                    # What a faculty answers with is JSON for the program:
-                    # that it is being written is said, the JSON is not shown.
-                    label = f"{at['tag'].lower()} {dot} writing it down"
-                else:
-                    label = f"{at['tag'].lower()} {dot} {at['text'].rstrip('.… ')}"
-                screen.update(block(label[:max(20, console.width - 12)],
-                                    str(job.get("embedding") or "").replace("·", dot),
-                                    "" if job.get("answer") else str(job.get("thinking") or "")))
-            if stop_key():
-                return "left", job, said
-            time.sleep(0.25 if screen else 0.5)
-
-    if live:
-        with Live(Text(""), console=console, refresh_per_second=8, transient=True) as screen:
-            how, job, said = follow(screen)
-    else:
-        how, job, said = follow(None)
-    if how == "left":
-        console.print(Text("  still working - it carries on without you.", style=look["tones"][2]))
-        return "left"
-    console.print()
-    for line in _closing(look, job, said, time.time() - started, gone=(how == "gone")):
-        console.print(line)
-    return "done" if how == "gone" else how
+            parts.append(_entry(look, e))
+        if state in ("pending", "running"):
+            at = said[-1] if said and said[-1]["running"] else None
+            key = (len(said), bool(job.get("answer")))
+            if key != self.step:
+                self.step, self.since = key, time.time()
+            if at is None:
+                label = "starting" if not said else f"{said[-1]['tag'].lower()} {dot} working"
+            elif job.get("answer"):
+                # What a faculty answers with is JSON for the program: that it
+                # is being written is said, the JSON is not shown.
+                label = f"{at['tag'].lower()} {dot} writing it down"
+            else:
+                label = f"{at['tag'].lower()} {dot} {at['text'].rstrip('.… ')}"
+            frames = _SPIN[1] if look["poor"] else _SPIN[0]
+            line = Text(f"  {frames[int(time.time() * 10) % len(frames)]} ", style=look["accent"])
+            line.append(f"{label[:max(20, width - 12)]}  {int(time.time() - self.since)}s",
+                        style="bright_black")
+            parts.append(line)
+            # Under it: the embedding server when it is the one working, then
+            # the end of what the model is reasoning.
+            embedding = str(job.get("embedding") or "").replace("·", dot)
+            if embedding:
+                parts.append(Text("    " + embedding[:max(20, width - 8)], style="bright_black"))
+            thinking = "" if job.get("answer") else str(job.get("thinking") or "")
+            if thinking:
+                body = Text(" ".join(thinking.split()), style=f"italic {look['tones'][2]}")
+                for part in body.wrap(self.console, max(20, width - 10))[-4:]:
+                    parts.append(Text("      ") + part)
+        else:
+            if not parts and state != "done":
+                parts.append(Text("  it had not got as far as saying anything", style=look["tones"][2]))
+            parts.append(Text(""))
+            parts += _closing(look, job, said, time.time() - self.opened, gone=self.gone)
+        return _drawn(look, parts, width)
 
 
 # --- starting, stopping, letting go --------------------------------------------
@@ -701,116 +611,129 @@ def state_of(job: dict) -> str:
     return str(state or "?")
 
 
-def show_log(job: dict) -> None:
-    """What a job did, and how it ended: the lines it would have drawn while it
-    was followed, for one that is not being written any more."""
-    from rich.text import Text
-    console, look = _look()
-    said = entries(job.get("log"))
-    for e in said:
-        if e["running"]:
-            continue
-        if e["tag"] == "ERROR" and e["text"] and e["text"] in str(job.get("error") or ""):
-            continue
-        console.print(_entry(look, e))
-    if not any(not e["running"] for e in said):
-        console.print(Text("  it had not got as far as saying anything", style=look["tones"][2]))
-    console.print()
-    for line in _closing(look, job, said, 0.0):
-        console.print(line)
+def _job_page(project: str, job: dict) -> str:
+    """One job, as a page: what it has done so far, still being drawn while it
+    is written, and under that what can be done with it.
+
+    THE JOB IS THE PAGE. It was a list that opened onto two words - watch,
+    stop - of which one opened a third screen, where the job finally was; and
+    going back from there took you past both again. What it is doing is what
+    someone who opens a job came to see, so that is what opening it shows.
+    Stopping it, running it again and letting it go happen here, and the page
+    stays: the lines above say what came of it.
+
+    Returns what is left to say to the list it goes back to.
+    """
+    from pragma_menu import SEP, confirm, pick, title
+    path = Path(job["_path"])
+    note = str(job.get("note") or "a session")
+    where = f"{project} > {note}" if project else note
+    shown: dict = {}
+    while True:
+        following = _Following(path, job)
+
+        def frame() -> dict:
+            following.read()
+            state = following.state()
+            if state in ("pending", "running"):
+                # `back` first, and under the cursor: Enter on a page you have
+                # only just opened must not be what ends the work.
+                rows = [("back", "it goes on writing without you", "back"),
+                        ("stop", "end it now - what was said stays in the job, to write later or let go",
+                         "stop")]
+            elif state == "done":
+                rows = []
+            else:
+                rows = [("run again", "start writing it again", "again"),
+                        ("discard", "delete it - what was said in it never becomes memory", "discard")]
+            shown["rows"] = rows
+            return {"body": following.lines(),
+                    "options": [r[0] for r in rows], "notes": [r[1] for r in rows],
+                    "hint": "" if rows else "ctrl+D back"}
+
+        title("Jobs", where)
+        i = pick("", [], live=frame, every=0.1)
+        job = following.job
+        if i is None:
+            return ""
+        what = shown["rows"][i][2]
+        if what == "back":
+            return ""
+        if what == "stop":
+            fresh = read(path)
+            if fresh and fresh.get("status") in ("pending", "running"):
+                if not stop(dict(fresh, _path=str(path))):
+                    return f"it could not be stopped{SEP}its process did not end"
+        elif what == "again":
+            try:
+                start(path)
+            except Exception as e:
+                return f"could not start it{SEP}{type(e).__name__}: {str(e)[:90]}"
+        elif what == "discard":
+            title("Jobs", f"{where} > discard")
+            if confirm("Delete it? What was said in it is lost to the memory.", "yes, delete it"):
+                return "deleted." if discard(job) else "it could not be deleted"
+        job = dict(read(path) or job, _path=str(path))
 
 
 def manage(lister, everywhere: bool = False) -> str | None:
-    """/jobs: the memory's work in the background, as a page to walk.
+    """/jobs: the memory's work in the background.
 
-    `lister()` gives [(project or "", job)], asked again after every action:
-    what was writing a moment ago may have finished. Each job opens onto what
-    can be done with it - one being written can be followed or stopped; one
-    that is not can be read, started again or let go.
+    `lister()` gives [(project or "", job)]. With one job there is nothing to
+    choose, and the page that opens is that job. With several it is the list
+    of them, each saying where it stands and saying it again as that changes;
+    Enter opens one.
 
-    A PAGE, LIKE THE OTHERS. Every screen of it - the list, what can be done
-    with a job, the job being followed, its log - clears and is drawn in the
-    same place, under a head that says where you are. It was drawn down the
-    screen instead, each menu under the one before: three keys in, the list
-    you were choosing from was the fourth thing from the bottom and the first
-    three were debris.
+    A PAGE, LIKE THE OTHERS: drawn in one place, under a head that says where
+    you are. It was drawn down the screen once, each menu under the one
+    before - three keys in, the list being chosen from was the fourth thing
+    from the bottom and the first three were debris.
 
     Returns None when there was nothing to show and nothing was drawn but one
     line; otherwise the last thing it has to say - possibly nothing, "" - to
     whoever draws its own screen again in its place.
     """
-    from pragma_menu import choose, confirm, pick, say, title
+    from pragma_menu import pick, say, title
     found = lister()
     if not found:
         print()
         show_idle(everywhere)
         return None
+    if len(found) == 1:
+        said = _job_page(*found[0])
+        found = lister()
+        if len(found) < 2:
+            return said
+    else:
+        said = ""
     at = 0
-    notice = ""
+    shown: dict = {"at": 0.0, "found": found}
     while True:
         if not found:
-            return notice or "nothing left in the background"
+            return said or "nothing left in the background"
         title("Jobs", "what the memory is writing in the background")
-        if notice:
+        if said:
             print()
-            say(f"  {notice}", "dim")
-            notice = ""
-        names = [project or str(job.get("note") or "a session") for project, job in found]
-        chosen = pick("", names, [state_of(job) for _p, job in found], min(at, len(found) - 1))
+            say(f"  {said}", "dim")
+            said = ""
+
+        def frame() -> dict:
+            # The files are read again once a second, not at every draw: there
+            # is one per job, and from the home screen one folder per project.
+            if time.time() - shown["at"] > 1.0:
+                shown["found"], shown["at"] = lister(), time.time()
+            now = shown["found"]
+            return {"options": [project or str(job.get("note") or "a session") for project, job in now],
+                    "notes": [state_of(job) for _p, job in now],
+                    "hint": "" if now else "ctrl+D back"}
+
+        shown["at"] = 0.0
+        chosen = pick("", [], start=at, live=frame, every=0.5)
+        found = shown["found"]
         if chosen is None:
             return ""
         at = chosen
-        project, job = found[chosen]
-        path = Path(job["_path"])
-        note = str(job.get("note") or "a session")
-        where = f"{project} > {note}" if project else note
-        title("Jobs", where)
-        if job.get("status") in ("pending", "running"):
-            what = choose("", [("watch", "follow it, step by step"),
-                               ("stop", "end it now - what was said stays in the job, to write later or let go")])
-        else:
-            what = choose("", [("log", "what it did, and how it ended"),
-                               ("run again", "start writing it again"),
-                               ("discard", "delete it - what was said in it never becomes memory")])
-        if what in ("watch", "run again"):
-            if what == "run again":
-                try:
-                    start(path)
-                    job = dict(job, status="pending")
-                except Exception as e:
-                    notice = f"could not start it - {type(e).__name__}: {str(e)[:90]}"
-                    what = None
-            if what:
-                title("Jobs", f"{where} > watch")
-                print()
-                say("  ctrl+D goes back, and it carries on", "dim")
-                print()
-                ended = "left"
-                try:
-                    ended = watch(path, job)
-                except KeyboardInterrupt:
-                    print()
-                if ended != "left":
-                    print()
-                    hold("ctrl+D to go back")
-        elif what == "stop":
-            fresh = read(path)
-            if not fresh or fresh.get("status") not in ("pending", "running"):
-                notice = "it had already finished"
-            elif stop(dict(fresh, _path=str(path))):
-                notice = "stopped. What was said is still in the job: run it again, or discard it."
-            else:
-                notice = "it could not be stopped - its process did not end"
-        elif what == "log":
-            title("Jobs", f"{where} > log")
-            print()
-            show_log(job)
-            print()
-            hold("ctrl+D to go back")
-        elif what == "discard":
-            title("Jobs", f"{where} > discard")
-            if confirm("Delete it? What was said in it is lost to the memory.", "yes, delete it"):
-                notice = "deleted." if discard(job) else "it could not be deleted"
+        said = _job_page(*found[chosen])
         found = lister()
 
 
