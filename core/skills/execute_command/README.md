@@ -20,7 +20,7 @@ Formatted string with `returncode`, `stdout`, and `stderr` sections, or timeout/
 ## Notes
 
 - On Windows, uses `taskkill /F /T` to kill the entire process tree; on POSIX, kills the process group.
-- Commands waiting for user input (input()) will time out — remove interactive calls before using.
+- A command has nothing on its input and no terminal behind it: one that asks for input (`input()`) meets the end of it at once, and one that draws a screen and waits for keys (curses, pygame) can only run into the timeout.
 - Commands are not portable across platforms: use `python`/`git`/`pip` for portability.
 
 ## Examples

@@ -115,8 +115,11 @@ def execute_command(command: str, cwd: str = "", timeout: int = 60,
     hitting the timeout.
 
     Timeout is enforced by killing the ENTIRE process tree (not just the shell)
-    so a hanging child — e.g. a pygame loop, an `input()` call, a server — cannot
+    so a hanging child — e.g. a pygame loop, a curses screen, a server — cannot
     survive past `timeout` seconds.
+
+    The command has nothing on its input: a program that asks for some - an
+    `input()` call - meets the end of it at once instead of waiting.
 
     CROSS-PLATFORM NOTE: shell=True uses cmd.exe on Windows and /bin/sh on Linux.
     Commands must be written for the target platform.
@@ -140,8 +143,21 @@ def execute_command(command: str, cwd: str = "", timeout: int = 60,
         return _run_detached(command, work_dir)
 
     # Spawn in a new process group / job so we can kill the whole tree.
+    #
+    # WITH NOTHING ON ITS INPUT. Left alone, a command inherits this process's
+    # stdin, which in a conversation is the terminal the conversation is drawn
+    # on - and a terminal handed to a child is a terminal the child may
+    # reconfigure. `script` does: it puts the terminal on its input into raw
+    # mode for as long as it runs and puts it back when it ends. Killed by the
+    # timeout, it never puts it back: from then on a newline no longer returns
+    # to the left margin, every line starts where the one before it ended, and
+    # a screen that redraws itself in place prints copy after copy of itself
+    # instead. A command has nobody to type to it anyway: one that asks for
+    # input now meets the end of it at once, where it used to wait for the
+    # timeout - and to read whatever was typed at the keyboard meanwhile.
     popen_kwargs: dict = dict(
         shell=True,
+        stdin=subprocess.DEVNULL,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         text=True,
@@ -216,9 +232,11 @@ def execute_command(command: str, cwd: str = "", timeout: int = 60,
     if timed_out:
         parts = [
             f"ERROR: command timed out after {timeout}s — process tree was killed.",
-            "Possible causes: the script is waiting for user input (input()), "
-            "an infinite loop, a GUI window (pygame/tkinter), or a long-running operation. "
-            "If the script uses input(), remove it and use hardcoded test values instead.",
+            "Possible causes: an infinite loop, a long-running operation, or a program that "
+            "draws a screen or opens a window and waits for keys (curses, pygame, tkinter). "
+            "Such a program cannot be played from here: there is no terminal and no keyboard "
+            "behind a command. Check it another way - import it and call its logic, or run "
+            "the parts that do not need a screen.",
         ]
         if out: parts.append(f"stdout (partial):\n{out}")
         if err and capture_stderr: parts.append(f"stderr (partial):\n{err}")
