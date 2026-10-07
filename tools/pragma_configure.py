@@ -17,13 +17,20 @@ set of numbers worth sending it. None of that changes when a project opens, so
 none of it is a project's setting - it is written here, once, beside the
 address, and every project that talks to that endpoint inherits it.
 
-    add      a server: its address, its name, what it is, how it samples
-    use      one endpoint for every role - the usual setup
-    roles    a different endpoint per role
-    tune     what the model is, what it is for, and the knobs it sends
-    edit     address, model name, API key
-    remove   an endpoint no role needs
-    test     ask every endpoint again
+THE PAGE IS ITS ENDPOINTS. Each is a row: its name, the roles it serves, and
+under it what answers there, where, and what it is. Enter on one opens it,
+and every row of ITS page is one question -
+
+    serves           the roles that ask this server
+    what it is       a model that reasons, or one that answers at once
+    what it is for   conversation, or code
+    who reasons      which roles are asked to, on a model that can
+    sampling         the knobs every request carries
+    name, address, model, API key
+    remove
+
+Under the endpoints, `add` and the three switches that are the harness's
+rather than one server's.
 
 The four roles are agent (the conversation), recall (the CURATOR, before each
 turn), memory (the faculties that write episodes and beliefs) and critic (the
@@ -35,6 +42,8 @@ TUNING HAS THREE WAYS IN, because the three are different amounts of knowing:
     standard   send nothing; the server keeps the numbers it was started with
     advanced   type them yourself, row by row
     ask it     let the model read its own card on HuggingFace and fill them in
+
+They are the three answers to the `sampling` row.
 
 The last one asks the endpoint - with no knobs, so it answers as it was
 started - to read the model card of the model it is serving and translate its
@@ -57,6 +66,7 @@ import json
 import os
 import re
 import sys
+import time
 import urllib.error
 import urllib.request
 from pathlib import Path
@@ -69,7 +79,7 @@ os.environ.setdefault("PRAGMA_NO_ENDPOINT_PROBE", "1")
 
 import endpoints  # noqa: E402
 from pragma_menu import (GREY, RESET, accent, ask, choose, clear,  # noqa: E402
-                         confirm, pick, say, title, waiting)
+                         columns, confirm, pick, say, title, waiting)
 
 CHANGED, UNCHANGED = 0, 3
 NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,31}$")
@@ -92,9 +102,9 @@ WORK_BLURB = {
 # instruct one has nothing to switch.
 #
 # A table of its own, under its own name. It was a second ROLE_BLURB, and a
-# second assignment to a name replaces the first: the `use` page, which asks
-# what an endpoint SERVES, had been showing these lines about waiting ever
-# since, and the table written for it above was shown nowhere.
+# second assignment to a name replaces the first: the page that asks what an
+# endpoint SERVES had been showing these lines about waiting ever since, and
+# the table written for it above was shown nowhere.
 REASONS_BLURB = {
     "agent":  "the steps of the conversation: reading, editing, running",
     "recall": "choosing what to bring back from memory, every turn",
@@ -125,14 +135,18 @@ def grey(text: str) -> str:
     return f"{GREY}{text}{RESET}" if accent() else text
 
 
-def indented(text: str, colour: str = "", indent: int = 4) -> None:
-    """A line of the page under an endpoint's name, wrapped under itself."""
-    import shutil
+def wrapped(text: str, colour: str = "", indent: int = 6) -> list[str]:
+    """A line that belongs under a name, as the lines it takes in this window.
+
+    Wrapped at words and never handed to the terminal to break: an address
+    split as ".../" and "v1" at the last column, with the rest at the left
+    edge, is what that looks like.
+    """
     import textwrap
-    room = max(20, shutil.get_terminal_size((100, 24)).columns - 1 - indent)
+    room = max(20, columns() - 1 - indent)
     paint = colour if (colour and sys.stdout.isatty()) else ""
-    for part in textwrap.wrap(text, room, break_on_hyphens=False) or [""]:
-        print(" " * indent + (f"{paint}{part}{RESET}" if paint else part))
+    return [f"{paint}{part}{RESET}" if paint else part
+            for part in textwrap.wrap(text, room, break_on_hyphens=False) or [""]]
 
 
 # -- the page -----------------------------------------------------------------
@@ -202,13 +216,63 @@ def roles_of(cat: dict, name: str) -> str:
     return " ".join(serving)
 
 
-def show(state: dict, crumbs: str = "") -> None:
-    """The whole page: every endpoint, what it is, and what it serves."""
+_ASKED_FOR = 20          # seconds an endpoint's answer is shown again unasked
+
+
+def answers(state: dict, eps: list) -> dict:
+    """What each of these endpoints answers, by address.
+
+    Every page that names a server says whether it answers, and one that is
+    switched off takes three seconds to say that it is. Asked afresh by every
+    page, a look inside an endpoint and back was two waits on an empty
+    screen. An answer is kept for a few seconds; an address that has not been
+    asked is asked at once, and so is everything after an address or a key
+    has changed.
+    """
+    kept = state.get("answers") or {}
+    stale = time.time() - state.get("asked", 0.0) > _ASKED_FOR
+    if stale or any(ep.base_url not in kept for ep in eps):
+        with waiting("asking the server" + ("" if len(eps) == 1 else "s")):
+            kept = endpoints.probe_all(eps)
+        state["answers"], state["asked"] = kept, time.time()
+    return kept
+
+
+def key_text(entry: dict) -> str:
+    if entry.get("key_env"):
+        return f"from ${entry['key_env']}"
+    return "set" if entry.get("key") else "none"
+
+
+def front(state: dict, at: tuple) -> tuple | None:
+    """The page: every endpoint, `add`, and the harness's switches. Returns
+    what was chosen - ("endpoint", name) or ("action", word) - or None.
+
+    THE ENDPOINTS ARE THE ROWS. They used to be drawn above a list of verbs -
+    add, remove, endpoints - and `endpoints` opened the same drawing above
+    three more, each of which then asked "which endpoint?" with the names a
+    third time. A server is chosen where it is shown, once; what can be asked
+    about it is on its own page.
+    """
     cat = state["cat"]
-    step(crumbs)
+    step()
+    eps = ([endpoints.from_entry(n, e) for n, e in cat["endpoints"].items()]
+           or [endpoints.env_endpoint()])
+    found = answers(state, eps)
+    told = state.pop("note", "")
+    if told:
+        print()
+        say(f"  {told}", "good")
+    options, notes, under, what = [], [], [], []
+
+    def put(option: str = "", note: str = "", lines=(), means: tuple | None = None) -> None:
+        options.append(option)
+        notes.append(note)
+        under.append(list(lines))
+        what.append(means)
+
     if not cat["endpoints"]:
-        env = endpoints.env_endpoint()
-        p = endpoints.probe(env)
+        p = found.get(eps[0].base_url, {})
         print()
         print("  " + grey("An endpoint is a server Pragma can talk to, under a name"))
         print("  " + grey("you choose. There are none yet, so `add` is the way in."))
@@ -223,35 +287,44 @@ def show(state: dict, crumbs: str = "") -> None:
             print("  " + grey("Meanwhile it tries llama.cpp's own default port,"))
             print("  " + grey("which is a guess, not a setting:"))
         print()
-        print(f"    {env.base_url}  {ok_bad(p.get('up'))}{endpoints.status_text(p)}{off()}")
-        return
-    eps = [endpoints.from_entry(n, e) for n, e in cat["endpoints"].items()]
-    found = endpoints.probe_all(eps)
-    for ep in eps:
+        print(f"    {eps[0].base_url}  {ok_bad(p.get('up'))}{endpoints.status_text(p)}{off()}")
+    dim = GREY if accent() else ""
+    for ep in (eps if cat["endpoints"] else []):
         p = found.get(ep.base_url, {})
         entry = cat["endpoints"][ep.name]
-        note = []
+        extra = []
         if entry.get("key_env"):
-            note.append(f"key from ${entry['key_env']}")
+            extra.append(f"key from ${entry['key_env']}")
         elif ep.api_key:
-            note.append("key set")
+            extra.append("key set")
         if ep.model:
-            note.append(f"asks for {ep.model}")
-        tail = f"  ({', '.join(note)})" if note else ""
-        print()
-        a = accent()
-        serves = roles_of(cat, ep.name)
-        print(f"  {a}{ep.name}{off()}" + (f"   {grey(serves)}" if serves else ""))
-        # Three lines, each wrapped under itself: what answers there, where it
-        # is, what it is. They were two, and both ran past a 100-column window
-        # onto the next line at column 0.
-        indented(endpoints.status_text(p), ok_bad(p.get("up")))
-        indented(endpoints.short_url(ep.base_url) + tail, GREY if accent() else "")
-        indented(nature(entry), GREY if accent() else "")
-    told = state.pop("note", "")
-    if told:
-        print()
-        say(f"  {told}", "good")
+            extra.append(f"asks for {ep.model}")
+        tail = f"  ({', '.join(extra)})" if extra else ""
+        # Three lines under the name, each wrapped under itself: what answers
+        # there, where it is, what it is.
+        put(ep.name, roles_of(cat, ep.name) or "no role",
+            wrapped(endpoints.status_text(p), ok_bad(p.get("up")))
+            + wrapped(endpoints.short_url(ep.base_url) + tail, dim)
+            + wrapped(nature(entry), dim),
+            ("endpoint", ep.name))
+        put()
+    # A switch says what it IS, not what pressing it does: a menu where some
+    # rows are verbs and one is a promise is a menu you have to read twice.
+    # Enter flips it.
+    opts = cat.get("options") or {}
+    for name, blurb, _handler in ACTIONS:
+        if name == "meaning":
+            where = str((cat.get("embedding") or {}).get("url") or "")
+            put(f"{name:<12}{endpoints.short_url(where) if where else 'off'}", blurb,
+                means=("action", name))
+        elif name in OPTION_BLURB:
+            put(f"{name:<12}{'on' if opts.get(name) else 'off'}", OPTION_BLURB[name],
+                means=("action", name))
+        else:
+            put(name, blurb, means=("action", name))
+            put()
+    i = pick("", options, notes, what.index(at) if at in what else 0, under=under)
+    return None if i is None else what[i]
 
 
 # -- naming and addresses -----------------------------------------------------
@@ -290,34 +363,13 @@ def rename(cat: dict, old: str, new: str) -> None:
     cat["roles"] = {r: (new if n == old else n) for r, n in cat["roles"].items()}
 
 
-def which(cat: dict, question: str, crumbs: str = "") -> str | None:
-    """The endpoint a command is about, chosen from the list.
-
-    With one endpoint there is nothing to choose and nothing is drawn: a page
-    that asks a question with a single answer is a page that wastes a keypress.
-    """
-    names = sorted(cat["endpoints"])
-    if not names:
-        raise ValueError("there are no endpoints yet - add one first")
-    if len(names) == 1:
-        return names[0]
-    step(crumbs)
-    notes = [nature(cat["endpoints"][n]) for n in names]
-    # The cursor starts on the endpoint the agent uses: that is the one most
-    # questions here are about, and alphabetical order put a server that was
-    # switched off under it instead.
-    agent = role_target(cat, "agent")[0]
-    i = pick(question, names, notes, names.index(agent) if agent in names else 0)
-    return None if i is None else names[i]
-
-
 # -- what a model is, and the numbers it sends --------------------------------
 
 def edit_row(entry: dict, kind: str, work: str, name: str = "") -> None:
     """One row of the table, knob by knob. Enter keeps, `-` hands it back."""
     table = entry.setdefault("sampling", {}).setdefault(kind, {})
     row = dict(table.get(work) or {})
-    step(f"endpoints > tune > {name} > sampling > {kind} . {work}" if name
+    step(f"{name} > sampling > {kind} . {work}" if name
          else f"sampling > {kind} . {work}")
     print()
     print("  " + grey("Six knobs, asked in order. Every one of them is MEASURED to"))
@@ -351,7 +403,7 @@ def edit_row(entry: dict, kind: str, work: str, name: str = "") -> None:
 def advanced(entry: dict, name: str = "") -> None:
     """The four rows, as a list: whichever one you want to write."""
     while True:
-        step(f"endpoints > tune > {name} > sampling > advanced" if name else "sampling > advanced")
+        step(f"{name} > sampling > advanced" if name else "sampling > advanced")
         rows, labels, notes = [], [], []
         for kind in endpoints.KINDS:
             for work in endpoints.FLAVOURS:
@@ -819,7 +871,7 @@ def _model_reads(ep, alias: str, text: str, where: str, scanned: dict):
 
 def ask_the_model(ep, entry: dict, name: str = "") -> bool:
     """Let the endpoint read its own card and propose the four rows."""
-    step(f"endpoints > tune > {name} > sampling > ask it" if name else "sampling > ask it")
+    step(f"{name} > sampling > ask it" if name else "sampling > ask it")
     print()
     with waiting("asking the server what it is serving"):
         alias = served_alias(ep)
@@ -859,7 +911,7 @@ def ask_the_model(ep, entry: dict, name: str = "") -> bool:
         table, kind, by_model = scanned, ("thinking" if scanned.get("thinking")
                                           else "instruct"), False
 
-    step(f"endpoints > tune > {name} > sampling > ask it" if name else "sampling > ask it")
+    step(f"{name} > sampling > ask it" if name else "sampling > ask it")
     print()
     # WHICH ROUTE produced these, and whether the two agreed. Two readings
     # that match is the strongest thing this page can say; one that was
@@ -928,7 +980,7 @@ def who_reasons(entry: dict, name: str) -> bool:
     # away from you every time you press it. It stays where you left it.
     at = 0
     while True:
-        step(f"endpoints > tune > {name} > who reasons")
+        step(f"{name} > who reasons")
         print()
         print("  " + grey("This model reasons. Each role can be asked"))
         print("  " + grey("to use it, or to answer at once instead."))
@@ -950,76 +1002,6 @@ def who_reasons(entry: dict, name: str) -> bool:
         else:
             entry["reasons"] = now
         changed = True
-
-
-def tune(state: dict, name: str) -> bool:
-    """What the endpoint is, what it is for, who reasons, and how it samples."""
-    cat = state["cat"]
-    entry = cat["endpoints"][name]
-    changed = False
-    at = 0
-    while True:
-        sampling = ("the server's own numbers" if not entry.get("sampling")
-                    else knob_text(endpoints.sampling_row(entry)) or "nothing set yet")
-        rows = [(f"what it is      {entry.get('kind') or 'not set'}",
-                 "a reasoning model, or one that answers at once", "kind"),
-                (f"what it is for  {entry.get('work') or 'general'}",
-                 "conversation, or writing code", "work")]
-        # Only where there is something to switch: on an instruct endpoint the
-        # three answers exist but mean nothing, and a row that cannot change
-        # anything is a row that has to be explained.
-        if entry.get("kind") == "thinking":
-            rows.append((f"who reasons     {reasons_text(entry)}",
-                         "the agent, the recall, the memory - each on or off", "who"))
-        rows.append((f"sampling        {sampling}",
-                     "the knobs every request carries", "sampling"))
-        step(f"endpoints > tune > {name}")
-        print()
-        print("  " + grey(entry.get("url", "")))
-        print("  " + grey("What this endpoint is. Every project that talks to it"))
-        print("  " + grey("inherits these answers."))
-        i = pick("", [r for r, _, _ in rows], [b for _, b, _ in rows], at)
-        if i is None:
-            return changed
-        at = i
-        what = rows[i][2]
-        if what == "kind":
-            step(f"endpoints > tune > {name} > what it is")
-            got = choose("Does this model reason before it answers?",
-                         [(k, KIND_BLURB[k]) for k in endpoints.KINDS],
-                         entry.get("kind", ""))
-            if got:
-                entry["kind"] = got
-                changed = True
-        elif what == "work":
-            step(f"endpoints > tune > {name} > what it is for")
-            got = choose("What is this endpoint used for?",
-                         [(w, WORK_BLURB[w]) for w in endpoints.FLAVOURS],
-                         entry.get("work", "general"))
-            if got:
-                entry["work"] = got
-                changed = True
-        elif what == "who":
-            if who_reasons(entry, name):
-                changed = True
-        else:
-            step(f"endpoints > tune > {name} > sampling")
-            how = choose("How should it be sampled?", [
-                ("standard", "send nothing: the server keeps what it was started with"),
-                ("advanced", "type the numbers yourself, row by row"),
-                ("ask it",   "the model reads its own card on HuggingFace and fills them in"),
-            ])
-            if how == "standard":
-                entry.pop("sampling", None)
-                changed = True
-            elif how == "advanced":
-                advanced(entry, name)
-                changed = True
-            elif how == "ask it":
-                if ask_the_model(endpoints.from_entry(name, entry), entry, name):
-                    changed = True
-        if changed:
-            save(state)
 
 
 def cmd_add(state: dict) -> bool:
@@ -1048,112 +1030,175 @@ def cmd_add(state: dict) -> bool:
     if first:
         for role in endpoints.ROLES:
             cat["roles"][role] = name
-    save(state)
-    tune(state, name)
     state["note"] = (f"{name} added - the first endpoint, so every role uses it"
-                     if first else f"{name} added")
+                     if first else f"{name} added - it serves nothing until a role is given to it")
+    # Its own page is where it goes next: what it is has not been said yet.
+    state["open"] = name
     return True
 
 
-def cmd_use(state: dict) -> bool:
-    """What an endpoint serves: everything, or one role.
+def ask_serves(state: dict, name: str) -> bool:
+    """The four roles and who answers each: Enter gives one to this endpoint.
 
-    One page instead of two. `use` and `roles` were separate commands that
-    asked the same two questions in the opposite order, and the second existed
-    only for the setup that splits the roles across machines - which is the
-    rarer half of a choice, not a command of its own.
+    It asked "what should it serve?" over a list of the roles alone, so the
+    answer was given without seeing what it took the role away from.
     """
     cat = state["cat"]
-    name = which(cat, "Which endpoint?", "endpoints > use")
-    if name is None:
+    changed = False
+    at = 0
+    while True:
+        step(f"{name} > serves")
+        print()
+        print("  " + grey(f"Who answers each role now. Enter gives it to {name};"))
+        print("  " + grey("to take one away, give it to another endpoint from its page."))
+        rows = ["everything"] + [f"{role:<8}{role_target(cat, role)[0]}" for role in endpoints.ROLES]
+        i = pick("", rows, ["every role - what most setups are"]
+                 + [ROLE_BLURB[r] for r in endpoints.ROLES], at)
+        if i is None:
+            return changed
+        at = i
+        for role in (endpoints.ROLES if i == 0 else (endpoints.ROLES[i - 1],)):
+            if cat["roles"].get(role) != name:
+                cat["roles"][role] = name
+                changed = True
+
+
+def ask_kind(state: dict, name: str) -> bool:
+    entry = state["cat"]["endpoints"][name]
+    step(f"{name} > what it is")
+    got = choose("Does this model reason before it answers?",
+                 [(k, KIND_BLURB[k]) for k in endpoints.KINDS], entry.get("kind", ""))
+    if not got:
         return False
-    step(f"endpoints > use > {name}")
-    print()
-    print("  " + grey(cat["endpoints"][name].get("url", "")))
-    what = choose("What should it serve?",
-                  [("everything", "every role - what most setups are")]
-                  + [(r, ROLE_BLURB[r]) for r in endpoints.ROLES],
-                  roles_of(cat, name).split(" ")[0] if roles_of(cat, name) else "")
-    if not what:
-        return False
-    for role in (endpoints.ROLES if what == "everything" else (what,)):
-        cat["roles"][role] = name
-    state["note"] = (f"every role now uses {name}" if what == "everything"
-                     else f"{what} now uses {name}")
+    entry["kind"] = got
     return True
 
 
-def cmd_edit(state: dict) -> bool:
-    """The address, the name, the model it is asked for, the key."""
+def ask_work(state: dict, name: str) -> bool:
+    entry = state["cat"]["endpoints"][name]
+    step(f"{name} > what it is for")
+    got = choose("What is this endpoint used for?",
+                 [(w, WORK_BLURB[w]) for w in endpoints.FLAVOURS], entry.get("work", "general"))
+    if not got:
+        return False
+    entry["work"] = got
+    return True
+
+
+def ask_who(state: dict, name: str) -> bool:
+    return who_reasons(state["cat"]["endpoints"][name], name)
+
+
+def ask_sampling(state: dict, name: str) -> bool:
+    entry = state["cat"]["endpoints"][name]
+    step(f"{name} > sampling")
+    how = choose("How should it be sampled?", [
+        ("standard", "send nothing: the server keeps what it was started with"),
+        ("advanced", "type the numbers yourself, row by row"),
+        ("ask it",   "the model reads its own card on HuggingFace and fills them in"),
+    ])
+    if how == "standard":
+        entry.pop("sampling", None)
+        return True
+    if how == "advanced":
+        advanced(entry, name)
+        return True
+    if how == "ask it":
+        return ask_the_model(endpoints.from_entry(name, entry), entry, name)
+    return False
+
+
+def ask_name(state: dict, name: str) -> bool:
     cat = state["cat"]
-    name = which(cat, "Which endpoint?", "endpoints > edit")
-    if name is None:
-        return False
-    entry = cat["endpoints"][name]
-    step(f"endpoints > edit > {name}")
+    step(f"{name} > name")
     print()
-    print("  " + grey("What it is and how it samples are not here: those are `tune`."))
-    print("  " + grey("enter keeps what is in brackets . ctrl+D stops"))
+    print("  " + grey("What these pages call the server. Every role that uses it"))
+    print("  " + grey("follows the new name."))
     print()
-    # The name is asked first. Someone who opened this to call an endpoint
-    # something else would otherwise find no name here at all, and typing the
-    # new one into "model name" quietly asks the server for a model it does
-    # not serve.
-    new_name = ask("Name", name)
-    if new_name is None:
+    new = ask("Name", name)
+    if new is None or new == name:
         return False
-    if new_name != name:
-        check_name(cat, new_name)
-    url = ask("Address", entry.get("url", ""))
+    rename(cat, name, new)
+    state["renamed"] = new
+    return True
+
+
+def ask_address(state: dict, name: str) -> bool:
+    entry = state["cat"]["endpoints"][name]
+    step(f"{name} > address")
+    print()
+    url = ask("Address", entry.get("url", ""), hint="/v1 is added if missing")
     if url is None:
         return False
-    model = ask("Model name", entry.get("model", ""),
-                hint="[whatever the server serves] - `-` clears it")
-    if model is None:
+    url = normalise_url(url)
+    if url == entry.get("url"):
         return False
-    key_env = ask("API key from an environment variable", entry.get("key_env", ""),
-                  hint="[none] - its name, or `-` to clear")
-    if key_env is None:
-        return False
-    key = entry.get("key", "")
-    if not key_env.strip("-"):
-        import getpass
-        try:
-            typed = getpass.getpass("  API key (empty for local servers, `-` clears): ")
-        except (EOFError, KeyboardInterrupt):
-            return False
-        if typed.strip():
-            key = "" if typed.strip() == "-" else typed.strip()
-    new = {"url": normalise_url(url)}
-    if model.strip() and model.strip() != "-":
-        new["model"] = model.strip()
-    if key_env.strip() and key_env.strip() != "-":
-        new["key_env"] = key_env.strip().lstrip("$")
-    elif key:
-        new["key"] = key
-    # Everything `tune` wrote stays. `reasons` was missing from this list: an
-    # endpoint whose address was corrected came back with every role
-    # reasoning as an endpoint that says nothing does, and nothing said so.
-    for keep in ("kind", "work", "sampling", "reasons"):
-        if entry.get(keep):
-            new[keep] = entry[keep]
-    cat["endpoints"][name] = new
-    rename(cat, name, new_name)
-    state["note"] = f"{new_name} saved"
+    entry["url"] = url
+    state.pop("answers", None)        # the page it goes back to asks the new one
     return True
 
 
-def cmd_remove(state: dict) -> bool:
-    cat = state["cat"]
-    name = which(cat, "Which endpoint should go?", "remove")
-    if name is None:
+def ask_model(state: dict, name: str) -> bool:
+    entry = state["cat"]["endpoints"][name]
+    step(f"{name} > model")
+    print()
+    print("  " + grey("Only for a server that hosts several models: the one to ask"))
+    print("  " + grey("it for. Left empty, it answers with whatever it is serving."))
+    print()
+    now = entry.get("model", "")
+    model = ask("Model name", now, hint="`-` clears it" if now else "[whatever the server serves]")
+    if model is None:
         return False
+    model = "" if model.strip() == "-" else model.strip()
+    if model == now:
+        return False
+    if model:
+        entry["model"] = model
+    else:
+        entry.pop("model", None)
+    state.pop("answers", None)
+    return True
+
+
+def ask_key(state: dict, name: str) -> bool:
+    entry = state["cat"]["endpoints"][name]
+    before = (entry.get("key_env", ""), entry.get("key", ""))
+    step(f"{name} > API key")
+    print()
+    print("  " + grey("A local server needs none. For one that does, the key is better"))
+    print("  " + grey("left in an environment variable whose NAME is given here: the"))
+    print("  " + grey("key itself is then never written to a file."))
+    print()
+    key_env = ask("Environment variable holding the key", before[0],
+                  hint="its name, or `-` to clear" if before[0] else "[none] - its name")
+    if key_env is None:
+        return False
+    key_env = key_env.strip().lstrip("$")
+    if key_env.strip("-"):
+        entry["key_env"] = key_env
+        entry.pop("key", None)
+    else:
+        entry.pop("key_env", None)
+        import getpass
+        # ctrl+D here leaves by the door that puts the endpoint back as it was.
+        typed = getpass.getpass("  API key (enter keeps what is set, `-` clears): ").strip()
+        if typed == "-":
+            entry.pop("key", None)
+        elif typed:
+            entry["key"] = typed
+    if (entry.get("key_env", ""), entry.get("key", "")) == before:
+        return False
+    state.pop("answers", None)
+    return True
+
+
+def ask_remove(state: dict, name: str) -> bool:
+    cat = state["cat"]
     users = [role for role, n in cat["roles"].items() if n == name]
     if users and len(cat["endpoints"]) > 1:
-        raise ValueError(f"'{name}' serves {', '.join(users)} - point "
-                         f"{'it' if len(users) == 1 else 'them'} somewhere else "
-                         f"first, under endpoints > use")
-    step(f"remove > {name}")
+        raise ValueError(f"'{name}' serves {', '.join(users)} - open the endpoint that should "
+                         f"take {'it' if len(users) == 1 else 'them'} over, and say so under `serves`")
+    step(f"{name} > remove")
     print()
     print("  " + grey(cat["endpoints"][name].get("url", "")))
     if not confirm(f"Remove '{name}'?", f"yes, remove {name}"):
@@ -1165,20 +1210,89 @@ def cmd_remove(state: dict) -> bool:
     return True
 
 
-def cmd_tune(state: dict) -> bool:
-    name = which(state["cat"], "Which endpoint?", "endpoints > tune")
-    return bool(name and tune(state, name))
-
-
-# What can be done to ONE endpoint. Reached from the main page through
-# `endpoints`, because the page above is about which servers exist and this
-# one is about what a server is - two different questions, and asking them in
-# one list of seven words was the scattered part.
-ENDPOINT_ACTIONS = [
-    ("use",  "what this endpoint serves: everything, or one role", cmd_use),
-    ("tune", "what the model is, what it is for, how it samples", cmd_tune),
-    ("edit", "address, model name, API key", cmd_edit),
+# What can be asked about ONE endpoint, in the order its page asks it. Every
+# row is one question, and says its answer beside its name. They were three
+# pages - use, tune, edit - reached by choosing the verb first and the
+# endpoint second; and `edit` asked its four questions in a row, whichever of
+# them you had come to change.
+ENDPOINT_ROWS = [
+    ("serves",         "the roles that ask this server", ask_serves),
+    ("what it is",     "a reasoning model, or one that answers at once", ask_kind),
+    ("what it is for", "conversation, or writing code", ask_work),
+    ("who reasons",    "each role, on or off", ask_who),
+    ("sampling",       "the knobs every request carries", ask_sampling),
+    ("name",           "what these pages call it", ask_name),
+    ("address",        "where the server listens", ask_address),
+    ("model",          "which one, where a server hosts several", ask_model),
+    ("API key",        "typed, or left in an environment variable", ask_key),
+    ("remove",         "take it off the list", ask_remove),
 ]
+_GAP_BEFORE = ("name", "remove")
+
+
+def endpoint_page(state: dict, name: str) -> bool:
+    """One endpoint: what answers there, and one row for everything about it."""
+    changed = False
+    at = None
+    while True:
+        cat = state["cat"]
+        if name not in cat["endpoints"]:
+            return changed
+        entry = cat["endpoints"][name]
+        step(name)
+        eps = [endpoints.from_entry(n, e) for n, e in cat["endpoints"].items()]
+        p = answers(state, eps).get(endpoints.from_entry(name, entry).base_url, {})
+        print()
+        for line in wrapped(endpoints.status_text(p), ok_bad(p.get("up")), indent=2):
+            print("  " + line)
+        told = state.pop("note", "")
+        if told:
+            print()
+            say(f"  {told}", "good")
+        says = {
+            "serves": roles_of(cat, name) or "no role",
+            "what it is": entry.get("kind") or "not set",
+            "what it is for": entry.get("work") or "general",
+            "who reasons": reasons_text(entry),
+            "sampling": ("the server's own numbers" if not entry.get("sampling")
+                         else knob_text(endpoints.sampling_row(entry)) or "nothing set yet"),
+            "name": name,
+            "address": endpoints.short_url(entry.get("url", "")),
+            "model": entry.get("model") or "the server's own",
+            "API key": key_text(entry),
+            "remove": "",
+        }
+        # Only what can change something. With one endpoint there is nobody
+        # else to serve a role; on a model that answers at once there is no
+        # reasoning to switch. A row that cannot change anything is a row that
+        # has to be explained.
+        absent = set()
+        if len(cat["endpoints"]) < 2:
+            absent.add("serves")
+        if entry.get("kind") != "thinking":
+            absent.add("who reasons")
+        options, notes, what = [], [], []
+        for label, blurb, handler in ENDPOINT_ROWS:
+            if label in absent:
+                continue
+            if label in _GAP_BEFORE:
+                options.append("")
+                notes.append("")
+                what.append(None)
+            options.append(f"{label:<16}{says[label]}".rstrip())
+            notes.append(blurb)
+            what.append((label, handler))
+        labels = [w[0] if w else None for w in what]
+        # The cursor comes back to the row it left: a page that redraws with
+        # the first row under the cursor walks away from what you were doing.
+        i = pick("", options, notes, labels.index(at) if (at and at in labels) else 0)
+        if i is None:
+            return changed
+        at, handler = what[i]
+        if run_action(state, lambda st, h=handler, n=name: h(st, n)):
+            changed = True
+            name = state.pop("renamed", name)
+
 
 def _flip(state: dict, key: str) -> bool:
     """One press, on or off. No page of its own: it is one answer."""
@@ -1257,32 +1371,14 @@ OPTION_BLURB = {
 }
 
 
-# What changes the SET of endpoints, the way in to the three above, and the
+# What the page offers under its endpoints: one more of them, and the
 # switches that are the harness's rather than one server's.
 ACTIONS = [
     ("add",       "a server: its address, its name, what it is", cmd_add),
-    ("remove",    "one no role needs", cmd_remove),
-    ("endpoints", "use, tune, edit", None),
     ("prediction", "", cmd_prediction),
     ("critic", "", cmd_critic),
     ("meaning", "the memory searched by meaning, with an embedding server", cmd_meaning),
 ]
-
-
-def endpoints_page(state: dict) -> bool:
-    """use, tune, edit - until ctrl+D."""
-    changed = False
-    at = 0
-    while True:
-        show(state, crumbs="endpoints")
-        i = pick("", [a for a, _, _ in ENDPOINT_ACTIONS],
-                 [b for _, b, _ in ENDPOINT_ACTIONS], at)
-        if i is None:
-            return changed
-        at = i
-        _, _, handler = ENDPOINT_ACTIONS[i]
-        if run_action(state, handler):
-            changed = True
 
 
 def save(state: dict) -> None:
@@ -1368,42 +1464,29 @@ def main() -> int:
     old = Path.home() / ".pragma" / "sampling.json"
     if old.is_file():
         state["note"] = (f"{old} is no longer read - sampling lives beside "
-                         f"each endpoint now, under tune")
+                         f"each endpoint now, on its own page")
 
     changed = False
-    at = 0
+    at: tuple = ()
+    handlers = {name: handler for name, _blurb, handler in ACTIONS}
     while True:
-        show(state)
-        # The prediction row says what it IS, not what pressing it does: a
-        # menu where some rows are verbs and one is a promise is a menu you
-        # have to read twice. Enter flips it, like every other switch here.
-        opts = cat.get("options") or {}
-        labels, blurbs = [], []
-        for name, blurb, _h in ACTIONS:
-            if name == "meaning":
-                where = str((cat.get("embedding") or {}).get("url") or "")
-                labels.append(f"{name:<12}{endpoints.short_url(where) if where else 'off'}")
-                blurbs.append(blurb)
-            elif name in OPTION_BLURB:
-                labels.append(f"{name:<12}{'on' if opts.get(name) else 'off'}")
-                blurbs.append(OPTION_BLURB[name])
-            else:
-                labels.append(name)
-                blurbs.append(blurb)
-        i = pick("", labels, blurbs, at)
-        if i is None:
+        chosen = front(state, at)
+        if chosen is None:
             clear()
             return CHANGED if changed else UNCHANGED
-        at = i
-        action, _, handler = ACTIONS[i]
-        if action == "endpoints":
-            if not cat["endpoints"]:
-                state["note"] = "there are no endpoints yet - add one first"
-                continue
-            if endpoints_page(state):
+        at = chosen
+        kind, name = chosen
+        if kind == "endpoint":
+            if endpoint_page(state, name):
                 changed = True
-        elif run_action(state, handler):
+            continue
+        if run_action(state, handlers[name]):
             changed = True
+        opened = state.pop("open", "")
+        if opened in cat["endpoints"]:
+            at = ("endpoint", opened)
+            if endpoint_page(state, opened):
+                changed = True
 
 
 if __name__ == "__main__":

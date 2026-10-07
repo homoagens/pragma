@@ -75,22 +75,31 @@ These belong to the home screen. Typed inside a project they say where they went
 
 Reached from either screen. A page walked with the arrows rather than typed.
 
+Its rows are the endpoints: each with the roles it serves and, under its name, what answers there, where, and what it is. Under them:
+
 | Choice | What it is |
 |---|---|
 | `add` | a server: its address, its name, what it is |
-| `remove` | one no role needs |
-| `endpoints` | use, tune, edit |
 | `prediction` | on or off: the line you will probably type next, in grey; tab takes it |
 | `critic` | on or off: the work checked against your request before it is delivered |
 | `meaning` | the memory searched by meaning, with an embedding server |
 
-Under `endpoints`, for the one selected:
+Enter on an endpoint opens its own page. Every row there is one question, and says its answer beside its name:
 
-| Choice | What it is |
+| Row | What it is |
 |---|---|
-| `use` | what this endpoint serves: everything, or one role |
-| `tune` | what the model is, what it is for, how it samples |
-| `edit` | address, model name, API key |
+| `serves` | the roles that ask this server |
+| `what it is` | a reasoning model, or one that answers at once |
+| `what it is for` | conversation, or writing code |
+| `who reasons` | each role, on or off |
+| `sampling` | the knobs every request carries |
+| `name` | what these pages call it |
+| `address` | where the server listens |
+| `model` | which one, where a server hosts several |
+| `API key` | typed, or left in an environment variable |
+| `remove` | take it off the list |
+
+`serves` is there when there is more than one endpoint, and `who reasons` for a model that reasons.
 
 An endpoint serves one or more of four roles:
 

@@ -52,7 +52,8 @@ your server.
 The second line is the server answering: Pragma asked what it is serving and
 suggests a name from the reply. Press Enter to take it.
 
-One more question follows, and it is worth answering now. Select `what it is`
+You are now on the page of your endpoint: one row for each thing that can be
+said about it. The first is worth answering now. Press Enter on `what it is`
 and say whether your model reasons before it answers (`thinking`) or answers
 at once (`instruct`). If you are not sure, choose `instruct`: it is also what
 Pragma assumes when nothing has been said.

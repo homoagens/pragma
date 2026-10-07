@@ -278,7 +278,7 @@ def commands(notes) -> str:
                             "_AT_HOME", "_ALIASES"})
     conf = tables(conf_py, {"ROLE_BLURB", "OPTION_BLURB"})
     actions = pairs(conf_py, "ACTIONS")
-    endpoint_actions = pairs(conf_py, "ENDPOINT_ACTIONS")
+    endpoint_rows = pairs(conf_py, "ENDPOINT_ROWS")
 
     out = [BANNER, "# Commands\n",
            "Pragma is two screens, and each has its own short list. A command "
@@ -325,14 +325,20 @@ def commands(notes) -> str:
     out.append("\n## `/configure`\n")
     out.append("Reached from either screen. A page walked with the arrows "
                "rather than typed.\n")
+    out.append("Its rows are the endpoints: each with the roles it serves and, "
+               "under its name, what answers there, where, and what it is. "
+               "Under them:\n")
     rows = []
     for name, blurb in actions:
         if name in conf["OPTION_BLURB"]:
             blurb = "on or off: " + conf["OPTION_BLURB"][name]
         rows.append((f"`{name}`", blurb))
     out += _rows(("Choice", "What it is"), rows)
-    out.append("\nUnder `endpoints`, for the one selected:\n")
-    out += _rows(("Choice", "What it is"), ((f"`{n}`", b) for n, b in endpoint_actions))
+    out.append("\nEnter on an endpoint opens its own page. Every row there is "
+               "one question, and says its answer beside its name:\n")
+    out += _rows(("Row", "What it is"), ((f"`{n}`", b) for n, b in endpoint_rows))
+    out.append("\n`serves` is there when there is more than one endpoint, and "
+               "`who reasons` for a model that reasons.")
     out.append("\nAn endpoint serves one or more of four roles:\n")
     out += _rows(("Role", "The calls it answers"),
                  ((f"`{r}`", b) for r, b in conf["ROLE_BLURB"].items()))
