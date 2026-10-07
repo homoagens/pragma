@@ -271,6 +271,18 @@ def _related_beliefs(ep: dict, active: list[dict]) -> list[dict]:
     return [e for e, s in rel_scored if s > 0][:8]
 
 
+def _looked_at(entry: dict) -> str:
+    """When a belief's sentence was last written, reworded or checked."""
+    return max([str(entry.get("ts", "") or ""), str(entry.get("reviewed", "") or "")]
+               + [str(h.get("ts", "") or "") for h in (entry.get("text_history") or [])])
+
+
+def _reread_since(ep: dict | None, since: str) -> bool:
+    """Whether an episode's interpretation was rewritten after `since`."""
+    return bool(ep) and any(str(h.get("ts", "") or "") > since
+                            for h in (ep.get("interpretation_history") or []))
+
+
 def _replaced(before: str, after: str, entry: dict) -> dict:
     """The record of a belief's sentence being replaced, with how near the new
     one is to it when an embedding server is in use: like an episode's
@@ -967,6 +979,7 @@ def episode_consolidate_detailed(transcript: str = "", workspace: str = "",
     # answer is that the belief still stands.
     # This path never retires: it only rewrites when a better version exists.
     bridge_min = getattr(config, "RECONSOLIDATE_BRIDGE_MIN_SOURCES", 2)
+    over_time = getattr(config, "RECONSOLIDATE_BRIDGE_OVER_TIME", False)
     if recon_on and recon_interps and bridge_min > 0:
         handled = ({r["from"] for r in result["reformulated"]}
                    | set(result["retired"])
@@ -978,6 +991,14 @@ def episode_consolidate_detailed(transcript: str = "", workspace: str = "",
             if text in handled:
                 continue
             shifted = [s for s in e.get("sources", []) if s in recon_interps]
+            if over_time and shifted:
+                # ...and the sources re-read in EARLIER sessions, since this
+                # belief was last written or looked at. Two sources re-read a
+                # week apart weigh on a belief as much as two re-read at once,
+                # and counted session by session they were never seen.
+                since = _looked_at(e)
+                shifted += [s for s in e.get("sources", [])
+                            if s not in recon_interps and _reread_since(ep_by_id.get(s), since)]
             if len(shifted) < bridge_min:
                 continue
             # Each source with what happened in it and what it is taken to mean
@@ -990,6 +1011,9 @@ def episode_consolidate_detailed(transcript: str = "", workspace: str = "",
                      for s in e.get("sources", []) if s in ep_by_id]
             shown.sort(key=lambda x: not x["revised"])      # the revised ones first
             reformed = reconsolidate.review_belief(text, shown)
+            if over_time and not reconsolidate.LAST_ERROR:
+                # Looked at, whatever came of it: the count starts again here.
+                e["reviewed"] = ts
             if not reformed:
                 continue  # it still stands → leave the belief as-is
             hist = e.get("text_history") or []

@@ -150,6 +150,7 @@ What stops a model that is repeating itself.
 | `RECONSOLIDATE_MAX_EPISODES` | `3` | Related past episodes re-read each time a session is written down. | [`core/config.py`](../../core/config.py) |
 | `RECONSOLIDATE_REFORMULATE_AT` | same as `SEMANTIC_RETIRE_CONTRADICTIONS` | Contradictions after which a belief is reworded rather than retired. | [`core/config.py`](../../core/config.py) |
 | `RECONSOLIDATE_BRIDGE_MIN_SOURCES` | `2` | Revised source episodes, in one session, that make a belief a candidate for rewording. | [`core/config.py`](../../core/config.py) |
+| `RECONSOLIDATE_BRIDGE_OVER_TIME` | `false` | `true` counts a belief's revised sources since it was last written or checked, not session by session. | [`core/config.py`](../../core/config.py) |
 | `RECONSOLIDATE_REFUSE_DRIFT` | `false` | `true` leaves an episode's interpretation as it was when a revision would bring it closer to the new episode than to its own. Needs an embedding server. | [`core/config.py`](../../core/config.py) |
 | `AUTO_REFLECT` | `true` | Whether a reflection pass runs after a successful task. | [`core/config.py`](../../core/config.py) |
 | `BATCH_SEGMENT` | unset | `1` has a batch run judged before it becomes an episode. Unset, every batch run with `--memory` writes one. | [`core/config.py`](../../core/config.py) |

@@ -264,6 +264,8 @@ CONFIG = {
         "same as `SEMANTIC_RETIRE_CONTRADICTIONS`"),
     "RECONSOLIDATE_BRIDGE_MIN_SOURCES": ("memory",
         "Revised source episodes, in one session, that make a belief a candidate for rewording."),
+    "RECONSOLIDATE_BRIDGE_OVER_TIME": ("memory",
+        "`true` counts a belief's revised sources since it was last written or checked, not session by session."),
     "RECONSOLIDATE_REFUSE_DRIFT": ("memory",
         "`true` leaves an episode's interpretation as it was when a revision would bring it closer to the new episode than to its own. Needs an embedding server."),
     "AUTO_REFLECT": ("memory",

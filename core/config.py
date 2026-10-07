@@ -1201,6 +1201,14 @@ RECONSOLIDATE_REFORMULATE_AT = int(os.environ.get(
 # fragile semantic one; on this path a belief is never retired, only rewritten.
 RECONSOLIDATE_BRIDGE_MIN_SOURCES = int(os.environ.get(
     "RECONSOLIDATE_BRIDGE_MIN_SOURCES", "2"))
+# The count above is taken session by session: two sources re-read in the same
+# session make a belief a candidate, two re-read a week apart never do. With
+# this on, the sources re-read since the belief was last written or looked at
+# are counted together with those of the session - the belief is still looked
+# at only when a session re-reads one of its sources - and each look is
+# stamped on the belief (`reviewed`), so the count starts again from there.
+RECONSOLIDATE_BRIDGE_OVER_TIME = os.environ.get(
+    "RECONSOLIDATE_BRIDGE_OVER_TIME", "false").lower() in ("1", "true", "yes")
 # A re-reading is measured, when an embedding server is in use: how near the
 # new interpretation is to the episode's own event, and how near to the event
 # of the episode that occasioned it (embed.moved). The measure is always kept
