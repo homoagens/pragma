@@ -307,8 +307,7 @@ def memory_jobs() -> list[tuple[str, str]]:
         for job in found:
             if job.get("status") not in ("pending", "running"):
                 continue
-            log = job.get("log") or []
-            out.append((str(entry["name"]), (log[-1] if log else "starting")[:60]))
+            out.append((str(entry["name"]), jobs.step_of(job)[:60]))
     return out
 
 
@@ -338,17 +337,15 @@ def show_jobs() -> None:
             continue
     print()
     if not found:
-        print("  nothing in the background - every memory is up to date.")
+        jobs.show_idle(everywhere=True)
         print()
         return
     live = [(p, j) for p, j in found if j.get("status") in ("pending", "running")]
     failed = [(p, j) for p, j in found if j.get("status") not in ("pending", "running")]
     if live:
         project, job = live[0]
-        others = ", ".join(p for p, _ in live[1:])
-        print(f"  {project} - {job.get('note') or 'a session'}   ctrl+D to leave it to itself"
-              + (f"   (also writing: {others})" if others else ""))
-        print()
+        jobs.header(project, job.get("note") or "a session",
+                    also=", ".join(p for p, _ in live[1:]))
         ended = "left"
         try:
             ended = jobs.watch(Path(job["_path"]), job)
@@ -364,25 +361,8 @@ def show_jobs() -> None:
             jobs.hold("ctrl+D to go back")
             print()
     if failed:
-        # The command as THIS system spells it: the Windows one, printed on
-        # Linux, was a line nobody could paste.
-        py = Path(sys.executable)
-        try:
-            py = py.relative_to(ROOT)
-        except ValueError:
-            pass
-        tool = Path("tools") / "pragma_consolidate.py"
-        print("  these did not finish. The turns are still in them, so they can be")
-        print(f"  run again, from {ROOT}:")
-        print(f"    {py} {tool} <file>")
+        jobs.show_failed(failed)
         print()
-        for project, job in failed:
-            when = job.get("finished") or job.get("started") or job.get("created") or ""
-            print(f"  {job.get('status', '?'):<10}{project:<16}{when}   {job.get('note', '')}")
-            if job.get("error"):
-                print(f"    {str(job['error'])[:100]}")
-            print(f"    {job.get('_path', '')}")
-            print()
 
 
 def memory_line(jobs_running: list[tuple[str, str]], grey: str, reset: str) -> None:

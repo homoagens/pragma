@@ -231,7 +231,7 @@ def _nearness(ep: dict, others: list[str], kind: str) -> list[float] | None:
     """
     if not others or embed.server() is None:
         return None
-    mine = embed.of([embed.event_text(ep)], "events")
+    mine = embed.of([embed.event_text(ep)], "events", tell=False)
     theirs = embed.of(others, kind) if mine is not None else None
     if mine is None or theirs is None:
         return None

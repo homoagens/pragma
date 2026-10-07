@@ -1202,7 +1202,7 @@ def _consolidate(turns: list[Turn], cwd: Path, renderer,
         return []
 
     renderer.faculty_running(
-        "CONSOLIDATOR", f"writing {len(kept)} episode(s) from {note}…")
+        "CONSOLIDATOR", f"writing {_so_many(len(kept), 'episode')} from {note}…")
     written: list[dict] = []
     for i, (idx, _why) in enumerate(kept, 1):
         # A merged segment is consolidated as ONE experience: the turns are
@@ -1224,14 +1224,80 @@ def _consolidate(turns: list[Turn], cwd: Path, renderer,
                 res = episode_consolidate_detailed(
                     transcript=transcript, workspace=str(cwd), source="chat",
                     session_id=sid)
-            renderer.faculty("CONSOLIDATOR",
-                             f"[{i}/{len(kept)}] {res.get('summary', '')}")
             ep = _load_episode(res.get("episode_id", ""))
+            _say_written(renderer, res, ep, i, len(kept))
             if ep:
                 written.append(ep)
         except Exception as e:
             renderer.error(None, f"episode {i} failed: {e}")
     return written
+
+
+def _so_many(n: int, one: str, many: str = "") -> str:
+    return f"{n} {one if n == 1 else (many or one + 's')}"
+
+
+def _say_written(renderer, res: dict, ep: dict | None, i: int, n: int) -> None:
+    """What writing one episode did to the memory, faculty by faculty.
+
+    It used to be one line, the skill's own: "[1/1] OK: episode
+    ep_20261007_101500_3fa2 saved (0 surprises); semantics: +2 assertions, 1
+    confirmed, 0 contradicted; reconsolidated 1 episode(s)". Every word of it
+    is true and none of it says what was written: an identifier, a count of
+    surprises, and the names the code gives to things.
+
+    So each faculty says its own part, as it does everywhere else: the
+    consolidator WHAT it wrote - the episode's goal, which is the memory in
+    one line - the reconsolidator what it re-read and why, the abstractor
+    what is believed now that was not before. A faculty with nothing to say
+    says nothing.
+    """
+    which = f"({i}/{n}) " if n > 1 else ""
+    summary = str(res.get("summary", "") or "")
+    if res.get("status") != "ok" or res.get("already_consolidated") or not ep:
+        renderer.faculty("CONSOLIDATOR", which + (summary or "nothing was written"))
+        return
+
+    notes = []
+    if res.get("surprises"):
+        notes.append(_so_many(int(res["surprises"]), "surprise") + " in it")
+    if "fallback" in summary:
+        notes.append("the model did not write it: a plain record of the turns was kept")
+    swept = res.get("sweep") or {}
+    if swept.get("dormant"):
+        notes.append(_so_many(len(swept["dormant"]), "older memory", "older memories") + " went dormant")
+    if swept.get("deleted"):
+        notes.append(_so_many(len(swept["deleted"]), "memory", "memories") + " forgotten for good")
+    if res.get("embed_error"):
+        notes.append("what it is related to was found by words - the embedding server did not answer "
+                     f"({res['embed_error']})")
+    renderer.faculty("CONSOLIDATOR", which + (str(ep.get("goal") or "").strip() or "an episode"), notes)
+
+    reread, held = res.get("reconsolidated") or [], res.get("held") or []
+    if res.get("reconsolidate_error"):
+        renderer.faculty("RECONSOLIDATOR", f"did not run - {res['reconsolidate_error']}")
+    elif reread or held:
+        said = []
+        if reread:
+            said.append(_so_many(len(reread), "earlier memory", "earlier memories") + " re-read")
+        if held:
+            said.append(f"{len(held)} left as {'it was' if len(held) == 1 else 'they were'}")
+        renderer.faculty("RECONSOLIDATOR", ", ".join(said),
+                         [str(r.get("reason", "")).strip() for r in reread if r.get("reason")][:3])
+
+    if res.get("semantic_ran"):
+        new = res.get("new_assertions") or []
+        reworded = res.get("reformulated") or []
+        counts = [(len(new), "new belief", "new beliefs"),
+                  (len(res.get("confirmed") or []), "confirmed", "confirmed"),
+                  (len(res.get("contradicted") or []), "contradicted", "contradicted"),
+                  (len(reworded), "reworded", "reworded"),
+                  (len(res.get("retired") or []), "retired", "retired"),
+                  (int(res.get("merged_beliefs") or 0), "folded into another", "folded into others")]
+        said = [_so_many(k, one, many) for k, one, many in counts if k]
+        details = [f"belief: {str(a.get('text', '')).strip()}" for a in new[:3] if a.get("text")]
+        details += [f"reworded: {str(r.get('to', '')).strip()}" for r in reworded[:2] if r.get("to")]
+        renderer.faculty("ABSTRACTOR", " · ".join(said) or "nothing new to believe", details)
 
 
 def _spool(turns: list[Turn]) -> list[dict]:
@@ -1326,7 +1392,7 @@ def _show_jobs() -> None:
         return
     print()
     if not items:
-        print("  nothing in the background - the memory is up to date.")
+        jobs.show_idle()
         print()
         return
 
@@ -1336,9 +1402,7 @@ def _show_jobs() -> None:
     # because a record of consolidations that worked is a worse copy of the
     # episodes they produced. What is left is what still wants attention.
     if live:
-        print(f"  {live.get('note', 'a session')}   "
-              "ctrl+D to leave it to itself")
-        print()
+        jobs.header(os.environ.get("PRAGMA_PROJECT") or "", live.get("note") or "a session")
         try:
             jobs.watch(Path(live["_path"]), live)
         except KeyboardInterrupt:
@@ -1347,20 +1411,8 @@ def _show_jobs() -> None:
         print()
         return
 
-    print("  these did not finish. The turns are still in them, so they can be")
-    print("  run again:  venv\\Scripts\\python.exe tools\\pragma_consolidate.py <file>")
+    jobs.show_failed([("", job) for job in items])
     print()
-    for job in items:
-        state = job.get("status", "?")
-        when = (job.get("finished") or job.get("started")
-                or job.get("created") or "")
-        print(f"  {state:<10}{when}   {job.get('note', '')}")
-        if job.get("error"):
-            print(f"    {job['error'][:100]}")
-        for line in (job.get("log") or [])[-4:]:
-            print(f"    {line[:100]}")
-        print(f"    {job.get('_path', '')}")
-        print()
 
 
 def _load_episode(episode_id: str) -> dict | None:

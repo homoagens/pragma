@@ -30,6 +30,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import sys
 import time
 from datetime import datetime, timezone
@@ -301,17 +302,180 @@ def hold(text: str = "ctrl+D to go back") -> None:
         pass
 
 
-def _rest(log: list, shown: int) -> list:
-    """The lines of a log that vanished before they were printed."""
-    return [line for line in log[shown:] if line]
+# --- what a job says, as it is read -------------------------------------------
+# The log of a job is lines of text - "[ABSTRACTOR] 2 new beliefs" and, under
+# it and indented, what it has to add - because a file a person may have to
+# open should read as what happened. Drawn, it is the conversation's own
+# ledger: a column of names in the accent, what each faculty did beside it,
+# the one at work on a status line with its seconds, and a closing line.
+#
+#     giulia  a session of 2 turns · ctrl+D leaves it to itself
+#
+#     segmenter       2 turns, 1 worth keeping - the greeting carries nothing
+#     consolidator    Agrilog delivered; never deploy on a Friday
+#     reconsolidator  2 earlier memories re-read
+#     abstractor      1 new belief · 1 confirmed
+#                     · belief: A fixed price needs its risks named up front
+#     ⠇ abstractor · distilling beliefs from the episodes  12s
+#
+#     ✓ 1 memory written · 96s
+#
+# It used to be the log itself, brackets and capitals, printed as it came:
+# what a worker writes for a file is not what a person watching wants to read.
+
+NAME = 16                        # the column a faculty's name stands in
+_LINE = re.compile(r"^\[([A-Z][A-Z0-9 /]*)\]\s*(.*)$", re.DOTALL)
 
 
-def _ending(job: dict) -> str:
-    state = job.get("status")
+def entries(log) -> list[dict]:
+    """A job's log as what each faculty said: {"tag", "text", "details",
+    "running"}. `running` is a faculty saying what it is ABOUT to do - those
+    lines end on an ellipsis - and is what the status line shows; the rest is
+    what was done, and stays."""
+    out: list[dict] = []
+    for line in log or []:
+        line = str(line)
+        found = _LINE.match(line)
+        if found:
+            text = found.group(2).strip()
+            if "\n" in text:            # a traceback: the line that names the error
+                text = [part.strip() for part in text.splitlines() if part.strip()][-1]
+            out.append({"tag": found.group(1).split()[0], "text": text, "details": [],
+                        "running": text.endswith(("…", "..."))})
+        elif out and line.strip():
+            out[-1]["details"].append(line.strip())
+    return out
+
+
+def step_of(job: dict) -> str:
+    """The faculty at work on a job and what it is doing, in one line."""
+    said = entries(job.get("log"))
+    if not said:
+        return "starting"
+    last = said[-1]
+    return f"{last['tag'].lower()} · {last['text'].rstrip('.… ')}"
+
+
+def _look():
+    """The console, and the conversation's colours and marks for it."""
+    from rich.console import Console
+    from agent.harness import GLYPHS, GLYPHS_LEGACY, accent_hex
+    console = Console(highlight=False)
+    poor = bool(getattr(console, "legacy_windows", False))
+    return console, {"accent": accent_hex(), "g": GLYPHS_LEGACY if poor else GLYPHS, "poor": poor,
+                     "tones": ("", "bright_black", "bright_black") if poor else ("", "grey66", "grey42")}
+
+
+def _row(look: dict, name: str, text: str, details=(), name_style: str = ""):
+    """One entry: a name in its column, what it says, and under that - in the
+    same column and a tone quieter - what it has to add."""
+    from rich.console import Group
+    from rich.table import Table
+    from rich.text import Text
+
+    def hanging(lead, body):
+        # The body wraps under itself, never under what leads it in.
+        grid = Table.grid(padding=0)
+        grid.add_column(no_wrap=True)
+        grid.add_column(overflow="fold")
+        grid.add_row(lead, body)
+        return grid
+
+    rows = [hanging(Text("  " + name.ljust(NAME), style=name_style or look["accent"]),
+                    Text(" ".join(str(text).split()), style=look["tones"][1]))]
+    for d in details:
+        rows.append(hanging(Text(" " * (2 + NAME) + look["g"]["dot"] + " ", style=look["tones"][2]),
+                            Text(" ".join(str(d).split()), style=look["tones"][2])))
+    return Group(*rows)
+
+
+def _entry(look: dict, e: dict):
+    return _row(look, e["tag"].lower(), e["text"], e["details"],
+                name_style="red" if e["tag"] == "ERROR" else "")
+
+
+def _seconds(job: dict, fallback: float) -> int:
+    try:
+        fmt = "%Y-%m-%dT%H:%M:%SZ"
+        return max(0, int((datetime.strptime(job["finished"], fmt)
+                           - datetime.strptime(job["started"], fmt)).total_seconds()))
+    except Exception:
+        return max(0, int(fallback))
+
+
+def _closing(look: dict, job: dict, said: list[dict], elapsed: float, gone: bool = False):
+    """How it ended, as a turn's closing line says how a turn did."""
+    from rich.text import Text
+    dot = look["g"]["dot"]
+    state = "done" if gone else job.get("status")
     if state == "done":
-        n = len(job.get("episodes") or [])
-        return f"done - {n} episode{'s' if n != 1 else ''} written."
-    return f"{state} - {str(job.get('error', ''))[:100]}"
+        n = len(job.get("episodes") or []) if not gone else sum(
+            1 for e in said if e["tag"] == "CONSOLIDATOR" and not e["running"])
+        what = (f"{n} {'memory' if n == 1 else 'memories'} written" if n
+                else "nothing in it was worth keeping")
+        line = Text(f"  {look['g']['ok']} ", style="green")
+        line.append(f"{what} {dot} {_seconds(job, elapsed)}s", style=look["tones"][2])
+        return [line]
+    line = Text(f"  {look['g']['bad']} ", style="red")
+    line.append(f"{state} {dot} {str(job.get('error') or 'no reason recorded')[:160]}", style=look["tones"][1])
+    return [line, Text(f"    the turns are still in it: {job.get('_path') or ''}", style=look["tones"][2])]
+
+
+def header(project: str, note: str, also: str = "") -> None:
+    """The line a job is watched under: whose memory, of what."""
+    from rich.text import Text
+    console, look = _look()
+    line = Text("  ")
+    if project:
+        line.append(project + "  ", style=look["accent"])
+    dot = look["g"]["dot"]
+    line.append(f"{note or 'a session'} {dot} ctrl+D leaves it to itself"
+                + (f" {dot} also writing: {also}" if also else ""), style=look["tones"][2])
+    console.print(line)
+    console.print()
+
+
+def show_idle(everywhere: bool = False) -> None:
+    from rich.text import Text
+    console, look = _look()
+    console.print(Text("  nothing in the background - "
+                       + ("every memory is up to date" if everywhere else "the memory is up to date"),
+                       style=look["tones"][2]))
+
+
+def show_failed(found: list[tuple[str, dict]]) -> None:
+    """The jobs that did not finish, and how to run one again.
+
+    `found` is [(project or "", job)]. The command is spelled as THIS system
+    spells it: the Windows one, printed on Linux, was a line nobody could
+    paste.
+    """
+    from rich.text import Text
+    console, look = _look()
+    quiet = look["tones"][2]
+    py = Path(sys.executable)
+    try:
+        py = py.relative_to(_ROOT)
+    except ValueError:
+        pass
+    console.print(Text("  these did not finish. The turns are still in them, so they can be run again:",
+                       style=look["tones"][1]))
+    console.print(Text(f"    {py} {Path('tools') / 'pragma_consolidate.py'} <file>", style=quiet))
+    console.print(Text(f"    from {_ROOT}", style=quiet))
+    for project, job in found:
+        console.print()
+        when = str(job.get("finished") or job.get("started") or job.get("created") or "")
+        when = when.replace("T", " ").rstrip("Z")[:16]
+        dot = look["g"]["dot"]
+        what = f" {dot} ".join(x for x in (project, str(job.get("note") or "a session"), when) if x)
+        details = []
+        if job.get("error"):
+            details.append(str(job["error"])[:200])
+        done = [e for e in entries(job.get("log")) if not e["running"] and e["tag"] != "ERROR"]
+        if done:
+            details.append(f"got as far as: {done[-1]['tag'].lower()} - {done[-1]['text'][:120]}")
+        details.append(str(job.get("_path", "")))
+        console.print(_row(look, str(job.get("status", "?")), what, details, name_style="red"))
 
 
 def watch(path, job: dict) -> str:
@@ -319,122 +483,124 @@ def watch(path, job: dict) -> str:
 
     The faculties are the same and they take the same minute; what changed is
     that you are no longer held there. So the log is FOLLOWED rather than
-    dumped: each line appears as its faculty finishes, and the one in flight
-    carries a second count, because forty seconds of nothing moving is
-    indistinguishable from a worker that has died.
+    dumped: each faculty's line appears as it finishes, and the one in flight
+    is on the status line with its seconds, because forty seconds of nothing
+    moving is indistinguishable from a worker that has died.
 
     Returns "left" when the watcher walked away, and otherwise how the job
     ended - so the caller knows whether there is an ending on the screen to
     leave standing.
     """
-    shown = 0
-    started = time.time()
-    last_len = 0
-    # Repainting needs a terminal to repaint on. Piped to a file, a carriage
-    # return is just a character, and the second counter would write four
-    # hundred copies of the same sentence into the log.
+    # Repainting needs a terminal to repaint on. Piped to a file, a status
+    # line is four hundred copies of the same sentence.
     try:
-        repaint = sys.stdout.isatty()
+        live = sys.stdout.isatty()
     except Exception:
-        repaint = False
-    if repaint:
-        try:
-            with _keyboard():
-                return _watch_live(path, job)
-        except ImportError:
-            pass
-    while True:
-        fresh = read(path)
-        if not fresh and shown:
-            # The worker finished and cleaned up after itself. A job file that
-            # has gone is the success case; what it last said is printed from
-            # the copy read before it went.
-            for line in _rest(job.get("log") or [], shown):
-                print("\r" + " " * last_len + "\r  " + line[:100])
-                last_len = 0
-            print("  done.")
-            return "done"
-        job = fresh or job
-        log = job.get("log") or []
-        for line in log[shown:-1] if len(log) > shown else []:
-            print("\r" + " " * last_len + "\r  " + line[:100])
-            last_len = 0
-        shown = max(shown, len(log) - 1)
-        done = job.get("status") not in ("pending", "running")
-        tail = log[-1] if log else "starting"
-        if done:
-            if log:
-                print("\r" + " " * last_len + "\r  " + log[-1][:100])
-            break
-        if repaint:
-            row = f"  {tail[:88]}  {int(time.time() - started)}s"
-            print("\r" + row.ljust(last_len), end="", flush=True)
-            last_len = len(row)
-        if stop_key():
-            print("\r" + " " * last_len + "\r"
-                  "  still working - it carries on without you.")
-            return "left"
-        time.sleep(0.5)
-
-    print("  " + _ending(job))
-    return str(job.get("status") or "done")
+        live = False
+    with (_keyboard() if live else _nothing()):
+        return _watch(path, job, live)
 
 
-def _watch_live(path, job: dict) -> str:
-    """watch() on a terminal: the step in flight with its seconds, and under it
-    the last lines of what the faculty is thinking - the same block the
-    conversation draws for the agent."""
-    from rich.console import Console, Group
+def _nothing():
+    import contextlib
+    return contextlib.nullcontext()
+
+
+def _watch(path, job: dict, live: bool) -> str:
+    from rich.console import Group
     from rich.live import Live
     from rich.padding import Padding
     from rich.spinner import Spinner
     from rich.text import Text
 
-    console = Console(highlight=False)
-    spinner = Spinner("dots", text="")
-    shown = 0
+    console, look = _look()
+    dot = look["g"]["dot"]
+    spinner = Spinner("line" if look["poor"] else "dots", text="", style=look["accent"])
     started = time.time()
+    printed = 0                         # entries already on the screen for good
+    step, since = None, time.time()     # the step in flight, and since when
+    job = dict(job, _path=str(path))
 
-    def block(tail, thinking, answer=""):
-        spinner.update(text=Text(f"{tail[:88]}  {int(time.time() - started)}s", style="bright_black"))
-        # The answer, once the faculty has started writing it, in place of
-        # the reasoning - upright where the reasoning is in italics.
-        if answer:
-            body = Text(answer.strip("\n"), style="bright_black")
-        elif thinking:
-            body = Text(" ".join(thinking.split()), style="italic bright_black")
-        else:
-            return spinner
-        lines = body.wrap(console, max(20, console.width - 8))
-        return Group(spinner, Padding(Group(*lines[-4:]), (0, 0, 0, 4)))
+    def block(label: str, embedding: str, thinking: str):
+        """The status: who is at work and for how long; under it the embedding
+        server when it is the one working, then the end of the reasoning."""
+        spinner.update(text=Text(f"{label}  {int(time.time() - since)}s", style="bright_black"))
+        under = []
+        if embedding:
+            under.append(Padding(Text(embedding[:max(20, console.width - 8)], style="bright_black"),
+                                 (0, 0, 0, 2)))
+        if thinking:
+            body = Text(" ".join(thinking.split()), style=f"italic {look['tones'][2]}")
+            lines = body.wrap(console, max(20, console.width - 10))
+            under.append(Padding(Group(*lines[-4:]), (0, 0, 0, 4)))
+        return Padding(Group(spinner, *under) if under else spinner, (0, 0, 0, 2))
 
-    with Live(block("starting", ""), console=console, refresh_per_second=4, transient=True) as live:
+    def settle(said: list[dict], out) -> None:
+        nonlocal printed
+        done = [e for e in said if not e["running"]]
+        for e in done[printed:]:
+            # What a job failed of is its closing line; said there, it is not
+            # said twice.
+            if e["tag"] == "ERROR" and e["text"] and e["text"] in str(job.get("error") or ""):
+                continue
+            out.print(_entry(look, e))
+        printed = len(done)
+
+    def follow(screen) -> tuple[str, dict, list[dict]]:
+        nonlocal job, step, since
+        missed = 0
         while True:
             fresh = read(path)
-            if not fresh and shown:
-                live.stop()
-                for line in _rest(job.get("log") or [], shown):
-                    console.print("  " + line[:100], highlight=False)
-                console.print("  done.")
-                return "done"
-            job = fresh or job
-            log = job.get("log") or []
-            for line in log[shown:-1] if len(log) > shown else []:
-                live.console.print("  " + line[:100], highlight=False)
-            shown = max(shown, len(log) - 1)
+            if not fresh:
+                # The worker finished and cleaned up after itself: a job file
+                # that has gone is the success case. What it last said is
+                # printed from the copy read before it went. (One empty read
+                # can be the file between two writes; two are not.)
+                missed += 1
+                if missed >= 2:
+                    said = entries(job.get("log"))
+                    settle(said, screen.console if screen else console)
+                    return "gone", job, said
+                time.sleep(0.2)
+                continue
+            missed = 0
+            job = dict(fresh, _path=str(path))
+            said = entries(job.get("log"))
+            settle(said, screen.console if screen else console)
             if job.get("status") not in ("pending", "running"):
-                if log:
-                    live.console.print("  " + log[-1][:100], highlight=False)
-                break
-            live.update(block(log[-1] if log else "starting", job.get("thinking") or "", job.get("answer") or ""))
+                return str(job.get("status")), job, said
+            if screen:
+                at = said[-1] if said and said[-1]["running"] else None
+                key = (len(said), bool(job.get("answer")))
+                if key != step:
+                    step, since = key, time.time()
+                if at is None:
+                    label = "starting" if not said else f"{said[-1]['tag'].lower()} {dot} working"
+                elif job.get("answer"):
+                    # What a faculty answers with is JSON for the program:
+                    # that it is being written is said, the JSON is not shown.
+                    label = f"{at['tag'].lower()} {dot} writing it down"
+                else:
+                    label = f"{at['tag'].lower()} {dot} {at['text'].rstrip('.… ')}"
+                screen.update(block(label[:max(20, console.width - 12)],
+                                    str(job.get("embedding") or "").replace("·", dot),
+                                    "" if job.get("answer") else str(job.get("thinking") or "")))
             if stop_key():
-                live.stop()
-                console.print("  still working - it carries on without you.")
-                return "left"
-            time.sleep(0.5)
+                return "left", job, said
+            time.sleep(0.25 if screen else 0.5)
 
-    console.print("  " + _ending(job))
-    return str(job.get("status") or "done")
+    if live:
+        with Live(Text(""), console=console, refresh_per_second=8, transient=True) as screen:
+            how, job, said = follow(screen)
+    else:
+        how, job, said = follow(None)
+    if how == "left":
+        console.print(Text("  still working - it carries on without you.", style=look["tones"][2]))
+        return "left"
+    console.print()
+    for line in _closing(look, job, said, time.time() - started, gone=(how == "gone")):
+        console.print(line)
+    return "done" if how == "gone" else how
 
 
 # --- the lock -----------------------------------------------------------------

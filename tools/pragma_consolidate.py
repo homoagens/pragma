@@ -77,9 +77,13 @@ class _JobRenderer:
         self._add(f"[{tag}] {note}")
 
     def faculty(self, tag, summary, details=None):
-        self._add(f"[{tag}] {summary}")
-        for d in details or []:
-            self._add(f"         {d}")
+        # The line and what hangs under it, in ONE write. Whoever is watching
+        # reads the file between writes, and a line read without its details
+        # is printed without them: /jobs does not print a faculty twice.
+        log = self.job.setdefault("log", [])
+        log.append(f"[{tag}] {summary}")
+        log.extend(f"         {d}" for d in details or [])
+        jobs.write(self.path, self.job)
 
     def error(self, step, content):
         self._add(f"[ERROR] {content}")
@@ -98,6 +102,7 @@ class _JobHook:
         self.tail = ""
         self.said = ""
         self.written = 0.0
+        self.held: dict = {}
 
     # What each faculty is doing, for the line that names it. The segmenter
     # and the consolidator announce themselves already; these two run inside
@@ -141,8 +146,33 @@ class _JobHook:
             self.r.job["answer"] = self.said
             jobs.write(self.r.path, self.r.job)
 
+    def embedding(self, kind, done, todo, held):
+        """embed.STATUS_HOOK for the worker: the embedding server at work, in
+        the words the conversation uses for it, for /jobs to say under the
+        status. A re-reading being measured is not a search and is not said."""
+        from agent.harness import _counted
+        if kind == "readings":
+            return
+        if not kind:
+            text = ""
+        elif kind == "request":
+            text = self.r.job.get("embedding") or "embedding · the request"
+        elif todo and done < todo:
+            text = f"embedding · {done} of {_counted({kind: todo})}"
+        else:
+            self.held[kind] = held
+            text = f"embedding · {_counted(self.held)} searched by meaning"
+        if text != (self.r.job.get("embedding") or ""):
+            if text:
+                self.r.job["embedding"] = text
+            else:
+                self.r.job.pop("embedding", None)
+            jobs.write(self.r.path, self.r.job)
+
     def end(self):
+        self.held = {}
         had = self.r.job.pop("thinking", None) is not None
+        had = (self.r.job.pop("embedding", None) is not None) or had
         had = (self.r.job.pop("answer", None) is not None) or had
         if had:
             jobs.write(self.r.path, self.r.job)
@@ -235,8 +265,9 @@ def run(path: Path) -> int:
             turns.append(turn)
 
         renderer = _JobRenderer(path, job)
+        import embed
         import llm_client
-        llm_client.STATUS_HOOK = _JobHook(renderer)
+        llm_client.STATUS_HOOK = embed.STATUS_HOOK = _JobHook(renderer)
         written = _consolidate(turns, Path(job.get("workspace") or os.getcwd()),
                                renderer, note=job.get("note") or "a session")
         job["episodes"] = [e.get("id", "") for e in written if e]

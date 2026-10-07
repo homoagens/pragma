@@ -19,16 +19,16 @@ and `/jobs`, from the home screen or from inside a project, lists what is
 waiting:
 
 ```text
-  these did not finish. The turns are still in them, so they can be
-  run again, from /home/you/pragma:
+  these did not finish. The turns are still in them, so they can be run again:
     venv/bin/python tools/pragma_consolidate.py <file>
+    from /home/you/pragma
 
-  abandoned first           2026-10-01T14:24:51Z   this session
-    /home/you/.pragma/projects/first/jobs/job_20261001T142451Z_480.json
+  abandoned       first · this session · 2026-10-01 14:24
+                  · /home/you/.pragma/projects/first/jobs/job_20261001T142451Z_480.json
 ```
 
 `abandoned` means the process that was doing the work is gone. `failed` means
-it stopped with an error, shown on the line below it.
+it stopped with an error, shown on the line below it, with how far it had got.
 
 ## Run it again
 

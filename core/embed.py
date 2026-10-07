@@ -247,10 +247,14 @@ def _failed(e: Exception) -> None:
     _tell("", 0, 0, 0)
 
 
-def of(texts: list[str], kind: str) -> list[array] | None:
+def of(texts: list[str], kind: str, tell: bool = True) -> list[array] | None:
     """A unit vector for each text, kept between calls under `kind` - one of
     KINDS. None when there is no server or it did not answer: LAST_ERROR then
-    says which."""
+    says which.
+
+    `tell=False` for texts that are not being searched: the one episode
+    everything else is compared WITH, the two events a re-reading is measured
+    against. Said to whoever is watching, they read as "1 memory searched"."""
     global LAST_ERROR
     if kind not in KINDS:
         raise ValueError(f"not a kind of vector: {kind!r}")
@@ -266,13 +270,14 @@ def of(texts: list[str], kind: str) -> list[array] | None:
         missing = [i for i, v in enumerate(out) if v is None]
         if missing:
             fresh = _ask(srv, [texts[i] for i in missing],
-                         each=lambda done: _tell(kind, done, len(missing), len(texts)))
+                         each=(lambda done: _tell(kind, done, len(missing), len(texts))) if tell else None)
             for i, vector in zip(missing, fresh):
                 out[i] = vector
                 _save(paths[i], vector)
                 _hold(paths[i], vector)
         LAST_ERROR = ""
-        _tell(kind, len(missing), len(missing), len(texts))
+        if tell:
+            _tell(kind, len(missing), len(missing), len(texts))
         return out
     except Exception as e:
         _failed(e)
@@ -367,8 +372,8 @@ def moved(own: dict, before: str, after: str, other: dict) -> dict | None:
     """
     if not before.strip() or not after.strip():
         return None
-    r = of([before.strip(), after.strip()], "readings")
-    e = of([event_text(own), event_text(other)], "events") if r is not None else None
+    r = of([before.strip(), after.strip()], "readings", tell=False)
+    e = of([event_text(own), event_text(other)], "events", tell=False) if r is not None else None
     if r is None or e is None:
         return None
     srv = server()
