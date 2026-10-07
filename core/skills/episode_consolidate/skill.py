@@ -961,7 +961,10 @@ def episode_consolidate_detailed(transcript: str = "", workspace: str = "",
     # The abstractor's explicit `contradicts` is fragile (model-dependent). But
     # if the episodes a belief RESTS ON have just been reinterpreted, that is a
     # robust signal the belief itself may be stale — even with zero
-    # contradictions. Reformulate it in the light of its sources' new meanings.
+    # contradictions. So it is LOOKED AT AGAIN in the light of its sources' new
+    # meanings - which is not the question asked of a contradicted belief, and
+    # has a faculty of its own (reconsolidate.review_belief): here the usual
+    # answer is that the belief still stands.
     # This path never retires: it only rewrites when a better version exists.
     bridge_min = getattr(config, "RECONSOLIDATE_BRIDGE_MIN_SOURCES", 2)
     if recon_on and recon_interps and bridge_min > 0:
@@ -977,12 +980,18 @@ def episode_consolidate_detailed(transcript: str = "", workspace: str = "",
             shifted = [s for s in e.get("sources", []) if s in recon_interps]
             if len(shifted) < bridge_min:
                 continue
-            evidence = [recon_interps[s] for s in shifted]
-            srcs = [ep_by_id[s].get("goal", "") for s in e.get("sources", [])
-                    if s in ep_by_id and ep_by_id[s].get("goal")]
-            reformed = reconsolidate.reformulate_belief(text, evidence, srcs)
+            # Each source with what happened in it and what it is taken to mean
+            # now. The facts are the ground a belief stands on, and a re-reading
+            # that no longer mentions them has not taken them away.
+            shown = [{"about": ep_by_id[s].get("goal", ""),
+                      "happened": ep_by_id[s].get("narrative", ""),
+                      "means_now": recon_interps.get(s) or ep_by_id[s].get("interpretation", ""),
+                      "revised": s in shifted}
+                     for s in e.get("sources", []) if s in ep_by_id]
+            shown.sort(key=lambda x: not x["revised"])      # the revised ones first
+            reformed = reconsolidate.review_belief(text, shown)
             if not reformed:
-                continue  # no defensible rewrite → leave the belief as-is
+                continue  # it still stands → leave the belief as-is
             hist = e.get("text_history") or []
             hist.append(_replaced(text, reformed["text"], {
                 "ts": ts, "text": text,

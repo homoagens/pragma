@@ -38,6 +38,7 @@ answers it: see [Architecture](../explanation/architecture.md#which-server-answe
 | `_SEMANTIC_SYSTEM` | [`core/skills/episode_consolidate/skill.py`](../../core/skills/episode_consolidate/skill.py) | Draws beliefs from what recurs across episodes. |
 | `_EPISODIC_SYSTEM` | [`core/reconsolidate.py`](../../core/reconsolidate.py) | Revises what an earlier episode is taken to mean. |
 | `_SEMANTIC_SYSTEM` | [`core/reconsolidate.py`](../../core/reconsolidate.py) | Rewords a belief that has been contradicted. |
+| `_REVIEW_SYSTEM` | [`core/reconsolidate.py`](../../core/reconsolidate.py) | Checks a belief against episodes whose meaning was revised. |
 | `_REFLECT_SYSTEM` | [`core/skills/session_reflect/skill.py`](../../core/skills/session_reflect/skill.py) | A reflection pass over a finished task. |
 
 ## Sent in the `critic` role

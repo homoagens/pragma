@@ -278,3 +278,105 @@ def reformulate_belief(text: str, contradicting_evidence: list[str],
     if not new_text or new_text in ("...", "…") or new_text == text.strip():
         return None
     return {"text": new_text, "reason": str(data.get("reason", "")).strip()[:200]}
+
+
+# ── C. A belief whose sources were re-read ───────────────────────────────────
+#
+# NOT THE SAME QUESTION AS B. There, a belief has been contradicted and the
+# only way to keep it is to rewrite it. Here nobody has contradicted anything:
+# the episodes a belief rests on have been re-read, and the question is whether
+# the belief still says what they support. Asked with B's prompt - which opens
+# by telling the model the belief "can no longer stand as written", and whose
+# only way of leaving it alone is to declare it false - a belief came back
+# reworded whether or not anything under it had changed. The usual answer here
+# is that it still stands, and the prompt has to make that answer available.
+#
+# AND IT IS ASKED AGAINST WHAT HAPPENED, not only against what the sources are
+# now taken to mean. An interpretation is rewritten for a reason of its own,
+# and the new one may no longer mention what a belief drew from that episode.
+# Shown the meanings alone, the model takes that silence for a contradiction
+# and writes a different belief in the old one's place. The narrative is the
+# part of an episode that does not change: it is the ground the belief was
+# drawn from, and it is still there.
+
+_REVIEW_SYSTEM = """You are the reconsolidation module of an AI agent's memory,
+working on SEMANTIC beliefs. A belief rests on episodes. What some of those
+episodes are taken to MEAN has since been revised; what HAPPENED in them has
+not changed and cannot. Nobody has contradicted the belief. Your job: check
+whether it still says what its sources support.
+
+You are given the belief and its sources: for each, what it was about, what
+happened in it, what it is taken to mean now, and whether that meaning was
+revised.
+
+Respond with ONLY a JSON object:
+{
+  "reformulate": true | false,
+  "text": "the belief as it should now read, a general statement, <= 200 chars",
+  "reason": "what in the sources the old wording no longer fits, <= 20 words"
+}
+
+RULES:
+- Most of the time the belief STILL STANDS, and a belief is meant to be
+  steadier than the episodes under it. Then set reformulate=false and leave
+  "text" and "reason" empty. This is the normal, correct answer.
+- WHAT HAPPENED IS THE GROUND. A belief stands for as long as what happened in
+  its sources supports it. A revised meaning that no longer mentions what the
+  belief says has not taken that support away: the episode was re-read for
+  something else.
+- Set reformulate=true only when the revised meanings, read together with what
+  happened, show the belief to be too broad, too narrow, or pointed the wrong
+  way. Then change only that: keep its subject, and as much of its wording as
+  still holds. A sentence about something else is a different belief, not a
+  rewording of this one.
+- The new wording must be SUPPORTED by what is shown; do not invent facts or
+  conditions the sources do not warrant.
+- A belief is a general statement. Do not turn it into a summary of its
+  sources, and do not reword it for style."""
+
+# How many sources a belief is shown with: the revised ones come first.
+_REVIEW_SOURCES = 6
+
+
+def review_belief(text: str, sources: list[dict], model=None) -> dict | None:
+    """Ask whether a belief still says what its sources support, now that some
+    of them have been re-read.
+
+    `sources` are the episodes it rests on, each {"about", "happened",
+    "means_now", "revised"}. Returns {"text", "reason"} when it should be
+    reworded, or None to leave it as it is - which is also what any failure
+    returns: a belief is never retired from here. Never raises.
+    """
+    global LAST_ERROR
+    LAST_ERROR = ""
+    import json
+    payload = json.dumps({
+        "belief":  text,
+        "sources": [{"about":           str(s.get("about", "") or "")[:200],
+                     "happened":        str(s.get("happened", "") or "")[:400],
+                     "means_now":       str(s.get("means_now", "") or "")[:300],
+                     "meaning_revised": bool(s.get("revised"))}
+                    for s in (sources or [])[:_REVIEW_SOURCES]],
+    }, ensure_ascii=False, indent=2)
+    try:
+        with llm_client.faculty("RECONSOLIDATOR"):
+            raw = llm_client.call_llm(
+                messages=[
+                    {"role": "system", "content": _REVIEW_SYSTEM},
+                    {"role": "user",   "content": payload},
+                ],
+                model=model,
+                max_tokens=config.MEMORY_MAX_TOKENS,
+                **config.memory_call("write"),
+                response_schema=_REFORMULATION_SCHEMA,
+            )
+        data = extract_json(raw)
+    except Exception as e:
+        LAST_ERROR = f"{type(e).__name__}: {str(e)[:160]}"
+        return None
+    if not isinstance(data, dict) or not data.get("reformulate"):
+        return None
+    new_text = str(data.get("text", "")).strip()[:300]
+    if not new_text or new_text in ("...", "…") or new_text == text.strip():
+        return None
+    return {"text": new_text, "reason": str(data.get("reason", "")).strip()[:200]}

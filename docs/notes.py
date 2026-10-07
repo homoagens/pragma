@@ -420,6 +420,8 @@ PROMPTS = {
         "Revises what an earlier episode is taken to mean."),
     "core/reconsolidate.py:_SEMANTIC_SYSTEM": ("memory",
         "Rewords a belief that has been contradicted."),
+    "core/reconsolidate.py:_REVIEW_SYSTEM": ("memory",
+        "Checks a belief against episodes whose meaning was revised."),
     "core/skills/session_reflect/skill.py:_REFLECT_SYSTEM": ("memory",
         "A reflection pass over a finished task."),
 
