@@ -1131,7 +1131,10 @@ def cmd_edit(state: dict) -> bool:
         new["key_env"] = key_env.strip().lstrip("$")
     elif key:
         new["key"] = key
-    for keep in ("kind", "work", "sampling"):
+    # Everything `tune` wrote stays. `reasons` was missing from this list: an
+    # endpoint whose address was corrected came back with every role
+    # reasoning as an endpoint that says nothing does, and nothing said so.
+    for keep in ("kind", "work", "sampling", "reasons"):
         if entry.get(keep):
             new[keep] = entry[keep]
     cat["endpoints"][name] = new
