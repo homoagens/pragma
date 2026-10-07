@@ -334,7 +334,7 @@ _SEQUENCES = {
 }
 
 
-def read_key() -> str:
+def read_key(timeout: float | None = None) -> str:
     """One keypress, as a word: up, down, home, end, pageup, pagedown, enter,
     back - or the character, lower-cased.
 
@@ -342,6 +342,9 @@ def read_key() -> str:
     on Linux, and nothing above a menu caught it: ctrl+C on the projects page
     or in /configure ended Pragma with a traceback, while on Windows the same
     key went back one page.
+
+    With a `timeout` it waits that many seconds and then answers "" - for a
+    page that has something of its own to redraw while nobody presses a key.
     """
     if os.name == "nt":
         import msvcrt
@@ -350,7 +353,10 @@ def read_key() -> str:
             # only runs its ctrl+C handler between calls, and getwch() blocks
             # until a key comes - so ctrl+C on a Windows menu did nothing
             # until the NEXT key was pressed.
+            until = None if timeout is None else time.time() + timeout
             while not msvcrt.kbhit():
+                if until is not None and time.time() >= until:
+                    return ""
                 time.sleep(0.02)
             ch = msvcrt.getwch()
             if ch in ("\x00", "\xe0"):      # a special key arrives as two
@@ -364,6 +370,8 @@ def read_key() -> str:
     with keyboard():
         fd = sys.stdin.fileno()
         try:
+            if timeout is not None and not _select.select([fd], [], [], timeout)[0]:
+                return ""
             ch = os.read(fd, 1)
         except KeyboardInterrupt:
             return "back"
@@ -392,7 +400,8 @@ def read_key() -> str:
 
 
 def menu(options: list[str], notes: list[str] | None = None, start: int = 0,
-         hint: str = "") -> int | None:
+         hint: str = "", under: list[list[str]] | None = None,
+         live=None, every: float = 0.0) -> int | None:
     """The list, walked with the arrows.
 
     Drawn once and then redrawn over itself from where the drawing ended -
@@ -401,7 +410,9 @@ def menu(options: list[str], notes: list[str] | None = None, start: int = 0,
 
     THE NOTES ARE A COLUMN. Each used to start three spaces after its own
     option, so a list of words of different lengths had its explanations
-    zig-zagging down the page; they now start where the longest option ends.
+    zig-zagging down the page; they now start where the longest option ends -
+    wherever that leaves every note room, which a cap at a third of the window
+    did not ask before it broke the column.
 
     A LIST LONGER THAN THE WINDOW scrolls inside itself, with a line saying
     how many rows are above and below. Drawn whole, it pushed its own top off
@@ -411,77 +422,160 @@ def menu(options: list[str], notes: list[str] | None = None, start: int = 0,
     A digit picks a row, and so does a first letter when only one row starts
     with it. When several do, the letter moves to the next of them instead of
     choosing blindly: "q" on qwen3.8 and qwen36 used to open qwen3.8, always.
+
+    A ROW CAN BE THE THING ITSELF. `under[i]` is lines drawn beneath row i and
+    belonging to it - a server's answer, its address - so a page that shows
+    its objects and then asks which of them you meant can have the objects be
+    the rows, and ask nothing. An empty option is a gap between two groups of
+    rows: drawn as a blank line, and never stopped on.
+
+    A PAGE THAT IS STILL HAPPENING passes `live`: asked before every draw, it
+    answers with whichever of "body", "options", "notes", "under" and "hint"
+    it has news of. The body is lines drawn above the rows, inside what is
+    redrawn - what a job has done so far, with its actions under it. `every`
+    is how long to wait for a key before asking again; the screen is written
+    only when what it would say has changed. A body that does not fit keeps
+    its end, which is where the news is.
     """
-    if not options:
+    if not options and not live:
         return None
-    sel = max(0, min(start, len(options) - 1))
+    sel = max(0, start)
     a, r = accent(), (RESET if accent() else "")
     grey = GREY if a else ""
-    hint = hint or f"↑↓ move{SEP}enter select{SEP}ctrl+D back"
-    if not _encodes(hint):
-        hint = "arrows move - enter select - ctrl+D back"
-    col = min(max(len(o) for o in options), max(12, columns() // 3))
+    body: list[str] = []
     drawn = 0
+    shown: list[str] | None = None
     top = 0
     with keyboard():
         while True:
-            # How many rows fit: the window, less the hint, the blank line and
-            # the two "more" markers - and never fewer than three.
-            room = max(3, lines() - 6)
-            window = len(options) if len(options) <= room else room
-            if sel < top:
-                top = sel
-            elif sel >= top + window:
-                top = sel - window + 1
-            if drawn:
-                print(f"{ESC}[{drawn}A", end="")
-            count = 0
-            if len(options) > window:
-                above = f"  {grey}  ↑ {top} more{r}" if top else ""
-                print(f"{ESC}[2K" + above)
-                count += 1
-            for i in range(top, top + window):
+            if live:
+                news = live() or {}
+                body = list(news.get("body", body))
+                options = list(news.get("options", options))
+                notes = news.get("notes", notes)
+                under = news.get("under", under)
+                hint = news.get("hint", hint)
+            rows = [i for i, o in enumerate(options) if o]
+            if not rows and not live:
+                return None
+            if rows and sel not in rows:
+                sel = min(rows, key=lambda i: abs(i - sel))
+            tip = hint or f"↑↓ move{SEP}enter select{SEP}ctrl+D back"
+            if not _encodes(tip):
+                tip = tip.replace("↑↓", "arrows").replace("·", "-")
+                if not _encodes(tip):
+                    tip = "arrows move - enter select - ctrl+D back"
+            # Where the notes start: after the longest row when every note
+            # still fits there, and otherwise no further than a third of the
+            # window - one long row must not push every explanation off it.
+            longest = max([len(o) for o in options] or [0])
+            widest = max([visible(n) for n in (notes or []) if n] or [0])
+            col = (longest if 4 + longest + 3 + widest < columns()
+                   else min(longest, max(12, columns() // 3)))
+            below = [list(under[i]) if under and i < len(under) and under[i] else []
+                     for i in range(len(options))]
+            high = [1 + len(lines_) for lines_ in below]
+
+            # How many lines the page has under its head: the window, less
+            # the head's three, the blank line, the hint and the line the
+            # cursor is left on. A list that does not fit gives two of them to
+            # the "more" markers - it gave none, so a list that scrolled
+            # pushed the head off the top. A row is shown whole or not at all.
+            budget = max(3, lines() - 6)
+            scrolls = sum(high) > budget
+            if not scrolls:
+                top, end = 0, len(options)
+            else:
+                room = max(3, budget - 2)
+
+                def until(first: int) -> int:
+                    used, i = 0, first
+                    while i < len(options) and used + high[i] <= room:
+                        used += high[i]
+                        i += 1
+                    return max(i, first + 1)
+                top = min(top, sel)
+                while sel >= until(top):
+                    top += 1
+                end = until(top)
+                # A gap is between two rows: at the edge of what is shown it
+                # is only a blank line under "more".
+                while top < sel and not options[top]:
+                    top += 1
+                while end - 1 > sel and not options[end - 1]:
+                    end -= 1
+
+            frame: list[str] = []
+            taken = sum(high[top:end]) + (2 if scrolls else 0)
+            space = max(0, budget - taken - 1)
+            told = body
+            if len(body) > space:
+                hidden = len(body) - max(0, space - 1)
+                told = ([f"  {grey}  ↑ {hidden} more{r}"] if space else []) + body[hidden:]
+            frame += [fit(line) for line in told]
+            if told and options:
+                frame.append("")
+            if scrolls:
+                above = sum(1 for i in rows if i < top)
+                frame.append(f"  {grey}  ↑ {above} more{r}" if above else "")
+            for i in range(top, end):
                 option = options[i]
+                if not option:
+                    frame.append("")
+                    continue
                 note = notes[i] if notes and i < len(notes) and notes[i] else ""
                 label = option.ljust(col) if note else option
                 if i == sel:
-                    body = f"  {a}{MARK} {label}{r}"
+                    line = f"  {a}{MARK} {label}{r}"
                 else:
-                    body = f"    {label}"
-                line = fit(body, f"   {grey}{note}{r}" if note else "")
-                print(f"{ESC}[2K" + line)
-                count += 1
-            if len(options) > window:
-                left = len(options) - top - window
-                print(f"{ESC}[2K" + (f"  {grey}  ↓ {left} more{r}" if left else ""))
-                count += 1
-            print(f"{ESC}[2K")
-            print(f"{ESC}[2K  {grey}{hint}{r}", flush=True)
-            drawn = count + 2
+                    line = f"    {label}"
+                frame.append(fit(line, f"   {grey}{note}{r}" if note else ""))
+                frame += [fit("      " + more) for more in below[i]]
+            if scrolls:
+                left = sum(1 for i in rows if i >= end)
+                frame.append(f"  {grey}  ↓ {left} more{r}" if left else "")
+            frame.append("")
+            frame.append(f"  {grey}{tip}{r}")
+
+            if frame != shown:
+                # One write, so a frame is never seen half drawn; what the last
+                # one drew below where this one ends is wiped.
+                out = f"{ESC}[{drawn}A" if drawn else ""
+                out += "".join(f"{ESC}[2K{line}\n" for line in frame) + f"{ESC}[J"
+                sys.stdout.write(out)
+                sys.stdout.flush()
+                drawn, shown = len(frame), frame
             try:
-                key = read_key()
+                key = read_key(every if (live and every) else None)
             except Exception:               # a terminal that cannot go raw has
                 return None                 # no menu to offer
+            if not key:
+                continue
+            if key == "back":
+                return None
+            if not rows:
+                if key == "enter":
+                    return None
+                continue
+            at = rows.index(sel)
             if key == "up":
-                sel = (sel - 1) % len(options)
+                sel = rows[(at - 1) % len(rows)]
             elif key == "down":
-                sel = (sel + 1) % len(options)
+                sel = rows[(at + 1) % len(rows)]
             elif key == "home":
-                sel = 0
+                sel = rows[0]
             elif key == "end":
-                sel = len(options) - 1
+                sel = rows[-1]
             elif key == "pageup":
-                sel = max(0, sel - window)
+                sel = rows[max(0, at - max(1, end - top))]
             elif key == "pagedown":
-                sel = min(len(options) - 1, sel + window)
+                sel = rows[min(len(rows) - 1, at + max(1, end - top))]
             elif key == "enter":
                 return sel
-            elif key == "back":
-                return None
-            elif key.isdigit() and 1 <= int(key) <= min(9, len(options)):
-                return int(key) - 1
-            elif key:
-                hits = [i for i, o in enumerate(options) if o[:1].lower() == key]
+            elif key.isdigit() and 1 <= int(key) <= min(9, len(rows)):
+                return rows[int(key) - 1]
+            else:
+                hits = [i for i in rows if options[i][:1].lower() == key]
                 if len(hits) == 1:
                     return hits[0]
                 if hits:
@@ -490,26 +584,43 @@ def menu(options: list[str], notes: list[str] | None = None, start: int = 0,
 
 
 def pick(title: str, options: list[str], notes: list[str] | None = None,
-         start: int = 0, hint: str = "") -> int | None:
+         start: int = 0, hint: str = "", under: list[list[str]] | None = None,
+         live=None, every: float = 0.0) -> int | None:
     """A list to choose from: walked with the arrows where the terminal allows
-    it, numbered where it does not - a pipe, a log, a test."""
-    if not options:
+    it, numbered where it does not - a pipe, a log, a test.
+
+    `under`, the gaps and `live` are menu()'s. Numbered, a page that is still
+    happening is shown as it stands when it is asked for.
+    """
+    if not options and not live:
         return None
     print()
     if title:
         say(f"  {title}", "accent")
         print()
     if sys.stdin.isatty() and sys.stdout.isatty():
-        return menu(options, notes, start, hint)
-    for i, option in enumerate(options, 1):
-        note = f"   {GREY}{notes[i - 1]}{RESET}" if notes and notes[i - 1] and accent() else ""
-        print(f"    {i}. {option}{note}")
+        return menu(options, notes, start, hint, under, live, every)
+    if live:
+        news = live() or {}
+        for line in news.get("body", []):
+            print(line)
+        options = list(news.get("options", options))
+        notes = news.get("notes", notes)
+        under = news.get("under", under)
+    rows = [i for i, o in enumerate(options) if o]
+    if not rows:
+        return None
+    for n, i in enumerate(rows, 1):
+        note = f"   {GREY}{notes[i]}{RESET}" if notes and i < len(notes) and notes[i] and accent() else ""
+        print(f"    {n}. {options[i]}{note}")
+        for more in (under[i] if under and i < len(under) and under[i] else []):
+            print(f"       {more}")
     while True:
         answer = ask("choice", hint="a number, or ctrl+D to go back")
         if answer is None:
             return None
-        if answer.isdigit() and 1 <= int(answer) <= len(options):
-            return int(answer) - 1
+        if answer.isdigit() and 1 <= int(answer) <= len(rows):
+            return rows[int(answer) - 1]
         say("    not one of them", "warn")
 
 
