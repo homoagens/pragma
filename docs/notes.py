@@ -434,10 +434,11 @@ PROMPTS = {
 # What the keyboard does. Not in any table the code keeps, so it is written
 # here; the commands themselves are read from the code.
 KEYS = [
-    ("ctrl+D", "In a project: close it and hand the conversation to the memory. "
+    ("ctrl+D", "At the prompt of a project: close it and hand the conversation to the memory. "
+               "While a turn is running: stop the turn, as ctrl+C does - the project stays open. "
                "At home: leave. In a menu or a page: go back."),
-    ("ctrl+C", "Stop the turn that is running; the project stays open. "
-               "In a menu: go back."),
+    ("ctrl+C", "Stop the turn that is running; the project stays open. Pressed again, "
+               "abandon it at once. In a menu: go back."),
     ("tab, or right arrow", "Take the suggested next line, when one is shown."),
     ("tab", "After a `/`: complete the command."),
     ("arrows, a digit, a first letter", "Move in a menu. Enter selects."),

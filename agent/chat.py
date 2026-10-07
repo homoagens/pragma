@@ -259,6 +259,8 @@ def _chat_ask_user(topic: str = "", context: str = "", mode: str = "input",
         # and comes back with the answer.
         if _RENDERER is not None:
             _RENDERER.pause()
+        for guard in _GUARD:
+            guard.pause()                   # the keyboard, for the answer
         print()
         print(f"  ? {q}")
         if context:
@@ -267,6 +269,8 @@ def _chat_ask_user(topic: str = "", context: str = "", mode: str = "input",
             answer = input("  y/n > ").strip().lower()
         except (EOFError, KeyboardInterrupt):
             answer = ""
+        for guard in _GUARD:
+            guard.resume()
         if _RENDERER is not None:
             _RENDERER.resume()
         return "yes" if answer in ("y", "yes", "s", "si") else "no"
@@ -492,8 +496,10 @@ def _suggest_wait(renderer) -> None:
         renderer.idle()
 
 
-def _ask(session):
-    """One line from the operator, with the hint while the line is empty."""
+def _ask(session, typed: str = ""):
+    """One line from the operator, with the hint while the line is empty.
+    `typed` is what was typed while the turn before ran: it is already on
+    the line, to be finished or deleted."""
     if session is None:
         return input(_prompt()).strip()
     from prompt_toolkit.formatted_text import ANSI
@@ -504,11 +510,11 @@ def _ask(session):
         return ANSI("\033[38;5;242m" + _hint() + "\033[0m")
 
     try:
-        return session.prompt(ANSI(_prompt()), placeholder=placeholder).strip()
+        return session.prompt(ANSI(_prompt()), placeholder=placeholder, default=typed).strip()
     except TypeError:
         # Older prompt_toolkit has no placeholder. The prompt is the point;
         # the hint is not worth failing over.
-        return session.prompt(ANSI(_prompt())).strip()
+        return session.prompt(ANSI(_prompt()), default=typed).strip()
 
 
 # The conversation's own AgentConfig, for the commands that change it while it
@@ -709,35 +715,179 @@ def _say_dim(text: str) -> None:
         print(text)
 
 
-class _ctrl_c_stops:
-    """ctrl+C, while a turn runs, asks it to stop; a second one abandons it.
+# What was typed while a turn ran, for the prompt that follows it: see
+# _stops_turn. And the guard of the turn in flight, for whoever needs the
+# keyboard back in the middle of it (a yes-or-no the loop has to ask).
+_TYPED = [""]
+_GUARD: list = []
 
-    Without this the key went straight to Python's KeyboardInterrupt, which
-    unwound out of the turn AND out of the conversation: the project closed,
-    and - in the same instant - the launcher above, which got the same signal,
-    died with a traceback. The key everyone presses to stop a reply that has
-    run on was the key that threw them out of Pragma.
+
+class _stops_turn:
+    """ctrl+C or ctrl+D, while a turn runs, asks it to stop; a second press
+    abandons it. Neither closes the project.
+
+    CTRL+C. Without this the key went straight to Python's KeyboardInterrupt,
+    which unwound out of the turn AND out of the conversation: the project
+    closed, and - in the same instant - the launcher above, which got the
+    same signal, died with a traceback. The key everyone presses to stop a
+    reply that has run on was the key that threw them out of Pragma.
 
     Now the first press sets the turn's stop signal, which every model call
     checks between the lines of its stream and every step checks before the
     next one, so the turn ends at the next safe point and the conversation
     goes on. A second press means "now": KeyboardInterrupt, as before, caught
     by the loop as a stopped turn rather than a closed project.
+
+    CTRL+D. At the prompt it closes the project, and it is the key the hand
+    goes to for "enough". Pressed while a turn ran it did nothing that could
+    be seen: nothing was reading the keyboard, so it waited - and when the
+    turn ended, the prompt read it and closed the project, a minute after it
+    was pressed and for a reason nobody remembered. So while a turn runs the
+    keyboard IS read, and ctrl+D means what ctrl+C means there: stop this,
+    not everything.
+
+    Reading the keyboard has a second effect. What is typed during a turn
+    used to be echoed over whatever was being drawn, and to arrive at the
+    prompt as a line already half entered. It is kept instead, unechoed, and
+    put on the next prompt to be finished or deleted (_TYPED).
     """
 
     def __init__(self, stop, renderer):
         self.stop = stop
         self.renderer = renderer
         self.old = None
+        self.saved = None
+        self.fd = -1
+        self.thread = None
+        self.done = threading.Event()
+        self.paused = threading.Event()
+        self.idle = threading.Event()
+        self.raw = bytearray()                # what was typed, as it arrived
+
+    # -- what a press does ---------------------------------------------------
 
     def _press(self, *_):
+        """ctrl+C, in the main thread."""
         if self.stop.is_set():
             raise KeyboardInterrupt
+        self._first()
+
+    def _first(self) -> None:
         self.stop.set()
         try:
-            self.renderer.notice(0, "stopping at the next safe point - ctrl+C again to abandon it now")
+            self.renderer.notice(0, "stopping at the next safe point - press it again to abandon it now")
         except Exception:
             pass
+
+    def _key(self) -> None:
+        """ctrl+D, seen by the thread that reads the keyboard. The turn runs
+        in the main thread, and that is where it has to be abandoned."""
+        if not self.stop.is_set():
+            self._first()
+            return
+        try:
+            if os.name == "nt":
+                import _thread
+                _thread.interrupt_main()
+            else:
+                import signal
+                os.kill(os.getpid(), signal.SIGINT)
+        except Exception:
+            pass
+
+    # -- the keyboard, while the turn runs -------------------------------------
+
+    def _quiet(self) -> None:
+        """Keys one at a time and unechoed. Signals stay as they are: ctrl+C
+        is still ctrl+C. Output is not touched."""
+        import termios
+        new = termios.tcgetattr(self.fd)
+        new[3] &= ~(termios.ICANON | termios.ECHO)
+        new[6][termios.VMIN], new[6][termios.VTIME] = 1, 0
+        termios.tcsetattr(self.fd, termios.TCSANOW, new)
+
+    def _take(self, data: bytes, stopping: bool = True) -> None:
+        for byte in data:
+            if byte == 0x04:
+                if stopping:
+                    self._key()
+            else:
+                self.raw.append(byte)
+
+    def _watch(self) -> None:
+        import time as _time
+        if os.name == "nt":
+            import msvcrt
+            while not self.done.is_set():
+                if self.paused.is_set() or not msvcrt.kbhit():
+                    self.idle.set()
+                    _time.sleep(0.05)
+                    continue
+                self.idle.clear()
+                ch = msvcrt.getwch()
+                if ch in ("\x00", "\xe0"):          # a special key arrives as two
+                    msvcrt.getwch()
+                elif ch == "\x04":
+                    self._key()
+                else:
+                    self.raw.extend(ch.encode("utf-8", "ignore"))
+            return
+        import select
+        while not self.done.is_set():
+            if self.paused.is_set():
+                self.idle.set()
+                _time.sleep(0.05)
+                continue
+            self.idle.clear()
+            try:
+                ready = select.select([self.fd], [], [], 0.1)[0]
+                if not ready or self.paused.is_set() or self.done.is_set():
+                    continue
+                data = os.read(self.fd, 256)
+            except Exception:
+                return
+            if not data:
+                return
+            self._take(data)
+
+    def pause(self) -> None:
+        """Give the keyboard back, for a question that needs an answer."""
+        if self.thread is None:
+            return
+        self.paused.set()
+        self.idle.wait(0.5)
+        if self.saved is not None:
+            try:
+                import termios
+                termios.tcsetattr(self.fd, termios.TCSANOW, self.saved)
+            except Exception:
+                pass
+
+    def resume(self) -> None:
+        if self.thread is None:
+            return
+        if self.saved is not None:
+            try:
+                self._quiet()
+            except Exception:
+                pass
+        self.paused.clear()
+
+    def _typed(self) -> str:
+        """What was typed, as a line to finish: no escape sequences, the
+        backspaces applied, no line ends - nothing is sent by itself."""
+        text = self.raw.decode("utf-8", "ignore")
+        text = re.sub(r"\x1b(\[[0-9;?]*[ -/]*[@-~]|O.|.)?", "", text)
+        out: list[str] = []
+        for ch in text:
+            if ch in ("\x7f", "\x08"):
+                if out:
+                    out.pop()
+            elif ch in ("\r", "\n", "\t"):
+                out.append(" ")
+            elif ch >= " ":
+                out.append(ch)
+        return "".join(out).strip()
 
     def __enter__(self):
         import signal
@@ -745,10 +895,47 @@ class _ctrl_c_stops:
             self.old = signal.signal(signal.SIGINT, self._press)
         except (ValueError, OSError):       # not the main thread
             self.old = None
+        try:
+            if sys.stdin.isatty() and sys.stdout.isatty():
+                if os.name != "nt":
+                    import termios
+                    self.fd = sys.stdin.fileno()
+                    self.saved = termios.tcgetattr(self.fd)
+                    self._quiet()
+                self.thread = threading.Thread(target=self._watch, daemon=True)
+                self.thread.start()
+        except Exception:
+            self.thread = None              # no keyboard to read: ctrl+C is still there
+        _GUARD.append(self)
         return self
 
     def __exit__(self, *exc):
         import signal
+        if self in _GUARD:
+            _GUARD.remove(self)
+        if self.thread is not None:
+            self.done.set()
+            self.thread.join(0.5)
+            if os.name != "nt":
+                try:
+                    # What arrived in the last instant. A ctrl+D among it is
+                    # let go: left there, the prompt would read it and close
+                    # the project.
+                    import select
+                    while select.select([self.fd], [], [], 0)[0]:
+                        data = os.read(self.fd, 256)
+                        if not data:
+                            break
+                        self._take(data, stopping=False)
+                except Exception:
+                    pass
+            _TYPED[0] = self._typed()
+        if self.saved is not None:
+            try:
+                import termios
+                termios.tcsetattr(self.fd, termios.TCSANOW, self.saved)
+            except Exception:
+                pass
         if self.old is not None:
             try:
                 signal.signal(signal.SIGINT, self.old)
@@ -818,7 +1005,8 @@ def _slash_help() -> None:
     print("  Anything without a slash is a message to the agent.")
     print()
     print(f"  {a}ctrl+C{r}  stops a reply that is running; the conversation goes on")
-    print(f"  {a}ctrl+D{r}  closes the project, and what was said goes into memory")
+    print(f"  {a}ctrl+D{r}  while a reply is running, stops it too; at the prompt, closes")
+    print("          the project, and what was said goes into memory")
     print()
     print("  Starting, backing up or removing a project is done where none is")
     print("  open: ctrl+D, then /projects.")
@@ -1758,7 +1946,7 @@ If the turn needed no tools at all, the conclusion is simply your reply.
         f"  {_STATE['project']} · talking to {_harness.pretty_model(served) or 'nothing - the backend is down'}"
         f" · memory {'on' if args.memory else 'off'}"
         f" · {max_steps} steps per turn",
-        "  ctrl+C stops a reply · ctrl+D closes the project and remembers what was said",
+        "  ctrl+C or ctrl+D stops a reply · at the prompt, ctrl+D closes the project and remembers what was said",
     ]
     _slash_banner()
 
@@ -1768,7 +1956,8 @@ If the turn needed no tools at all, the conclusion is simply your reply.
             _STATE["ctx"] = renderer.ctx_pct()
             _STATE["writing"] = _writing_now()
             try:
-                text = _ask(session)
+                typed, _TYPED[0] = _TYPED[0], ""
+                text = _ask(session, typed)
             except EOFError:
                 # One level up, which is now the home prompt: the project
                 # closes and another can be opened. What was said is
@@ -1812,12 +2001,6 @@ If the turn needed no tools at all, the conclusion is simply your reply.
             # had typed it would corrupt segmentation and then the episodes.
             turn = Turn(text)
             prompt = text
-            if args.memory:
-                block = _recall(text, cwd, desk_ids, desk_rules, reinforced,
-                                renderer, first_turn=not turns)
-                if block:
-                    prompt = f"{block}\n\n{text}"
-
             before = len(history or [])
             # A wider budget for what the model said: in a conversation the
             # thought field is where it talks to you, and the batch cap cut
@@ -1834,12 +2017,24 @@ If the turn needed no tools at all, the conclusion is simply your reply.
                     renderer.note_stats(dict(getattr(llm_client, "LAST_STATS", {}) or {}))
                 _inner(ev)
 
-            renderer.turn_begin()
             import time as _time
             _t_turn = _time.monotonic()
             cfg.stop_event = threading.Event()
+            result = None
             try:
-                with _ctrl_c_stops(cfg.stop_event, renderer):
+                # The recall is inside what can be stopped. It was outside: a
+                # ctrl+C while the curator was choosing closed the project,
+                # where a moment later it would only have stopped the reply.
+                with _stops_turn(cfg.stop_event, renderer):
+                    if args.memory:
+                        block = _recall(text, cwd, desk_ids, desk_rules, reinforced,
+                                        renderer, first_turn=not turns)
+                        if block:
+                            prompt = f"{block}\n\n{text}"
+                    renderer.turn_begin()
+                    _t_turn = _time.monotonic()
+                    if cfg.stop_event.is_set():
+                        raise KeyboardInterrupt     # asked to stop while recalling
                     result = run_agent(
                         cfg, prompt, on_step=on_step, history=history,
                         # Everything already in the history is a finished turn.
@@ -1851,7 +2046,7 @@ If the turn needed no tools at all, the conclusion is simply your reply.
                         request=text,
                     )
             except KeyboardInterrupt:
-                result = None           # the second ctrl+C: abandoned at once
+                result = None           # the second press: abandoned at once
             finally:
                 # Whatever ended the turn, nothing may be left spinning.
                 renderer.idle()
@@ -1859,7 +2054,8 @@ If the turn needed no tools at all, the conclusion is simply your reply.
                 # A STOPPED TURN IS NOT A CLOSED PROJECT. It used to be: the
                 # loop broke, the project closed, and the operator who pressed
                 # ctrl+C to stop a reply running on was thrown out of the
-                # conversation. What happened so far is kept for the memory;
+                # conversation. (ctrl+D stops it the same way: see
+                # _stops_turn.) What happened so far is kept for the memory;
                 # the history does not get the half-turn, so the next message
                 # starts from the last one that finished.
                 _append_raw_log(log_path, turn)
