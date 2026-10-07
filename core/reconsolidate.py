@@ -44,18 +44,19 @@ from json_parser import extract_json
 
 _EPISODIC_SYSTEM = """You are the reconsolidation module of an AI agent's memory.
 A NEW episode has just been recorded. You are given a few PAST episodes that are
-thematically close to it. Your job: decide whether the new episode changes the
-MEANING of any past episode, and if so, rewrite that episode's interpretation.
+thematically close to it. Your job: decide whether the new episode changes what
+any past episode MEANS, and if so, revise that episode's interpretation.
 
-This models how human memory works: recalling an old episode in the light of a
-later one can reveal it differently — an apparent failure was the first sign of
-a turning point; an apparent success hid a crack. The past is re-understood.
+This models how human memory works: an old episode recalled in the light of a
+later one can turn out to mean something else - what looked settled was not,
+what looked like a detail was the cause. The past is re-understood. It is still
+the same past: the revised interpretation is about the OLD episode.
 
 Respond with ONLY a JSON object:
 {
   "rewrites": [
     {"id": "ep_...",
-     "interpretation": "the past episode's meaning, re-read in light of the new one, <= INT_CHARS chars",
+     "interpretation": "what the past episode means, as it now stands, <= INT_CHARS chars",
      "reason": "what the new episode reveals about the old one, <= 20 words"},
     ...
   ]
@@ -67,13 +68,24 @@ IRON RULES — this is reinterpretation, not invention:
 - A new interpretation must remain SUPPORTED BY THAT EPISODE'S OWN narrative.
   You re-read the same facts in a new light; you must NOT import facts from the
   new episode into the old one, nor invent anything.
-- Only include an episode in "rewrites" if its meaning GENUINELY shifts. If the
-  new episode merely repeats or is unrelated, omit it. An empty "rewrites" list
-  is the normal, correct answer most of the time.
-- Keep each interpretation concrete and about the WORK, not the note-taking.
+- REVISE, DO NOT REPLACE. The interpretation is the one lasting note on what
+  that episode means. Keep what it already says that still holds - a lesson,
+  something about the user, an open question - and change only what the new
+  episode shows to be wrong or incomplete. A revision that drops the old
+  meaning in order to comment on the new episode has lost a memory.
+- IT STAYS ABOUT ITS OWN EPISODE. What the interpretation talks about is what
+  happened in THAT episode. Hindsight may change how much one of its facts
+  weighs ("the first sign of ...", "not the one-off it seemed"); it does not
+  retell the new episode or how the story went on.
+- Only include an episode in "rewrites" if its meaning GENUINELY shifts. That
+  the two belong to the same story, or that the new one continues, repeats or
+  confirms the old one, is a connection and not a shift: omit it. An empty
+  "rewrites" list is the normal, correct answer most of the time.
+- Keep each interpretation concrete and about the WORK, not the note-taking,
+  in plain statements of your own: no stock turn of phrase.
 - INT_CHARS chars is the real limit: on recall only the first INT_CHARS are
-  shown. You are replacing a note to self, not writing a commentary. Say the
-  shift in one sentence.""" \
+  shown. If the old meaning and the hindsight do not both fit, the old meaning
+  that still holds comes first.""" \
     .replace("INT_CHARS", str(config.MEMORY_INTERPRETATION_CHARS))
 
 
