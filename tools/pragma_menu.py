@@ -221,6 +221,12 @@ def waiting(message: str):
 
     The line is erased on the way out, so whatever the caller prints next
     lands where the spinner was.
+
+    WHAT IS TYPED WHILE IT WAITS IS NOT AN ANSWER. It used to be echoed onto
+    the moving line - Enter broke it in two, and the halves stayed - and then
+    it was read by whatever the page asked next: a question nobody had seen
+    yet, answered by a key pressed to pass the time. The keys are taken
+    unechoed for the length of the wait, and dropped. ctrl+C still interrupts.
     """
     if not sys.stdout.isatty():
         print(f"  {message}...")
@@ -248,11 +254,29 @@ def waiting(message: str):
     thread = threading.Thread(target=spin, daemon=True)
     thread.start()
     try:
-        yield
+        with keyboard():
+            try:
+                yield
+            finally:
+                _drop_typed()
     finally:
         stop.set()
         thread.join(timeout=1)
         print(f"\r{ESC}[2K", end="", flush=True)
+
+
+def _drop_typed() -> None:
+    """Forget the keys pressed and not yet read."""
+    try:
+        if os.name == "nt":
+            import msvcrt
+            while msvcrt.kbhit():
+                msvcrt.getwch()
+        elif sys.stdin.isatty():
+            import termios
+            termios.tcflush(sys.stdin.fileno(), termios.TCIFLUSH)
+    except Exception:
+        pass
 
 
 def ask(question: str, default: str = "", hint: str = "") -> str | None:
