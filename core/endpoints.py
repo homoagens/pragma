@@ -189,6 +189,28 @@ def option(name: str, default: bool = False) -> bool:
         return default
 
 
+def embedding() -> dict | None:
+    """The server that turns texts into vectors, or None when none is named.
+
+    It is not a role and not an endpoint among the others: it does not hold a
+    conversation, it has no sampling and nothing reasons on it. One address,
+    for the machine, beside the switches - what uses it is core/embed.py.
+    Never raises.
+    """
+    try:
+        data, error = load_catalogue()
+        entry = (data or {}).get("embedding") if not error else None
+        if not isinstance(entry, dict) or not str(entry.get("url") or "").strip():
+            return None
+        key = str(entry.get("key") or "")
+        if not key and entry.get("key_env"):
+            key = os.environ.get(str(entry["key_env"]), "")
+        return {"url": str(entry["url"]).strip().rstrip("/"), "model": str(entry.get("model") or ""),
+                "key": key}
+    except Exception:
+        return None
+
+
 class EndpointError(RuntimeError):
     """The catalogue says something that cannot be followed."""
 
@@ -298,7 +320,7 @@ def _problem(data) -> str:
     # switches live here too, and turning prediction on before adding a server
     # is a reasonable order to do things in. With no endpoints every role
     # falls back to .env, exactly as it does with no file at all.
-    if not eps and not data.get("options"):
+    if not eps and not data.get("options") and not data.get("embedding"):
         return "it lists no endpoints"
     for name, e in eps.items():
         if not isinstance(e, dict) or not str(e.get("url") or "").strip():
@@ -329,6 +351,10 @@ def _problem(data) -> str:
                 return f"\"options\" has \"{key}\"; it has {', '.join(OPTIONS)}"
             if not isinstance(on, bool):
                 return f"\"options.{key}\" must be true or false"
+    emb = data.get("embedding")
+    if emb is not None:
+        if not isinstance(emb, dict) or not str(emb.get("url") or "").strip():
+            return "\"embedding\" must be an object with a \"url\""
     return ""
 
 

@@ -12,7 +12,7 @@ folder Pragma is installed in.
 |---|---|---|
 | `registry.json` | The projects. | the launcher |
 | `endpoints.json` | The model servers, which role uses which, the optional faculties. | `/configure` |
-| `projects/<name>/` | One project's memory. | the memory worker |
+| `projects/<name>/` | One project's memory. In it, `vectors/` is kept only when an embedding server is in use, and can be deleted: it is rebuilt. | the memory worker |
 | `projects/backups/<name>/` | Snapshots, on Linux and macOS. | `/projects backups` |
 | `backups/<name>/` | Snapshots, on Windows. | `/projects backups` |
 | `plugins/<name>/plugin.json` | Commands added to the home screen. | you |
@@ -65,7 +65,8 @@ The same file is read by the launcher on every system.
     }
   },
   "roles": {"agent": "main", "recall": "main", "memory": "main", "critic": "main"},
-  "options": {"prediction": false, "critic": false}
+  "options": {"prediction": false, "critic": false},
+  "embedding": {"url": "http://127.0.0.1:7190/v1"}
 }
 ```
 
@@ -81,6 +82,7 @@ The same file is read by the launcher on every system.
 | `sampling` | The numbers sent with a request, one row per `kind` and `work`. Absent means the server keeps its own. The knobs are `temperature`, `top_p`, `top_k`, `min_p`, `presence_penalty`, `repeat_penalty`. |
 | `roles` | Which endpoint answers each role. A role left out follows `agent`. |
 | `options` | The optional faculties, on or off for the whole machine. |
+| `embedding` | An embedding server, optional: `url`, and `model`, `key` or `key_env` as for an endpoint. With one, the memory is searched by meaning before a recall. Without one, or while it does not answer, by words. |
 
 A file that cannot be followed — broken JSON, a role naming an endpoint that
 is not listed — is an error, and Pragma says so. It does not fall back to

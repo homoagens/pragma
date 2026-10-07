@@ -60,6 +60,29 @@ API key.
 A key can be typed, or — better — left in an environment variable whose
 *name* you give here, so that the key itself is never written to a file.
 
+## A second server, to search the memory by meaning
+
+Optional. Before a turn, Pragma searches the project's memory for what fits
+what you typed. It goes by the words the two share, so a memory written in
+other words, or in another language, is easily missed. With an *embedding*
+server it goes by meaning instead.
+
+That is a small model of its own, served on its own port — not the one you
+talk to. With llama.cpp, for example:
+
+```
+llama-server -m bge-m3-Q8_0.gguf --embedding --port 7190
+```
+
+Then, in `/configure`, choose `meaning` and type its address. The page says
+whether it answers. `/status`, inside a project, says how the memory is being
+searched.
+
+Nothing has to be rebuilt: the first search after that takes a few seconds
+longer, and the rest are as fast as before. If the server stops answering,
+the search goes by words again and the screen says so. `meaning`, then `off`,
+turns it back for good.
+
 ## Without `/configure`
 
 A machine that never opens `/configure` can name its server in a `.env` file

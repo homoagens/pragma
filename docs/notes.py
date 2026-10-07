@@ -194,6 +194,14 @@ CONFIG = {
         "Of the episodes offered, how many are simply the most recent."),
     "CURATOR_MAX_FRAGMENTS": ("recall",
         "Most fragments that may be placed in front of the agent for one turn."),
+    "PRAGMA_EMBED_URL": ("recall",
+        "Address of an embedding server, ending in `/v1`. With one, what is offered to that choice is "
+        "found by meaning and not by the words it shares with the request. `/configure` sets one for "
+        "the machine, and that one is used first; this is for a script."),
+    "PRAGMA_EMBED_MODEL": ("recall",
+        "The model name to ask that server for, when it hosts several."),
+    "PRAGMA_EMBED_TIMEOUT": ("recall",
+        "Seconds an embedding call may take before the search goes by words instead."),
     "CURATOR_OFFERED_EPISODES": ("recall",
         "`few`, `medium` or `many`: how many episodes are offered to that choice, said in a word. "
         "Set, it decides `CURATOR_CANDIDATES_EPISODES` and `CURATOR_CANDIDATES_RECENT`. "

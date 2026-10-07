@@ -1200,6 +1200,53 @@ def cmd_critic(state: dict) -> bool:
     return _flip(state, "critic")
 
 
+def cmd_meaning(state: dict) -> bool:
+    """The server that lets the memory be searched by meaning: its address, or none."""
+    cat = state["cat"]
+    now = str((cat.get("embedding") or {}).get("url") or "")
+    step("meaning")
+    print()
+    print("  " + grey("Before a recall the memory is searched for what fits the request."))
+    print("  " + grey("By default it goes by the words the two share. With an embedding"))
+    print("  " + grey("server it goes by meaning: another wording, or another language,"))
+    print("  " + grey("still finds the memory. It is a small model of its own, on its own"))
+    print("  " + grey("port - not the one you talk to."))
+    print()
+    url = ask("Address of the embedding server", now,
+              hint="e.g. 127.0.0.1:7190 - /v1 is added if missing; 'off' for none")
+    if url is None:
+        return False
+    if url.strip().lower() in ("off", "none", "no", "-"):
+        if not now:
+            return False
+        cat.pop("embedding", None)
+        state["note"] = "the memory is searched by words"
+        return True
+    url = normalise_url(url)
+    size, why = 0, ""
+    try:
+        import requests
+        r = requests.post(url + "/embeddings", json={"model": "embedding", "input": ["hello"]}, timeout=15)
+        r.raise_for_status()
+        vector = r.json()["data"][0]["embedding"]
+        if vector and isinstance(vector[0], list):
+            vector = vector[0]
+        size = len(vector)
+    except Exception as e:
+        why = f"{type(e).__name__}: {str(e)[:90]}"
+    print(f"  {url}  {ok_bad(bool(size))}"
+          + (f"answers with {size} numbers for a text" if size else f"does not answer as one - {why}")
+          + off())
+    if not size and not confirm("Keep this address anyway?", "yes, keep it"):
+        return False
+    if url == now:
+        return False
+    cat["embedding"] = dict(cat.get("embedding") or {}, url=url)
+    state["note"] = ("the memory is searched by meaning, from the next turn"
+                     if size else "kept - until it answers, the memory is searched by words")
+    return True
+
+
 # What each switch IS, beside its name - the row says it, not a page.
 OPTION_BLURB = {
     "prediction": "the line you will probably type next, in grey; tab takes it",
@@ -1215,6 +1262,7 @@ ACTIONS = [
     ("endpoints", "use, tune, edit", None),
     ("prediction", "", cmd_prediction),
     ("critic", "", cmd_critic),
+    ("meaning", "the memory searched by meaning, with an embedding server", cmd_meaning),
 ]
 
 
@@ -1246,7 +1294,7 @@ def save(state: dict) -> None:
     path = endpoints.catalogue_path()
     if not cat.get("options"):
         cat.pop("options", None)      # never write an empty object
-    if cat["endpoints"] or cat.get("options"):
+    if cat["endpoints"] or cat.get("options") or cat.get("embedding"):
         endpoints.save_catalogue(cat)
     elif path.exists():
         path.unlink()
@@ -1262,15 +1310,24 @@ def run_action(state: dict, handler) -> bool:
     before = {"endpoints": json.loads(json.dumps(cat["endpoints"])),
               "roles": dict(cat["roles"]),
               "options": dict(cat.get("options") or {})}
+    had = dict(cat["embedding"]) if cat.get("embedding") else None
+
+    def put_back() -> None:
+        cat.update(before)
+        if had is None:
+            cat.pop("embedding", None)
+        else:
+            cat["embedding"] = had
+
     try:
         if handler(state):
             save(state)
             return True
     except (EOFError, KeyboardInterrupt):
-        cat.update(before)
+        put_back()
         state["note"] = ""
     except (ValueError, endpoints.EndpointError) as e:
-        cat.update(before)
+        put_back()
         print()
         say(f"  {e}", "warn")
         ask("", hint="enter to go back")
@@ -1301,6 +1358,8 @@ def main() -> int:
            "roles": dict((data or {}).get("roles") or {})}
     if (data or {}).get("options"):
         cat["options"] = dict(data["options"])
+    if (data or {}).get("embedding"):
+        cat["embedding"] = dict(data["embedding"])
     state = {"cat": cat}
 
     old = Path.home() / ".pragma" / "sampling.json"
@@ -1318,7 +1377,11 @@ def main() -> int:
         opts = cat.get("options") or {}
         labels, blurbs = [], []
         for name, blurb, _h in ACTIONS:
-            if name in OPTION_BLURB:
+            if name == "meaning":
+                where = str((cat.get("embedding") or {}).get("url") or "")
+                labels.append(f"{name:<12}{endpoints.short_url(where) if where else 'off'}")
+                blurbs.append(blurb)
+            elif name in OPTION_BLURB:
                 labels.append(f"{name:<12}{'on' if opts.get(name) else 'off'}")
                 blurbs.append(OPTION_BLURB[name])
             else:

@@ -158,6 +158,7 @@ The short version. [Files](../reference/files.md) has what is inside each.
 | [`checkpoint.py`](../../core/checkpoint.py) | Undo for file edits. |
 | [`memory.py`](../../core/memory.py) | Summarises the older steps of a long turn. Not the long-term memory, despite the name. |
 | [`curator.py`](../../core/curator.py) | Recall: chooses what memory brings to a turn. |
+| [`embed.py`](../../core/embed.py) | Texts as vectors, for searching the memory by meaning. Used only when an embedding server is named. |
 | [`episodes.py`](../../core/episodes.py) | The episode store: active and dormant zones, fading. |
 | [`segmenter.py`](../../core/segmenter.py) | Which turns of a conversation become episodes. |
 | [`reconsolidate.py`](../../core/reconsolidate.py) | Revising what stored episodes and beliefs mean. |

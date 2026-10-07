@@ -82,6 +82,7 @@ Reached from either screen. A page walked with the arrows rather than typed.
 | `endpoints` | use, tune, edit |
 | `prediction` | on or off: the line you will probably type next, in grey; tab takes it |
 | `critic` | on or off: the work checked against your request before it is delivered |
+| `meaning` | the memory searched by meaning, with an embedding server |
 
 Under `endpoints`, for the one selected:
 

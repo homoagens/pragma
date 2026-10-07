@@ -32,6 +32,7 @@ from datetime import datetime
 from pathlib import Path
 
 import config
+import embed
 import episodes as estore
 import llm_client
 from json_parser import extract_json
@@ -233,7 +234,37 @@ def _episode_text(ep: dict) -> str:
     ])
 
 
-# ── Stage 1: prefilter (read-only) ────────────────────────────────────────────
+# ── Stage 1: prefilter ────────────────────────────────────────────────────────
+# It reads the store and changes nothing in it. With an embedding server named
+# it also keeps vectors beside the store (embed.py), which are not memory:
+# deleting them costs the next search a few seconds and nothing else.
+
+# How the last search was made, for whoever reports it: "words", or "meaning",
+# and - when meaning was wanted and could not be had - why not.
+SEARCH = {"by": "words", "error": ""}
+
+
+def _meaning_text(ep: dict) -> str:
+    """What an episode is about, as one text: what a search by meaning reads."""
+    return "\n".join([str(ep.get("goal", "") or ""), ", ".join(ep.get("keywords", []) or []),
+                      str(ep.get("narrative", "") or ""), str(ep.get("interpretation", "") or "")])
+
+
+def _nearness(task: str, texts: list[str]) -> list[float] | None:
+    """How near each text is to the request, by meaning - or None, and then
+    the search goes by words: no embedding server is named, or it is down."""
+    if embed.server() is None:
+        SEARCH.update(by="words", error="")
+        return None
+    q = embed.query(task)
+    vectors = embed.of(texts) if q is not None and texts else ([] if q is not None else None)
+    if q is None or vectors is None:
+        SEARCH.update(by="words", error=embed.LAST_ERROR or "the embedding server did not answer")
+        return None
+    SEARCH.update(by="meaning", error="")
+    return [embed.nearness(q, v) for v in vectors]
+
+
 
 def _episode_candidates(task: str, workspace: str,
                         exclude_ids: set[str] | None = None) -> tuple[list[dict], int]:
@@ -264,6 +295,33 @@ def _episode_candidates(task: str, workspace: str,
                           else 0)
             scored.append({"path": p, "ep": ep, "score": score, "kw": kw,
                            "dormant": zone == "dormant"})
+    # BY MEANING, WHEN THERE IS A SERVER FOR IT. The nearest to the request
+    # take the slots the best word matches would have taken, and the latest
+    # keep theirs: nearness says what a memory is about and nothing about when
+    # it happened, and "what did we do last time" is still a question.
+    #
+    # There is no "nothing matched" here, as there is with words: every memory
+    # is somewhere from the request, and how far is not a line that can be
+    # drawn - a bare "ok, thanks" sits as near to everything as a real
+    # question sits to its answer. So the slots are always filled the same way,
+    # and the curator, as ever, is the one that says the desk stays empty.
+    near = _nearness(task, [_meaning_text(c["ep"]) for c in scored])
+    if near is not None:
+        for c, value in zip(scored, near):
+            c["near"] = value
+        ranked = sorted(scored, key=lambda c: (c["near"], estore.effective_salience(c["ep"])),
+                        reverse=True)
+        r = max(getattr(config, "CURATOR_CANDIDATES_RECENT", 3), 0)
+        out = ranked[:max(n - r, 0)]
+        seen = {id(c["ep"]) for c in out}
+        for c in sorted(scored, key=lambda c: c["ep"].get("ts", ""), reverse=True):
+            if len(out) >= n:
+                break
+            if id(c["ep"]) not in seen:
+                out.append(c)
+                seen.add(id(c["ep"]))
+        return out, len(scored)
+
     # RELEVANCE IS THE KEYWORDS, NOT THE SCORE. The workspace boost is a
     # tiebreak between episodes that already match; it must not decide WHETHER
     # one matches. It used to: with a boost of 2, every episode in the current
@@ -340,6 +398,15 @@ def _learning_candidates(task: str,
         kw = len(_tokens(text) & qtok)
         out.append({"entry": e, "kw": kw,
                     "score": kw * float(e.get("confidence", 0.5))})
+
+    # By meaning when it can be had: the nearest to the request, and between
+    # two as near as each other the one held more firmly.
+    near = _nearness(task, [str(c["entry"].get("text", "") or "") for c in out])
+    if near is not None:
+        for c, value in zip(out, near):
+            c["near"] = value
+        out.sort(key=lambda c: (c["near"], float(c["entry"].get("confidence", 0.5))), reverse=True)
+        return out[:m], pool
 
     matched = [c for c in out if c["kw"] > 0]
     matched.sort(key=lambda c: c["score"], reverse=True)
@@ -685,10 +752,13 @@ def curate_knowledge_detailed(task: str, workspace: str = "", model=None,
         "episode_ids": [ids actually placed on the desk],
         "rule_texts":  [rule texts actually placed on the desk],
         "reason":   "<curator's one-line justification>",
+        "search":   "words" or "meaning": how the candidates were found,
+        "search_error": why not by meaning, when a server for it is named,
         "fallback": bool,   # curator LLM failed → deterministic top-k
         "empty":    bool }  # nothing relevant, or the curator chose an empty desk
     """
     info = {"block": "", "n_ep": 0, "n_ln": 0, "pool_ep": 0, "pool_ln": 0,
+            "search": "words", "search_error": "",
             "selected": [],
             "episode_ids": [], "rule_texts": [],
             "reason": "", "fallback": False, "empty": False}
@@ -699,6 +769,7 @@ def curate_knowledge_detailed(task: str, workspace: str = "", model=None,
     lns, pool_ln = _learning_candidates(task, exclude_rules)
     info["n_ep"], info["n_ln"] = len(eps), len(lns)
     info["pool_ep"], info["pool_ln"] = pool_ep, pool_ln
+    info["search"], info["search_error"] = SEARCH["by"], SEARCH["error"]
     if not eps and not lns:
         info["empty"] = True
         return info

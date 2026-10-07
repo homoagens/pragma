@@ -536,6 +536,28 @@ _RECALL_KEYS = {"RecallMemoriesOffered": "offered_episodes",
                 "RecallBeliefsTaken": "taken_learnings"}
 
 
+def _search_says() -> str:
+    """How the memory is searched before a recall: by words, or by meaning and
+    with what. Asks the embedding server its name, so it also says when it is
+    not there."""
+    try:
+        import embed
+        srv = embed.server()
+        if srv is None:
+            return "by words"
+        if embed.query("status") is None:
+            return (f"by words - the embedding server at {srv['url']} did not answer "
+                    f"({embed.LAST_ERROR or 'no reply'})")
+        import endpoints
+        return f"by meaning · {endpoints.model_name(embed.identity(srv))} · {endpoints.short_url(srv['url'])}"
+    except Exception as e:
+        return f"by words ({type(e).__name__}: {str(e)[:80]})"
+
+
+# Said once in a conversation, not at every turn: see _recall.
+_SEARCH_WARNED: list = []
+
+
 def _recall_says() -> str:
     """How much is offered to a recall and how readily it takes, in a line."""
     cfg = baseline_config
@@ -1003,6 +1025,7 @@ def _status_lines() -> list[tuple[str, str]]:
         out.append(("last here", f"{when} · memories halve in strength every {half:g} days"))
     # "recalls", not "recall": that word is a role's row, higher up.
     out.append(("recalls", _recall_says()))
+    out.append(("searched", _search_says()))
     return out
 
 
@@ -1460,6 +1483,14 @@ def _recall(text: str, cwd, desk_ids: set[str], desk_rules: set[str],
             exclude_ids=desk_ids, exclude_rules=desk_rules,
             no_reinforce=reinforced)
         took = f" · {_time.monotonic() - _t0:.0f}s"
+        # Set to search by meaning and unable to: the recall went by words,
+        # which is a different recall, and nothing on the screen would tell.
+        if info.get("search_error") and not _SEARCH_WARNED:
+            _SEARCH_WARNED.append(True)
+            say = getattr(renderer, "warning", None)
+            if say:
+                say(f"the memory was searched by words: the embedding server did not answer "
+                    f"({info['search_error']})")
     except Exception as e:
         renderer.faculty("CURATOR", f"recall unavailable — {e}")
         return ""

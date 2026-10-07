@@ -1245,6 +1245,20 @@ BATCH_SEGMENT = (os.environ.get("BATCH_SEGMENT", "").strip().lower()
 # Cap on how many fragments the curator may place on the desk.
 CURATOR_MAX_FRAGMENTS = int(os.environ.get("CURATOR_MAX_FRAGMENTS", "6"))
 
+# ── Searching the memory by meaning ──
+# What is offered to the curator is chosen, by default, by the words a request
+# shares with a memory. With an embedding server named - in /configure, or
+# here for a script - it is chosen by meaning instead: the request and every
+# memory become vectors, and the closest are offered. Words cannot bridge two
+# languages or two ways of saying one thing; this can. See core/embed.py.
+#
+# Unset, and with no server named in the catalogue, nothing changes.
+EMBED_URL = os.environ.get("PRAGMA_EMBED_URL", "").strip()
+EMBED_MODEL = os.environ.get("PRAGMA_EMBED_MODEL", "").strip()
+# Seconds an embedding call may take. It is a small model on a local port:
+# one that has not answered by then is down, and the search goes by words.
+EMBED_TIMEOUT = float(os.environ.get("PRAGMA_EMBED_TIMEOUT", "20"))
+
 # ── How much a recall is offered, and how much of it it may take ──
 # The numbers above, said the way a person would say them. For each of the two
 # kinds of thing the memory holds - episodes and beliefs - there are two
