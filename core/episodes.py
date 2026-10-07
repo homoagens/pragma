@@ -243,4 +243,14 @@ def sweep(store=None, learnings_path=None) -> dict:
                     result["deleted"].append(ep.get("id", p.stem))
     except Exception:
         pass
+    finally:
+        # An episode that is deleted takes its vectors with it. This asks no
+        # server and does nothing where vectors were never kept: see embed.py.
+        try:
+            import embed
+            removed = embed.tidy(store, learnings_path)
+            if removed:
+                result["vectors_removed"] = removed
+        except Exception:
+            pass
     return result

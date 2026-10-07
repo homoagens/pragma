@@ -1201,6 +1201,15 @@ RECONSOLIDATE_REFORMULATE_AT = int(os.environ.get(
 # fragile semantic one; on this path a belief is never retired, only rewritten.
 RECONSOLIDATE_BRIDGE_MIN_SOURCES = int(os.environ.get(
     "RECONSOLIDATE_BRIDGE_MIN_SOURCES", "2"))
+# A re-reading is measured, when an embedding server is in use: how near the
+# new interpretation is to the episode's own event, and how near to the event
+# of the episode that occasioned it (embed.moved). The measure is always kept
+# with the version it replaced. With this on, a re-reading that would leave the
+# interpretation nearer to the NEW episode than to its own is not applied: the
+# two episodes are linked, and the old one keeps what it meant. Without an
+# embedding server nothing is measured and this does nothing.
+RECONSOLIDATE_REFUSE_DRIFT = os.environ.get(
+    "RECONSOLIDATE_REFUSE_DRIFT", "false").lower() in ("1", "true", "yes")
 
 # Max chars of a project PRAGMA.md (user-authored instructions) injected
 # verbatim into the task by runners that support it.

@@ -218,20 +218,24 @@ def _now() -> str:
     return clock.stamp()
 
 
-def _nearness(text: str, others: list[str]) -> list[float] | None:
-    """How near each of `others` is to `text`, by meaning - or None, and then
-    what is related is decided by shared words, as it was: no embedding server
-    is named, or it did not answer (embed.LAST_ERROR then says why).
+def _nearness(ep: dict, others: list[str], kind: str) -> list[float] | None:
+    """How near each of `others` - texts of one of embed.KINDS - is to what
+    happened in `ep`, by meaning. Or None, and then what is related is decided
+    by shared words, as it was: no embedding server is named, or it did not
+    answer (embed.LAST_ERROR then says why).
 
-    The vector of `text` is kept like any other, so the memory being written
-    here does not have to be computed again the first time it is searched.
+    The new episode is compared by its EVENT, like every episode it is compared
+    with: what it is about, not what it has been taken to mean. Its vector is
+    kept like any other, so it does not have to be computed again the first
+    time the episode is searched.
     """
     if not others or embed.server() is None:
         return None
-    vectors = embed.of([text] + others)
-    if vectors is None:
+    mine = embed.of([embed.event_text(ep)], "events")
+    theirs = embed.of(others, kind) if mine is not None else None
+    if mine is None or theirs is None:
         return None
-    return [embed.nearness(vectors[0], v) for v in vectors[1:]]
+    return [embed.nearness(mine[0], v) for v in theirs]
 
 
 def _similar_episodes(ep: dict, past: list[dict], result: dict) -> list[dict]:
@@ -243,7 +247,7 @@ def _similar_episodes(ep: dict, past: list[dict], result: dict) -> list[dict]:
     by shared words, which finds what was written in the same words and the
     same language and little else. `result` is told which it was.
     """
-    near = _nearness(embed.episode_text(ep), [embed.episode_text(e) for e in past])
+    near = _nearness(ep, [embed.event_text(e) for e in past], "events")
     if near is not None:
         result["related_by"] = "meaning"
         return [e for e, _n in sorted(zip(past, near), key=lambda t: t[1], reverse=True)][:3]
@@ -258,13 +262,23 @@ def _similar_episodes(ep: dict, past: list[dict], result: dict) -> list[dict]:
 def _related_beliefs(ep: dict, active: list[dict]) -> list[dict]:
     """The beliefs a new episode may confirm or contradict: eight at most,
     the nearest by meaning, or those that share a word with it."""
-    near = _nearness(embed.episode_text(ep), [str(e.get("text", "") or "") for e in active])
+    near = _nearness(ep, [embed.belief_text(e) for e in active], "beliefs")
     if near is not None:
         return [e for e, _n in sorted(zip(active, near), key=lambda t: t[1], reverse=True)][:8]
     qtok = _tokens(_episode_text(ep))
     rel_scored = sorted(((e, len(_tokens(e.get("text", "")) & qtok)) for e in active),
                         key=lambda t: t[1], reverse=True)
     return [e for e, s in rel_scored if s > 0][:8]
+
+
+def _replaced(before: str, after: str, entry: dict) -> dict:
+    """The record of a belief's sentence being replaced, with how near the new
+    one is to it when an embedding server is in use: like an episode's
+    readings, a belief's formulations say how far each one went."""
+    step = embed.reworded(before, after)
+    if step:
+        entry["moved"] = step
+    return entry
 
 
 def _episode_text(ep: dict) -> str:
@@ -704,6 +718,9 @@ def episode_consolidate_detailed(transcript: str = "", workspace: str = "",
               "semantic_ran": False,
               "new_assertions": [], "confirmed": [], "contradicted": [],
               "retired": [], "reconsolidated": [], "reformulated": [],
+              # Re-readings the reconsolidator proposed and that were not
+              # applied: see config.RECONSOLIDATE_REFUSE_DRIFT.
+              "held": [],
               "reconsolidate_error": "",
               # How the memories and beliefs related to this one were found:
               # "meaning" with an embedding server, "words" without one - and
@@ -740,6 +757,7 @@ def episode_consolidate_detailed(transcript: str = "", workspace: str = "",
         try:
             targets = similar[:getattr(config, "RECONSOLIDATE_MAX_EPISODES", 3)]
             rewrites = reconsolidate.reconsolidate_episodes(ep, targets)
+            refuse_drift = getattr(config, "RECONSOLIDATE_REFUSE_DRIFT", False)
             linked: list[str] = []
             for rw in rewrites:
                 tp = store / f"{rw['id']}.json"
@@ -747,12 +765,34 @@ def episode_consolidate_detailed(transcript: str = "", workspace: str = "",
                     tgt = json.loads(tp.read_text(encoding="utf-8"))
                 except Exception:
                     continue
+                # HOW FAR THE RE-READING GOES, AND WHERE TO. With an embedding
+                # server in use the step is measured against two fixed points:
+                # this episode's own event and the new one's (embed.moved). The
+                # measure is kept with the version it replaced, so the store
+                # itself says how each reading came to be what it is.
+                measure = embed.moved(tgt, tgt.get("interpretation", "") or "",
+                                      rw["interpretation"], ep)
+                if refuse_drift and embed.drifted(measure):
+                    # The new reading would be nearer to the new episode than to
+                    # the one it is a reading of. The two are related - they are
+                    # linked - but the old episode keeps what it meant.
+                    tl = set(tgt.get("links") or [])
+                    tl.add(ep["id"])
+                    tgt["links"] = sorted(tl)
+                    estore.save(tp, tgt)
+                    linked.append(rw["id"])
+                    result["held"].append({"id": rw["id"], "reason": rw.get("reason", ""),
+                                           "moved": measure})
+                    continue
                 hist = tgt.get("interpretation_history") or []
-                hist.append({"ts": _now(),
-                             "text": tgt.get("interpretation", ""),
-                             "trigger": ep["id"],
-                             "reason": rw.get("reason", ""),
-                             "by": memory_model})
+                entry = {"ts": _now(),
+                         "text": tgt.get("interpretation", ""),
+                         "trigger": ep["id"],
+                         "reason": rw.get("reason", ""),
+                         "by": memory_model}
+                if measure:
+                    entry["moved"] = measure
+                hist.append(entry)
                 tgt["interpretation_history"] = hist
                 tgt["interpretation"] = rw["interpretation"]  # facts untouched
                 tl = set(tgt.get("links") or [])
@@ -896,9 +936,10 @@ def episode_consolidate_detailed(transcript: str = "", workspace: str = "",
                             e.get("text", ""), evidence, srcs)
                     if reformed:
                         hist = e.get("text_history") or []
-                        hist.append({"ts": ts, "text": e.get("text", ""),
-                                     "reason": reformed.get("reason", ""),
-                                     "by": memory_model})
+                        hist.append(_replaced(e.get("text", ""), reformed["text"], {
+                            "ts": ts, "text": e.get("text", ""),
+                            "reason": reformed.get("reason", ""),
+                            "by": memory_model}))
                         e["text_history"] = hist
                         old_text = e["text"]
                         e["text"] = reformed["text"]
@@ -943,9 +984,10 @@ def episode_consolidate_detailed(transcript: str = "", workspace: str = "",
             if not reformed:
                 continue  # no defensible rewrite → leave the belief as-is
             hist = e.get("text_history") or []
-            hist.append({"ts": ts, "text": text,
-                         "reason": reformed.get("reason", ""), "via": "bridge",
-                         "by": memory_model})
+            hist.append(_replaced(text, reformed["text"], {
+                "ts": ts, "text": text,
+                "reason": reformed.get("reason", ""), "via": "bridge",
+                "by": memory_model}))
             e["text_history"] = hist
             e["text"] = reformed["text"]
             e["reformulations"] = e.get("reformulations", 0) + 1
@@ -971,6 +1013,8 @@ def episode_consolidate_detailed(transcript: str = "", workspace: str = "",
     _recon_note = ""
     if result["reconsolidated"]:
         _recon_note += f"; reconsolidated {len(result['reconsolidated'])} episode(s)"
+    if result["held"]:
+        _recon_note += f"; {len(result['held'])} re-reading(s) not applied"
     if result["reformulated"]:
         _recon_note += f", reformulated {len(result['reformulated'])} belief(s)"
     if result.get("reconsolidate_error"):

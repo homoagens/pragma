@@ -244,14 +244,15 @@ def _episode_text(ep: dict) -> str:
 SEARCH = {"by": "words", "error": ""}
 
 
-def _nearness(task: str, texts: list[str]) -> list[float] | None:
+def _nearness(task: str, texts: list[str], kind: str) -> list[float] | None:
     """How near each text is to the request, by meaning - or None, and then
-    the search goes by words: no embedding server is named, or it is down."""
+    the search goes by words: no embedding server is named, or it is down.
+    `kind` is which of embed.KINDS the texts are."""
     if embed.server() is None:
         SEARCH.update(by="words", error="")
         return None
     q = embed.query(task)
-    vectors = embed.of(texts) if q is not None and texts else ([] if q is not None else None)
+    vectors = embed.of(texts, kind) if q is not None and texts else ([] if q is not None else None)
     if q is None or vectors is None:
         SEARCH.update(by="words", error=embed.LAST_ERROR or "the embedding server did not answer")
         return None
@@ -299,7 +300,10 @@ def _episode_candidates(task: str, workspace: str,
     # drawn - a bare "ok, thanks" sits as near to everything as a real
     # question sits to its answer. So the slots are always filled the same way,
     # and the curator, as ever, is the one that says the desk stays empty.
-    near = _nearness(task, [embed.episode_text(c["ep"]) for c in scored])
+    #
+    # An episode is found by its EVENT - what it was about and what happened -
+    # and not by what it has since come to mean: see embed.py.
+    near = _nearness(task, [embed.event_text(c["ep"]) for c in scored], "events")
     if near is not None:
         for c, value in zip(scored, near):
             c["near"] = value
@@ -395,7 +399,7 @@ def _learning_candidates(task: str,
 
     # By meaning when it can be had: the nearest to the request, and between
     # two as near as each other the one held more firmly.
-    near = _nearness(task, [str(c["entry"].get("text", "") or "") for c in out])
+    near = _nearness(task, [embed.belief_text(c["entry"]) for c in out], "beliefs")
     if near is not None:
         for c, value in zip(out, near):
             c["near"] = value
