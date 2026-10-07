@@ -80,6 +80,10 @@ Then, in `/configure`, choose `meaning` and type its address. The page says
 whether it answers. `/status`, inside a project, says how the memory is being
 searched.
 
+The first search after that reads the whole memory, once, and takes as long as
+that takes: while it does, a line under the status line says how far it is.
+From then on only what is new is read.
+
 Nothing has to be rebuilt: the first search after that takes a few seconds
 longer, and the rest are as fast as before. If the server stops answering,
 the search goes by words again and the screen says so. `meaning`, then `off`,

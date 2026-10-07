@@ -1647,6 +1647,13 @@ If the turn needed no tools at all, the conclusion is simply your reply.
     # Every model call - the curator's, the segmenter's, the agent's - reports
     # its wait to the same status line instead of drawing a spinner of its own.
     llm_client.STATUS_HOOK = renderer
+    # And so does the embedding server, when the memory is searched by meaning:
+    # it works before the curator's model does, under the curator's name.
+    try:
+        import embed
+        embed.STATUS_HOOK = renderer
+    except Exception:
+        pass
     served = getattr(baseline_config, "SERVED_MODEL", "") or baseline_config.DEFAULT_MODEL
     max_steps = args.max_steps or baseline_config.MAX_STEPS
     _STATE.update(project=os.environ.get("PRAGMA_PROJECT") or cwd.name,

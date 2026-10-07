@@ -52,6 +52,12 @@ store no longer holds. It needs no server - the name of a file is the hash of
 its text alone - and it runs whenever an episode is deleted and at the end of
 each consolidation: an episode that is forgotten takes its vectors with it.
 
+IT SAYS WHAT IT IS DOING to whoever is showing the work to a person. Turning a
+store into vectors for the first time takes as long as the model's own answer
+can, and a screen that names only the curator for those seconds is naming the
+wrong one. STATUS_HOOK is told when stored texts are being read and when they
+are in hand; with nobody listening, nothing is said.
+
 WHEN IT FAILS it says so and steps aside. An embedding server that does not
 answer must not cost a turn its recall: of() and query() return None, LAST_ERROR
 says why, and the caller searches by words. It is not asked again for a minute,
@@ -74,6 +80,25 @@ import config
 LAST_ERROR = ""
 
 KINDS = ("events", "readings", "beliefs")
+
+# Whoever shows the work to a person, when there is one: the terminal's
+# renderer. It is told through its `embedding(kind, done, todo, held)` -
+#   ("events", 16, 83, 83)   16 of the 83 episodes that had no vector have one
+#   ("events", 83, 83, 83)   all of them: 83 are in hand, 83 were read just now
+#   ("beliefs", 0, 0, 49)    49 beliefs in hand, none of which had to be read
+#   ("request", 0, 1, 0)     the request itself is being read
+#   ("", 0, 0, 0)            the server did not answer: there is nothing to show
+STATUS_HOOK = None
+
+
+def _tell(kind: str, done: int, todo: int, held: int) -> None:
+    hook = getattr(STATUS_HOOK, "embedding", None) if STATUS_HOOK is not None else None
+    if hook is None:
+        return
+    try:
+        hook(kind, done, todo, held)
+    except Exception:
+        pass                    # showing the work must never be what stops it
 
 _BATCH = 16
 _CHARS = 6000                 # of a text sent to the server: a unit is far shorter
@@ -148,9 +173,13 @@ def _unit(vector) -> array:
     return array("f", [x / norm for x in vector])
 
 
-def _ask(srv: dict, texts: list[str]) -> list[array]:
+def _ask(srv: dict, texts: list[str], each=None) -> list[array]:
+    """A vector for each text, asked for a few at a time. `each` is called with
+    how many are done before every request, for whoever is watching."""
     out: list[array] = []
     for at in range(0, len(texts), _BATCH):
+        if each is not None:
+            each(at)
         batch = [t[:_CHARS] or " " for t in texts[at:at + _BATCH]]
         data = _post(srv, "/embeddings", {"model": srv.get("model") or identity(srv), "input": batch},
                      config.EMBED_TIMEOUT)
@@ -215,6 +244,7 @@ def _failed(e: Exception) -> None:
     global LAST_ERROR, _down_until
     LAST_ERROR = f"{type(e).__name__}: {str(e)[:140]}"
     _down_until = time.monotonic() + _RETRY_AFTER
+    _tell("", 0, 0, 0)
 
 
 def of(texts: list[str], kind: str) -> list[array] | None:
@@ -235,12 +265,14 @@ def of(texts: list[str], kind: str) -> list[array] | None:
         out = [_load(p) for p in paths]
         missing = [i for i, v in enumerate(out) if v is None]
         if missing:
-            fresh = _ask(srv, [texts[i] for i in missing])
+            fresh = _ask(srv, [texts[i] for i in missing],
+                         each=lambda done: _tell(kind, done, len(missing), len(texts)))
             for i, vector in zip(missing, fresh):
                 out[i] = vector
                 _save(paths[i], vector)
                 _hold(paths[i], vector)
         LAST_ERROR = ""
+        _tell(kind, len(missing), len(missing), len(texts))
         return out
     except Exception as e:
         _failed(e)
@@ -260,6 +292,7 @@ def query(text: str) -> array | None:
         model = identity(srv)
         if _last_query and _last_query[:2] == (model, text):
             return _last_query[2]
+        _tell("request", 0, 1, 0)
         vector = _ask(srv, [text])[0]
         _last_query = (model, text, vector)
         LAST_ERROR = ""

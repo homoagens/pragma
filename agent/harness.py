@@ -51,6 +51,9 @@ import time
 # not enough to become the screen.
 THINK_LINES = 4
 THINK_KEEP = 2000                  # characters of reasoning kept for the panel
+# Seconds of reading by the embedding server after which a line says so for
+# good. Under that, it was not what the turn waited for.
+EMBEDDING_SAID_AFTER = 2.0
 
 GLYPHS = {"prompt": "❯", "tool": "●", "out": "⎿", "fac": "◆",
           "ok": "✓", "bad": "✗", "note": "!", "dot": "·"}
@@ -126,6 +129,25 @@ def fold(content: str, width: int, verbose: bool = False) -> list[str]:
 
 
 _MARKS = re.compile(r"\*\*|__|`+|(?:^|(?<=\s))#{1,6}\s")
+
+
+def _no_embedding() -> dict:
+    """Nothing read by the embedding server yet: what is in hand by kind, what
+    had to be read by kind, since when it is reading, and for how long it has."""
+    return {"held": {}, "read": {}, "since": 0.0, "seconds": 0.0}
+
+
+_EMBEDDED = {"events": ("memory", "memories"), "beliefs": ("belief", "beliefs")}
+
+
+def _counted(by_kind: dict) -> str:
+    """{"events": 83, "beliefs": 1} as "83 memories and 1 belief"."""
+    said = []
+    for kind in ("events", "beliefs"):
+        n = by_kind.get(kind)
+        if n:
+            said.append(f"{n} {_EMBEDDED[kind][0 if n == 1 else 1]}")
+    return " and ".join(said) or "nothing"
 
 
 def _plain_reasoning(text: str) -> str:
@@ -342,6 +364,8 @@ class Harness:
         self._call = {"streamed": 0}
         self._note = ""
         self._paused_label = ""
+        self._sub = ""                  # one line under the status: the embedding server at work
+        self._embedded = _no_embedding()
         self._turn: dict = {}
         self.turn_begin()
         self._ticking = True
@@ -381,6 +405,7 @@ class Harness:
             self._label = ""
             self._tail = ""
             self._said = ""
+            self._sub = ""
 
     def _redraw(self) -> None:
         if self._status is not None:
@@ -392,7 +417,8 @@ class Harness:
 
     def _renderable(self):
         """The block: a spinner line saying who and for how long, and under it
-        the last lines of the reasoning while there is any."""
+        what the embedding server is doing when it is at work, then the last
+        lines of the reasoning while there is any."""
         from rich.console import Group
         from rich.padding import Padding
         from rich.spinner import Spinner
@@ -407,12 +433,18 @@ class Harness:
         # A faculty's answer, once it has started, replaces its reasoning in
         # the block: the thinking is over and what is being written is what
         # there is to watch. Upright, where the reasoning is in italics.
+        under = []
+        if self._sub:
+            # In the column of the status line's words, not of its spinner.
+            under.append(Padding(Text(self._sub[:max(20, self.console.width - 6)],
+                                      style="bright_black"), (0, 0, 0, 2)))
         if self._tail:
             body = Text(_plain_reasoning(self._tail), style="italic bright_black")
-        else:
+            lines = body.wrap(self.console, max(20, self.console.width - 6))
+            under.append(Padding(Group(*lines[-THINK_LINES:]), (0, 0, 0, 4)))
+        if not under:
             return self._spinner
-        lines = body.wrap(self.console, max(20, self.console.width - 6))
-        return Group(self._spinner, Padding(Group(*lines[-THINK_LINES:]), (0, 0, 0, 4)))
+        return Group(self._spinner, *under)
 
     def _tick(self) -> None:
         while self._ticking:
@@ -512,6 +544,69 @@ class Harness:
         from rich.text import Text
         self._hanging(Text(f"  {self.g['note']} ", style="yellow"),
                       Text(" ".join(str(text).split()), style="yellow"))
+
+    # embed.STATUS_HOOK: the embedding server at work, said under the status.
+    def embedding(self, kind: str, done: int, todo: int, held: int) -> None:
+        """One line under the status line, for as long as the status is up.
+
+        With an embedding server in use the memory is searched by meaning
+        BEFORE the curator's model is asked anything, and under the curator's
+        name. The first search of a store reads every episode and every belief
+        in it, and for those seconds the screen named the curator, who had not
+        started. So the line under it says who is working: how many are being
+        read and how many are done; then, while the curator weighs what was
+        found, what the search went over.
+
+            ⠇ curator · searching memory for what bears on this  6s
+              embedding · 32 of 83 memories
+
+        It goes when the status goes. What was READ - as against found already
+        read - is counted with its seconds, for the line that stays
+        (_embedding_note): "embedded  83 memories and 49 beliefs · 14s", in the
+        past tense and above "recalled", as the status line's "curator" is
+        answered by "recalled".
+        """
+        if kind == "readings":
+            return                          # a re-reading being measured: not a search
+        dot = self.g["dot"]
+        with self._lock:
+            e = self._embedded
+            now = time.monotonic()
+            if not kind:                    # the server did not answer: the search goes by words
+                e["since"] = 0.0
+                self._sub = ""
+            elif kind == "request":
+                if not self._sub:
+                    self._sub = f"embedding {dot} the request"
+            elif todo and done < todo:
+                e["since"] = e["since"] or now
+                self._sub = f"embedding {dot} {done} of {_counted({kind: todo})}"
+            else:
+                if e["since"]:
+                    e["seconds"] += now - e["since"]
+                    e["since"] = 0.0
+                if todo:
+                    e["read"][kind] = e["read"].get(kind, 0) + todo
+                e["held"][kind] = held
+                self._sub = f"embedding {dot} {_counted(e['held'])} searched by meaning"
+            if self._status is None:
+                self._sub = ""              # nothing is up to say it under
+            else:
+                self._redraw()
+
+    def _embedding_note(self) -> str:
+        """What the embedding server read since the recall began, when reading
+        it is what the wait was - or "". Asked once: it starts the count again.
+
+        Read, not searched: a store already in vectors is searched in a
+        fraction of a second, and a line saying so at every turn would be a
+        line about nothing.
+        """
+        with self._lock:
+            e, self._embedded = self._embedded, _no_embedding()
+        if e["seconds"] < EMBEDDING_SAID_AFTER or not any(e["read"].values()):
+            return ""
+        return f"{_counted(e['read'])} {self.g['dot']} {e['seconds']:.0f}s"
 
     def pause(self) -> None:
         """Give the screen back for a question; resume() takes it again."""
@@ -768,6 +863,8 @@ class Harness:
         # review of twenty seconds with nothing to show it was happening.
         self._close_answer()
         self._end_thinking()
+        if tag == "CURATOR":
+            self._embedded = _no_embedding()    # a recall begins: its own count
         self._show(f"{tag.lower()} {self.g['dot']} {note.rstrip('.… ')}")
 
     def _hanging(self, lead, body) -> None:
@@ -791,6 +888,14 @@ class Harness:
         # What streams after this is a new call: a critic that sends the work
         # back is followed by more steps, not by more of the same answer.
         self._boundary = True
+        if tag == "CURATOR":
+            read = self._embedding_note()
+            if read:
+                # What the wait before the curator's line was, when it was not
+                # the curator: said first, in the voice of something that is
+                # not a faculty.
+                self._hanging(Text(f"  {self.g['fac']} embedded  ", style="bright_black"),
+                              Text(read, style="bright_black"))
         color = FACULTY_COLOR.get(tag, "magenta")
         lead = Text(f"  {self.g['fac']} ", style=self.accent)
         lead.append(f"{tag.lower()}  ", style=f"bold {color}")

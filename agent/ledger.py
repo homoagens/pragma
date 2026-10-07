@@ -505,6 +505,7 @@ class Ledger(Harness):
             self._label = ""
             self._tail = ""
             self._said = ""
+            self._sub = ""
             if self._status is None:
                 try:
                     from rich.live import Live
@@ -758,6 +759,11 @@ class Ledger(Harness):
         # typed stands alone. None under it - what follows brings its own.
         self.console.print()
         self._prev = "recall"
+        read = self._embedding_note()
+        if read:
+            # What the wait before this was, when it was the embedding server
+            # reading the store and not the curator: one quiet line, first.
+            self.console.print(Text(f"  embedded  {read}", style=quiet))
         if not items:
             # "1 memory + 0 beliefs → none of them bears on this — why · 2s"
             # is the curator's whole account. Here it is the verdict alone,
@@ -837,6 +843,16 @@ def demo(fast: bool = False) -> None:
     console.print(Text("❯ ", style=r.accent).append(
         "Add a --json flag to report.py and make the tests pass", style=""))
     r.faculty_running("CURATOR", "searching memory for what bears on this…")
+    # A store searched by meaning for the first time: every memory is read.
+    r.embedding("request", 0, 1, 0)
+    wait(0.3)
+    for done in range(0, 83, 16):
+        r.embedding("events", done, 83, 83)
+        wait(0.4)
+    r.embedding("events", 83, 83, 83)
+    r.embedding("beliefs", 0, 49, 49)
+    wait(0.5)
+    r.embedding("beliefs", 49, 49, 49)
     wait(2.2)
     r.end()
     r.recalled([("Every script starts with a one-line docstring", 0.62),
