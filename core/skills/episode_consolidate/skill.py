@@ -29,6 +29,7 @@ import uuid
 from pathlib import Path
 
 import config
+import embed
 import episodes as estore
 import llm_client
 import reconsolidate
@@ -215,6 +216,55 @@ def _tokens(s: str) -> set[str]:
 
 def _now() -> str:
     return clock.stamp()
+
+
+def _nearness(text: str, others: list[str]) -> list[float] | None:
+    """How near each of `others` is to `text`, by meaning - or None, and then
+    what is related is decided by shared words, as it was: no embedding server
+    is named, or it did not answer (embed.LAST_ERROR then says why).
+
+    The vector of `text` is kept like any other, so the memory being written
+    here does not have to be computed again the first time it is searched.
+    """
+    if not others or embed.server() is None:
+        return None
+    vectors = embed.of([text] + others)
+    if vectors is None:
+        return None
+    return [embed.nearness(vectors[0], v) for v in vectors[1:]]
+
+
+def _similar_episodes(ep: dict, past: list[dict], result: dict) -> list[dict]:
+    """The past episodes a new one is read against: three at most.
+
+    WHICH ONES decides everything that follows - these are what the
+    Abstractor may draw a belief from and what the Reconsolidator re-reads.
+    By meaning when an embedding server is named: the three nearest. Otherwise
+    by shared words, which finds what was written in the same words and the
+    same language and little else. `result` is told which it was.
+    """
+    near = _nearness(embed.episode_text(ep), [embed.episode_text(e) for e in past])
+    if near is not None:
+        result["related_by"] = "meaning"
+        return [e for e, _n in sorted(zip(past, near), key=lambda t: t[1], reverse=True)][:3]
+    if embed.server() is not None and past:
+        result["embed_error"] = embed.LAST_ERROR or "the embedding server did not answer"
+    qtok = _tokens(_episode_text(ep))
+    scored = sorted(((e, len(_tokens(_episode_text(e)) & qtok)) for e in past),
+                    key=lambda t: t[1], reverse=True)
+    return [e for e, s in scored if s >= 2][:3]  # ≥2 shared tokens = related
+
+
+def _related_beliefs(ep: dict, active: list[dict]) -> list[dict]:
+    """The beliefs a new episode may confirm or contradict: eight at most,
+    the nearest by meaning, or those that share a word with it."""
+    near = _nearness(embed.episode_text(ep), [str(e.get("text", "") or "") for e in active])
+    if near is not None:
+        return [e for e, _n in sorted(zip(active, near), key=lambda t: t[1], reverse=True)][:8]
+    qtok = _tokens(_episode_text(ep))
+    rel_scored = sorted(((e, len(_tokens(e.get("text", "")) & qtok)) for e in active),
+                        key=lambda t: t[1], reverse=True)
+    return [e for e, s in rel_scored if s > 0][:8]
 
 
 def _episode_text(ep: dict) -> str:
@@ -654,7 +704,11 @@ def episode_consolidate_detailed(transcript: str = "", workspace: str = "",
               "semantic_ran": False,
               "new_assertions": [], "confirmed": [], "contradicted": [],
               "retired": [], "reconsolidated": [], "reformulated": [],
-              "reconsolidate_error": ""}
+              "reconsolidate_error": "",
+              # How the memories and beliefs related to this one were found:
+              # "meaning" with an embedding server, "words" without one - and
+              # why not by meaning, when one is named and did not answer.
+              "related_by": "words", "embed_error": ""}
     if degraded and llm_note:
         _degraded_note = llm_note + " — deterministic fallback episode saved"
     elif degraded:
@@ -667,10 +721,7 @@ def episode_consolidate_detailed(transcript: str = "", workspace: str = "",
     # Runs only when at least one thematically similar past episode exists:
     # a single episode never generates knowledge on its own.
     past = [e for e in _load_episodes(store) if e.get("id") != ep["id"]]
-    qtok = _tokens(_episode_text(ep))
-    scored = sorted(((e, len(_tokens(_episode_text(e)) & qtok)) for e in past),
-                    key=lambda t: t[1], reverse=True)
-    similar = [e for e, s in scored if s >= 2][:3]  # ≥2 shared tokens = related
+    similar = _similar_episodes(ep, past, result)
     if not similar:
         result["summary"] = (
             f"OK: episode {ep['id']} saved ({len(surprises)} surprises); "
@@ -731,9 +782,7 @@ def episode_consolidate_detailed(transcript: str = "", workspace: str = "",
 
     # Related existing assertions, for confirmation/contradiction checks.
     active = [e for e in entries if e.get("status", "active") != "retired"]
-    rel_scored = sorted(((e, len(_tokens(e.get("text", "")) & qtok)) for e in active),
-                        key=lambda t: t[1], reverse=True)
-    related = [e for e, s in rel_scored if s > 0][:8]
+    related = _related_beliefs(ep, active)
 
     payload = json.dumps({
         "new_episode":         _episode_lite(ep),
@@ -926,6 +975,9 @@ def episode_consolidate_detailed(transcript: str = "", workspace: str = "",
         _recon_note += f", reformulated {len(result['reformulated'])} belief(s)"
     if result.get("reconsolidate_error"):
         _recon_note += f"; RECONSOLIDATOR FAILED - {result['reconsolidate_error']}"
+    if result.get("embed_error"):
+        _recon_note += (f"; related memories found by words - the embedding server did not answer "
+                        f"({result['embed_error']})")
     result["summary"] = (
         f"OK: episode {ep['id']} saved ({len(surprises)} surprises); "
         f"semantics: +{len(result['new_assertions'])} assertions, "

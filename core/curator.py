@@ -244,12 +244,6 @@ def _episode_text(ep: dict) -> str:
 SEARCH = {"by": "words", "error": ""}
 
 
-def _meaning_text(ep: dict) -> str:
-    """What an episode is about, as one text: what a search by meaning reads."""
-    return "\n".join([str(ep.get("goal", "") or ""), ", ".join(ep.get("keywords", []) or []),
-                      str(ep.get("narrative", "") or ""), str(ep.get("interpretation", "") or "")])
-
-
 def _nearness(task: str, texts: list[str]) -> list[float] | None:
     """How near each text is to the request, by meaning - or None, and then
     the search goes by words: no embedding server is named, or it is down."""
@@ -305,7 +299,7 @@ def _episode_candidates(task: str, workspace: str,
     # drawn - a bare "ok, thanks" sits as near to everything as a real
     # question sits to its answer. So the slots are always filled the same way,
     # and the curator, as ever, is the one that says the desk stays empty.
-    near = _nearness(task, [_meaning_text(c["ep"]) for c in scored])
+    near = _nearness(task, [embed.episode_text(c["ep"]) for c in scored])
     if near is not None:
         for c, value in zip(scored, near):
             c["near"] = value

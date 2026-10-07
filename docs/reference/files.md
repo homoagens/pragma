@@ -82,7 +82,7 @@ The same file is read by the launcher on every system.
 | `sampling` | The numbers sent with a request, one row per `kind` and `work`. Absent means the server keeps its own. The knobs are `temperature`, `top_p`, `top_k`, `min_p`, `presence_penalty`, `repeat_penalty`. |
 | `roles` | Which endpoint answers each role. A role left out follows `agent`. |
 | `options` | The optional faculties, on or off for the whole machine. |
-| `embedding` | An embedding server, optional: `url`, and `model`, `key` or `key_env` as for an endpoint. With one, the memory is searched by meaning before a recall. Without one, or while it does not answer, by words. |
+| `embedding` | An embedding server, optional: `url`, and `model`, `key` or `key_env` as for an endpoint. With one, the memory is searched by meaning: before a recall, and when a new memory looks for the ones it is related to. Without one, or while it does not answer, by words. |
 
 A file that cannot be followed — broken JSON, a role naming an endpoint that
 is not listed — is an error, and Pragma says so. It does not fall back to

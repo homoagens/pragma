@@ -65,7 +65,9 @@ A key can be typed, or — better — left in an environment variable whose
 Optional. Before a turn, Pragma searches the project's memory for what fits
 what you typed. It goes by the words the two share, so a memory written in
 other words, or in another language, is easily missed. With an *embedding*
-server it goes by meaning instead.
+server it goes by meaning instead. The same holds when a conversation is
+written into memory, and Pragma looks for the memories the new one is related
+to.
 
 That is a small model of its own, served on its own port — not the one you
 talk to. With llama.cpp, for example:

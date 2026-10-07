@@ -204,6 +204,18 @@ def query(text: str) -> list[float] | None:
         return None
 
 
+def episode_text(ep: dict) -> str:
+    """What an episode is about, as one text: what a search by meaning reads.
+
+    One definition for everyone who embeds an episode - the search before a
+    turn, and the write side when it looks for what a new memory is related
+    to. The vector is kept under the hash of this text, so two callers that
+    built it differently would each compute their own and share nothing.
+    """
+    return "\n".join([str(ep.get("goal", "") or ""), ", ".join(ep.get("keywords", []) or []),
+                      str(ep.get("narrative", "") or ""), str(ep.get("interpretation", "") or "")])
+
+
 def nearness(a: list[float], b: list[float]) -> float:
     """How close two unit vectors are: 1 the same direction, 0 unrelated."""
     if len(a) != len(b):
