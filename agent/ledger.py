@@ -296,6 +296,15 @@ class Ledger(Harness):
         if name == "apply_patch":
             files = re.findall(r"^\+\+\+ (?:b/)?(\S+)", str(args.get("diff", "")), re.MULTILINE)
             return verb, ", ".join(self._near(f) for f in files[:3]) or "a patch"
+        if name == "replace_in_files":
+            # Which files it touches is known only once it has run. Until
+            # then: what is being replaced, and where it is looked for - its
+            # `path` is the folder searched, and "changed ." said nothing.
+            old = " ".join(str(args.get("old", "")).split())
+            where = self._near(args.get("path") or ".")
+            what = f'"{old[:40]}"' + (f"  in {where}" if where and where != "." else "")
+            dry = str(args.get("dry_run", "")).lower() in ("true", "1", "yes")
+            return ("looked" if dry else verb), what
         target = (args.get("path") or args.get("image_path") or args.get("file") or "")
         return verb, self._near(target) or name
 
@@ -354,6 +363,24 @@ class Ledger(Harness):
             added = len(re.findall(r"^\+(?!\+\+)", diff, re.MULTILINE))
             removed = len(re.findall(r"^-(?!--)", diff, re.MULTILINE))
             word = f"+{added} {self.m['minus']}{removed}"
+        elif name == "replace_in_files":
+            # "REPLACED 6 occurrence(s) in 1 file(s):" and, under it, the
+            # files. The row is about THEM, now that they are known - and
+            # what it says of them is how many places changed, not the first
+            # twenty-eight characters of the tool's own sentence.
+            found = re.match(r"\s*(WOULD REPLACE|REPLACED) (\d+) occurrence\(s\) in \d+ file", text)
+            files = re.findall(r"^  (\S.*?) \(\d+\)\s*$", text, re.MULTILINE)
+            if found:
+                n = int(found.group(2))
+                word = f"{n} replaced" if found.group(1) == "REPLACED" else f"{n} to replace"
+                base = str(args.get("path") or ".")
+                names = [self._near(os.path.join(base, f)) for f in files[:3]]
+                if names:
+                    more = f" and {len(files) - 3} more" if len(files) > 3 else ""
+                    return {"word": word, "ok": True, "why": [], "mark": "plain",
+                            "what": ", ".join(names) + more}
+            else:
+                word = _last(text.split("\n", 1)[0])[:28]
         elif name in ("list_dir", "glob_match", "grep_search", "git_status", "git_diff"):
             word = plural(_lines(text), "line")
         elif name == "web_fetch":
