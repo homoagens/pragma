@@ -536,6 +536,15 @@ _RECALL_KEYS = {"RecallMemoriesOffered": "offered_episodes",
                 "RecallBeliefsTaken": "taken_learnings"}
 
 
+def _search_named() -> str:
+    """"meaning" when an embedding server is named, "" when none is."""
+    try:
+        import embed
+        return "meaning" if embed.server() is not None else ""
+    except Exception:
+        return ""
+
+
 def _search_says() -> str:
     """How the memory is searched before a recall: by words, or by meaning and
     with what. Asks the embedding server its name, so it also says when it is
@@ -1535,6 +1544,10 @@ def _recall(text: str, cwd, desk_ids: set[str], desk_rules: set[str],
             exclude_ids=desk_ids, exclude_rules=desk_rules,
             no_reinforce=reinforced)
         took = f" · {_time.monotonic() - _t0:.0f}s"
+        if _STATE.get("search"):
+            # For the line under the prompt: whether the embedding server
+            # answered this search.
+            _STATE["search"] = "words" if info.get("search_error") else "meaning"
         # Set to search by meaning and unable to: the recall went by words,
         # which is a different recall, and nothing on the screen would tell.
         if info.get("search_error") and not _SEARCH_WARNED:
@@ -1716,7 +1729,10 @@ If the turn needed no tools at all, the conclusion is simply your reply.
                   # read config and so reported the default however the
                   # project was set.
                   max_steps=max_steps,
-                  memory=bool(args.memory), turns=0, ctx=None, writing="")
+                  memory=bool(args.memory), turns=0, ctx=None, writing="",
+                  # "meaning" where an embedding server is named - until a
+                  # search says it did not answer; "" where none is.
+                  search=_search_named())
 
     log_path = cwd / ".pragma_session.jsonl"
     print()

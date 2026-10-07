@@ -469,6 +469,27 @@ def endpoint_lines() -> list[tuple[str, str, bool]]:
             for role, ep in roles.items()]
 
 
+def embedding_line(found: dict | None) -> tuple[str, str]:
+    """(text, colour) for the line under the endpoint that says whether the
+    memory is searched by meaning, and by what.
+
+    `found` is embed.probe(): None when no embedding server is named. The same
+    order as the endpoint's line - what is served, then where - and the same
+    two colours, so that the two servers a memory can depend on are read the
+    same way. With none named the line is still there, quietly: it is a thing
+    this machine could have and does not.
+    """
+    sys.path[:0] = [str(ROOT), str(ROOT / "core")]
+    import endpoints
+    if found is None:
+        return f"none - the memory is searched by words{SEP}/configure", GREY
+    where = endpoints.short_url(found["url"])
+    if found.get("up"):
+        served = endpoints.model_name(found.get("model") or "") or "answering"
+        return f"{served}{SEP}{where}", "\033[32m"
+    return f"{where}{SEP}not answering - the memory is searched by words{SEP}/configure", "\033[33m"
+
+
 def show_help(extra: dict | None = None) -> None:
     a = accent()
     r = RESET if a else ""
@@ -522,10 +543,28 @@ def main() -> int:
 
     if args.page:
         page(args.notice)
+    # The embedding server is asked while the endpoints are, not after them:
+    # one that is down must not add its wait to theirs.
+    os.environ.setdefault("PRAGMA_NO_ENDPOINT_PROBE", "1")
+    sys.path[:0] = [str(ROOT), str(ROOT / "core")]
+    embedding: dict = {}
+
+    def ask_embedding() -> None:
+        try:
+            import embed
+            embedding["found"] = embed.probe(2.5)
+            embedding["asked"] = True
+        except Exception:
+            pass
+
+    import threading
+    asking = threading.Thread(target=ask_embedding, daemon=True)
+    asking.start()
     try:
         lines = endpoint_lines()
     except Exception as e:
         lines = [("endpoint", f"unknown - {type(e).__name__}", False)]
+    asking.join(3.5)
     a = accent()
     grey = GREY if a else ""
     reset = RESET if a else ""
@@ -536,6 +575,13 @@ def main() -> int:
     from pragma_menu import row
     for label, status, up in lines:
         row(label, status, "\033[32m" if up else "\033[33m")
+    # Under the endpoint, whether the memory is searched by meaning. That
+    # there is NO embedding server is said only on a machine whose model
+    # answers: on a first run the one line to read is the endpoint's, and a
+    # second one about something optional would be read instead of it.
+    if embedding.get("asked") and (embedding.get("found") is not None
+                                   or any(up for _label, _status, up in lines)):
+        row("embedding", *embedding_line(embedding.get("found")))
     print()
 
     # What the page says the memory is doing is a photograph taken as it was

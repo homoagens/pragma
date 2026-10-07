@@ -191,8 +191,9 @@ def toolbar(state: dict) -> list:
     """The line under the prompt, as prompt_toolkit formatted text.
 
     The things that change while you type nothing: which project, which
-    model, how full the context is, whether the memory is on, how many turns
-    so far, and whether a consolidation is being written right now.
+    model, how full the context is, whether the memory is on - and, where an
+    embedding server is named, whether it answered the last search - how many
+    turns so far, and whether a consolidation is being written right now.
     """
     dot = ("class:toolbar.dim", "  ·  ")
     out = [("class:toolbar", f" {state.get('project') or 'no project'}")]
@@ -204,6 +205,13 @@ def toolbar(state: dict) -> list:
         style = "class:toolbar.warn" if ctx >= 80 else "class:toolbar.dim"
         out += [dot, (style, f"ctx {ctx}%")]
     out += [dot, ("class:toolbar.dim", "memory on" if state.get("memory") else "memory off")]
+    # Only where an embedding server is named, and only while the memory is
+    # on: how the last search went, or - before the first - how it will go.
+    search = state.get("search") if state.get("memory") else ""
+    if search == "meaning":
+        out += [dot, ("class:toolbar.dim", "embedding on")]
+    elif search == "words":
+        out += [dot, ("class:toolbar.warn", "embedding down")]
     turns = state.get("turns") or 0
     out += [dot, ("class:toolbar.dim", plural(turns, "turn") if turns else "no turns yet")]
     writing = state.get("writing")

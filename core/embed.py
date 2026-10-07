@@ -165,6 +165,31 @@ def identity(srv: dict) -> str:
     return named or "embedding"
 
 
+def probe(timeout: float = 3.0) -> dict | None:
+    """Whether the embedding server that is named is there, for a screen that
+    says so beside the model endpoint: None when none is named, otherwise
+    {"url", "up", "model", "error"}.
+
+    It asks the server what it serves and nothing else - no text is sent, and
+    nothing is kept. A server that answers with an error it is still a server
+    that answers: some have no list of models to give, and embed all the same.
+    """
+    srv = server()
+    if srv is None:
+        return None
+    found = {"url": srv["url"], "up": False, "model": srv.get("model") or "", "error": ""}
+    try:
+        data = _post(srv, "/models", None, timeout)
+        first = (data.get("data") or data.get("models") or [{}])[0]
+        found["model"] = str(first.get("id") or first.get("model") or first.get("name") or found["model"])
+        found["up"] = True
+    except Exception as e:
+        found["up"] = getattr(e, "response", None) is not None
+        if not found["up"]:
+            found["error"] = f"{type(e).__name__}: {str(e)[:100]}"
+    return found
+
+
 def _unit(vector) -> array:
     # Some servers answer with one vector per token instead of one per text.
     if vector and isinstance(vector[0], list):

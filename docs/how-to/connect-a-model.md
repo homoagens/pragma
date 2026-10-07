@@ -77,8 +77,9 @@ llama-server -m bge-m3-Q8_0.gguf --embedding --port 7190
 ```
 
 Then, in `/configure`, choose `meaning` and type its address. The page says
-whether it answers. `/status`, inside a project, says how the memory is being
-searched.
+whether it answers. From then on the home screen says so too, on the line
+under the endpoint, and inside a project the bar under the prompt says
+`embedding on`. `/status` says how the memory is being searched.
 
 The first search after that reads the whole memory, once, and takes as long as
 that takes: while it does, a line under the status line says how far it is.
