@@ -310,8 +310,6 @@ def hold(text: str = "ctrl+D to go back") -> None:
 # ledger: a column of names in the accent, what each faculty did beside it,
 # the one at work on a status line with its seconds, and a closing line.
 #
-#     giulia  a session of 2 turns · ctrl+D goes back, and it carries on
-#
 #     segmenter       2 turns, 1 worth keeping - the greeting carries nothing
 #     consolidator    Agrilog delivered; never deploy on a Friday
 #     reconsolidator  2 earlier memories re-read
@@ -422,20 +420,6 @@ def _closing(look: dict, job: dict, said: list[dict], elapsed: float, gone: bool
     # "stopped - stopped by hand" says it twice.
     line.append(why if state == "stopped" else f"{state} {dot} {why}", style=look["tones"][1])
     return [line, Text(f"    the turns are still in it: {job.get('_path') or ''}", style=look["tones"][2])]
-
-
-def header(project: str, note: str, also: str = "") -> None:
-    """The line a job is watched under: whose memory, of what."""
-    from rich.text import Text
-    console, look = _look()
-    line = Text("  ")
-    if project:
-        line.append(project + "  ", style=look["accent"])
-    dot = look["g"]["dot"]
-    line.append(f"{note or 'a session'} {dot} ctrl+D goes back, and it carries on"
-                + (f" {dot} also writing: {also}" if also else ""), style=look["tones"][2])
-    console.print(line)
-    console.print()
 
 
 def show_idle(everywhere: bool = False) -> None:
@@ -736,76 +720,98 @@ def show_log(job: dict) -> None:
         console.print(line)
 
 
-def manage(lister, everywhere: bool = False) -> None:
-    """/jobs: the memory's work in the background, as a list to walk.
+def manage(lister, everywhere: bool = False) -> str | None:
+    """/jobs: the memory's work in the background, as a page to walk.
 
     `lister()` gives [(project or "", job)], asked again after every action:
     what was writing a moment ago may have finished. Each job opens onto what
     can be done with it - one being written can be followed or stopped; one
     that is not can be read, started again or let go.
+
+    A PAGE, LIKE THE OTHERS. Every screen of it - the list, what can be done
+    with a job, the job being followed, its log - clears and is drawn in the
+    same place, under a head that says where you are. It was drawn down the
+    screen instead, each menu under the one before: three keys in, the list
+    you were choosing from was the fourth thing from the bottom and the first
+    three were debris.
+
+    Returns None when there was nothing to show and nothing was drawn but one
+    line; otherwise the last thing it has to say - possibly nothing, "" - to
+    whoever draws its own screen again in its place.
     """
-    from pragma_menu import choose, confirm, pick, say
-    at = 0
-    while True:
-        found = lister()
+    from pragma_menu import choose, confirm, pick, say, title
+    found = lister()
+    if not found:
         print()
+        show_idle(everywhere)
+        return None
+    at = 0
+    notice = ""
+    while True:
         if not found:
-            show_idle(everywhere)
-            return
+            return notice or "nothing left in the background"
+        title("Jobs", "what the memory is writing in the background")
+        if notice:
+            print()
+            say(f"  {notice}", "dim")
+            notice = ""
         names = [project or str(job.get("note") or "a session") for project, job in found]
-        chosen = pick("what the memory is writing" if everywhere or len(found) > 1
-                      else "what the memory is writing here", names, [state_of(job) for _p, job in found],
-                      min(at, len(found) - 1))
+        chosen = pick("", names, [state_of(job) for _p, job in found], min(at, len(found) - 1))
         if chosen is None:
-            return
+            return ""
         at = chosen
         project, job = found[chosen]
         path = Path(job["_path"])
         note = str(job.get("note") or "a session")
-        title = f"{project}{_sep()}{note}" if project else note
-        writing = job.get("status") in ("pending", "running")
-        if writing:
-            what = choose(title, [("watch", "follow it, step by step"),
-                                  ("stop", "end it now - what was said stays in the job, to write later or let go")])
+        where = f"{project} > {note}" if project else note
+        title("Jobs", where)
+        if job.get("status") in ("pending", "running"):
+            what = choose("", [("watch", "follow it, step by step"),
+                               ("stop", "end it now - what was said stays in the job, to write later or let go")])
         else:
-            what = choose(title, [("log", "what it did, and how it ended"),
-                                  ("run again", "start writing it again"),
-                                  ("discard", "delete it - what was said in it never becomes memory")])
-        if what is None:
-            continue
-        print()
+            what = choose("", [("log", "what it did, and how it ended"),
+                               ("run again", "start writing it again"),
+                               ("discard", "delete it - what was said in it never becomes memory")])
         if what in ("watch", "run again"):
             if what == "run again":
                 try:
                     start(path)
+                    job = dict(job, status="pending")
                 except Exception as e:
-                    say(f"  could not start it - {type(e).__name__}: {str(e)[:90]}", "warn")
-                    continue
-                job = dict(job, status="pending")
-            header(project, note)
-            ended = "left"
-            try:
-                ended = watch(path, job)
-            except KeyboardInterrupt:
+                    notice = f"could not start it - {type(e).__name__}: {str(e)[:90]}"
+                    what = None
+            if what:
+                title("Jobs", f"{where} > watch")
                 print()
-            print()
-            if ended != "left":
-                hold("ctrl+D to go back")
+                say("  ctrl+D goes back, and it carries on", "dim")
+                print()
+                ended = "left"
+                try:
+                    ended = watch(path, job)
+                except KeyboardInterrupt:
+                    print()
+                if ended != "left":
+                    print()
+                    hold("ctrl+D to go back")
         elif what == "stop":
             fresh = read(path)
             if not fresh or fresh.get("status") not in ("pending", "running"):
-                say("  it had already finished", "dim")
+                notice = "it had already finished"
             elif stop(dict(fresh, _path=str(path))):
-                say("  stopped. What was said is still in the job: run it again, or discard it.", "dim")
+                notice = "stopped. What was said is still in the job: run it again, or discard it."
             else:
-                say("  it could not be stopped - its process did not end", "warn")
+                notice = "it could not be stopped - its process did not end"
         elif what == "log":
+            title("Jobs", f"{where} > log")
+            print()
             show_log(job)
             print()
             hold("ctrl+D to go back")
         elif what == "discard":
+            title("Jobs", f"{where} > discard")
             if confirm("Delete it? What was said in it is lost to the memory.", "yes, delete it"):
-                say("  deleted." if discard(job) else "  it could not be deleted", "dim")
+                notice = "deleted." if discard(job) else "it could not be deleted"
+        found = lister()
 
 
 # --- the lock -----------------------------------------------------------------

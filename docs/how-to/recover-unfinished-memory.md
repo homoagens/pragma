@@ -19,7 +19,7 @@ and `/jobs`, from the home screen or from inside a project, lists what is
 waiting:
 
 ```text
-  what the memory is writing
+  Jobs  what the memory is writing in the background
 
   ❯ first   abandoned · whatever was writing it is gone
 ```
@@ -34,7 +34,7 @@ Each piece of unfinished work still holds the turns it was working on. Make
 sure the model server answers, press Enter on the line, and choose:
 
 ```text
-  first · this session
+  Jobs  first › this session
 
   ❯ log         what it did, and how it ended
     run again   start writing it again

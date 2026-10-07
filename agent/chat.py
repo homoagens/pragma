@@ -1552,16 +1552,25 @@ def _show_jobs() -> None:
     """What the memory is doing on its own for this project: a list to walk.
 
     One being written can be followed or stopped; one that did not finish can
-    be read, started again or let go. See pragma_jobs.manage.
+    be read, started again or let go. A page, like /configure: see
+    pragma_jobs.manage.
     """
+    said = None
     try:
         import pragma_jobs as jobs
         project = os.environ.get("PRAGMA_PROJECT") or ""
-        jobs.manage(lambda: [(project, job) for job in jobs.listing(limit=6)])
+        said = jobs.manage(lambda: [(project, job) for job in jobs.listing(limit=6)])
     except KeyboardInterrupt:
-        print()
+        said = ""
     except Exception as e:
         print(f"  {type(e).__name__}: {str(e)[:120]}")
+    if said is not None:
+        # It was a page, and it took the screen: the conversation's own head
+        # comes back in its place, as it does after the other pages.
+        _new_page()
+        _show_chat_header()
+        if said:
+            _say_dim(f"  {said}")
     print()
 
 

@@ -311,13 +311,17 @@ def memory_jobs() -> list[tuple[str, str]]:
     return out
 
 
-def show_jobs() -> None:
+def show_jobs() -> str | None:
     """The memory's background work in every project, as a list to walk: one
     being written can be followed or stopped, one that did not finish can be
     read, started again or let go; one line when there is nothing.
 
     The same view the conversation has, from the screen where you actually are
     after leaving a project - which is when a consolidation is running.
+
+    Returns what pragma_jobs.manage does: None when one line was all there was
+    to say, otherwise the last word of a page that took the screen - and the
+    home page has to be drawn again in its place.
     """
     os.environ.setdefault("PRAGMA_NO_ENDPOINT_PROBE", "1")
     sys.path[:0] = [str(ROOT), str(ROOT / "core"), str(ROOT / "tools")]
@@ -325,7 +329,7 @@ def show_jobs() -> None:
         import pragma_jobs as jobs
     except Exception as e:
         print(f"  jobs unavailable - {type(e).__name__}: {e}")
-        return
+        return None
 
     def everywhere() -> list[tuple[str, dict]]:
         found: list[tuple[str, dict]] = []
@@ -341,10 +345,9 @@ def show_jobs() -> None:
         return found
 
     try:
-        jobs.manage(everywhere, everywhere=True)
+        return jobs.manage(everywhere, everywhere=True)
     except KeyboardInterrupt:
-        print()
-    print()
+        return ""
 
 
 def memory_line(jobs_running: list[tuple[str, str]], grey: str, reset: str) -> None:
@@ -644,7 +647,12 @@ def main() -> int:
         if cmd == "/help":
             show_help(extra)
         elif cmd == "/jobs":
-            show_jobs()
+            said = show_jobs()
+            if said is not None:
+                # It was a page: the home screen is drawn again in its place,
+                # with whatever the page had left to say.
+                return choose("clear", said)
+            print()
             # The page said the memory was writing when it was drawn. If that
             # has finished, the line is now wrong, and it stays on the screen
             # being wrong - so the page is drawn again, saying so.

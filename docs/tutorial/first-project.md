@@ -153,7 +153,7 @@ The conversation is being turned into memory in the background. Type `/jobs`
 to see it:
 
 ```text
-  what the memory is writing
+  Jobs  what the memory is writing in the background
 
   ❯ first   writing · segmenter · deciding what was worth keeping
 ```
@@ -161,7 +161,9 @@ to see it:
 Press Enter on it, and Enter again on `watch`, to follow it step by step:
 
 ```text
-  first  this session · ctrl+D goes back, and it carries on
+  Jobs  first › this session › watch
+
+  ctrl+D goes back, and it carries on
 
   segmenter       2 turns -> 1 episode (1 dropped)
   consolidator    Every script in this project starts with a one-line docstring
