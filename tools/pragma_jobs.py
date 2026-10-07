@@ -31,6 +31,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import subprocess
 import sys
 import time
 from datetime import datetime, timezone
@@ -211,7 +212,7 @@ def prune(store: Path | None = None, keep_failed: int = 5) -> None:
                 p.unlink()
             except Exception:
                 pass
-        elif status in ("failed", "abandoned"):
+        elif status in ("failed", "abandoned", "stopped"):
             failed.append(p)
     for p in failed[keep_failed:]:
         try:
@@ -309,7 +310,7 @@ def hold(text: str = "ctrl+D to go back") -> None:
 # ledger: a column of names in the accent, what each faculty did beside it,
 # the one at work on a status line with its seconds, and a closing line.
 #
-#     giulia  a session of 2 turns · ctrl+D leaves it to itself
+#     giulia  a session of 2 turns · ctrl+D goes back, and it carries on
 #
 #     segmenter       2 turns, 1 worth keeping - the greeting carries nothing
 #     consolidator    Agrilog delivered; never deploy on a Friday
@@ -417,7 +418,9 @@ def _closing(look: dict, job: dict, said: list[dict], elapsed: float, gone: bool
         line.append(f"{what} {dot} {_seconds(job, elapsed)}s", style=look["tones"][2])
         return [line]
     line = Text(f"  {look['g']['bad']} ", style="red")
-    line.append(f"{state} {dot} {str(job.get('error') or 'no reason recorded')[:160]}", style=look["tones"][1])
+    why = str(job.get("error") or "no reason recorded")[:160]
+    # "stopped - stopped by hand" says it twice.
+    line.append(why if state == "stopped" else f"{state} {dot} {why}", style=look["tones"][1])
     return [line, Text(f"    the turns are still in it: {job.get('_path') or ''}", style=look["tones"][2])]
 
 
@@ -429,7 +432,7 @@ def header(project: str, note: str, also: str = "") -> None:
     if project:
         line.append(project + "  ", style=look["accent"])
     dot = look["g"]["dot"]
-    line.append(f"{note or 'a session'} {dot} ctrl+D leaves it to itself"
+    line.append(f"{note or 'a session'} {dot} ctrl+D goes back, and it carries on"
                 + (f" {dot} also writing: {also}" if also else ""), style=look["tones"][2])
     console.print(line)
     console.print()
@@ -441,41 +444,6 @@ def show_idle(everywhere: bool = False) -> None:
     console.print(Text("  nothing in the background - "
                        + ("every memory is up to date" if everywhere else "the memory is up to date"),
                        style=look["tones"][2]))
-
-
-def show_failed(found: list[tuple[str, dict]]) -> None:
-    """The jobs that did not finish, and how to run one again.
-
-    `found` is [(project or "", job)]. The command is spelled as THIS system
-    spells it: the Windows one, printed on Linux, was a line nobody could
-    paste.
-    """
-    from rich.text import Text
-    console, look = _look()
-    quiet = look["tones"][2]
-    py = Path(sys.executable)
-    try:
-        py = py.relative_to(_ROOT)
-    except ValueError:
-        pass
-    console.print(Text("  these did not finish. The turns are still in them, so they can be run again:",
-                       style=look["tones"][1]))
-    console.print(Text(f"    {py} {Path('tools') / 'pragma_consolidate.py'} <file>", style=quiet))
-    console.print(Text(f"    from {_ROOT}", style=quiet))
-    for project, job in found:
-        console.print()
-        when = str(job.get("finished") or job.get("started") or job.get("created") or "")
-        when = when.replace("T", " ").rstrip("Z")[:16]
-        dot = look["g"]["dot"]
-        what = f" {dot} ".join(x for x in (project, str(job.get("note") or "a session"), when) if x)
-        details = []
-        if job.get("error"):
-            details.append(str(job["error"])[:200])
-        done = [e for e in entries(job.get("log")) if not e["running"] and e["tag"] != "ERROR"]
-        if done:
-            details.append(f"got as far as: {done[-1]['tag'].lower()} - {done[-1]['text'][:120]}")
-        details.append(str(job.get("_path", "")))
-        console.print(_row(look, str(job.get("status", "?")), what, details, name_style="red"))
 
 
 def watch(path, job: dict) -> str:
@@ -601,6 +569,243 @@ def _watch(path, job: dict, live: bool) -> str:
     for line in _closing(look, job, said, time.time() - started, gone=(how == "gone")):
         console.print(line)
     return "done" if how == "gone" else how
+
+
+# --- starting, stopping, letting go --------------------------------------------
+# A job could be watched and nothing else. One that was writing went on writing
+# whatever was done to the screen it was started from - which is the point of
+# running it elsewhere - and there was no way to tell it to stop short of
+# finding its process by hand. One that had failed could be run again only by
+# copying a command off the page.
+
+def start(path) -> bool:
+    """Start a worker on a job, detached: it outlives whoever called this.
+
+    A job that had ended - failed, abandoned, stopped - is first marked as
+    about to start. The worker takes a second or two to come up, and until it
+    does the file would go on saying how the LAST attempt ended: whoever
+    started it and turned to watch it was shown, at once, that it had stopped.
+    """
+    job = read(path)
+    if job and job.get("status") not in ("pending", "running"):
+        job.update(status="pending", pid=0, error="", finished="", log=[])
+        write(path, job)
+    worker = _ROOT / "tools" / "pragma_consolidate.py"
+    exe = sys.executable
+    kwargs: dict = {}
+    if os.name == "nt":
+        # NO WINDOW. DETACHED_PROCESS detaches the console but lets Windows
+        # give a console application one of its own - a black window for the
+        # length of the consolidation. pythonw.exe never allocates a console;
+        # CREATE_NO_WINDOW says the same to Windows where it is missing. Its
+        # own process group keeps a Ctrl+C aimed at the shell from reaching it
+        # halfway through writing an episode.
+        pyw = Path(exe).with_name("pythonw.exe")
+        if pyw.is_file():
+            exe = str(pyw)
+        kwargs["creationflags"] = (subprocess.CREATE_NO_WINDOW
+                                   | subprocess.CREATE_NEW_PROCESS_GROUP)
+    else:
+        kwargs["start_new_session"] = True
+    subprocess.Popen([exe, str(worker), str(path)], cwd=str(_ROOT), stdin=subprocess.DEVNULL,
+                     stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, close_fds=True, **kwargs)
+    return True
+
+
+def _gone(pid: int) -> bool:
+    """Whether a process has ended - counting one that has ended and is only
+    waiting for its parent to notice, which os.kill still finds."""
+    if not alive(pid):
+        return True
+    try:
+        state = Path(f"/proc/{pid}/stat").read_text().rsplit(")", 1)[1].split()[0]
+        return state == "Z"
+    except Exception:
+        return False
+
+
+def stop(job: dict) -> bool:
+    """End a job that is being written, and say so in its file.
+
+    The worker is ended, not asked: it is in the middle of a call to the model
+    that may have a minute to run, and nothing it writes is left half written
+    - an episode is saved whole or not at all, and so is the job file. What
+    it had not reached is still in the job, which stays: it can be written
+    again later, or let go.
+    """
+    path = Path(job.get("_path") or "")
+    try:
+        pid = int(job.get("pid") or 0)
+    except (TypeError, ValueError):
+        pid = 0
+    if pid > 0 and not _gone(pid):
+        try:
+            if os.name == "nt":
+                subprocess.run(["taskkill", "/PID", str(pid), "/T", "/F"], capture_output=True, timeout=15)
+            else:
+                import signal
+                os.kill(pid, signal.SIGTERM)
+                for _ in range(30):
+                    if _gone(pid):
+                        break
+                    time.sleep(0.1)
+                else:
+                    os.kill(pid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
+        except Exception:
+            return False
+        for _ in range(30):
+            if _gone(pid):
+                break
+            time.sleep(0.1)
+        else:
+            return False
+    fresh = read(path)
+    if not fresh:
+        return True                         # it finished and cleared up while this was being asked
+    if fresh.get("status") in ("pending", "running"):
+        fresh.update(status="stopped", error="stopped by hand", finished=_utc(), pid=0)
+        fresh.pop("thinking", None)
+        fresh.pop("answer", None)
+        fresh.pop("embedding", None)
+        write(path, fresh)
+    # The lock it held is nobody's now. The next consolidation would find
+    # that out by itself; this spares it the wait.
+    lock = path.parent / ".lock"
+    try:
+        if pid and int(lock.read_text(encoding="utf-8").strip() or 0) == pid:
+            lock.unlink()
+    except Exception:
+        pass
+    return True
+
+
+def discard(job: dict) -> bool:
+    """Delete a job that is not being written: what was said in it never
+    becomes memory. Nothing else refers to it."""
+    if job.get("status") in ("pending", "running") and not _abandoned(job):
+        return False
+    try:
+        Path(job["_path"]).unlink()
+        return True
+    except Exception:
+        return False
+
+
+def _sep() -> str:
+    try:
+        from pragma_menu import SEP
+        return SEP
+    except Exception:
+        return " - "
+
+
+def state_of(job: dict) -> str:
+    """Where a job stands, in a few words, for the list."""
+    state = job.get("status")
+    if state == "running":
+        return f"writing{_sep()}{step_of(job)}"
+    if state == "pending":
+        return "about to start"
+    if state == "failed":
+        return f"failed{_sep()}{str(job.get('error') or 'no reason recorded')[:70]}"
+    if state == "abandoned":
+        return f"abandoned{_sep()}whatever was writing it is gone"
+    if state == "stopped":
+        return "stopped by hand"
+    return str(state or "?")
+
+
+def show_log(job: dict) -> None:
+    """What a job did, and how it ended: the lines it would have drawn while it
+    was followed, for one that is not being written any more."""
+    from rich.text import Text
+    console, look = _look()
+    said = entries(job.get("log"))
+    for e in said:
+        if e["running"]:
+            continue
+        if e["tag"] == "ERROR" and e["text"] and e["text"] in str(job.get("error") or ""):
+            continue
+        console.print(_entry(look, e))
+    if not any(not e["running"] for e in said):
+        console.print(Text("  it had not got as far as saying anything", style=look["tones"][2]))
+    console.print()
+    for line in _closing(look, job, said, 0.0):
+        console.print(line)
+
+
+def manage(lister, everywhere: bool = False) -> None:
+    """/jobs: the memory's work in the background, as a list to walk.
+
+    `lister()` gives [(project or "", job)], asked again after every action:
+    what was writing a moment ago may have finished. Each job opens onto what
+    can be done with it - one being written can be followed or stopped; one
+    that is not can be read, started again or let go.
+    """
+    from pragma_menu import choose, confirm, pick, say
+    at = 0
+    while True:
+        found = lister()
+        print()
+        if not found:
+            show_idle(everywhere)
+            return
+        names = [project or str(job.get("note") or "a session") for project, job in found]
+        chosen = pick("what the memory is writing" if everywhere or len(found) > 1
+                      else "what the memory is writing here", names, [state_of(job) for _p, job in found],
+                      min(at, len(found) - 1))
+        if chosen is None:
+            return
+        at = chosen
+        project, job = found[chosen]
+        path = Path(job["_path"])
+        note = str(job.get("note") or "a session")
+        title = f"{project}{_sep()}{note}" if project else note
+        writing = job.get("status") in ("pending", "running")
+        if writing:
+            what = choose(title, [("watch", "follow it, step by step"),
+                                  ("stop", "end it now - what was said stays in the job, to write later or let go")])
+        else:
+            what = choose(title, [("log", "what it did, and how it ended"),
+                                  ("run again", "start writing it again"),
+                                  ("discard", "delete it - what was said in it never becomes memory")])
+        if what is None:
+            continue
+        print()
+        if what in ("watch", "run again"):
+            if what == "run again":
+                try:
+                    start(path)
+                except Exception as e:
+                    say(f"  could not start it - {type(e).__name__}: {str(e)[:90]}", "warn")
+                    continue
+                job = dict(job, status="pending")
+            header(project, note)
+            ended = "left"
+            try:
+                ended = watch(path, job)
+            except KeyboardInterrupt:
+                print()
+            print()
+            if ended != "left":
+                hold("ctrl+D to go back")
+        elif what == "stop":
+            fresh = read(path)
+            if not fresh or fresh.get("status") not in ("pending", "running"):
+                say("  it had already finished", "dim")
+            elif stop(dict(fresh, _path=str(path))):
+                say("  stopped. What was said is still in the job: run it again, or discard it.", "dim")
+            else:
+                say("  it could not be stopped - its process did not end", "warn")
+        elif what == "log":
+            show_log(job)
+            print()
+            hold("ctrl+D to go back")
+        elif what == "discard":
+            if confirm("Delete it? What was said in it is lost to the memory.", "yes, delete it"):
+                say("  deleted." if discard(job) else "  it could not be deleted", "dim")
 
 
 # --- the lock -----------------------------------------------------------------

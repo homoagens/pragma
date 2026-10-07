@@ -106,7 +106,7 @@ _COMMANDS = {
     "/memory":    ("memory",    ""),      # the views fill the blurb in
     "/settings":  ("settings",  "how many steps a turn may take, and how much the memory brings to one"),
     "/status":    ("status",    "how this project is set up right now"),
-    "/jobs":      ("jobs",      "what the memory is writing in the background"),
+    "/jobs":      ("jobs",      "what the memory is writing in the background: follow it, stop it, run it again"),
     "/configure": ("configure", "point Pragma at an LLM endpoint"),
     "/clear":     ("clear",     "clear the screen, keep the conversation"),
     "/help":      ("help",      "this list"),
@@ -1339,34 +1339,7 @@ def _consolidate_later(turns: list[Turn], cwd: Path,
     try:
         import pragma_jobs as jobs
         job_path = jobs.create(_spool(turns), str(cwd), note)
-        worker = _ROOT / "tools" / "pragma_consolidate.py"
-        exe = sys.executable
-        kwargs: dict = {}
-        if os.name == "nt":
-            # NO WINDOW. The first version used DETACHED_PROCESS, which detaches
-            # the console but lets Windows give a console application one of its
-            # own - so a black window appeared for the length of the
-            # consolidation, which is a strange thing for "it happens quietly in
-            # the background" to look like.
-            #
-            # Two belts. pythonw.exe is the GUI-subsystem interpreter and never
-            # allocates a console at all; CREATE_NO_WINDOW says the same thing
-            # to Windows for the case where it is missing. The child outlives
-            # this process either way - that was never what DETACHED_PROCESS
-            # was for - and its own process group keeps a Ctrl+C aimed at the
-            # shell from reaching it halfway through writing an episode.
-            pyw = Path(exe).with_name("pythonw.exe")
-            if pyw.is_file():
-                exe = str(pyw)
-            kwargs["creationflags"] = (subprocess.CREATE_NO_WINDOW
-                                       | subprocess.CREATE_NEW_PROCESS_GROUP)
-        else:
-            kwargs["start_new_session"] = True
-        subprocess.Popen(
-            [exe, str(worker), str(job_path)],
-            cwd=str(_ROOT), stdin=subprocess.DEVNULL,
-            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-            close_fds=True, **kwargs)
+        jobs.start(job_path)
     except Exception as e:
         print(f"  could not start the consolidation worker: "
               f"{type(e).__name__}: {str(e)[:90]}")
@@ -1388,39 +1361,19 @@ def _writing_now() -> str:
 
 
 def _show_jobs() -> None:
-    """What the memory has been doing on its own, newest first.
+    """What the memory is doing on its own for this project: a list to walk.
 
-    A job still running is FOLLOWED rather than listed: the reason to type
-    /jobs while something is working is to watch it work.
+    One being written can be followed or stopped; one that did not finish can
+    be read, started again or let go. See pragma_jobs.manage.
     """
     try:
         import pragma_jobs as jobs
-        items = jobs.listing(limit=6)
+        project = os.environ.get("PRAGMA_PROJECT") or ""
+        jobs.manage(lambda: [(project, job) for job in jobs.listing(limit=6)])
+    except KeyboardInterrupt:
+        print()
     except Exception as e:
         print(f"  {type(e).__name__}: {str(e)[:120]}")
-        return
-    print()
-    if not items:
-        jobs.show_idle()
-        print()
-        return
-
-    live = next((j for j in items if j.get("status") in ("pending", "running")),
-                None)
-    # Everything else in the list is a failure: `listing` drops finished jobs,
-    # because a record of consolidations that worked is a worse copy of the
-    # episodes they produced. What is left is what still wants attention.
-    if live:
-        jobs.header(os.environ.get("PRAGMA_PROJECT") or "", live.get("note") or "a session")
-        try:
-            jobs.watch(Path(live["_path"]), live)
-        except KeyboardInterrupt:
-            print()
-            print("  still working - it carries on without you.")
-        print()
-        return
-
-    jobs.show_failed([("", job) for job in items])
     print()
 
 

@@ -210,16 +210,16 @@ def run(path: Path) -> int:
     # word, as if it had worked.
     status = ("abandoned" if jobs._abandoned(dict(job, _path=str(path)))
               else job.get("status"))
-    if status not in ("pending", "abandoned", "failed"):
+    if status not in ("pending", "abandoned", "failed", "stopped"):
         # Running, or finished successfully. Re-running one of those would
         # consolidate the same turns twice; the store's own session_id guard
         # would catch most of it, but "most" is not a thing to rely on for
         # memory.
         #
-        # A FAILED or ABANDONED job is different, and is the case /jobs tells
-        # you to run by hand: nothing of it reached the store, the turns are
-        # still in it, and the whole reason the file was kept is that it can
-        # be tried again.
+        # A FAILED, ABANDONED or STOPPED job is different, and is the case
+        # /jobs offers to run again: the turns are still in it, and the whole
+        # reason the file was kept is that it can be tried again. What of it
+        # had already reached the store is recognised and not written twice.
         _say(f"{path.name}: {status or 'unreadable'} - nothing to do"
              + (f" (process {job.get('pid')} is working on it)"
                 if status == "running" else ""))

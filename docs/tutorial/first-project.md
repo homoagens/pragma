@@ -150,15 +150,23 @@ one new line at the bottom:
 ```
 
 The conversation is being turned into memory in the background. Type `/jobs`
-to follow it:
+to see it:
 
 ```text
-  first - this session   ctrl+D to leave it to itself
-  [SEGMENTER] deciding what was worth keeping…
-  [SEGMENTER] 2 turns -> 1 episode (1 dropped)
-  [CONSOLIDATOR] writing 1 episode(s) from this session…
-  [CONSOLIDATOR] [1/1] OK: episode saved
-  done - 1 episode written.
+  what the memory is writing
+
+  ❯ first   writing · segmenter · deciding what was worth keeping
+```
+
+Press Enter on it, and Enter again on `watch`, to follow it step by step:
+
+```text
+  first  this session · ctrl+D goes back, and it carries on
+
+  segmenter       2 turns -> 1 episode (1 dropped)
+  consolidator    Every script in this project starts with a one-line docstring
+
+  ✓ 1 memory written · 58s
 ```
 
 Two turns went in and one episode came out. Writing ten square numbers to a

@@ -78,7 +78,7 @@ COMMANDS = {
     "/open":      "go into a project - /open <name>, tab completes it",
     "/new":       "start a project",
     "/projects":  "",                     # the actions fill the blurb in
-    "/jobs":      "what the memory is writing in the background",
+    "/jobs":      "what the memory is writing in the background: follow it, stop it, run it again",
     "/configure": "the model server Pragma talks to",
     "/clear":     "clear the screen",
     "/help":      "this list",
@@ -312,8 +312,9 @@ def memory_jobs() -> list[tuple[str, str]]:
 
 
 def show_jobs() -> None:
-    """The memory's background work in every project: followed while it runs,
-    listed when it failed, one line when there is nothing.
+    """The memory's background work in every project, as a list to walk: one
+    being written can be followed or stopped, one that did not finish can be
+    read, started again or let go; one line when there is nothing.
 
     The same view the conversation has, from the screen where you actually are
     after leaving a project - which is when a consolidation is running.
@@ -325,44 +326,25 @@ def show_jobs() -> None:
     except Exception as e:
         print(f"  jobs unavailable - {type(e).__name__}: {e}")
         return
-    found: list[tuple[str, dict]] = []
-    for entry in registry_entries():
-        store = str(entry.get("memory") or "").strip()
-        if not store:
-            continue
-        try:
-            for job in jobs.listing(Path(store), limit=6):
-                found.append((str(entry["name"]), job))
-        except Exception:
-            continue
+
+    def everywhere() -> list[tuple[str, dict]]:
+        found: list[tuple[str, dict]] = []
+        for entry in registry_entries():
+            store = str(entry.get("memory") or "").strip()
+            if not store:
+                continue
+            try:
+                for job in jobs.listing(Path(store), limit=6):
+                    found.append((str(entry["name"]), job))
+            except Exception:
+                continue
+        return found
+
+    try:
+        jobs.manage(everywhere, everywhere=True)
+    except KeyboardInterrupt:
+        print()
     print()
-    if not found:
-        jobs.show_idle(everywhere=True)
-        print()
-        return
-    live = [(p, j) for p, j in found if j.get("status") in ("pending", "running")]
-    failed = [(p, j) for p, j in found if j.get("status") not in ("pending", "running")]
-    if live:
-        project, job = live[0]
-        jobs.header(project, job.get("note") or "a session",
-                    also=", ".join(p for p, _ in live[1:]))
-        ended = "left"
-        try:
-            ended = jobs.watch(Path(job["_path"]), job)
-        except KeyboardInterrupt:
-            print()
-            print("  still working - it carries on without you.")
-        print()
-        # It ended while being watched: what it said stays where it is until
-        # it is dismissed. The page behind is about to be drawn again - its
-        # own "memory is writing" line is stale now - and that used to happen
-        # at once, taking the lines being read with it.
-        if ended != "left" and not failed:
-            jobs.hold("ctrl+D to go back")
-            print()
-    if failed:
-        jobs.show_failed(failed)
-        print()
 
 
 def memory_line(jobs_running: list[tuple[str, str]], grey: str, reset: str) -> None:

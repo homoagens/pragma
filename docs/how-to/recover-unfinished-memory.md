@@ -19,39 +19,39 @@ and `/jobs`, from the home screen or from inside a project, lists what is
 waiting:
 
 ```text
-  these did not finish. The turns are still in them, so they can be run again:
-    venv/bin/python tools/pragma_consolidate.py <file>
-    from /home/you/pragma
+  what the memory is writing
 
-  abandoned       first · this session · 2026-10-01 14:24
-                  · /home/you/.pragma/projects/first/jobs/job_20261001T142451Z_480.json
+  ❯ first   abandoned · whatever was writing it is gone
 ```
 
 `abandoned` means the process that was doing the work is gone. `failed` means
-it stopped with an error, shown on the line below it, with how far it had got.
+it stopped with an error, which the line names. `stopped by hand` means you
+stopped it yourself, from this same list.
 
 ## Run it again
 
-Each piece of unfinished work is a file that still holds the turns it was
-working on. Make sure the model server answers, go to the folder the page
-names, and run the command it gives you with the file it lists:
+Each piece of unfinished work still holds the turns it was working on. Make
+sure the model server answers, press Enter on the line, and choose:
+
+```text
+  first · this session
+
+  ❯ log         what it did, and how it ended
+    run again   start writing it again
+    discard     delete it - what was said in it never becomes memory
+```
+
+`run again` starts it and follows it. It takes about as long as closing a
+project does, and ends by saying what it wrote. The job is then gone — one
+that finishes deletes itself — and `/jobs` goes back to saying there is
+nothing.
+
+The same can be done by hand, with the file that `log` names:
 
 ```
 cd /home/you/pragma
 venv/bin/python tools/pragma_consolidate.py /home/you/.pragma/projects/first/jobs/job_20261001T142451Z_480.json
 ```
-
-On Windows the page prints the same line the way PowerShell spells it.
-
-It takes about as long as closing a project does, and ends by saying what it
-did:
-
-```text
-done - 1 episode written to /home/you/.pragma/projects/first/episodes
-```
-
-The file is then gone — a job that finishes deletes itself — and `/jobs` goes
-back to saying there is nothing.
 
 Running the same file twice is safe: a conversation already written down is
 recognised and not written again. If another process is still working on the
@@ -59,9 +59,15 @@ job, the command says so and does nothing.
 
 ## Or let it go
 
-If the conversation was not worth keeping — a test, a false start — delete
-the file. Nothing else refers to it. Its turns never become memory, and the
+If the conversation was not worth keeping — a test, a false start — choose
+`discard`. Nothing else refers to it. Its turns never become memory, and the
 rest of the memory is untouched.
+
+## Stop one that is being written
+
+A memory being written is on the same list, as `writing`. Enter on it offers
+`watch` and `stop`. `stop` ends it there: what it had already written stays
+written, and what was said stays in the job, to run again later or discard.
 
 ## Why it is kept at all
 

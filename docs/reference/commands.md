@@ -16,7 +16,7 @@ Where no project is open: what is done *to* a project lives here.
 | `/open` | go into a project - /open &lt;name&gt;, tab completes it |
 | `/new` | start a project |
 | `/projects` | everything done to a project: `open`, `new`, `backups`, `delete` |
-| `/jobs` | what the memory is writing in the background |
+| `/jobs` | what the memory is writing in the background: follow it, stop it, run it again |
 | `/configure` | the model server Pragma talks to |
 | `/clear` | clear the screen |
 | `/help` | this list |
@@ -40,7 +40,7 @@ Alone it opens the page; followed by one of these it goes straight there.
 | `/memory` | look at the store: `map`, `beliefs`, `last`, `diff`, `dormant`, `sizes` |
 | `/settings` | how many steps a turn may take, and how much the memory brings to one |
 | `/status` | how this project is set up right now |
-| `/jobs` | what the memory is writing in the background |
+| `/jobs` | what the memory is writing in the background: follow it, stop it, run it again |
 | `/configure` | point Pragma at an LLM endpoint |
 | `/clear` | clear the screen, keep the conversation |
 | `/help` | this list |

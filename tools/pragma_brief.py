@@ -142,7 +142,7 @@ def brief(store: Path, since: str = "") -> dict:
         out["working"] = len(live)
         out["working_note"] = (live[0].get("note") or "") if live else ""
         out["jobs_failed"] = sum(
-            1 for j in items if j.get("status") in ("failed", "abandoned"))
+            1 for j in items if j.get("status") in ("failed", "abandoned", "stopped"))
     except Exception:
         out["working"] = 0
         out["working_note"] = ""
