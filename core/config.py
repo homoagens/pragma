@@ -1218,6 +1218,15 @@ RECONSOLIDATE_BRIDGE_OVER_TIME = os.environ.get(
 # embedding server nothing is measured and this does nothing.
 RECONSOLIDATE_REFUSE_DRIFT = os.environ.get(
     "RECONSOLIDATE_REFUSE_DRIFT", "false").lower() in ("1", "true", "yes")
+# Which past episodes are re-read is decided by nearness alone, and something
+# is always nearest: a one-line lookup is read against the other one-line
+# lookups, and each comes out of it meaning something. With this above 0, an
+# episode whose `importance` - the consolidator's own judgement, written with
+# the episode - is at or below it takes no part in a re-reading: written down,
+# it re-reads nothing; found near a later one, it is not re-read. For recall,
+# for forgetting and as a source of beliefs it stays an episode like any other.
+# One with no importance on record is never left out. 0 re-reads as before.
+RECONSOLIDATE_IMPORTANCE_FLOOR = float(os.environ.get("RECONSOLIDATE_IMPORTANCE_FLOOR", "0"))
 
 # Max chars of a project PRAGMA.md (user-authored instructions) injected
 # verbatim into the task by runners that support it.

@@ -268,6 +268,8 @@ CONFIG = {
         "`true` counts a belief's revised sources since it was last written or checked, not session by session."),
     "RECONSOLIDATE_REFUSE_DRIFT": ("memory",
         "`true` leaves an episode's interpretation as it was when a revision would bring it closer to the new episode than to its own. Needs an embedding server."),
+    "RECONSOLIDATE_IMPORTANCE_FLOOR": ("memory",
+        "Above `0`, an episode whose importance is at or below this neither revises earlier episodes nor is revised by later ones. `0` leaves every episode in."),
     "AUTO_REFLECT": ("memory",
         "Whether a reflection pass runs after a successful task."),
     "BATCH_SEGMENT": ("memory",

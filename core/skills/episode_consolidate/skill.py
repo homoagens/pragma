@@ -259,6 +259,16 @@ def _similar_episodes(ep: dict, past: list[dict], result: dict) -> list[dict]:
     return [e for e, s in scored if s >= 2][:3]  # ≥2 shared tokens = related
 
 
+def _slight(ep: dict, floor: float) -> bool:
+    """Whether an episode is too slight to take part in a re-reading: its
+    importance, as the consolidator judged it, is at or below `floor`. One
+    with no importance on record is not slight - nothing says it is."""
+    importance = ep.get("importance")
+    if floor <= 0 or isinstance(importance, bool) or not isinstance(importance, (int, float)):
+        return False
+    return importance <= floor
+
+
 def _related_beliefs(ep: dict, active: list[dict]) -> list[dict]:
     """The beliefs a new episode may confirm or contradict: eight at most,
     the nearest by meaning, or those that share a word with it."""
@@ -768,6 +778,17 @@ def episode_consolidate_detailed(transcript: str = "", workspace: str = "",
     if getattr(config, "RECONSOLIDATION_ENABLED", True):
         try:
             targets = similar[:getattr(config, "RECONSOLIDATE_MAX_EPISODES", 3)]
+            # WHAT HARDLY MATTERED RE-READS NOTHING AND IS NOT RE-READ, when a
+            # floor is set (config.RECONSOLIDATE_IMPORTANCE_FLOOR). The episodes
+            # passed over are named in the result, and the Abstractor is still
+            # shown them: only the re-reading leaves them out.
+            floor = getattr(config, "RECONSOLIDATE_IMPORTANCE_FLOOR", 0.0)
+            if floor > 0 and targets:
+                new_is_slight = _slight(ep, floor)
+                over = [t for t in targets if new_is_slight or _slight(t, floor)]
+                if over:
+                    result["passed_over"] = [t.get("id", "") for t in over]
+                    targets = [t for t in targets if t not in over]
             rewrites = reconsolidate.reconsolidate_episodes(ep, targets)
             refuse_drift = getattr(config, "RECONSOLIDATE_REFUSE_DRIFT", False)
             linked: list[str] = []
@@ -1048,6 +1069,8 @@ def episode_consolidate_detailed(transcript: str = "", workspace: str = "",
         _recon_note += f"; reconsolidated {len(result['reconsolidated'])} episode(s)"
     if result["held"]:
         _recon_note += f"; {len(result['held'])} re-reading(s) not applied"
+    if result.get("passed_over"):
+        _recon_note += f"; {len(result['passed_over'])} episode(s) not re-read (slight importance)"
     if result["reformulated"]:
         _recon_note += f", reformulated {len(result['reformulated'])} belief(s)"
     if result.get("reconsolidate_error"):
