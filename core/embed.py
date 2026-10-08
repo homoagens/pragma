@@ -356,6 +356,13 @@ def readings(ep: dict) -> list[str]:
     return [t for t in [str(h.get("text", "") or "").strip() for h in past] + [reading_text(ep)] if t]
 
 
+def hindsights(ep: dict) -> list[str]:
+    """Every line of hindsight an episode has carried, the current one last.
+    Kept with the readings: each was measured against the meaning beside it."""
+    lines = list(ep.get("hindsight_history") or []) + [ep.get("hindsight")]
+    return [t for t in [str(h.get("text", "") or "").strip() for h in lines if isinstance(h, dict)] if t]
+
+
 def belief_text(entry: dict) -> str:
     return str(entry.get("text", "") or "").strip()
 
@@ -469,7 +476,7 @@ def tidy(episodes_dir=None, learnings_path=None) -> int:
                 return 0
             for _p, ep in loaded:
                 keep["events"].add(_key(event_text(ep)))
-                keep["readings"].update(_key(t) for t in readings(ep))
+                keep["readings"].update(_key(t) for t in readings(ep) + hindsights(ep))
         lp = Path(learnings_path) if learnings_path else Path(config.LEARNINGS_PATH)
         if lp.exists():
             entries = json.loads(lp.read_text(encoding="utf-8")).get("entries")

@@ -288,9 +288,14 @@ def _looked_at(entry: dict) -> str:
 
 
 def _reread_since(ep: dict | None, since: str) -> bool:
-    """Whether an episode's interpretation was rewritten after `since`."""
-    return bool(ep) and any(str(h.get("ts", "") or "") > since
-                            for h in (ep.get("interpretation_history") or []))
+    """Whether an episode was re-read after `since`: its interpretation
+    rewritten, or a line of hindsight written beside it."""
+    if not ep:
+        return False
+    lines = [estore.hindsight(ep) or {}] + list(ep.get("hindsight_history") or [])
+    return any(str(h.get("ts", "") or "") > since
+               for h in list(ep.get("interpretation_history") or []) + lines
+               if isinstance(h, dict))
 
 
 def _replaced(before: str, after: str, entry: dict) -> dict:
@@ -314,8 +319,10 @@ def _episode_text(ep: dict) -> str:
 
 
 def _episode_lite(ep: dict) -> dict:
-    """Compact view of an episode for the abstraction prompt."""
-    return {
+    """Compact view of an episode for the abstraction prompt. An episode seen
+    differently since it happened is shown with that line too: a belief drawn
+    from what it meant then alone would be drawn from half of what is known."""
+    lite = {
         "id":             ep.get("id", ""),
         "goal":           ep.get("goal", ""),
         "outcome":        ep.get("outcome", ""),
@@ -323,6 +330,9 @@ def _episode_lite(ep: dict) -> dict:
         "interpretation": ep.get("interpretation", ""),
         "keywords":       ep.get("keywords", []),
     }
+    if estore.hindsight(ep):
+        lite["in_hindsight"] = estore.hindsight_text(ep)
+    return lite
 
 
 def _session_key(transcript: str, session_id: str = "") -> str:
@@ -789,7 +799,12 @@ def episode_consolidate_detailed(transcript: str = "", workspace: str = "",
                 if over:
                     result["passed_over"] = [t.get("id", "") for t in over]
                     targets = [t for t in targets if t not in over]
-            rewrites = reconsolidate.reconsolidate_episodes(ep, targets)
+            # WHERE THE RE-READING IS WRITTEN: beside what the episode meant
+            # when it happened, as a line of hindsight - or, the way it used to
+            # be, over it. See config.RECONSOLIDATE_HINDSIGHT.
+            in_hindsight = getattr(config, "RECONSOLIDATE_HINDSIGHT", True)
+            rewrites = (reconsolidate.hindsight_episodes(ep, targets) if in_hindsight
+                        else reconsolidate.reconsolidate_episodes(ep, targets))
             refuse_drift = getattr(config, "RECONSOLIDATE_REFUSE_DRIFT", False)
             linked: list[str] = []
             for rw in rewrites:
@@ -797,6 +812,37 @@ def episode_consolidate_detailed(transcript: str = "", workspace: str = "",
                 try:
                     tgt = json.loads(tp.read_text(encoding="utf-8"))
                 except Exception:
+                    continue
+                if in_hindsight:
+                    # What it meant then is not touched. The line says what it
+                    # says, when it was written and in the light of which
+                    # episode; the one it replaces is kept behind it.
+                    line = {"text": rw["hindsight"], "ts": _now(), "trigger": ep["id"],
+                            "reason": rw.get("reason", ""), "by": memory_model}
+                    # How near the line is to what the episode meant, to what
+                    # happened in it and to what happened in the new one: kept
+                    # with the line, when an embedding server is in use. A line
+                    # that only says the meaning again, or only tells the new
+                    # episode, can then be found by its numbers.
+                    measure = embed.moved(tgt, tgt.get("interpretation", "") or "",
+                                          rw["hindsight"], ep)
+                    if measure:
+                        line["near"] = {"meaning_then": measure["previous"],
+                                        "own_event": measure["own_event"][1],
+                                        "new_event": measure["new_event"][1],
+                                        "model": measure["model"]}
+                    held = estore.hindsight(tgt)
+                    if held:
+                        tgt["hindsight_history"] = (tgt.get("hindsight_history") or []) + [held]
+                    tgt["hindsight"] = line
+                    tl = set(tgt.get("links") or [])
+                    tl.add(ep["id"])
+                    tgt["links"] = sorted(tl)
+                    estore.save(tp, tgt)
+                    linked.append(rw["id"])
+                    recon_interps[rw["id"]] = estore.meaning_now(tgt)
+                    result["reconsolidated"].append(
+                        {"id": rw["id"], "reason": rw.get("reason", "")})
                     continue
                 # HOW FAR THE RE-READING GOES, AND WHERE TO. With an embedding
                 # server in use the step is measured against two fixed points:
@@ -1027,7 +1073,7 @@ def episode_consolidate_detailed(transcript: str = "", workspace: str = "",
             # that no longer mentions them has not taken them away.
             shown = [{"about": ep_by_id[s].get("goal", ""),
                       "happened": ep_by_id[s].get("narrative", ""),
-                      "means_now": recon_interps.get(s) or ep_by_id[s].get("interpretation", ""),
+                      "means_now": recon_interps.get(s) or estore.meaning_now(ep_by_id[s]),
                       "revised": s in shifted}
                      for s in e.get("sources", []) if s in ep_by_id]
             shown.sort(key=lambda x: not x["revised"])      # the revised ones first

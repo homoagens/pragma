@@ -297,6 +297,26 @@ def _when(stamp):
     return t.astimezone().strftime("%d %b %Y, %H:%M")
 
 
+def _hindsight(e):
+    """An episode's line of hindsight - what a later session showed it to have
+    been, kept beside what it meant when it happened - or None."""
+    h = e.get("hindsight")
+    return h if isinstance(h, dict) and str(h.get("text", "") or "").strip() else None
+
+
+def _later(e, h):
+    """When a line of hindsight was written, and how long after its episode:
+    "10 Jul 2026, 27 days later". The distance is the thing to see."""
+    try:
+        a = D.datetime.strptime(e.get("ts", ""), ISO)
+        b = D.datetime.strptime(h.get("ts", ""), ISO)
+    except Exception:
+        return str(h.get("ts", "") or "")[:10]
+    days = (b.date() - a.date()).days
+    after = "the same day" if days == 0 else "a day later" if days == 1 else f"{days} days later"
+    return b.strftime("%d %b %Y") + (", " + after if days >= 0 else "")
+
+
 def show_map():
     active, dormant = load(""), load("dormant")
     _title("what is remembered",
@@ -314,6 +334,8 @@ def show_map():
         text = e.get("goal", "") or "(no goal recorded)"
         if r:
             text += f"   (meaning revised {_n(r, 'time')})"
+        if _hindsight(e):
+            text += f"   (seen in hindsight {_n(1 + len(e.get('hindsight_history') or []), 'time')})"
         _wrap(text, lead, width)
     if dormant:
         print()
@@ -392,6 +414,7 @@ def show_sizes():
         ("goal",           [len(e.get("goal", "") or "") for e in eps],           None),
         ("narrative",      [len(e.get("narrative", "") or "") for e in eps],      400),
         ("meaning",        [len(e.get("interpretation", "") or "") for e in eps], 200),
+        ("hindsight",      [len((_hindsight(e) or {}).get("text", "") or "") for e in eps], 200),
         ("belief",         [len(e.get("text", "") or "") for e in ents],          None),
     ]
     print("  " + _grey(f"{'':<14}{'typical':>9}{'longest':>9}   reaches the prompt"))
@@ -422,8 +445,11 @@ def show_sizes():
         cap = getattr(_cfg, "CURATOR_MAX_FRAGMENTS", 6)
     except Exception:
         pass
-    _say(f"Characters, not tokens. Recall brings at most {cap} fragments of about 600 "
-         f"characters each into a turn - about {cap * 600 // 1000} KB, however big the "
+    # What happened and what it meant, and for an episode seen in hindsight
+    # that line too: each is cut where the table above says.
+    each = 800 if any(_hindsight(e) for e in eps) else 600
+    _say(f"Characters, not tokens. Recall brings at most {cap} fragments of about {each} "
+         f"characters each into a turn - about {cap * each // 1000} KB, however big the "
          f"memory grows. Beliefs are not cut.")
     if ents:
         longest = max(len(e.get("text", "") or "") for e in ents)
@@ -437,14 +463,14 @@ def show_diff():
     width = _width()
     items = []
     for e in load("") + load("dormant"):
-        if e.get("interpretation_history"):
+        if e.get("interpretation_history") or _hindsight(e):
             items.append(("episode", e))
     for e in learnings():
         if e.get("text_history"):
             items.append(("belief", e))
     _title("meanings it has revised", _n(len(items), "revision") if items else "")
     if not items:
-        _say("Nothing revised yet. An episode's meaning is revised when a later session "
+        _say("Nothing revised yet. An episode is seen in hindsight when a later session "
              "sheds new light on it; a belief is rewritten when episodes contradict it.")
         print()
         return
@@ -453,7 +479,14 @@ def show_diff():
             _wrap(e.get("goal", ""), "  " + _accent("episode") + "  ", width)
             for v in e.get("interpretation_history") or []:
                 _wrap(v.get("text", ""), "    " + _grey(f"{'before':<8}"), width, _grey)
-            _wrap(e.get("interpretation", ""), "    " + _grey(f"{'now':<8}"), width)
+            h = _hindsight(e)
+            # With hindsight beside it, what the episode means is what it meant
+            # THEN; the line under it is what is understood NOW, and since when.
+            _wrap(e.get("interpretation", ""), "    " + _grey(f"{'then' if h else 'now':<8}"), width)
+            for v in e.get("hindsight_history") or []:
+                _wrap(f"({_later(e, v)}) {v.get('text', '')}", "    " + _grey(f"{'later':<8}"), width, _grey)
+            if h:
+                _wrap(f"({_later(e, h)}) {h.get('text', '')}", "    " + _grey(f"{'now':<8}"), width)
         else:
             _wrap(f"rewritten {_n(e.get('reformulations', 0), 'time')}",
                   "  " + _accent("belief") + "   ", width)
@@ -505,6 +538,8 @@ def show_last():
         _field("what happened", e.get("narrative", ""), width)
     if e.get("interpretation"):
         _field("what it means", e.get("interpretation", ""), width)
+    if _hindsight(e):
+        _field("in hindsight", f"({_later(e, _hindsight(e))}) {_hindsight(e).get('text', '')}", width)
     for s in e.get("surprises") or []:
         _field("surprise", s, width)
     print()

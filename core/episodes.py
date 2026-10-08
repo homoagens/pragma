@@ -53,6 +53,65 @@ def _parse_ts(s: str):
         return None
 
 
+# ── Hindsight ────────────────────────────────────────────────────────────────
+# What an episode meant when it happened is its `interpretation`. What a later
+# episode showed it to have been is a line of its own, `hindsight`: its text,
+# the date it was written, the episode that occasioned it. One definition of
+# how it is read and how it is shown, for everyone who shows an episode.
+
+def hindsight(ep: dict) -> dict | None:
+    """The line of hindsight an episode carries, or None."""
+    h = ep.get("hindsight")
+    return h if isinstance(h, dict) and str(h.get("text", "") or "").strip() else None
+
+
+def hindsight_text(ep: dict) -> str:
+    h = hindsight(ep)
+    return " ".join(str(h["text"]).split()) if h else ""
+
+
+def days_between(earlier: str, later: str) -> int | None:
+    """Whole days from one stored date to another, or None when either cannot
+    be read. Worked out here and handed over as a number: a model given two
+    dates and asked for the days between them is wrong often enough to matter."""
+    try:
+        a = datetime.strptime(str(earlier)[:10], "%Y-%m-%d").date()
+        b = datetime.strptime(str(later)[:10], "%Y-%m-%d").date()
+    except Exception:
+        return None
+    return (b - a).days
+
+
+def hindsight_when(ep: dict) -> str:
+    """When an episode's hindsight was written, as it is shown beside it: the
+    date, and how long after the episode that was - "2026-07-10, 27 days
+    later". A memory is read with two dates in it, and the distance between
+    them is the thing to see: how long something was believed before it was
+    understood."""
+    h = hindsight(ep)
+    if not h:
+        return ""
+    date = str(h.get("ts", "") or "")[:10]
+    gap = days_between(ep.get("ts", ""), date)
+    if not date or gap is None or gap < 0:
+        return date
+    after = "the same day" if gap == 0 else "a day later" if gap == 1 else f"{gap} days later"
+    return f"{date}, {after}"
+
+
+def meaning_now(ep: dict) -> str:
+    """What an episode means, in one string, for a reader that takes one: the
+    meaning it was given, and under the word "hindsight" what has been
+    understood since. Just the first for an episode with no hindsight."""
+    meant = str(ep.get("interpretation", "") or "").strip()
+    line = hindsight_text(ep)
+    if not line:
+        return meant
+    when = hindsight_when(ep)
+    label = f"In hindsight ({when}): " if when else "In hindsight: "
+    return (meant + " " if meant else "") + label + line
+
+
 def reinforced(salience: float, factor: float = 1.0) -> float:
     """The stored salience after one recall.
 

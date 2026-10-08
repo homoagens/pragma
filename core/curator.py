@@ -479,8 +479,13 @@ def _episode_card(ref: str, c: dict) -> str:
         lines.append(f"   surprises: {'; '.join(surprises[:2])}")
     interp = _truncate(ep.get("interpretation", ""),
                        config.MEMORY_INTERPRETATION_CHARS)
+    later = _truncate(estore.hindsight_text(ep), config.MEMORY_INTERPRETATION_CHARS)
     if interp:
-        lines.append(f"   meaning: {interp}")
+        lines.append(f"   meaning{' at the time' if later else ''}: {interp}")
+    if later:
+        # Dated like the card itself, in the form the question takes.
+        when = _when((estore.hindsight(ep) or {}).get("ts", ""))
+        lines.append(f"   in hindsight{f' ({when})' if when else ''}: {later}")
     return "\n".join(lines)
 
 
@@ -617,8 +622,16 @@ def _format_episode(c: dict, workspace: str, revived: bool) -> list[str]:
         lines.append(f"  surprises: {'; '.join(surprises[:2])}")
     interp = _truncate(ep.get("interpretation", ""),
                        config.MEMORY_INTERPRETATION_CHARS)
+    later = _truncate(estore.hindsight_text(ep), config.MEMORY_INTERPRETATION_CHARS)
     if interp:
-        lines.append(f"  meaning: {interp}")
+        # With hindsight under it the line says whose view it is: left as
+        # "meaning", the agent reads two meanings and takes the first.
+        lines.append(f"  meaning{' at the time' if later else ''}: {interp}")
+    if later:
+        # Two dates in one memory, and the distance between them: how long it
+        # was taken to mean the one before it was understood as the other.
+        when = estore.hindsight_when(ep)
+        lines.append(f"  in hindsight{f' ({when})' if when else ''}: {later}")
     return lines
 
 

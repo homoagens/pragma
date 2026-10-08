@@ -1227,6 +1227,20 @@ RECONSOLIDATE_REFUSE_DRIFT = os.environ.get(
 # for forgetting and as a source of beliefs it stays an episode like any other.
 # One with no importance on record is never left out. 0 re-reads as before.
 RECONSOLIDATE_IMPORTANCE_FLOOR = float(os.environ.get("RECONSOLIDATE_IMPORTANCE_FLOOR", "0"))
+# WHERE A RE-READING IS WRITTEN. A re-reading used to rewrite the episode's
+# `interpretation`, the one before going to a history that recall never shows:
+# after the first re-reading, what an episode meant when it happened was gone
+# from everything the agent is given. With this on - the default - the
+# interpretation is written once, like the narrative, and a re-reading writes
+# a line of its own beside it: `hindsight`, with the date it was written and
+# the episode that occasioned it. One line, replaced by the next one; those
+# before it are kept. On recall the two are shown one under the other, each
+# with its date. An episode already re-read the old way keeps the
+# interpretation it has, and from here on that is not touched either.
+# `false` re-reads as before: the interpretation is rewritten, and
+# RECONSOLIDATE_REFUSE_DRIFT applies.
+RECONSOLIDATE_HINDSIGHT = os.environ.get(
+    "RECONSOLIDATE_HINDSIGHT", "true").lower() in ("1", "true", "yes")
 
 # Max chars of a project PRAGMA.md (user-authored instructions) injected
 # verbatim into the task by runners that support it.
@@ -1370,7 +1384,8 @@ set_recall()
 # They are small on purpose. A memory is a pill, not a treatise: what is
 # recalled has to fit beside the actual task without crowding it out, and at
 # CURATOR_MAX_FRAGMENTS fragments these bound the whole recall at ~3 KB
-# however large the store grows.
+# however large the store grows - nearer 5 KB if every episode recalled has
+# been seen in hindsight, whose line is cut where a meaning is.
 MEMORY_NARRATIVE_CHARS      = int(os.environ.get("MEMORY_NARRATIVE_CHARS", "400"))
 MEMORY_INTERPRETATION_CHARS = int(os.environ.get("MEMORY_INTERPRETATION_CHARS", "200"))
 

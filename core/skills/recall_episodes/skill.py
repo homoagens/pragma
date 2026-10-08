@@ -180,6 +180,11 @@ def recall_episodes(query: str = "", workspace: str = "", top_k: int = 0,
         if surprises:
             lines.append(f"  surprises: {'; '.join(surprises[:2])}")
         interp = " ".join((ep.get("interpretation") or "").split())
+        later = estore.hindsight_text(ep)
         if interp:
-            lines.append(f"  meaning: {_truncate(interp, 200)}")
+            lines.append(f"  meaning{' at the time' if later else ''}: {_truncate(interp, 200)}")
+        if later:
+            # What a later session showed it to have been, with its own date.
+            when = estore.hindsight_when(ep)
+            lines.append(f"  in hindsight{f' ({when})' if when else ''}: {_truncate(later, 200)}")
     return "\n".join(lines)
