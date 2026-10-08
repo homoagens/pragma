@@ -38,8 +38,9 @@ import llm_client
 from json_parser import extract_json
 try:                      # core/ is normally on sys.path directly
     import clock
+    import when
 except ImportError:       # imported as a package instead
-    from core import clock
+    from core import clock, when
 
 
 _CURATOR_SYSTEM = """You are the context curator for an AI coding agent.
@@ -240,8 +241,9 @@ def _episode_text(ep: dict) -> str:
 # deleting them costs the next search a few seconds and nothing else.
 
 # How the last search was made, for whoever reports it: "words", or "meaning",
-# and - when meaning was wanted and could not be had - why not.
-SEARCH = {"by": "words", "error": ""}
+# and - when meaning was wanted and could not be had - why not. And the days
+# the request named, if it named any: (first, last, the words that named them).
+SEARCH = {"by": "words", "error": "", "days": []}
 
 
 def _nearness(task: str, texts: list[str], kind: str) -> list[float] | None:
@@ -259,6 +261,61 @@ def _nearness(task: str, texts: list[str], kind: str) -> list[float] | None:
     SEARCH.update(by="meaning", error="")
     return [embed.nearness(q, v) for v in vectors]
 
+
+
+def _days(task: str) -> list[tuple[str, str, str]]:
+    """The stretches of days a request names, as the dates episodes carry:
+    (first day, last day, the words that named them). See when.py."""
+    if not getattr(config, "CURATOR_DATED", True):
+        return []
+    try:
+        return [(a.isoformat(), b.isoformat(), words)
+                for a, b, words in when.windows(task, clock.now().date())]
+    except Exception:
+        return []
+
+
+def _dated(task: str, scored: list[dict], out: list[dict]) -> list[dict]:
+    """Seats for the days a request names, ADDED to those already given.
+
+    A request can name a time - "last week", "back in June" - and neither
+    words nor meaning can follow it there. Words find the episode that SAYS
+    "last week"; meaning finds what the request is about, whenever it
+    happened; and the latest three are the latest three. So the episodes of
+    the days named get seats of their own: as many again as nearness has, half
+    to those of them nearest to the request - "what did I decide about the
+    bathroom last week" - and the rest to those that mattered most - "what
+    happened last week", which is near to nothing in particular.
+
+    ADDED, NOT TAKEN. Nobody who had a seat loses it. Seats taken from the
+    nearest would make every request that mentions a day in passing worse at
+    finding what it is about - and many do: "yesterday Marco insisted...".
+    The price is a longer list for the curator on the turns that name a time,
+    and on those only.
+    """
+    SEARCH["days"] = days = _days(task)
+    n = getattr(config, "CURATOR_CANDIDATES_EPISODES", 10)
+    seats = max(n - max(getattr(config, "CURATOR_CANDIDATES_RECENT", 3), 0), 0)
+    if not days or not seats:
+        return out
+    have = {id(c["ep"]) for c in out}
+
+    def named(c: dict) -> bool:
+        day = str(c["ep"].get("ts", ""))[:10]
+        return any(first <= day <= last for first, last, _words in days)
+
+    pool = [c for c in scored if id(c["ep"]) not in have and named(c)]
+    nearest = sorted(pool, key=lambda c: (c.get("near", c["kw"]), estore.effective_salience(c["ep"])),
+                     reverse=True)[:(seats + 1) // 2]
+    weightiest = sorted(pool, key=lambda c: (estore.effective_salience(c["ep"]), c["ep"].get("ts", "")),
+                        reverse=True)
+    extra: list[dict] = []
+    for c in nearest + weightiest:
+        if len(extra) >= seats:
+            break
+        if not any(c is x for x in extra):
+            extra.append(c)
+    return out + extra
 
 
 def _episode_candidates(task: str, workspace: str,
@@ -318,7 +375,7 @@ def _episode_candidates(task: str, workspace: str,
             if id(c["ep"]) not in seen:
                 out.append(c)
                 seen.add(id(c["ep"]))
-        return out, len(scored)
+        return _dated(task, scored, out), len(scored)
 
     # RELEVANCE IS THE KEYWORDS, NOT THE SCORE. The workspace boost is a
     # tiebreak between episodes that already match; it must not decide WHETHER
@@ -350,7 +407,7 @@ def _episode_candidates(task: str, workspace: str,
             if id(c["ep"]) not in seen:
                 out.append(c)
                 seen.add(id(c["ep"]))
-        return out, len(scored)
+        return _dated(task, scored, out), len(scored)
     # Nothing keyword-relevant — offer the most recent as candidates and let
     # the curator decide (it will usually return an empty desk). The opening
     # question of a session often shares no words with anything stored ("what
@@ -369,7 +426,7 @@ def _episode_candidates(task: str, workspace: str,
     # the opening line, were offered the latest ones. What is already on the
     # desk is not offered again (exclude_ids), so this does not repeat itself.
     scored.sort(key=lambda c: c["ep"].get("ts", ""), reverse=True)
-    return scored[:n], len(scored)
+    return _dated(task, scored, scored[:n]), len(scored)
 
 
 def _learning_candidates(task: str,
@@ -511,7 +568,12 @@ def _ask_curator(task: str, eps: list[dict], lns: list[dict],
     # on a card and "yesterday" in the question are two strings that happen to
     # look alike; with it they are the same day.
     today = clock.today()
-    payload = (f"TODAY: {today}\n\nTASK:\n{task}\n\nCANDIDATES:\n"
+    # And the days the task names, worked out: "last week" on one side and a
+    # column of dates on the other is a subtraction the model is asked to do
+    # ten times over. Said only when the task names a time.
+    named = "".join(f"\nDAYS THE TASK NAMES: {a} to {b} (\"{words}\")" if a != b
+                    else f"\nDAYS THE TASK NAMES: {a} (\"{words}\")" for a, b, words in _days(task))
+    payload = (f"TODAY: {today}{named}\n\nTASK:\n{task}\n\nCANDIDATES:\n"
                + "\n".join(cards))
     try:
         with llm_client.faculty("CURATOR"):
@@ -781,6 +843,7 @@ def curate_knowledge_detailed(task: str, workspace: str = "", model=None,
     info["n_ep"], info["n_ln"] = len(eps), len(lns)
     info["pool_ep"], info["pool_ln"] = pool_ep, pool_ln
     info["search"], info["search_error"] = SEARCH["by"], SEARCH["error"]
+    info["days"] = list(SEARCH.get("days") or [])
     if not eps and not lns:
         info["empty"] = True
         return info

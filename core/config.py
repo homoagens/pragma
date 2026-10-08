@@ -1253,6 +1253,16 @@ CURATOR_CANDIDATES_LEARNINGS = int(os.environ.get("CURATOR_CANDIDATES_LEARNINGS"
 # that holds the answer, and would be met with the store's greatest hits.
 # Reserved out of the pool, not added to it: the prompt does not grow.
 CURATOR_CANDIDATES_RECENT    = int(os.environ.get("CURATOR_CANDIDATES_RECENT", "3"))
+# Seats for the days a request names. "Last week", "back in June", "the day
+# before yesterday": a search by words or by meaning cannot follow a request
+# there, and the latest three are only ever the latest. With this on, the
+# episodes of the days named are offered too - as many again as the slots
+# above leave to nearness, ADDED to them, so that no request loses a candidate
+# it had. The days are read off the words (core/when.py), with no model asked,
+# and stated to the curator beside today's date. A request that names no time
+# is offered exactly what it was before. `false` offers every request that.
+CURATOR_DATED = os.environ.get(
+    "CURATOR_DATED", "true").lower() in ("1", "true", "yes")
 
 # ── Segmenting a batch run ──
 # Whether a one-shot `pragma "task"` is JUDGED before it becomes an episode.

@@ -255,6 +255,8 @@ CONFIG = {
         "Confidence it loses each time it is contradicted."),
     "SEMANTIC_RETIRE_CONTRADICTIONS": ("memory",
         "Contradictions after which a belief is retired."),
+    "CURATOR_DATED": ("memory",
+        "Whether a request that names a time (\"last week\", \"in June\") is also offered the episodes of those days. `false` offers it what any other request gets."),
     "RECONSOLIDATION_ENABLED": ("memory",
         "Whether later sessions may revise what earlier episodes and beliefs mean."),
     "RECONSOLIDATE_MAX_EPISODES": ("memory",

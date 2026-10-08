@@ -163,6 +163,7 @@ The short version. [Files](../reference/files.md) has what is inside each.
 | [`segmenter.py`](../../core/segmenter.py) | Which turns of a conversation become episodes. |
 | [`reconsolidate.py`](../../core/reconsolidate.py) | Revising what stored episodes and beliefs mean. |
 | [`clock.py`](../../core/clock.py) | The clock the memory reads. It can be frozen for tests. |
+| [`when.py`](../../core/when.py) | The days a request names ("last week", "in June"), read off its words for recall. |
 | [`critic.py`](../../core/critic.py) | The optional check of a turn against the request. |
 | [`suggest.py`](../../core/suggest.py) | The optional guess at your next line. |
 | [`skills/`](../../core/skills) | The tools, one folder each. [`__init__.py`](../../core/skills/__init__.py) is the loader and decides which are offered. |
