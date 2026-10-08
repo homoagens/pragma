@@ -266,8 +266,6 @@ CONFIG = {
         "Revised source episodes, in one session, that make a belief a candidate for rewording."),
     "RECONSOLIDATE_BRIDGE_OVER_TIME": ("memory",
         "`true` counts a belief's revised sources since it was last written or checked, not session by session."),
-    "RECONSOLIDATE_REFUSE_DRIFT": ("memory",
-        "`true` leaves an episode's interpretation as it was when a revision would bring it closer to the new episode than to its own. Needs an embedding server, and applies only with `RECONSOLIDATE_HINDSIGHT=false`."),
     "RECONSOLIDATE_HINDSIGHT": ("memory",
         "Where a later session's light on an earlier episode is written: beside what the episode meant at the time, as a dated line of hindsight. `false` rewrites the meaning instead."),
     "RECONSOLIDATE_IMPORTANCE_FLOOR": ("memory",

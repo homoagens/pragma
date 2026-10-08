@@ -750,9 +750,6 @@ def episode_consolidate_detailed(transcript: str = "", workspace: str = "",
               "semantic_ran": False,
               "new_assertions": [], "confirmed": [], "contradicted": [],
               "retired": [], "reconsolidated": [], "reformulated": [],
-              # Re-readings the reconsolidator proposed and that were not
-              # applied: see config.RECONSOLIDATE_REFUSE_DRIFT.
-              "held": [],
               "reconsolidate_error": "",
               # How the memories and beliefs related to this one were found:
               # "meaning" with an embedding server, "words" without one - and
@@ -805,7 +802,6 @@ def episode_consolidate_detailed(transcript: str = "", workspace: str = "",
             in_hindsight = getattr(config, "RECONSOLIDATE_HINDSIGHT", True)
             rewrites = (reconsolidate.hindsight_episodes(ep, targets) if in_hindsight
                         else reconsolidate.reconsolidate_episodes(ep, targets))
-            refuse_drift = getattr(config, "RECONSOLIDATE_REFUSE_DRIFT", False)
             linked: list[str] = []
             for rw in rewrites:
                 tp = store / f"{rw['id']}.json"
@@ -851,18 +847,6 @@ def episode_consolidate_detailed(transcript: str = "", workspace: str = "",
                 # itself says how each reading came to be what it is.
                 measure = embed.moved(tgt, tgt.get("interpretation", "") or "",
                                       rw["interpretation"], ep)
-                if refuse_drift and embed.drifted(measure):
-                    # The new reading would be nearer to the new episode than to
-                    # the one it is a reading of. The two are related - they are
-                    # linked - but the old episode keeps what it meant.
-                    tl = set(tgt.get("links") or [])
-                    tl.add(ep["id"])
-                    tgt["links"] = sorted(tl)
-                    estore.save(tp, tgt)
-                    linked.append(rw["id"])
-                    result["held"].append({"id": rw["id"], "reason": rw.get("reason", ""),
-                                           "moved": measure})
-                    continue
                 hist = tgt.get("interpretation_history") or []
                 entry = {"ts": _now(),
                          "text": tgt.get("interpretation", ""),
@@ -1113,8 +1097,6 @@ def episode_consolidate_detailed(transcript: str = "", workspace: str = "",
     _recon_note = ""
     if result["reconsolidated"]:
         _recon_note += f"; reconsolidated {len(result['reconsolidated'])} episode(s)"
-    if result["held"]:
-        _recon_note += f"; {len(result['held'])} re-reading(s) not applied"
     if result.get("passed_over"):
         _recon_note += f"; {len(result['passed_over'])} episode(s) not re-read (slight importance)"
     if result["reformulated"]:

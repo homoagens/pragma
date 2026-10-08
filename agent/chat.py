@@ -1470,16 +1470,11 @@ def _say_written(renderer, res: dict, ep: dict | None, i: int, n: int) -> None:
                      f"({res['embed_error']})")
     renderer.faculty("CONSOLIDATOR", which + (str(ep.get("goal") or "").strip() or "an episode"), notes)
 
-    reread, held = res.get("reconsolidated") or [], res.get("held") or []
+    reread = res.get("reconsolidated") or []
     if res.get("reconsolidate_error"):
         renderer.faculty("RECONSOLIDATOR", f"did not run - {res['reconsolidate_error']}")
-    elif reread or held:
-        said = []
-        if reread:
-            said.append(_so_many(len(reread), "earlier memory", "earlier memories") + " re-read")
-        if held:
-            said.append(f"{len(held)} left as {'it was' if len(held) == 1 else 'they were'}")
-        renderer.faculty("RECONSOLIDATOR", ", ".join(said),
+    elif reread:
+        renderer.faculty("RECONSOLIDATOR", _so_many(len(reread), "earlier memory", "earlier memories") + " re-read",
                          [str(r.get("reason", "")).strip() for r in reread if r.get("reason")][:3])
 
     if res.get("semantic_ran"):

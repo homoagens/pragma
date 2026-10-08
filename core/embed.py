@@ -399,8 +399,9 @@ def moved(own: dict, before: str, after: str, other: dict) -> dict | None:
         new_event   the reading to the event that occasioned it:  [before, after]
 
     A reading that the re-reading leaves nearer to the other episode's event
-    than to its own has stopped being about its own episode; drifted() says
-    so. None when the vectors cannot be had: nothing is measured by words.
+    than to its own has stopped being about its own episode: the numbers are
+    kept so that this can be seen. None when the vectors cannot be had: nothing
+    is measured by words.
     """
     if not before.strip() or not after.strip():
         return None
@@ -426,25 +427,6 @@ def reworded(before: str, after: str) -> dict | None:
         return None
     srv = server()
     return {"previous": round(nearness(v[0], v[1]), 3), "model": identity(srv) if srv else ""}
-
-
-def drifted(measure: dict | None) -> bool:
-    """Whether a re-reading, as moved() measured it, took the interpretation
-    away from its own episode: the new reading is nearer to the other episode's
-    event than to its own, AND it was the re-reading that took it there or
-    further. Two episodes of one story have events that resemble each other,
-    and a reading can sit nearer to its neighbour's before anyone touches it:
-    a re-reading that brings such a reading back towards its own event has not
-    drifted.
-
-    Only nearnesses of the same texts are compared with each other, so no
-    threshold has to be chosen - how near two unrelated texts are differs from
-    one embedding model to the next."""
-    if not measure:
-        return False
-    own_before, own_after = measure["own_event"]
-    new_before, new_after = measure["new_event"]
-    return own_after < new_after and (own_after - new_after) < (own_before - new_before)
 
 
 # ── Keeping the folder true to the store ──────────────────────────────────────

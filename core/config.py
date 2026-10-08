@@ -1209,15 +1209,6 @@ RECONSOLIDATE_BRIDGE_MIN_SOURCES = int(os.environ.get(
 # stamped on the belief (`reviewed`), so the count starts again from there.
 RECONSOLIDATE_BRIDGE_OVER_TIME = os.environ.get(
     "RECONSOLIDATE_BRIDGE_OVER_TIME", "false").lower() in ("1", "true", "yes")
-# A re-reading is measured, when an embedding server is in use: how near the
-# new interpretation is to the episode's own event, and how near to the event
-# of the episode that occasioned it (embed.moved). The measure is always kept
-# with the version it replaced. With this on, a re-reading that would leave the
-# interpretation nearer to the NEW episode than to its own is not applied: the
-# two episodes are linked, and the old one keeps what it meant. Without an
-# embedding server nothing is measured and this does nothing.
-RECONSOLIDATE_REFUSE_DRIFT = os.environ.get(
-    "RECONSOLIDATE_REFUSE_DRIFT", "false").lower() in ("1", "true", "yes")
 # Which past episodes are re-read is decided by nearness alone, and something
 # is always nearest: a one-line lookup is read against the other one-line
 # lookups, and each comes out of it meaning something. With this above 0, an
@@ -1237,8 +1228,7 @@ RECONSOLIDATE_IMPORTANCE_FLOOR = float(os.environ.get("RECONSOLIDATE_IMPORTANCE_
 # before it are kept. On recall the two are shown one under the other, each
 # with its date. An episode already re-read the old way keeps the
 # interpretation it has, and from here on that is not touched either.
-# `false` re-reads as before: the interpretation is rewritten, and
-# RECONSOLIDATE_REFUSE_DRIFT applies.
+# `false` re-reads as before: the interpretation is rewritten.
 RECONSOLIDATE_HINDSIGHT = os.environ.get(
     "RECONSOLIDATE_HINDSIGHT", "true").lower() in ("1", "true", "yes")
 
