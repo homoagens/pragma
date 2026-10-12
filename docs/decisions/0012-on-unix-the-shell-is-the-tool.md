@@ -2,7 +2,7 @@
 
 - **Date:** 2026-09-24
 - **Status:** accepted
-- **Where:** [`core/skills/__init__.py`](../../core/skills/__init__.py)
+- **Where:** [`core/tools/__init__.py`](../../core/tools/__init__.py)
 
 ## Context
 
@@ -28,4 +28,4 @@ equivalent.
 
 - What the agent is told to do and what it is given to do it with agree.
 - The list of tools depends on the system, which the
-  [skills reference](../reference/skills.md) marks.
+  [skills reference](../reference/tools.md) marks.

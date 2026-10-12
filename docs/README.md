@@ -27,7 +27,7 @@ says what differs.
 | look up a command or a key | [Commands](reference/commands.md) |
 | look up a setting and its default | [Configuration](reference/configuration.md) |
 | know which files Pragma writes, and where | [Files](reference/files.md) |
-| see which tools the agent has | [Skills](reference/skills.md) |
+| see which tools the agent has | [Tools](reference/tools.md) |
 | read what the model is told | [Prompts](reference/prompts.md) |
 | know what differs on Windows, or in the browser | [Three interfaces](explanation/interfaces.md) |
 | see what the pieces are and how a turn runs | [Architecture](explanation/architecture.md) |

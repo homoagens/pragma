@@ -2,7 +2,7 @@
 
 - **Date:** 2026-09-10
 - **Status:** accepted
-- **Where:** [`core/skills/__init__.py`](../../core/skills/__init__.py)
+- **Where:** [`core/tools/__init__.py`](../../core/tools/__init__.py)
 
 ## Context
 

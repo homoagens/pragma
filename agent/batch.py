@@ -69,7 +69,7 @@ for _p in (str(_CORE), str(_ROOT)):
 import config as baseline_config
 import llm_client
 from react import AgentConfig, run_agent
-from skills import palette as skills_palette
+from tools import palette as skills_palette
 from agent.prompts import build_system_prompt, project_contract, session_block
 
 
@@ -913,7 +913,7 @@ confirmed mid-task. Therefore:
 
         renderer.faculty_running("CONSOLIDATOR", "writing the session episode…")
         try:
-            from skills.episode_consolidate.skill import (
+            from tools.episode_consolidate.tool import (
                 episode_consolidate_detailed,
             )
             # No session_id here on purpose: batch is one session per

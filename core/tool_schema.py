@@ -30,7 +30,7 @@ import inspect
 import typing
 from pathlib import Path
 
-SKILLS_DIR = Path(__file__).parent / "skills"
+SKILLS_DIR = Path(__file__).parent / "tools"
 
 # Injected by the runner, never chosen by the model.
 _HIDDEN_PARAMS = {"context", "stop_event", "self", "cls"}

@@ -45,8 +45,8 @@ from react import AgentConfig, run_agent
 
 import config as baseline_config
 import memory as baseline_memory
-from skills import ALL_SKILLS, skills_summary_for  # noqa: F401  (ALL_SKILLS: public re-export)
-from skills import palette as skills_palette
+from tools import ALL_SKILLS, skills_summary_for  # noqa: F401  (ALL_SKILLS: public re-export)
+from tools import palette as skills_palette
 from agent.prompts import build_system_prompt, session_block
 
 # Same palette rule as batch: no base64 variants on the native channel.
@@ -203,7 +203,7 @@ def _reflection_worker_loop() -> None:
             # inspection (the user expands the indicator to see what was
             # actually saved).
             try:
-                from skills.session_reflect.skill import session_reflect_detailed as _reflect
+                from tools.session_reflect.tool import session_reflect_detailed as _reflect
                 res = _reflect(transcript=transcript, label=label)
                 done_ev = {
                     "type":    "reflection",
@@ -892,7 +892,7 @@ async def websocket_endpoint(ws: WebSocket):
         and format them as an injection block. Pure keyword overlap; no LLM
         call. Empty string if the store is empty / unavailable."""
         try:
-            from skills.recall_learnings.skill import recall_learnings as _recall
+            from tools.recall_learnings.tool import recall_learnings as _recall
         except Exception:
             return ""
         try:

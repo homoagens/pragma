@@ -53,7 +53,7 @@ flowchart TD
    project opened, from [`agent/prompts.py`](../../agent/prompts.py) and the
    workspace's `PRAGMA.md` if there is one; [Prompts](../reference/prompts.md)
    lists its parts. After it come the conversation so far and your message.
-   The [skills](../reference/skills.md) are offered to the model as tools.
+   The [skills](../reference/tools.md) are offered to the model as tools.
 4. **The loop.** [`core/react.py`](../../core/react.py) calls the model. The
    reply is either a tool call or the answer. A tool call runs the skill, what
    it returned goes back to the model, and the loop repeats until there is an
@@ -84,7 +84,7 @@ The conversation files a job and exits. The memory worker picks it up:
 
 1. [`core/segmenter.py`](../../core/segmenter.py) decides which turns were
    worth keeping.
-2. [`core/skills/episode_consolidate/`](../../core/skills/episode_consolidate/README.md)
+2. [`core/tools/episode_consolidate/`](../../core/tools/episode_consolidate/README.md)
    writes an episode for each of them. The three steps below run from there,
    once per episode written.
 3. [`core/episodes.py`](../../core/episodes.py) moves episodes that have
@@ -166,7 +166,7 @@ The short version. [Files](../reference/files.md) has what is inside each.
 | [`when.py`](../../core/when.py) | The days a request names ("last week", "in June"), read off its words for recall. |
 | [`critic.py`](../../core/critic.py) | The optional check of a turn against the request. |
 | [`suggest.py`](../../core/suggest.py) | The optional guess at your next line. |
-| [`skills/`](../../core/skills) | The tools, one folder each. [`__init__.py`](../../core/skills/__init__.py) is the loader and decides which are offered. |
+| [`skills/`](../../core/tools) | The tools, one folder each. [`__init__.py`](../../core/tools/__init__.py) is the loader and decides which are offered. |
 
 ### `agent/` — the ways of running it
 

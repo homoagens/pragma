@@ -432,7 +432,7 @@ def fetch(url: str, timeout: int = 30) -> str:
     as text beginning with ERROR / HTTP ERROR / TIMEOUT.
     """
     try:
-        from skills.web_fetch.skill import web_fetch
+        from tools.web_fetch.tool import web_fetch
     except Exception:
         return ""
     body = web_fetch(url, timeout=timeout, max_chars=400_000)

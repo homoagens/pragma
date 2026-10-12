@@ -66,7 +66,7 @@ for p in (str(_ROOT), str(_CORE), str(_TOOLS)):
 import config as baseline_config          # noqa: E402
 import llm_client                          # noqa: E402
 from react import AgentConfig, run_agent, _msg_chars   # noqa: E402
-from skills import palette as skills_palette   # noqa: E402
+from tools import palette as skills_palette   # noqa: E402
 
 from agent.batch import (                  # noqa: E402
     _pool_line,
@@ -1382,7 +1382,7 @@ def _consolidate(turns: list[Turn], cwd: Path, renderer,
     if not turns:
         return []
     try:
-        from skills.episode_consolidate.skill import episode_consolidate_detailed
+        from tools.episode_consolidate.tool import episode_consolidate_detailed
     except Exception as e:
         renderer.error(None, f"consolidation unavailable: {e}")
         return []

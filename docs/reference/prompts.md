@@ -18,7 +18,7 @@ answers it: see [Architecture](../explanation/architecture.md#which-server-answe
 | `project_contract` | [`agent/prompts.py`](../../agent/prompts.py) | Carries the workspace's `PRAGMA.md` into the prompt, with what it overrides. |
 | `session_block` | [`agent/prompts.py`](../../agent/prompts.py) | The folder and the date. Last, so that everything before it is the same from one session to the next. |
 | `SYSTEM_PROMPT_SUMMARY` | [`core/memory.py`](../../core/memory.py) | Summarises the older steps of a turn that has grown too long. |
-| `_ASK_SYSTEM` | [`core/skills/ask_user/skill.py`](../../core/skills/ask_user/skill.py) | Words a question for the person, where the question is not asked by ending the turn. |
+| `_ASK_SYSTEM` | [`core/tools/ask_user/tool.py`](../../core/tools/ask_user/tool.py) | Words a question for the person, where the question is not asked by ending the turn. |
 | `_SUMMARIZE_SYSTEM` | [`agent/server.py`](../../agent/server.py) | The browser interface's summary of a thread that has grown too long. |
 
 ## Sent in the `recall` role
@@ -34,13 +34,13 @@ answers it: see [Architecture](../explanation/architecture.md#which-server-answe
 | Prompt | In | What it is for |
 |---|---|---|
 | `_SYSTEM` | [`core/segmenter.py`](../../core/segmenter.py) | Decides which turns of a conversation are worth keeping. |
-| `_EPISODE_SYSTEM` | [`core/skills/episode_consolidate/skill.py`](../../core/skills/episode_consolidate/skill.py) | Writes an episode from what was kept. |
-| `_SEMANTIC_SYSTEM` | [`core/skills/episode_consolidate/skill.py`](../../core/skills/episode_consolidate/skill.py) | Draws beliefs from what recurs across episodes. |
+| `_EPISODE_SYSTEM` | [`core/tools/episode_consolidate/tool.py`](../../core/tools/episode_consolidate/tool.py) | Writes an episode from what was kept. |
+| `_SEMANTIC_SYSTEM` | [`core/tools/episode_consolidate/tool.py`](../../core/tools/episode_consolidate/tool.py) | Draws beliefs from what recurs across episodes. |
 | `_EPISODIC_SYSTEM` | [`core/reconsolidate.py`](../../core/reconsolidate.py) | Revises what an earlier episode is taken to mean, when `RECONSOLIDATE_HINDSIGHT` is `false`. |
 | `_HINDSIGHT_SYSTEM` | [`core/reconsolidate.py`](../../core/reconsolidate.py) | Writes what a later session shows an earlier episode to have been, beside what it meant at the time. |
 | `_SEMANTIC_SYSTEM` | [`core/reconsolidate.py`](../../core/reconsolidate.py) | Rewords a belief that has been contradicted. |
 | `_REVIEW_SYSTEM` | [`core/reconsolidate.py`](../../core/reconsolidate.py) | Checks a belief against episodes whose meaning was revised. |
-| `_REFLECT_SYSTEM` | [`core/skills/session_reflect/skill.py`](../../core/skills/session_reflect/skill.py) | A reflection pass over a finished task. |
+| `_REFLECT_SYSTEM` | [`core/tools/session_reflect/tool.py`](../../core/tools/session_reflect/tool.py) | A reflection pass over a finished task. |
 
 ## Sent in the `critic` role
 

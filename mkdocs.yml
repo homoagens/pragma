@@ -37,7 +37,7 @@ nav:
   - Reference:
       - Commands: reference/commands.md
       - Configuration: reference/configuration.md
-      - Skills: reference/skills.md
+      - Tools: reference/tools.md
       - Prompts: reference/prompts.md
       - Files: reference/files.md
   - Explanation:

@@ -28,7 +28,7 @@ site/
 .cache/
 
 # Skills in testing (wip_ prefix — rename folder to publish)
-core/skills/wip_*/
+core/tools/wip_*/
 
 # Pragma runtime / local files
 *.log

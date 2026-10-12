@@ -15,12 +15,12 @@ This keeps the project free to evolve its licensing as it grows. If you are not 
 
 ## The fastest way to contribute: add a skill
 
-Each skill lives in its own folder under `core/skills/`. The loader picks it up automatically — no registration needed.
+Each skill lives in its own folder under `core/tools/`. The loader picks it up automatically — no registration needed.
 
 ```
-core/skills/
+core/tools/
   your_skill/
-    skill.py     ← required: contains a function named exactly like the folder
+    tool.py     ← required: contains a function named exactly like the folder
     README.md    ← required: documents parameters, returns, examples
 ```
 
@@ -30,9 +30,9 @@ core/skills/
 - Return a string always — on error return `"ERROR: ..."` instead of raising
 - The first line under the title of `README.md` is what the model is told the tool does. Keep it on **one line**: a sentence wrapped over two reaches the model cut in half
 
-A fully documented template is in `core/skills/_template/`. The skills that
+A fully documented template is in `core/tools/_template/`. The skills that
 exist, and which of them the agent is offered, are listed in
-[docs/reference/skills.md](docs/reference/skills.md); that page is generated,
+[docs/reference/tools.md](docs/reference/tools.md); that page is generated,
 so run `python docs/build.py` after adding one.
 
 ---

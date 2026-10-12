@@ -31,7 +31,7 @@ machine that built it.
 
     reference/configuration.md   every environment variable the code reads
     reference/commands.md        the commands of the two screens
-    reference/skills.md          the tools, and which of them the agent is given
+    reference/tools.md          the tools, and which of them the agent is given
     reference/prompts.md         where every prompt is, and whose calls carry it
     decisions/README.md          the list of decision records, from the records
 """
@@ -72,7 +72,7 @@ def _rel(path: Path) -> str:
 def _sources() -> list[Path]:
     """The Python the harness actually runs.
 
-    Not the retired skills: a folder under core/skills whose name starts with
+    Not the retired skills: a folder under core/tools whose name starts with
     an underscore is never loaded, so a variable read only there is not a
     setting. Not the wip_ ones either - they are in nobody else's checkout.
     """
@@ -407,7 +407,7 @@ def _summary(readme: Path) -> str:
 
 
 def skills(notes) -> str:
-    base = ROOT / "core" / "skills"
+    base = ROOT / "core" / "tools"
     rules = tables(base / "__init__.py", {"_NOT_AGENT_TOOLS", "_SHELL_DOES_THIS_BETTER"})
     internal = set(rules["_NOT_AGENT_TOOLS"])
     shell = set(rules["_SHELL_DOES_THIS_BETTER"])
@@ -416,24 +416,24 @@ def skills(notes) -> str:
     for folder in sorted(base.iterdir()):
         if not folder.is_dir() or folder.name.startswith(("_", "wip_")):
             continue
-        if not (folder / "skill.py").exists():
+        if not (folder / "tool.py").exists():
             continue
         name = folder.name
-        link = f"[`{name}`](../../core/skills/{name}/README.md)"
+        link = f"[`{name}`](../../core/tools/{name}/README.md)"
         row = (link, _summary(folder / "README.md"),
-               "`" + _cell(_signature(folder / "skill.py", name)) + "`")
+               "`" + _cell(_signature(folder / "tool.py", name)) + "`")
         if name in internal:
             withheld.append(row)
         else:
             offered.append(row + ("Windows only" if name in shell else "everywhere",))
 
-    out = [BANNER, "# Skills\n",
+    out = [BANNER, "# Tools\n",
            "A skill is a tool the agent can call: one folder under "
-           "[`core/skills/`](../../core/skills), holding the function and the "
+           "[`core/tools/`](../../core/tools), holding the function and the "
            "README that documents it. The loader finds them by folder; nothing "
            "is registered by hand. To add one, see "
            "[CONTRIBUTING](../../CONTRIBUTING.md) and the "
-           "[template](../../core/skills/_template/README.md).\n",
+           "[template](../../core/tools/_template/README.md).\n",
            "Each name links to its README, which has the parameters, what comes "
            "back and examples.\n"]
 
@@ -458,10 +458,10 @@ def skills(notes) -> str:
     out.append("A folder whose name starts with an underscore is skipped by the loader.\n")
     for folder, what in (("_legacy", "retired"), ("_future", "kept for later")):
         names = sorted(p.name for p in (base / folder).iterdir()
-                       if p.is_dir() and (p / "skill.py").exists())
+                       if p.is_dir() and (p / "tool.py").exists())
         listed = ", ".join(f"`{n}`" for n in names)
-        out.append(f"- [`{folder}/`](../../core/skills/{folder}/README.md), {what}: {listed}")
-    out.append("- [`_template/`](../../core/skills/_template/README.md), the starting "
+        out.append(f"- [`{folder}/`](../../core/tools/{folder}/README.md), {what}: {listed}")
+    out.append("- [`_template/`](../../core/tools/_template/README.md), the starting "
                "point for a new one")
     return "\n".join(out).rstrip() + "\n"
 
@@ -630,7 +630,7 @@ def menu() -> list[str]:
 PAGES = {
     "reference/configuration.md": configuration,
     "reference/commands.md": commands,
-    "reference/skills.md": skills,
+    "reference/tools.md": skills,
     "reference/prompts.md": prompts,
     "decisions/README.md": decisions,
 }

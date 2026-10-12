@@ -187,7 +187,7 @@ Written for the conversation it starts. Listed so that nobody sets them by hand.
 | `PRAGMA_PROJECT` | unset | Name of the open project. | [`agent/chat.py`](../../agent/chat.py) |
 | `PRAGMA_WORKSPACE` | unset | Folder of the open project. A batch run uses it when `--cwd` is not given. | [`agent/batch.py`](../../agent/batch.py), [`agent/chat.py`](../../agent/chat.py) |
 | `PRAGMA_REQUEST` | unset | File through which the conversation asks the launcher to do something on the way out. | [`agent/chat.py`](../../agent/chat.py) |
-| `PRAGMA_SESSION_ID` | unset | Identifies a session, so that writing it down twice produces one episode. | [`core/skills/episode_consolidate/skill.py`](../../core/skills/episode_consolidate/skill.py) |
+| `PRAGMA_SESSION_ID` | unset | Identifies a session, so that writing it down twice produces one episode. | [`core/tools/episode_consolidate/tool.py`](../../core/tools/episode_consolidate/tool.py) |
 | `PRAGMA_ACCENT` | `178;132;255` | Accent colour of the screens, as `R;G;B`. | [`agent/chat.py`](../../agent/chat.py), [`agent/harness.py`](../../agent/harness.py), [`terminal/mem_map.py`](../../terminal/mem_map.py), [`terminal/pragma_home.py`](../../terminal/pragma_home.py), [`terminal/pragma_menu.py`](../../terminal/pragma_menu.py) |
 
 ## For development and tests
