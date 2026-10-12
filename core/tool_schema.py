@@ -108,6 +108,18 @@ def _description(name: str, fn) -> str:
 
 def schema_for(name: str, fn) -> dict | None:
     """OpenAI-style tool definition for one skill, or None if unusable."""
+    # A tool that lives on an MCP server comes with its own description and
+    # schema (core/mcp_client.py): they are sent as the server wrote them.
+    remote = getattr(fn, "__mcp__", None)
+    if remote:
+        return {
+            "type": "function",
+            "function": {
+                "name": name,
+                "description": remote["description"],
+                "parameters": remote["schema"],
+            },
+        }
     try:
         sig = inspect.signature(fn)
     except (ValueError, TypeError):

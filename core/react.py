@@ -383,7 +383,8 @@ def _call_skill(cfg: AgentConfig, action: str, args: dict) -> str:
         return f"ERROR: skill '{action}' does not exist. Available: {list(cfg.skills)}"
     fn = cfg.skills[action]
     kwargs = dict(args) if args else {}
-    if cfg.skill_context is not None:
+    # A tool on an MCP server takes what its own schema names and nothing else.
+    if cfg.skill_context is not None and not hasattr(fn, "__mcp__"):
         kwargs.setdefault(cfg.skill_context_kwarg, cfg.skill_context)
 
     # ── Validate signature BEFORE calling ──
@@ -1043,10 +1044,20 @@ def run_agent(cfg: AgentConfig, user_task: str, log_path: Optional[Path] = None,
         if soft_limit > 0 and len(observation) > soft_limit:
             head = observation[: soft_limit // 2]
             tail = observation[-soft_limit // 4 :]
+            # What to do about it depends on where the answer came from. A
+            # file can be read again in pieces; an answer from an MCP server
+            # cannot, and the same call would be cut in the same place.
+            if hasattr(cfg.skills.get(action), "__mcp__"):
+                way_out = ("The middle is lost: the same call would be cut again. "
+                           "Ask for less at a time - fewer results, less of each, "
+                           "a narrower request")
+            else:
+                way_out = ("Use read_file with start_line/end_line or grep_search "
+                           "for targeted access")
             stored_obs = (
                 f"{head}\n"
                 f"\n[... observation truncated — full length {len(observation)} chars. "
-                f"Use read_file with start_line/end_line or grep_search for targeted access ...]\n"
+                f"{way_out} ...]\n"
                 f"\n{tail}"
             )
         else:

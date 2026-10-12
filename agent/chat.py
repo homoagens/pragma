@@ -1783,6 +1783,10 @@ def main() -> int:
 
     skills = skills_palette()
     skills["ask_user"] = _chat_ask_user
+    # And the tools of the MCP servers in ~/.pragma/mcp.json, when there are
+    # any. What each server gave is said under the briefing, below.
+    import mcp_client
+    mcp_notes = mcp_client.offer(skills)
     # One channel, always curated — the same rule as `agent.batch`. The raw
     # recall skills would be a second, uncurated way in: they reinforce and
     # revive on keyword overlap alone, with no judgment between the prefilter
@@ -1836,7 +1840,7 @@ If the turn needed no tools at all, the conclusion is simply your reply.
 
     system_prompt = build_system_prompt(
         str(cwd), default_model=baseline_config.DEFAULT_MODEL,
-    ) + chat_policy + project_contract(cwd) + session_block(cwd)
+    ) + chat_policy + mcp_client.prompt_block() + project_contract(cwd) + session_block(cwd)
 
     global _RENDERER
     # A turn is drawn as a ledger: see agent/ledger.py. PRAGMA_LOOK=classic
@@ -1891,6 +1895,8 @@ If the turn needed no tools at all, the conclusion is simply your reply.
         print(f"  backend down - {str(detail).split(chr(8212))[0].strip()[:70]}")
         print("  the memory still answers: /memory, /status, /jobs")
         print("  /configure points Pragma at another endpoint")
+    for note in mcp_notes:
+        print(f"  {note}")
 
     cfg = AgentConfig(
         name="Pragma",

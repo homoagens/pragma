@@ -166,7 +166,8 @@ The short version. [Files](../reference/files.md) has what is inside each.
 | [`when.py`](../../core/when.py) | The days a request names ("last week", "in June"), read off its words for recall. |
 | [`critic.py`](../../core/critic.py) | The optional check of a turn against the request. |
 | [`suggest.py`](../../core/suggest.py) | The optional guess at your next line. |
-| [`skills/`](../../core/tools) | The tools, one folder each. [`__init__.py`](../../core/tools/__init__.py) is the loader and decides which are offered. |
+| [`mcp_client.py`](../../core/mcp_client.py) | Tools published by MCP servers, added to the ones the agent is offered. Used only when a server is listed. |
+| [`tools/`](../../core/tools) | The tools, one folder each. [`__init__.py`](../../core/tools/__init__.py) is the loader and decides which are offered. |
 
 ### `agent/` — the ways of running it
 

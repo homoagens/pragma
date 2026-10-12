@@ -754,6 +754,10 @@ def main() -> int:
     # server escapes arguments and the model's own encoding is the risk.
     skills = skills_palette()
     skills["ask_user"] = batch_ask_user
+    # And the tools of the MCP servers in ~/.pragma/mcp.json, when there are any.
+    import mcp_client
+    for note in mcp_client.offer(skills):
+        _out(f"[{_ts()}] {note}")
     # Memory reaches the desk only through the curator (upstream, automatic).
     # The agent never pokes raw recall skills — one channel, always curated.
     # palette() withholds them: see _NOT_AGENT_TOOLS.
@@ -793,7 +797,7 @@ confirmed mid-task. Therefore:
     # "skill does not exist" (field-found in the 5-year demo).
     system_prompt = build_system_prompt(
         str(cwd), default_model=baseline_config.DEFAULT_MODEL,
-    ) + batch_policy
+    ) + batch_policy + mcp_client.prompt_block()
 
     # ── Task assembly: instructions + memory + current request ──────────
     # PRAGMA.md is the user-authored project contract (standing rules,

@@ -34,6 +34,9 @@ Used until `/configure` writes its own file; the timeouts apply either way.
 | `LLM_API_KEY` | unset | Key sent to that server. Local servers usually need none. | [`core/config.py`](../../core/config.py) |
 | `DEFAULT_MODEL` | `llama3.2` | Model name sent in the request. A single-model server ignores it. | [`core/config.py`](../../core/config.py) |
 | `PRAGMA_ENDPOINTS` | `~/.pragma/endpoints.json` | Another file to read the endpoint catalogue from. | [`core/endpoints.py`](../../core/endpoints.py) |
+| `PRAGMA_MCP` | `~/.pragma/mcp.json` | Another file to read the list of MCP servers from. | [`core/mcp_client.py`](../../core/mcp_client.py) |
+| `MCP_TIMEOUT` | `120` | Seconds before a call to a tool on an MCP server is abandoned. | [`core/mcp_client.py`](../../core/mcp_client.py) |
+| `MCP_CONNECT_TIMEOUT` | `5` | Seconds an MCP server may take to accept a connection. | [`core/mcp_client.py`](../../core/mcp_client.py) |
 | `LLM_TIMEOUT` | `900` | Seconds before one model call is abandoned. *Project setting `Timeout`.* | [`core/config.py`](../../core/config.py) |
 | `LLM_STREAM_CALLS` | `1` | `0` makes every call a blocking request, for a server whose streaming misbehaves. | [`core/config.py`](../../core/config.py) |
 | `ENDPOINT_PROBE_TIMEOUT` | `1.0` | Seconds a connection may take before an endpoint counts as not connected. | [`core/config.py`](../../core/config.py) |
