@@ -475,6 +475,54 @@ def embedding_line(found: dict | None) -> tuple[str, str]:
     return f"{where}{SEP}not answering - the memory is searched by words{SEP}/configure", "\033[33m"
 
 
+def mcp_line(wait: float = 3.0) -> tuple[str, str] | None:
+    """(text, colour) for the line that says which MCP servers are listed and
+    whether each answers, or None when none is listed: unlike the embedding
+    server, this is not something every machine could be expected to have.
+
+    Each server is asked on a thread of its own and the line waits `wait`
+    seconds for all of them together, so one that is down costs the page no
+    more than the endpoints already do. Green only when every server that is
+    switched on answered.
+    """
+    sys.path[:0] = [str(ROOT), str(ROOT / "core")]
+    import threading
+    import mcp_client
+    try:
+        listed = mcp_client.read_list()
+    except Exception:
+        return f"the list of servers cannot be read{SEP}/configure", "[33m"
+    if not listed:
+        return None
+    on = {n: e for n, e in listed.items() if not e.get("off")}
+    counts: dict[str, int] = {}
+
+    def ask(name: str, entry: dict) -> None:
+        try:
+            counts[name] = len(mcp_client.Server(name, entry["url"], mcp_client.key_of(entry)).tools())
+        except Exception:
+            pass
+
+    threads = [threading.Thread(target=ask, args=item, daemon=True) for item in on.items()]
+    for t in threads:
+        t.start()
+    until = time.time() + wait
+    for t in threads:
+        t.join(max(0.0, until - time.time()))
+    parts = []
+    for name in on:
+        n = counts.get(name)
+        parts.append(f"{name} not answering" if n is None
+                     else f"{name} {n} tool{'' if n == 1 else 's'}")
+    out = len(listed) - len(on)
+    if out:
+        parts.append(f"{out} off")
+    if not on:
+        return SEP.join(parts) + f"{SEP}/configure", GREY
+    up = all(name in counts for name in on)
+    return SEP.join(parts) + ("" if up else f"{SEP}/configure"), "[32m" if up else "[33m"
+
+
 def show_help(extra: dict | None = None) -> None:
     a = accent()
     r = RESET if a else ""
@@ -545,6 +593,16 @@ def main() -> int:
     import threading
     asking = threading.Thread(target=ask_embedding, daemon=True)
     asking.start()
+    tools: dict = {}
+
+    def ask_mcp() -> None:
+        try:
+            tools["line"] = mcp_line()
+        except Exception:
+            pass
+
+    asking_mcp = threading.Thread(target=ask_mcp, daemon=True)
+    asking_mcp.start()
     try:
         lines = endpoint_lines()
     except Exception as e:
@@ -567,6 +625,10 @@ def main() -> int:
     if embedding.get("asked") and (embedding.get("found") is not None
                                    or any(up for _label, _status, up in lines)):
         row("embedding", *embedding_line(embedding.get("found")))
+    # And the servers that publish tools, when any is listed.
+    asking_mcp.join(3.5)
+    if tools.get("line"):
+        row("mcp", *tools["line"])
     print()
 
     # What the page says the memory is doing is a photograph taken as it was
