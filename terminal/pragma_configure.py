@@ -30,7 +30,9 @@ and every row of ITS page is one question -
     remove
 
 Under the endpoints, `add` and the three switches that are the harness's
-rather than one server's.
+rather than one server's - and `mcp`, the servers that publish tools rather
+than a model. Those are kept in a file of their own, ~/.pragma/mcp.json
+(core/mcp_client.py reads it), and have a page of their own.
 
 The four roles are agent (the conversation), recall (the CURATOR, before each
 turn), memory (the faculties that write episodes and beliefs) and critic (the
@@ -317,6 +319,8 @@ def front(state: dict, at: tuple) -> tuple | None:
             where = str((cat.get("embedding") or {}).get("url") or "")
             put(f"{name:<12}{endpoints.short_url(where) if where else 'off'}", blurb,
                 means=("action", name))
+        elif name == "mcp":
+            put(f"{name:<12}{mcp_summary()}", blurb, means=("action", name))
         elif name in OPTION_BLURB:
             put(f"{name:<12}{'on' if opts.get(name) else 'off'}", OPTION_BLURB[name],
                 means=("action", name))
@@ -1160,10 +1164,10 @@ def ask_model(state: dict, name: str) -> bool:
     return True
 
 
-def ask_key(state: dict, name: str) -> bool:
-    entry = state["cat"]["endpoints"][name]
+def key_question(entry: dict, crumbs: str) -> bool:
+    """The key of one server, an endpoint's or an MCP server's. True if it changed."""
     before = (entry.get("key_env", ""), entry.get("key", ""))
-    step(f"{name} > API key")
+    step(crumbs)
     print()
     print("  " + grey("A local server needs none. For one that does, the key is better"))
     print("  " + grey("left in an environment variable whose NAME is given here: the"))
@@ -1180,13 +1184,17 @@ def ask_key(state: dict, name: str) -> bool:
     else:
         entry.pop("key_env", None)
         import getpass
-        # ctrl+D here leaves by the door that puts the endpoint back as it was.
+        # ctrl+D here leaves by the door that puts the server back as it was.
         typed = getpass.getpass("  API key (enter keeps what is set, `-` clears): ").strip()
         if typed == "-":
             entry.pop("key", None)
         elif typed:
             entry["key"] = typed
-    if (entry.get("key_env", ""), entry.get("key", "")) == before:
+    return (entry.get("key_env", ""), entry.get("key", "")) != before
+
+
+def ask_key(state: dict, name: str) -> bool:
+    if not key_question(state["cat"]["endpoints"][name], f"{name} > API key"):
         return False
     state.pop("answers", None)
     return True
@@ -1364,6 +1372,316 @@ def cmd_meaning(state: dict) -> bool:
     return True
 
 
+# -- MCP servers --------------------------------------------------------------
+# Servers that publish tools, not a model. They are not endpoints: nothing is
+# routed to them and nothing is sampled, so none of the questions above apply.
+# What there is to say about one is where it is, whether its tools are
+# offered, and what it publishes - and it is kept in a file of its own,
+# ~/.pragma/mcp.json, which this page is the only thing here to write.
+#
+# The list is read when a conversation or a run starts, so a change made here
+# reaches a conversation the next time its project is opened. The page says so
+# rather than leaving it to be found out.
+
+def mcp_list() -> dict:
+    import mcp_client
+    return mcp_client.read_list()
+
+
+def mcp_summary() -> str:
+    """The front page's word for the list: how many, and how many are off."""
+    try:
+        listed = mcp_list()
+    except Exception:
+        return "the list cannot be read"
+    if not listed:
+        return "none"
+    out = sum(1 for e in listed.values() if e.get("off"))
+    words = f"{len(listed)} server{'' if len(listed) == 1 else 's'}"
+    return words + (f", {out} off" if out else "")
+
+
+def mcp_asks(state: dict, listed: dict) -> dict:
+    """What each listed server answers, by address and key. Kept like answers()."""
+    import mcp_client
+    kept = state.setdefault("mcp_answers", {})
+    missing = [(n, e) for n, e in listed.items()
+               if (e["url"], mcp_client.key_of(e)) not in kept]
+    if time.time() - state.get("mcp_asked", 0.0) > _ASKED_FOR:
+        kept.clear()
+        missing = list(listed.items())
+    if missing:
+        with waiting("asking the server" + ("" if len(missing) == 1 else "s")):
+            for _name, entry in missing:
+                kept[(entry["url"], mcp_client.key_of(entry))] = mcp_probe(entry)
+        state["mcp_asked"] = time.time()
+    return {n: kept[(e["url"], mcp_client.key_of(e))] for n, e in listed.items()}
+
+
+def mcp_probe(entry: dict) -> dict:
+    """Ask one server for its tools: {"up", "text", "tools", "calls_itself"}."""
+    import mcp_client
+    server = mcp_client.Server("probe", entry["url"], mcp_client.key_of(entry))
+    try:
+        tools = server.tools()
+    except Exception as e:
+        return {"up": False, "text": f"does not answer - {e}", "tools": [], "calls_itself": ""}
+    n = len(tools)
+    return {"up": True, "text": f"answers · {n} tool{'' if n == 1 else 's'}", "tools": tools,
+            "calls_itself": server.calls_itself}
+
+
+def mcp_url(url: str) -> str:
+    """The address as typed, with a scheme. The path is the server's own and is
+    not guessed: /mcp is common and nothing says it has to be that."""
+    url = url.strip()
+    if url and not re.match(r"^https?://", url):
+        url = "http://" + url
+    return url
+
+
+def mcp_check_name(listed: dict, name: str, but: str = "") -> None:
+    import mcp_client
+    if not NAME_RE.match(name):
+        raise ValueError("a name is letters, digits, dots, dashes or underscores, 32 at most")
+    prefix = mcp_client._clean(name)
+    if not prefix:
+        raise ValueError(f"'{name}' has nothing in it a tool's name could start with")
+    for other in listed:
+        if other != but and mcp_client._clean(other) == prefix:
+            raise ValueError(f"'{other}' is already on the list, and its tools would carry the same name")
+
+
+def mcp_save(state: dict, listed: dict, note: str = "") -> None:
+    import mcp_client
+    mcp_client.save_list(listed)
+    state["mcp_changed"] = True
+    state["mcp_note"] = note or "saved - a conversation sees it the next time its project is opened"
+
+
+def mcp_add(state: dict, listed: dict) -> str:
+    """Address first, so the server can be asked what it is. The name added, or ""."""
+    step("mcp > add")
+    print()
+    print("  " + grey("The whole address, path included: it is whatever the server"))
+    print("  " + grey("says it is, and /mcp is only the usual one."))
+    print()
+    url = ask("Address of the server", hint="e.g. 127.0.0.1:8000/mcp")
+    if not url:
+        return ""
+    entry = {"url": mcp_url(url)}
+    with waiting("asking the server"):
+        p = mcp_probe(entry)
+    for line in wrapped(f"{entry['url']}  {p['text']}", ok_bad(p["up"]), indent=2):
+        print("  " + line)
+    if not p["up"] and not confirm("Keep this address anyway?", "yes, keep it"):
+        return ""
+    import mcp_client
+    suggestion = mcp_client._clean(p["calls_itself"]).lower()[:32] or "tools"
+    while any(mcp_client._clean(n) == mcp_client._clean(suggestion) for n in listed):
+        suggestion += "2"
+    print()
+    print("  " + grey("The name starts the name of each of its tools, as the agent"))
+    print("  " + grey(f"sees them: {suggestion}__<tool>. Short is better."))
+    print()
+    name = ask("Name", suggestion)
+    if not name:
+        return ""
+    mcp_check_name(listed, name)
+    listed[name] = entry
+    state.setdefault("mcp_answers", {})[(entry["url"], "")] = p
+    mcp_save(state, listed, f"{name} added - a conversation sees it the next time its project is opened")
+    return name
+
+
+def mcp_show_tools(name: str, p: dict) -> None:
+    """What the server publishes, under the names the agent is given."""
+    import mcp_client
+    step(f"mcp > {name} > tools")
+    print()
+    if not p["up"]:
+        say(f"  {p['text']}", "warn")
+    elif not p["tools"]:
+        print("  " + grey("It answers, and publishes no tools."))
+    for spec in p["tools"]:
+        full = mcp_client._clean(name) + mcp_client.SEPARATOR + mcp_client._clean(spec["name"])
+        takes = ", ".join(((spec.get("inputSchema") or {}).get("properties") or {})) or "nothing"
+        print(f"  {full}")
+        for line in wrapped(" ".join(str(spec.get("description") or "no description").split()),
+                            GREY if accent() else ""):
+            print("      " + line)
+        for line in wrapped(f"takes: {takes}", GREY if accent() else ""):
+            print("      " + line)
+        print()
+    ask("", hint="enter to go back")
+
+
+MCP_ROWS = [
+    ("tools",   "what it publishes, as the agent is shown it"),
+    ("offered", "whether the agent is given its tools"),
+    ("name",    "what starts the name of each of its tools"),
+    ("address", "where the server listens, path included"),
+    ("API key", "typed, or left in an environment variable"),
+    ("remove",  "take it off the list"),
+]
+
+
+def mcp_server_page(state: dict, listed: dict, name: str) -> None:
+    """One MCP server: whether it answers, and one row for everything about it."""
+    at = "tools"
+    while name in listed:
+        entry = listed[name]
+        step(f"mcp > {name}")
+        p = mcp_asks(state, {name: entry})[name]
+        print()
+        for line in wrapped(p["text"], ok_bad(p["up"]), indent=2):
+            print("  " + line)
+        told = state.pop("mcp_note", "")
+        if told:
+            print()
+            say(f"  {told}", "good")
+        says = {
+            # How many, not which: four names in a row push every note beside
+            # them off the page, and the row opens the list anyway.
+            "tools": str(len(p["tools"])) if p["up"] else "not known",
+            "offered": "no" if entry.get("off") else "yes",
+            "name": name,
+            "address": re.sub(r"^https?://", "", entry["url"]),
+            "API key": key_text(entry),
+            "remove": "",
+        }
+        options, notes, labels = [], [], []
+        for label, blurb in MCP_ROWS:
+            if label in _GAP_BEFORE:
+                options.append("")
+                notes.append("")
+                labels.append(None)
+            options.append(f"{label:<10}{says[label]}".rstrip())
+            notes.append(blurb)
+            labels.append(label)
+        i = pick("", options, notes, labels.index(at) if at in labels else 0)
+        if i is None:
+            return
+        at = labels[i]
+        try:
+            if at == "tools":
+                mcp_show_tools(name, p)
+            elif at == "offered":
+                if entry.get("off"):
+                    entry.pop("off")
+                else:
+                    entry["off"] = True
+                mcp_save(state, listed)
+            elif at == "name":
+                step(f"mcp > {name} > name")
+                print()
+                print("  " + grey("It starts the name of each of its tools. A conversation"))
+                print("  " + grey("that has used them will know them by the old name."))
+                print()
+                new = ask("Name", name)
+                if new and new != name:
+                    mcp_check_name(listed, new, but=name)
+                    kept = dict(listed)
+                    listed.clear()
+                    for n, e in kept.items():
+                        listed[new if n == name else n] = e
+                    name = new
+                    mcp_save(state, listed)
+            elif at == "address":
+                step(f"mcp > {name} > address")
+                print()
+                url = ask("Address", entry["url"], hint="the whole address, path included")
+                if url and mcp_url(url) != entry["url"]:
+                    entry["url"] = mcp_url(url)
+                    mcp_save(state, listed)
+            elif at == "API key":
+                before = json.dumps(entry, sort_keys=True)
+                try:
+                    changed = key_question(entry, f"mcp > {name} > API key")
+                except (EOFError, KeyboardInterrupt):
+                    changed = False
+                    entry.clear()
+                    entry.update(json.loads(before))
+                if changed:
+                    mcp_save(state, listed)
+            elif at == "remove":
+                step(f"mcp > {name} > remove")
+                print()
+                print("  " + grey(entry["url"]))
+                if confirm(f"Remove '{name}'?", f"yes, remove {name}"):
+                    del listed[name]
+                    mcp_save(state, listed, f"{name} removed")
+        except ValueError as e:
+            print()
+            say(f"  {e}", "warn")
+            ask("", hint="enter to go back")
+
+
+def cmd_mcp(state: dict) -> bool:
+    """The MCP servers: each a row, and `add`. Writes its own file, so it
+    never reports a change to the endpoint catalogue."""
+    import mcp_client
+    try:
+        listed = mcp_list()
+    except mcp_client.McpError as e:
+        step("mcp")
+        print()
+        print(f"  {ok_bad(False)}The list of MCP servers cannot be read:{off()}")
+        for line in wrapped(str(e), indent=4):
+            print("    " + line)
+        print("  Fix it by hand, or move it aside from this page.")
+        if not confirm("Set it aside and start again?", "yes, set it aside"):
+            return False
+        path = mcp_client.servers_path()
+        os.replace(path, path.with_name(path.name + ".broken"))
+        listed = {}
+    at = ""
+    while True:
+        step("mcp")
+        found = mcp_asks(state, listed)
+        told = state.pop("mcp_note", "")
+        if told:
+            print()
+            say(f"  {told}", "good")
+        if not listed:
+            print()
+            print("  " + grey("An MCP server publishes tools: a search over a collection,"))
+            print("  " + grey("a database, another program. Listed here, its tools are"))
+            print("  " + grey("offered to the agent beside Pragma's own. There are none yet."))
+        dim = GREY if accent() else ""
+        options, notes, under, what = [], [], [], []
+        for name, entry in listed.items():
+            p = found[name]
+            options.append(name)
+            notes.append("off - its tools are not offered" if entry.get("off") else "")
+            key = key_text(entry)
+            under.append(wrapped(p["text"], ok_bad(p["up"]))
+                         + wrapped(entry["url"] + ("" if key == "none" else f"  (key {key})"), dim))
+            what.append(name)
+            options.append("")
+            notes.append("")
+            under.append([])
+            what.append(None)
+        options.append("add")
+        notes.append("a server: its address, then its name")
+        under.append([])
+        what.append("+")
+        i = pick("", options, notes, what.index(at) if at in what else 0, under=under)
+        if i is None:
+            return False
+        at = what[i]
+        try:
+            if at == "+":
+                at = mcp_add(state, listed) or "+"
+                if at == "+":
+                    continue
+            mcp_server_page(state, listed, at)
+        except ValueError as e:
+            print()
+            say(f"  {e}", "warn")
+            ask("", hint="enter to go back")
+
+
 # What each switch IS, beside its name - the row says it, not a page.
 OPTION_BLURB = {
     "prediction": "the line you will probably type next, in grey; tab takes it",
@@ -1378,6 +1696,7 @@ ACTIONS = [
     ("prediction", "", cmd_prediction),
     ("critic", "", cmd_critic),
     ("meaning", "the memory searched by meaning, with an embedding server", cmd_meaning),
+    ("mcp", "servers whose tools the agent is offered", cmd_mcp),
 ]
 
 
@@ -1481,6 +1800,8 @@ def main() -> int:
                 changed = True
             continue
         if run_action(state, handlers[name]):
+            changed = True
+        if state.pop("mcp_changed", False):
             changed = True
         opened = state.pop("open", "")
         if opened in cat["endpoints"]:

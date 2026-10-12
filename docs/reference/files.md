@@ -12,7 +12,7 @@ folder Pragma is installed in.
 |---|---|---|
 | `registry.json` | The projects. | the launcher |
 | `endpoints.json` | The model servers, which role uses which, the optional faculties. | `/configure` |
-| `mcp.json` | The MCP servers whose tools the agent is offered. Optional. | you |
+| `mcp.json` | The MCP servers whose tools the agent is offered. Optional. | `/configure` |
 | `projects/<name>/` | One project's memory. In it, `vectors/` is kept only when an embedding server is in use, and can be deleted: it is rebuilt. | the memory worker |
 | `projects/backups/<name>/` | Snapshots, on Linux and macOS. | `/projects backups` |
 | `backups/<name>/` | Snapshots, on Windows. | `/projects backups` |
@@ -108,7 +108,8 @@ It is never part of a snapshot, so no address or key ends up in a zip.
 | `key`, `key_env` | A key sent as a bearer token, or the name of the environment variable that holds one. |
 | `off` | `true` leaves the server out without removing the entry. |
 
-The file is read when a conversation or a run starts. A server that does not
+Written from the `mcp` row of `/configure`, or by hand. The file is read
+when a conversation or a run starts. A server that does not
 answer then has its tools left out, and a line says so. Only tools are used,
 and only what they return as text. `PRAGMA_MCP` names another file.
 

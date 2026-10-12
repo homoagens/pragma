@@ -69,8 +69,19 @@ def _clean(name: str) -> str:
     return re.sub(r"[^A-Za-z0-9_]", "_", str(name)).strip("_")
 
 
-def load_servers() -> dict[str, dict]:
-    """The servers in use, by name. No file is no servers; a bad file raises."""
+def key_of(entry: dict) -> str:
+    """The key an entry sends: written in it, or held by the variable it names."""
+    key = str(entry.get("key") or "")
+    if not key and entry.get("key_env"):
+        key = os.environ.get(str(entry["key_env"]), "")
+    return key
+
+
+def read_list() -> dict[str, dict]:
+    """Every server in the file as it is written, the ones switched off too.
+
+    No file is no servers; a file that cannot be followed raises.
+    """
     path = servers_path()
     try:
         text = path.read_text(encoding="utf-8-sig")
@@ -85,19 +96,32 @@ def load_servers() -> dict[str, dict]:
     listed = data.get("servers") if isinstance(data, dict) else None
     if not isinstance(listed, dict):
         raise McpError(f"{path}: the top level must be an object with \"servers\"")
-    out: dict[str, dict] = {}
     for name, entry in listed.items():
         if not isinstance(entry, dict) or not str(entry.get("url") or "").strip():
             raise McpError(f"{path}: server \"{name}\" has no \"url\"")
         if not _clean(name):
             raise McpError(f"{path}: \"{name}\" cannot be used as a server name")
-        if entry.get("off"):
-            continue
-        key = str(entry.get("key") or "")
-        if not key and entry.get("key_env"):
-            key = os.environ.get(str(entry["key_env"]), "")
-        out[str(name)] = {"url": str(entry["url"]).strip(), "key": key}
-    return out
+    return {str(name): dict(entry) for name, entry in listed.items()}
+
+
+def save_list(servers: dict[str, dict]) -> None:
+    """Write the list so a reader never sees half a file; no servers, no file."""
+    path = servers_path()
+    if not servers:
+        if path.exists():
+            path.unlink()
+        return
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_name(path.name + ".tmp")
+    tmp.write_text(json.dumps({"servers": servers}, indent=2, ensure_ascii=False) + "\n",
+                   encoding="utf-8")
+    os.replace(tmp, path)
+
+
+def load_servers() -> dict[str, dict]:
+    """The servers in use, by name: the list without what is switched off."""
+    return {name: {"url": str(entry["url"]).strip(), "key": key_of(entry)}
+            for name, entry in read_list().items() if not entry.get("off")}
 
 
 class Server:
@@ -106,6 +130,7 @@ class Server:
     def __init__(self, name: str, url: str, key: str = ""):
         self.name, self.url, self.key = name, url, key
         self.instructions = ""
+        self.calls_itself = ""        # the name the server gives for itself
         self._session = ""
         self._version = PROTOCOL
         self._open = False
@@ -185,6 +210,7 @@ class Server:
         }, CONNECT_TIMEOUT * 2)
         self._version = str(result.get("protocolVersion") or PROTOCOL)
         self.instructions = str(result.get("instructions") or "")
+        self.calls_itself = str((result.get("serverInfo") or {}).get("name") or "")
         self._open = True
         # The handshake's third leg. It has no id and so no answer to wait for.
         self._post({"jsonrpc": "2.0", "method": "notifications/initialized"},

@@ -83,6 +83,7 @@ Its rows are the endpoints: each with the roles it serves and, under its name, w
 | `prediction` | on or off: the line you will probably type next, in grey; tab takes it |
 | `critic` | on or off: the work checked against your request before it is delivered |
 | `meaning` | the memory searched by meaning, with an embedding server |
+| `mcp` | servers whose tools the agent is offered |
 
 Enter on an endpoint opens its own page. Every row there is one question, and says its answer beside its name:
 
