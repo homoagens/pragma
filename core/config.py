@@ -802,6 +802,10 @@ WRITE_FILE_HARD_LIMIT = int(os.environ.get(
 # (the actual return value is unaffected — only the message stored for
 # the next LLM turn is compacted). 0 disables the feature.
 OBSERVATION_SOFT_LIMIT = int(os.environ.get("OBSERVATION_SOFT_LIMIT", "12000"))
+# The same limit for what a tool on an MCP server returns. 0, the default, is
+# none: a file cut short can be read again in pieces, an answer from a server
+# cannot, so it is kept whole and costs what it costs in the window.
+MCP_OBSERVATION_LIMIT = int(os.environ.get("MCP_OBSERVATION_LIMIT", "0"))
 
 # Reasoning loop watchdog: reasoning-capable models occasionally get stuck
 # in their <think> block, repeating the same paragraph forever without

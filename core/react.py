@@ -1041,13 +1041,19 @@ def run_agent(cfg: AgentConfig, user_task: str, log_path: Optional[Path] = None,
         # logged to disk; only the copy stored for the next LLM turn gets
         # truncated, so the model doesn't carry a 10kB file content forward.
         soft_limit = getattr(config, "OBSERVATION_SOFT_LIMIT", 0)
+        # What an MCP server returns is kept whole unless a limit of its own
+        # is set: it is what was asked for, and there is no going back for the
+        # part that was dropped. A long one is paid for in the window instead.
+        _remote = hasattr(cfg.skills.get(action), "__mcp__")
+        if _remote:
+            soft_limit = getattr(config, "MCP_OBSERVATION_LIMIT", 0)
         if soft_limit > 0 and len(observation) > soft_limit:
             head = observation[: soft_limit // 2]
             tail = observation[-soft_limit // 4 :]
             # What to do about it depends on where the answer came from. A
             # file can be read again in pieces; an answer from an MCP server
             # cannot, and the same call would be cut in the same place.
-            if hasattr(cfg.skills.get(action), "__mcp__"):
+            if _remote:
                 way_out = ("The middle is lost: the same call would be cut again. "
                            "Ask for less at a time - fewer results, less of each, "
                            "a narrower request")

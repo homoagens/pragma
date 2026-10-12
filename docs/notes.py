@@ -143,6 +143,8 @@ CONFIG = {
         "twice `MAX_TOKENS`, at most 20000"),
     "OBSERVATION_SOFT_LIMIT": ("budgets",
         "Characters above which a tool's output is shortened in the history. `0` disables."),
+    "MCP_OBSERVATION_LIMIT": ("budgets",
+        "The same limit for what a tool on an MCP server returns. `0` keeps it whole."),
     "PRAGMA_MD_MAX_CHARS": ("budgets",
         "Characters of the workspace's `PRAGMA.md` that are passed to the agent."),
 
