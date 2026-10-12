@@ -522,10 +522,18 @@ def _when(ts: str) -> str:
     return str(ts)[:10]
 
 
-def _episode_card(ref: str, c: dict) -> str:
+def _episode_card(ref: str, c: dict, days: list | None = None) -> str:
     ep = c["ep"]
     tag = " [dormant]" if c["dormant"] else ""
     when = _when(ep.get("ts", ""))
+    # ONE OF THE DAYS THE TASK NAMES, said on the card. The days are stated
+    # once, above, as dates; a card of the last fortnight says "4 days ago".
+    # Left to match the two, the model is doing the subtraction again - and,
+    # asked what was said "last Friday", takes the card that talks about
+    # Fridays over the one that is from Friday.
+    day = str(ep.get("ts", ""))[:10]
+    if days and any(first <= day <= last for first, last, _words in days):
+        when = f"{when}, one of the days the task names" if when else "one of the days the task names"
     stamp = f" ({when})" if when else ""
     lines = [f"{ref}{tag}{stamp} goal: {ep.get('goal', '')}"]
     nar = _truncate(ep.get("narrative", ""), config.MEMORY_NARRATIVE_CHARS)
@@ -560,8 +568,9 @@ def _ask_curator(task: str, eps: list[dict], lns: list[dict],
     it is credited as substantive, which is what every recall used to get.
     """
     cards = []
+    days = _days(task)
     for i, c in enumerate(eps, 1):
-        cards.append(_episode_card(f"E{i}", c))
+        cards.append(_episode_card(f"E{i}", c, days))
     for i, c in enumerate(lns, 1):
         cards.append(_learning_card(f"L{i}", c))
     # The date anchors the relative stamps on the cards. Without it "yesterday"
@@ -572,7 +581,7 @@ def _ask_curator(task: str, eps: list[dict], lns: list[dict],
     # column of dates on the other is a subtraction the model is asked to do
     # ten times over. Said only when the task names a time.
     named = "".join(f"\nDAYS THE TASK NAMES: {a} to {b} (\"{words}\")" if a != b
-                    else f"\nDAYS THE TASK NAMES: {a} (\"{words}\")" for a, b, words in _days(task))
+                    else f"\nDAYS THE TASK NAMES: {a} (\"{words}\")" for a, b, words in days)
     payload = (f"TODAY: {today}{named}\n\nTASK:\n{task}\n\nCANDIDATES:\n"
                + "\n".join(cards))
     try:
