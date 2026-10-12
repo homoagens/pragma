@@ -282,6 +282,18 @@ def run(path: Path) -> int:
         jobs.write(path, job)
         lock.release()
 
+    try:
+        # Why nothing was kept outlives the job; anything else replaces it.
+        if job.get("status") == "done" and not job.get("episodes"):
+            said = [str(x) for x in job.get("log") or [] if str(x).startswith("[SEGMENTER] ")]
+            line = said[-1][len("[SEGMENTER] "):] if said else ""
+            why = line.split(" — ", 1)[1].strip() if " — " in line else ""
+            jobs.note_kept_nothing(store, len(job.get("turns") or []), why)
+        else:
+            jobs.clear_kept_nothing(store)
+    except Exception:
+        pass
+
     if job.get("status") == "done":
         n = len(job.get("episodes") or [])
         _say(f"done - {n} episode{'' if n == 1 else 's'} written to {store / 'episodes'}"

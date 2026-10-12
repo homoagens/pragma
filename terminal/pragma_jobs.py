@@ -160,6 +160,40 @@ def running(store: Path | None = None) -> dict | None:
     return None
 
 
+# --- a conversation that left nothing -----------------------------------------
+# A job that ends with no episode deletes itself like any other that finished,
+# and with it went the only place that said WHY: from the outside, a memory
+# that chose to keep nothing and a memory that broke looked the same. So the
+# worker leaves one small file saying what was decided, the briefing shows it,
+# and the next job to finish - whatever it writes - takes it away.
+
+def _kept_nothing_path(store: Path | None = None) -> Path:
+    return jobs_dir(store) / "kept_nothing.json"
+
+
+def kept_nothing(store: Path | None = None) -> dict | None:
+    """What the last conversation that left no memory was told, or None."""
+    try:
+        data = json.loads(_kept_nothing_path(store).read_text(encoding="utf-8"))
+        return data if isinstance(data, dict) else None
+    except Exception:
+        return None
+
+
+def note_kept_nothing(store: Path | None, turns: int, why: str) -> None:
+    path = _kept_nothing_path(store)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps({"finished": _utc(), "turns": turns, "why": why},
+                               ensure_ascii=False), encoding="utf-8")
+
+
+def clear_kept_nothing(store: Path | None = None) -> None:
+    try:
+        _kept_nothing_path(store).unlink()
+    except OSError:
+        pass
+
+
 # --- writing ------------------------------------------------------------------
 
 def create(turns: list[dict], workspace: str, note: str,

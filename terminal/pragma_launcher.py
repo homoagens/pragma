@@ -363,6 +363,13 @@ def show_brief(entry: dict, data: dict) -> None:
         news.append(_n(data["fading"], "episode") + " close to fading")
     if data.get("last_goal"):
         news.append("last time you were on: " + data["last_goal"])
+    if data.get("kept_nothing"):
+        # Not a failure, so not among the lines above that want something done:
+        # the memory read the conversation and decided. It says what it decided.
+        why = str(data.get("kept_nothing_why") or "").strip()
+        news.append("the last conversation left no memory: "
+                    + _n(data.get("kept_nothing_turns"), "turn") + " read, none kept"
+                    + (f' - "{why}"' if why else " - no reason was given"))
     if news:
         print()
         say("  since you left", "dim")

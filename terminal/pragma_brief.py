@@ -143,10 +143,17 @@ def brief(store: Path, since: str = "") -> dict:
         out["working_note"] = (live[0].get("note") or "") if live else ""
         out["jobs_failed"] = sum(
             1 for j in items if j.get("status") in ("failed", "abandoned", "stopped"))
+        # A conversation the memory read and kept nothing of: said once it is
+        # no longer being written, with the reason it gave.
+        left = None if live else jobs.kept_nothing(root)
+        out["kept_nothing"] = bool(left)
+        out["kept_nothing_turns"] = int((left or {}).get("turns") or 0)
+        out["kept_nothing_why"] = str((left or {}).get("why") or "")
     except Exception:
         out["working"] = 0
         out["working_note"] = ""
         out["jobs_failed"] = 0
+        out["kept_nothing"] = False
 
     # The backend, asked here so the entry page can say whether it is up. It is
     # the thing worth knowing BEFORE choosing "chat", and the launcher clears

@@ -124,6 +124,7 @@ Like `endpoints.json`, it is never part of a snapshot.
 | `learnings.json` | The beliefs drawn from the episodes. |
 | `jobs/job_<stamp>_<n>.json` | Memory being written, or that did not finish. |
 | `jobs/.lock` | Held by whoever is writing to this memory. |
+| `jobs/kept_nothing.json` | Left by a conversation the memory read and kept nothing of: how many turns, and why. The briefing shows it; the next job to finish removes it. |
 
 What is inside an episode or a belief is Pragma's own and may change between
 versions. Read them with [`/memory`](commands.md#memory), which shows the
