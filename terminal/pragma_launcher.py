@@ -613,15 +613,93 @@ def open_project(heading: str = "Open a project") -> dict | None:
     return entries[chosen] if chosen is not None else None
 
 
-def delete_project(entry: dict | None = None) -> dict | None:
-    """Remove a project: the registry entry and the memory it keeps.
+def _workspace_kept(doomed: dict, entries: list) -> str:
+    """Why this project's workspace must not be removed with it, or "".
 
-    The same page, and the same meaning, as Invoke-DeleteProject on Windows -
-    a destructive action that means two different things on two systems is
-    worse than not having it. What Pragma made, Pragma removes; the workspace
-    is the operator's own folder, often a git repository and often the only
-    copy of something, so it is never touched. Snapshots stay too: they are
-    the way back from exactly this.
+    Deleting a project deletes its folder, and a folder is not always only a
+    project's: it can be the home directory, a folder another project works
+    in, or one that holds Pragma itself or its memories. Removing any of those
+    takes away far more than was asked, so the folder is kept and the page
+    says why before anything is confirmed.
+    """
+    raw = str(doomed.get("workspace") or "").strip()
+    if not raw:
+        return "the entry names none"
+    ws = Path(raw).expanduser()
+    if not ws.is_dir():
+        return "it is not there"
+    ws = ws.resolve()
+    if Path(raw).expanduser().is_symlink():
+        return "it is a link to a folder somewhere else"
+    if ws == Path(ws.anchor):
+        return "it is the root of a disk"
+    # (what it is, where, whether a folder INSIDE it is off limits too). Inside
+    # the home folder is where a workspace normally is; inside Pragma or its
+    # memories is never one.
+    held = (("your home folder", Path.home(), False),
+            ("Pragma's own folder", ROOT, True),
+            ("Pragma's memories", Path.home() / ".pragma", True))
+    for what, path, inside in held:
+        try:
+            path = path.resolve()
+        except OSError:
+            continue
+        if ws == path or ws in path.parents:
+            return f"it is, or holds, {what}"
+        if inside and path in ws.parents:
+            return f"it is inside {what}"
+    for other in entries:
+        if other.get("name") == doomed.get("name"):
+            continue
+        for key, what in (("workspace", "works in"), ("memory", "keeps its memory in")):
+            theirs = str(other.get(key) or "").strip()
+            if not theirs:
+                continue
+            try:
+                theirs = Path(theirs).expanduser().resolve()
+            except OSError:
+                continue
+            # The same folder, or one inside this one: removing this would
+            # remove theirs. A project that works in a folder ABOVE this one
+            # does not make this one any less this project's.
+            if theirs == ws or ws in theirs.parents:
+                return f"the project '{other.get('name')}' {what} it"
+    return ""
+
+
+def _folder_holds(folder: Path) -> tuple[int, int, bool]:
+    """(files, bytes, is a git repository) of a folder, without following links."""
+    files = size = 0
+    for base, dirs, names in os.walk(folder, followlinks=False):
+        for name in names:
+            files += 1
+            try:
+                size += os.lstat(os.path.join(base, name)).st_size
+            except OSError:
+                pass
+    return files, size, (folder / ".git").exists()
+
+
+def _size(n: int) -> str:
+    for unit in ("bytes", "KB", "MB", "GB"):
+        if n < 1024 or unit == "GB":
+            return f"{n:.0f} {unit}" if unit == "bytes" else f"{n:.1f} {unit}"
+        n /= 1024
+    return ""
+
+
+def delete_project(entry: dict | None = None) -> dict | None:
+    """Remove a project: the registry entry, its memory and its workspace.
+
+    Deleting a project deletes all of it. The folder it works in goes with the
+    memory, because a project whose files outlive it is not deleted, it is
+    orphaned - and the page counts what is in that folder, and says when it is
+    a git repository, before the name is typed. A folder that is more than
+    this project's (see _workspace_kept) is the one thing left alone, and the
+    page says so. Snapshots stay: they are the way back from exactly this.
+
+    Windows still keeps the workspace (Invoke-DeleteProject): the two are to
+    be brought back into line.
 
     Returns the project still open afterwards, or None when it was the one
     deleted (or when there was none to begin with).
@@ -640,27 +718,40 @@ def delete_project(entry: dict | None = None) -> dict | None:
     there = bool(str(store)) and store.is_dir()
     episodes = len(list((store / "episodes").glob("ep_*.json"))) if there else 0
     backups = store.parent / "backups" / doomed["name"]
+    kept = _workspace_kept(doomed, entries)
+    workspace = None if kept else Path(str(doomed["workspace"])).expanduser().resolve()
+    # The store is often inside nothing and the workspace elsewhere; when the
+    # store sits in the workspace, removing the folder removes both.
+    files, size, git = _folder_holds(workspace) if workspace else (0, 0, False)
 
     title("Delete a project", doomed["name"])
     print()
     say("  This removes, for good:", "dim")
+    if workspace:
+        print(f"    the workspace     {workspace}")
+        print(f"                      {_n(files, 'file')}, {_size(size)}")
+        if git:
+            say("                      a git repository: what was never pushed is lost", "warn")
     if there:
         print(f"    the memory        {store}")
         print(f"                      {_n(episodes, 'episode')}, and every belief drawn from them")
-    else:
+    elif not workspace:
         # A page that says "this removes the memory" about a folder that is
         # not there is how someone comes away sure a store was deleted when
         # nothing was. It says what it found instead.
         print("    the registry entry - and nothing else: there is no store at")
         print(f"                      {store or '(the entry names none)'}")
-    if there:
+    if there or workspace:
         print("    the registry entry")
     print()
-    say("  This does NOT touch:", "dim")
-    print(f"    the workspace     {doomed.get('workspace')}")
-    if backups.is_dir():
-        print(f"    the snapshots     {backups}")
-    print()
+    if kept or backups.is_dir():
+        say("  This does NOT touch:", "dim")
+        if kept:
+            print(f"    the workspace     {doomed.get('workspace') or '(none)'}")
+            print(f"                      {kept}")
+        if backups.is_dir():
+            print(f"    the snapshots     {backups}")
+        print()
     say("  There is no undo.", "bad")
     print()
     if (ask("type the project name to confirm", hint="ctrl+D goes back") or "") != doomed["name"]:
@@ -669,18 +760,20 @@ def delete_project(entry: dict | None = None) -> dict | None:
         pause()
         return entry
     write_registry([e for e in read_registry() if e["name"] != doomed["name"]])
-    gone = True
-    if there:
+    left = []
+    for what, folder in (("store", store if there else None), ("workspace", workspace)):
+        if folder is None or not folder.exists():
+            continue
         try:
-            shutil.rmtree(store)
+            shutil.rmtree(folder)
         except Exception as e:
-            gone = False
-            say(f"  the entry is gone, but the store is not: {type(e).__name__}: {str(e)[:90]}", "warn")
-            say(f"  remove it by hand: {store}", "dim")
-    if not there:
-        say(f"  '{doomed['name']}' removed from the registry. There was no store to delete.", "good")
+            left.append(folder)
+            say(f"  the entry is gone, but the {what} is not: {type(e).__name__}: {str(e)[:90]}", "warn")
+            say(f"  remove it by hand: {folder}", "dim")
+    if not there and not workspace:
+        say(f"  '{doomed['name']}' removed from the registry. There was nothing else to delete.", "good")
     else:
-        say(f"  '{doomed['name']}' deleted" + ("" if gone else " from the registry"), "good")
+        say(f"  '{doomed['name']}' deleted" + (" from the registry" if left else ""), "good")
     print()
     pause()
     return None if (entry and entry["name"] == doomed["name"]) else entry
