@@ -4,7 +4,7 @@
 
 # pragma_consolidate.py - the consolidation worker.
 #
-#     python tools/pragma_consolidate.py <job.json>
+#     python terminal/pragma_consolidate.py <job.json>
 #
 # Runs one job filed by pragma_jobs: the segmenter decides what was worth
 # keeping, the consolidator writes an episode per kept segment, the sweep and
@@ -32,7 +32,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 _ROOT = Path(__file__).resolve().parent.parent
-for _p in (str(_ROOT), str(_ROOT / "core"), str(_ROOT / "tools")):
+for _p in (str(_ROOT), str(_ROOT / "core"), str(_ROOT / "terminal")):
     if _p not in sys.path:
         sys.path.insert(0, _p)
 

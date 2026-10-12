@@ -9,7 +9,7 @@
 # exactly when it was last touched and what faded since. The moment of return is
 # the one moment a sense of time is worth something.
 #
-#     python tools/pragma_brief.py <store_dir> [--since <iso>]
+#     python terminal/pragma_brief.py <store_dir> [--since <iso>]
 #
 # Prints one JSON object on stdout and nothing else, so the caller never has to
 # parse prose. Every failure is reported inside that object rather than raised:
@@ -131,7 +131,7 @@ def brief(store: Path, since: str = "") -> dict:
     # line the store simply changes under you between one briefing and the
     # next - which is the failure mode a background worker has to avoid.
     try:
-        sys.path.insert(0, str(_ROOT / "tools"))
+        sys.path.insert(0, str(_ROOT / "terminal"))
         import pragma_jobs as jobs
         # `store` here is the EPISODES directory - that is what the launcher
         # passes and what _beliefs already walks up from. Jobs live beside it,

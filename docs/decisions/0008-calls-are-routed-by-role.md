@@ -2,7 +2,7 @@
 
 - **Date:** 2026-09-11
 - **Status:** accepted
-- **Where:** [`core/endpoints.py`](../../core/endpoints.py), [`tools/pragma_configure.py`](../../tools/pragma_configure.py)
+- **Where:** [`core/endpoints.py`](../../core/endpoints.py), [`terminal/pragma_configure.py`](../../terminal/pragma_configure.py)
 
 ## Context
 

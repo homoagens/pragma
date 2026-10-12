@@ -5,7 +5,7 @@
 
 r"""The launcher, in Python: the same two screens, on Linux and macOS too.
 
-    python -m tools.pragma_launcher            (or the `pragma` script)
+    python -m terminal.pragma_launcher            (or the `pragma` script)
 
 WHY IT EXISTS. The launcher was PowerShell - a Windows program for a Windows
 desktop - while everything it launches is Python that already runs anywhere:
@@ -17,10 +17,10 @@ WHAT IT IS. The same two screens the PowerShell launcher draws, built out of
 the pieces both share, so there is one implementation of each thing and not
 two to keep in step:
 
-    the home prompt      tools/pragma_home.py  (commands, endpoints, plugins)
-    the endpoint pages   tools/pragma_configure.py
-    the briefing         tools/pragma_brief.py, drawn here
-    the background work  tools/pragma_jobs.py
+    the home prompt      terminal/pragma_home.py  (commands, endpoints, plugins)
+    the endpoint pages   terminal/pragma_configure.py
+    the briefing         terminal/pragma_brief.py, drawn here
+    the background work  terminal/pragma_jobs.py
     the conversation     python -m agent.chat, with the project's environment
 
 What is only here is what PowerShell used to own: the registry of projects,
@@ -45,7 +45,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-sys.path[:0] = [str(ROOT), str(ROOT / "core"), str(ROOT / "tools")]
+sys.path[:0] = [str(ROOT), str(ROOT / "core"), str(ROOT / "terminal")]
 
 import pragma_home as home                     # noqa: E402  the home prompt, shared
 # The arrows, the digits, the first letter, ctrl+D: one menu, every page that
@@ -151,7 +151,7 @@ def save_setting(name: str, key: str, value: str) -> None:
 # ── the screen ────────────────────────────────────────────────────────────────
 
 # The mark from interface-web/logo.png beside the word, exactly as
-# Show-Logo draws it in tools/Pragma.psm1 - one picture, two launchers.
+# Show-Logo draws it in terminal/Pragma.psm1 - one picture, two launchers.
 # F is a full cell, T an upper half, B a lower half: letters, so this file
 # stays readable, and so a terminal that cannot draw blocks needs one map
 # rather than a second copy of the art.
@@ -292,7 +292,7 @@ def brief(entry: dict, env: dict) -> dict:
     store = Path(entry.get("memory") or "") / "episodes"
     try:
         with child_owns_ctrl_c():
-            done = subprocess.run([sys.executable, str(ROOT / "tools" / "pragma_brief.py"), str(store)],
+            done = subprocess.run([sys.executable, str(ROOT / "terminal" / "pragma_brief.py"), str(store)],
                                   capture_output=True, text=True, env=env, timeout=120)
         return json.loads(done.stdout or "{}")
     except Exception as e:
@@ -308,7 +308,7 @@ def _n(count, one: str, many: str = "") -> str:
 def show_brief(entry: dict, data: dict) -> None:
     """Two questions: can I start, and what changed while I was away. Plus one
     line for each thing that wants you. The same page the Windows launcher
-    draws - see Show-Brief in tools/Pragma.psm1."""
+    draws - see Show-Brief in terminal/Pragma.psm1."""
     a = accent()
     r = RESET if a else ""
     g = GREY if a else ""
@@ -759,7 +759,7 @@ def projects_page() -> dict | None:
 
 def configure_page() -> None:
     with child_owns_ctrl_c():
-        subprocess.run([sys.executable, str(ROOT / "tools" / "pragma_configure.py")], cwd=str(ROOT))
+        subprocess.run([sys.executable, str(ROOT / "terminal" / "pragma_configure.py")], cwd=str(ROOT))
 
 
 def run() -> int:

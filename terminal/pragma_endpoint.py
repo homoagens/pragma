@@ -4,7 +4,7 @@
 
 # pragma_endpoint.py - what this window is talking to, and on what terms.
 #
-#     python tools/pragma_endpoint.py
+#     python terminal/pragma_endpoint.py
 #
 # Prints one JSON object on stdout: the resolved endpoint, the model actually
 # loaded there, the sampling the server would apply on its own, and the

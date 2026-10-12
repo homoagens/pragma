@@ -7,7 +7,7 @@
 # Import this once from your PowerShell profile and `pragma` exists in every
 # window, with no paths to type:
 #
-#     Import-Module <repo>\tools\Pragma.psd1
+#     Import-Module <repo>\terminal\Pragma.psd1
 #
 # WHAT THIS IS. `pragma` opens a home prompt (/open, /new, /configure, /exit)
 # and stays there: an action runs and returns to it, and /exit leaves the

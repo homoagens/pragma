@@ -8,7 +8,7 @@ r"""/configure: the servers Pragma talks to, and everything about each one.
 Reached as /configure from the launcher's home prompt, on either system. It
 also runs on its own, for a machine being set up by hand:
 
-    venv\Scripts\python.exe tools\pragma_configure.py
+    venv\Scripts\python.exe terminal\pragma_configure.py
 
 WHAT IS HERE AND WHY IT IS ALL HERE. An endpoint is a server under a name you
 choose. The machine at that address is running one model: it either reasons or
@@ -72,7 +72,7 @@ import urllib.request
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-sys.path[:0] = [str(ROOT), str(ROOT / "core"), str(ROOT / "tools")]
+sys.path[:0] = [str(ROOT), str(ROOT / "core"), str(ROOT / "terminal")]
 # This page probes endpoints itself, with the answers it shows; config's
 # import-time probe would only add a wait before the page appears.
 os.environ.setdefault("PRAGMA_NO_ENDPOINT_PROBE", "1")

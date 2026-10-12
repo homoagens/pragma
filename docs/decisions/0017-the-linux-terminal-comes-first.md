@@ -2,7 +2,7 @@
 
 - **Date:** 2026-10-06
 - **Status:** accepted
-- **Where:** [`tools/pragma_launcher.py`](../../tools/pragma_launcher.py), [`tools/Pragma.psm1`](../../tools/Pragma.psm1), [`agent/server.py`](../../agent/server.py)
+- **Where:** [`terminal/pragma_launcher.py`](../../terminal/pragma_launcher.py), [`terminal/Pragma.psm1`](../../terminal/Pragma.psm1), [`agent/server.py`](../../agent/server.py)
 
 ## Context
 

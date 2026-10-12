@@ -35,7 +35,7 @@ core/skills/wip_*/
 
 # The endpoint list the monitor remembers: ports are a fact about one machine
 # (and over a tunnel they are the tunnel's, not the server's), never the project's
-tools/endpoint_monitor.local.json
+terminal/endpoint_monitor.local.json
 
 # Local-only docs (not for publication)
 MANUAL.md
@@ -65,5 +65,5 @@ sandbox/
 
 # Superseded entry points, kept on the machine that still has muscle memory
 # for them and out of the repository: configure.bat/.sh are now /configure in
-# the harness, and the logic they called lives in tools/pragma_configure.py.
+# the harness, and the logic they called lives in terminal/pragma_configure.py.
 old_tools/

@@ -1,6 +1,6 @@
 # monitor.ps1 - open the endpoint dashboard.
 #
-#     .\tools\monitor.ps1
+#     .\terminal\monitor.ps1
 #
 # Shows, for each endpoint you add: whether it answers, which model it really
 # has loaded, its context size, the sampling it applies to whatever a request

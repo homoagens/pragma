@@ -8,4 +8,4 @@ rem
 rem The browser interface has moved to pragma-gui.bat.
 cd /d "%~dp0"
 powershell -NoExit -ExecutionPolicy Bypass -Command ^
-  "Import-Module '%~dp0tools\Pragma.psd1'; pragma"
+  "Import-Module '%~dp0terminal\Pragma.psd1'; pragma"

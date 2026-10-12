@@ -5,7 +5,7 @@
 
 Pragma is two screens, and each has its own short list. A command starts with `/`; anything else typed inside a project is said to the agent.
 
-Read from [`tools/pragma_home.py`](../../tools/pragma_home.py), [`agent/chat.py`](../../agent/chat.py) and [`tools/pragma_configure.py`](../../tools/pragma_configure.py).
+Read from [`terminal/pragma_home.py`](../../terminal/pragma_home.py), [`agent/chat.py`](../../agent/chat.py) and [`terminal/pragma_configure.py`](../../terminal/pragma_configure.py).
 
 ## At home
 

@@ -58,7 +58,7 @@ from pathlib import Path
 _HERE = Path(__file__).resolve().parent
 _ROOT = _HERE.parent
 _CORE = _ROOT / "core"
-_TOOLS = _ROOT / "tools"
+_TOOLS = _ROOT / "terminal"
 for p in (str(_ROOT), str(_CORE), str(_TOOLS)):
     if p not in sys.path:
         sys.path.insert(0, p)
@@ -607,7 +607,7 @@ def _settings_here() -> None:
     runs the new way. Outside a project there is nowhere to keep a setting,
     and the one question that matters for a single conversation is asked here.
     """
-    tool = _ROOT / "tools" / "pragma_launcher.py"
+    tool = _ROOT / "terminal" / "pragma_launcher.py"
     name = os.environ.get("PRAGMA_PROJECT", "").strip()
     if not name or not tool.is_file():
         return _steps_here()
@@ -1019,7 +1019,7 @@ def _show_memory(view: str) -> bool:
     Called rather than reimplemented: two renderings of the same memory would
     disagree the first time one of them changed.
     """
-    tool = Path(__file__).resolve().parent.parent / "tools" / "mem_map.py"
+    tool = Path(__file__).resolve().parent.parent / "terminal" / "mem_map.py"
     if not tool.is_file():
         print(f"  this needs {tool}, which is missing from this copy of Pragma.")
         return True
@@ -1192,7 +1192,7 @@ def _status_lines() -> list[tuple[str, str]]:
     # nothing about the memory looked like a Pragma with no memory at all.
     # Whatever happens, these two lines say something.
     out.append(("", ""))
-    tool = Path(__file__).resolve().parent.parent / "tools" / "pragma_brief.py"
+    tool = Path(__file__).resolve().parent.parent / "terminal" / "pragma_brief.py"
     why, brief = "", {}
     try:
         done = subprocess.run([sys.executable, str(tool), str(cfg.EPISODES_DIR)],
@@ -1308,7 +1308,7 @@ def _run_slash(line: str) -> bool:
         # is true afterwards: the catalogue is re-read on every call, so new
         # roles apply here from the next turn; .env is read once at import, so
         # that change is announced as taking effect next time.
-        tool = Path(__file__).resolve().parent.parent / "tools" / "pragma_configure.py"
+        tool = Path(__file__).resolve().parent.parent / "terminal" / "pragma_configure.py"
         if not tool.is_file():
             print(f"  this needs {tool}, which is missing from this copy of Pragma.")
             return True

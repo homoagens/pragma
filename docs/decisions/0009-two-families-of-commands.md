@@ -2,7 +2,7 @@
 
 - **Date:** 2026-09-16
 - **Status:** accepted
-- **Where:** [`agent/chat.py`](../../agent/chat.py), [`tools/pragma_home.py`](../../tools/pragma_home.py)
+- **Where:** [`agent/chat.py`](../../agent/chat.py), [`terminal/pragma_home.py`](../../terminal/pragma_home.py)
 
 ## Context
 

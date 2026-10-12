@@ -25,7 +25,7 @@ param(
 
 $ErrorActionPreference = 'Stop'
 $Root     = $PSScriptRoot
-$Manifest = Join-Path $Root "tools\Pragma.psd1"
+$Manifest = Join-Path $Root "terminal\Pragma.psd1"
 $Begin    = "# >>> pragma >>>"
 $End      = "# <<< pragma <<<"
 
@@ -234,7 +234,7 @@ Write-Done "environment ready"
 # 2. A repository unzipped from a download carries the mark of the internet on
 # every file, and PowerShell refuses to load a marked module. Cloning does not,
 # so this usually finds nothing - and costs nothing when it does.
-Get-ChildItem -Path (Join-Path $Root "tools") -Filter "Pragma.ps*1" |
+Get-ChildItem -Path (Join-Path $Root "terminal") -Filter "Pragma.ps*1" |
     ForEach-Object { Unblock-File -Path $_.FullName -ErrorAction SilentlyContinue }
 
 # 3. The profile

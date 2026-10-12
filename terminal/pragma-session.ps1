@@ -1,6 +1,6 @@
 # pragma-session.ps1 - the batch session commands, shared by every session.
 #
-# You do not run this file directly. The launcher (`pragma`, tools/Pragma.psm1)
+# You do not run this file directly. The launcher (`pragma`, terminal/Pragma.psm1)
 # builds $PragmaSession for the project you open and dot-sources this file.
 #
 # WHY IT LIVES HERE AND NOT IN THE SESSION FILE. The logic is written once, in
@@ -134,9 +134,9 @@ function script:Get-ContractLine {
 function script:Invoke-MemTool([string[]]$toolArgs) {
     Push-Location $script:SRepo
     if ($toolArgs -and $toolArgs[0]) {
-        & $script:PragmaPy tools\mem_map.py @toolArgs
+        & $script:PragmaPy terminal\mem_map.py @toolArgs
     } else {
-        & $script:PragmaPy tools\mem_map.py
+        & $script:PragmaPy terminal\mem_map.py
     }
     Pop-Location
 }

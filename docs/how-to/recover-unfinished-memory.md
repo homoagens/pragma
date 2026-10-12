@@ -54,7 +54,7 @@ The same can be done by hand, with the file the page names:
 
 ```
 cd /home/you/pragma
-venv/bin/python tools/pragma_consolidate.py /home/you/.pragma/projects/first/jobs/job_20261001T142451Z_480.json
+venv/bin/python terminal/pragma_consolidate.py /home/you/.pragma/projects/first/jobs/job_20261001T142451Z_480.json
 ```
 
 Running the same file twice is safe: a conversation already written down is

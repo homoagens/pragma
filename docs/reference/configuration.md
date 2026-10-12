@@ -37,7 +37,7 @@ Used until `/configure` writes its own file; the timeouts apply either way.
 | `LLM_TIMEOUT` | `900` | Seconds before one model call is abandoned. *Project setting `Timeout`.* | [`core/config.py`](../../core/config.py) |
 | `LLM_STREAM_CALLS` | `1` | `0` makes every call a blocking request, for a server whose streaming misbehaves. | [`core/config.py`](../../core/config.py) |
 | `ENDPOINT_PROBE_TIMEOUT` | `1.0` | Seconds a connection may take before an endpoint counts as not connected. | [`core/config.py`](../../core/config.py) |
-| `PRAGMA_NO_ENDPOINT_PROBE` | unset | `1` skips asking the server for its context window at start-up. | [`core/config.py`](../../core/config.py), [`tools/pragma_launcher.py`](../../tools/pragma_launcher.py) |
+| `PRAGMA_NO_ENDPOINT_PROBE` | unset | `1` skips asking the server for its context window at start-up. | [`core/config.py`](../../core/config.py), [`terminal/pragma_launcher.py`](../../terminal/pragma_launcher.py) |
 
 ## Sampling and reasoning
 
@@ -139,8 +139,8 @@ What stops a model that is repeating itself.
 | `EPISODE_RECALL_RULE` | `asymptotic` | `asymptotic` or `additive`: how that boost is applied. | [`core/config.py`](../../core/config.py) |
 | `EPISODE_RECALL_PROCEDURAL_FACTOR` | `0.25` | Fraction of the boost earned by a recall made only to see how something is done. `1.0` treats every recall alike. | [`core/config.py`](../../core/config.py) |
 | `EPISODE_IMPORTANCE_ANCHORS` | `5` | Stored episodes shown as a scale when a new one is scored. `0` shows none. | [`core/config.py`](../../core/config.py) |
-| `EPISODE_DECAY_HALF_LIFE_DAYS` | `30` | Days for an episode's salience to halve when it is not recalled. `0` disables decay. | [`core/config.py`](../../core/config.py), [`tools/mem_map.py`](../../tools/mem_map.py) |
-| `EPISODE_DORMANT_THRESHOLD` | `0.15` | Salience below which an episode goes dormant. | [`core/config.py`](../../core/config.py), [`tools/mem_map.py`](../../tools/mem_map.py) |
+| `EPISODE_DECAY_HALF_LIFE_DAYS` | `30` | Days for an episode's salience to halve when it is not recalled. `0` disables decay. | [`core/config.py`](../../core/config.py), [`terminal/mem_map.py`](../../terminal/mem_map.py) |
+| `EPISODE_DORMANT_THRESHOLD` | `0.15` | Salience below which an episode goes dormant. | [`core/config.py`](../../core/config.py), [`terminal/mem_map.py`](../../terminal/mem_map.py) |
 | `EPISODE_DELETE_AFTER_DAYS` | `0` | Days dormant before an episode nothing refers to is deleted. `0` never deletes. | [`core/config.py`](../../core/config.py) |
 | `SEMANTIC_MIN_SOURCES` | `2` | Distinct episodes a new belief must rest on. | [`core/config.py`](../../core/config.py) |
 | `SEMANTIC_CONFIRM_BONUS` | `0.1` | Confidence a belief gains each time it is confirmed. | [`core/config.py`](../../core/config.py) |
@@ -174,9 +174,9 @@ Both are off unless turned on in `/configure`; the variables override that for o
 
 | Variable | Default | What it is | Read in |
 |---|---|---|---|
-| `PRAGMA_DATA_DIR` | `~/.pragma` | Folder holding the memory in use. The launcher sets it to the open project's own. | [`core/config.py`](../../core/config.py), [`tools/mem_map.py`](../../tools/mem_map.py) |
+| `PRAGMA_DATA_DIR` | `~/.pragma` | Folder holding the memory in use. The launcher sets it to the open project's own. | [`core/config.py`](../../core/config.py), [`terminal/mem_map.py`](../../terminal/mem_map.py) |
 | `LEARNINGS_PATH` | `learnings.json` in the data folder | File holding the beliefs. | [`core/config.py`](../../core/config.py) |
-| `PRAGMA_PLUGINS` | `~/.pragma/plugins` | Folder the home screen reads plugins from. | [`tools/pragma_home.py`](../../tools/pragma_home.py) |
+| `PRAGMA_PLUGINS` | `~/.pragma/plugins` | Folder the home screen reads plugins from. | [`terminal/pragma_home.py`](../../terminal/pragma_home.py) |
 
 ## Set by the launcher
 
@@ -188,7 +188,7 @@ Written for the conversation it starts. Listed so that nobody sets them by hand.
 | `PRAGMA_WORKSPACE` | unset | Folder of the open project. A batch run uses it when `--cwd` is not given. | [`agent/batch.py`](../../agent/batch.py), [`agent/chat.py`](../../agent/chat.py) |
 | `PRAGMA_REQUEST` | unset | File through which the conversation asks the launcher to do something on the way out. | [`agent/chat.py`](../../agent/chat.py) |
 | `PRAGMA_SESSION_ID` | unset | Identifies a session, so that writing it down twice produces one episode. | [`core/skills/episode_consolidate/skill.py`](../../core/skills/episode_consolidate/skill.py) |
-| `PRAGMA_ACCENT` | `178;132;255` | Accent colour of the screens, as `R;G;B`. | [`agent/chat.py`](../../agent/chat.py), [`agent/harness.py`](../../agent/harness.py), [`tools/mem_map.py`](../../tools/mem_map.py), [`tools/pragma_home.py`](../../tools/pragma_home.py), [`tools/pragma_menu.py`](../../tools/pragma_menu.py) |
+| `PRAGMA_ACCENT` | `178;132;255` | Accent colour of the screens, as `R;G;B`. | [`agent/chat.py`](../../agent/chat.py), [`agent/harness.py`](../../agent/harness.py), [`terminal/mem_map.py`](../../terminal/mem_map.py), [`terminal/pragma_home.py`](../../terminal/pragma_home.py), [`terminal/pragma_menu.py`](../../terminal/pragma_menu.py) |
 
 ## For development and tests
 

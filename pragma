@@ -24,4 +24,4 @@ if [ -z "$py" ]; then
     echo "        python3 -m venv venv && venv/bin/pip install -r requirements.txt" >&2
     exit 1
 fi
-exec "$py" "$here/tools/pragma_launcher.py" "$@"
+exec "$py" "$here/terminal/pragma_launcher.py" "$@"

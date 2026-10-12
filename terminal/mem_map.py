@@ -5,22 +5,22 @@
 # mem_map.py — inspect a Pragma memory store.
 #
 # Usage:
-#   python tools\mem_map.py [store_dir]            -> memory map (default)
-#   python tools\mem_map.py [store_dir] --beliefs  -> semantic beliefs
-#   python tools\mem_map.py [store_dir] --diff     -> before/after of every
+#   python terminal\mem_map.py [store_dir]            -> memory map (default)
+#   python terminal\mem_map.py [store_dir] --beliefs  -> semantic beliefs
+#   python terminal\mem_map.py [store_dir] --diff     -> before/after of every
 #                                                               reinterpretation/reformulation
-#   python tools\mem_map.py [store_dir] --oblio    -> dormant zone only
-#   python tools\mem_map.py [store_dir] --last     -> the newest episode, in full
-#   python tools\mem_map.py [store_dir] --sweep    -> MUTATES: run the real
+#   python terminal\mem_map.py [store_dir] --oblio    -> dormant zone only
+#   python terminal\mem_map.py [store_dir] --last     -> the newest episode, in full
+#   python terminal\mem_map.py [store_dir] --sweep    -> MUTATES: run the real
 #                                                               forgetting sweep now (moves
 #                                                               below-threshold episodes to
 #                                                               dormant/), instead of waiting
 #                                                               for the next consolidation
-#   python tools\mem_map.py [store_dir] --clock-set-> MUTATES: settle the story
+#   python terminal\mem_map.py [store_dir] --clock-set-> MUTATES: settle the story
 #                                                               clock: bank the real time
 #                                                               elapsed at the PREVIOUS pace,
 #                                                               then record the current pace
-#   python tools\mem_map.py [store_dir] --jump N   -> MUTATES: the time machine's
+#   python terminal\mem_map.py [store_dir] --jump N   -> MUTATES: the time machine's
 #                                                               core. Ages every episode by N
 #                                                               simulated months (timestamps
 #                                                               shifted back by N * half_life

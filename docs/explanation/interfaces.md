@@ -19,7 +19,7 @@ macOS runs the Linux launcher. It is not what Pragma is tested on.
 ## The terminal on Linux
 
 Start it with `pragma`. The launcher is
-[`tools/pragma_launcher.py`](../../tools/pragma_launcher.py), and a project
+[`terminal/pragma_launcher.py`](../../terminal/pragma_launcher.py), and a project
 opens into [`agent/chat.py`](../../agent/chat.py).
 
 This is the reference. The [tutorial](../tutorial/first-project.md) and every
@@ -29,7 +29,7 @@ too.
 ## The terminal on Windows
 
 Start it with `pragma` in PowerShell. The launcher is
-[`tools/Pragma.psm1`](../../tools/Pragma.psm1).
+[`terminal/Pragma.psm1`](../../terminal/Pragma.psm1).
 
 Most of what you see is the very same code as on Linux: the home prompt,
 `/configure`, the briefing, `/jobs` and the conversation itself are single

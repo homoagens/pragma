@@ -2,7 +2,7 @@
 
 - **Date:** 2026-09-05
 - **Status:** accepted
-- **Where:** [`tools/pragma_consolidate.py`](../../tools/pragma_consolidate.py), [`tools/pragma_jobs.py`](../../tools/pragma_jobs.py)
+- **Where:** [`terminal/pragma_consolidate.py`](../../terminal/pragma_consolidate.py), [`terminal/pragma_jobs.py`](../../terminal/pragma_jobs.py)
 
 ## Context
 

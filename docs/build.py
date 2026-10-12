@@ -77,7 +77,7 @@ def _sources() -> list[Path]:
     setting. Not the wip_ ones either - they are in nobody else's checkout.
     """
     out = []
-    for top in ("core", "agent", "tools"):
+    for top in ("core", "agent", "terminal"):
         for path in sorted((ROOT / top).rglob("*.py")):
             parts = path.relative_to(ROOT).parts
             if any(p.startswith(("_", "wip_")) and p != "__init__.py" for p in parts[:-1]):
@@ -229,7 +229,7 @@ def configuration(notes) -> str:
         raise Stop("settings and their descriptions disagree:\n  " + "\n  ".join(problems))
 
     setting_of = {var: key for key, var in tables(
-        ROOT / "tools" / "pragma_launcher.py", {"ENV_OF"})["ENV_OF"].items()}
+        ROOT / "terminal" / "pragma_launcher.py", {"ENV_OF"})["ENV_OF"].items()}
 
     out = [BANNER, "# Configuration\n", notes.CONFIG_INTRO.rstrip()]
     for key, title, lead in notes.CONFIG_GROUPS:
@@ -269,9 +269,9 @@ def _rows(head: tuple[str, str], rows) -> list[str]:
 
 
 def commands(notes) -> str:
-    home_py = ROOT / "tools" / "pragma_home.py"
+    home_py = ROOT / "terminal" / "pragma_home.py"
     chat_py = ROOT / "agent" / "chat.py"
-    conf_py = ROOT / "tools" / "pragma_configure.py"
+    conf_py = ROOT / "terminal" / "pragma_configure.py"
 
     home = tables(home_py, {"COMMANDS", "PROJECT_ACTIONS", "ALIASES"})
     chat = tables(chat_py, {"_COMMANDS", "_MEMORY_VIEWS", "_VIEW_ALIASES",

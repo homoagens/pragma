@@ -113,8 +113,8 @@ how it samples. With one endpoint, it serves all four.
 
 | Way in | Start it with | Entry point | Where it stands |
 |---|---|---|---|
-| The terminal on Linux | `pragma` | [`tools/pragma_launcher.py`](../../tools/pragma_launcher.py), then [`agent/chat.py`](../../agent/chat.py) | where Pragma is developed and tested |
-| The terminal on Windows | `pragma`, in PowerShell | [`tools/Pragma.psm1`](../../tools/Pragma.psm1), then [`agent/chat.py`](../../agent/chat.py) | follows Linux |
+| The terminal on Linux | `pragma` | [`terminal/pragma_launcher.py`](../../terminal/pragma_launcher.py), then [`agent/chat.py`](../../agent/chat.py) | where Pragma is developed and tested |
+| The terminal on Windows | `pragma`, in PowerShell | [`terminal/Pragma.psm1`](../../terminal/Pragma.psm1), then [`agent/chat.py`](../../agent/chat.py) | follows Linux |
 | One task, no interaction | `python -m agent.batch --task "..." --cwd DIR` | [`agent/batch.py`](../../agent/batch.py) | the same code everywhere |
 | The browser | `python -m agent.run` | [`agent/run.py`](../../agent/run.py), then [`agent/server.py`](../../agent/server.py) and [`interface-web/`](../../interface-web) | the old interface, not being worked on |
 
@@ -180,21 +180,21 @@ The short version. [Files](../reference/files.md) has what is inside each.
 | [`server.py`](../../agent/server.py) | The server behind the browser interface. |
 | [`run.py`](../../agent/run.py) | Starts that server. |
 
-### `tools/` — the screens around a conversation
+### `terminal/` — the screens around a conversation
 
 | File | What it is |
 |---|---|
-| [`pragma_launcher.py`](../../tools/pragma_launcher.py) | The launcher on Linux and macOS: the registry of projects, opening one. |
-| [`Pragma.psm1`](../../tools/Pragma.psm1), [`pragma-session.ps1`](../../tools/pragma-session.ps1) | The same launcher for Windows PowerShell. |
-| [`pragma_home.py`](../../tools/pragma_home.py) | The home prompt, its commands, the plugins. |
-| [`pragma_configure.py`](../../tools/pragma_configure.py) | The `/configure` pages. |
-| [`pragma_menu.py`](../../tools/pragma_menu.py) | The lists walked with the arrows. |
-| [`pragma_brief.py`](../../tools/pragma_brief.py) | The briefing shown when a project opens. |
-| [`pragma_jobs.py`](../../tools/pragma_jobs.py) | The record of background memory work, and `/jobs`. |
-| [`pragma_consolidate.py`](../../tools/pragma_consolidate.py) | The memory worker. |
-| [`mem_map.py`](../../tools/mem_map.py) | The views of a memory store behind `/memory`. |
-| [`pragma_endpoint.py`](../../tools/pragma_endpoint.py) | Reports what an endpoint serves and how it samples. |
-| [`endpoint_monitor.py`](../../tools/endpoint_monitor.py) | A dashboard for model servers. It stands alone and knows nothing of Pragma. |
+| [`pragma_launcher.py`](../../terminal/pragma_launcher.py) | The launcher on Linux and macOS: the registry of projects, opening one. |
+| [`Pragma.psm1`](../../terminal/Pragma.psm1), [`pragma-session.ps1`](../../terminal/pragma-session.ps1) | The same launcher for Windows PowerShell. |
+| [`pragma_home.py`](../../terminal/pragma_home.py) | The home prompt, its commands, the plugins. |
+| [`pragma_configure.py`](../../terminal/pragma_configure.py) | The `/configure` pages. |
+| [`pragma_menu.py`](../../terminal/pragma_menu.py) | The lists walked with the arrows. |
+| [`pragma_brief.py`](../../terminal/pragma_brief.py) | The briefing shown when a project opens. |
+| [`pragma_jobs.py`](../../terminal/pragma_jobs.py) | The record of background memory work, and `/jobs`. |
+| [`pragma_consolidate.py`](../../terminal/pragma_consolidate.py) | The memory worker. |
+| [`mem_map.py`](../../terminal/mem_map.py) | The views of a memory store behind `/memory`. |
+| [`pragma_endpoint.py`](../../terminal/pragma_endpoint.py) | Reports what an endpoint serves and how it samples. |
+| [`endpoint_monitor.py`](../../terminal/endpoint_monitor.py) | A dashboard for model servers. It stands alone and knows nothing of Pragma. |
 
 ### The repository root
 

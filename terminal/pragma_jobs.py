@@ -484,7 +484,7 @@ def start(path) -> bool:
     if job and job.get("status") not in ("pending", "running"):
         job.update(status="pending", pid=0, error="", finished="", log=[])
         write(path, job)
-    worker = _ROOT / "tools" / "pragma_consolidate.py"
+    worker = _ROOT / "terminal" / "pragma_consolidate.py"
     exe = sys.executable
     kwargs: dict = {}
     if os.name == "nt":

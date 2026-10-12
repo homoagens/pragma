@@ -2,7 +2,7 @@
 
 - **Date:** 2026-09-25
 - **Status:** accepted
-- **Where:** [`core/config.py`](../../core/config.py), [`core/suggest.py`](../../core/suggest.py), [`tools/pragma_configure.py`](../../tools/pragma_configure.py)
+- **Where:** [`core/config.py`](../../core/config.py), [`core/suggest.py`](../../core/suggest.py), [`terminal/pragma_configure.py`](../../terminal/pragma_configure.py)
 
 ## Context
 

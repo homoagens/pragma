@@ -10,7 +10,7 @@ conversation, so it gets the same prompt: commands completed as they are
 typed, and a grey hint on the empty line. PowerShell reading a line has
 neither, which is why the line is read here.
 
-    venv\Scripts\python.exe tools\pragma_home.py --out <file>
+    venv\Scripts\python.exe terminal\pragma_home.py --out <file>
 
 The launcher draws the page and runs this for the line. /help and mistakes
 are answered here, under the page, and the prompt asks again. Anything the
@@ -290,7 +290,7 @@ def memory_jobs() -> list[tuple[str, str]]:
     written. Each job's last log line names the faculty at work.
     """
     os.environ.setdefault("PRAGMA_NO_ENDPOINT_PROBE", "1")
-    sys.path[:0] = [str(ROOT), str(ROOT / "core"), str(ROOT / "tools")]
+    sys.path[:0] = [str(ROOT), str(ROOT / "core"), str(ROOT / "terminal")]
     try:
         import pragma_jobs as jobs
     except Exception:
@@ -324,7 +324,7 @@ def show_jobs() -> str | None:
     home page has to be drawn again in its place.
     """
     os.environ.setdefault("PRAGMA_NO_ENDPOINT_PROBE", "1")
-    sys.path[:0] = [str(ROOT), str(ROOT / "core"), str(ROOT / "tools")]
+    sys.path[:0] = [str(ROOT), str(ROOT / "core"), str(ROOT / "terminal")]
     try:
         import pragma_jobs as jobs
     except Exception as e:
