@@ -1290,6 +1290,14 @@ CURATOR_CANDIDATES_RECENT    = int(os.environ.get("CURATOR_CANDIDATES_RECENT", "
 # is offered exactly what it was before. `false` offers every request that.
 CURATOR_DATED = os.environ.get(
     "CURATOR_DATED", "true").lower() in ("1", "true", "yes")
+# Seats for what a request names. With an embedding server the search goes by
+# meaning, which finds what a request is about and is poor at what it NAMES -
+# a surname, an acronym, a file. So the best matches by words that meaning did
+# not offer get this many seats of their own, for episodes and for beliefs,
+# ADDED to the others (core/curator.py, _by_words). 0 offers what meaning
+# alone offers, as it was. Without an embedding server this changes nothing:
+# the search goes by words.
+CURATOR_CANDIDATES_WORDS = int(os.environ.get("CURATOR_CANDIDATES_WORDS", "2"))
 
 # ── Segmenting a batch run ──
 # Whether a one-shot `pragma "task"` is JUDGED before it becomes an episode.

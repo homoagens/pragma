@@ -154,6 +154,7 @@ What stops a model that is repeating itself.
 | `SEMANTIC_CONTRADICT_MALUS` | `0.2` | Confidence it loses each time it is contradicted. | [`core/config.py`](../../core/config.py) |
 | `SEMANTIC_RETIRE_CONTRADICTIONS` | `2` | Contradictions after which a belief is retired. | [`core/config.py`](../../core/config.py) |
 | `CURATOR_DATED` | `true` | Whether a request that names a time ("last week", "in June") is also offered the episodes of those days. `false` offers it what any other request gets. | [`core/config.py`](../../core/config.py) |
+| `CURATOR_CANDIDATES_WORDS` | `2` | With an embedding server, how many more episodes and beliefs are offered for matching the request's words when meaning did not offer them. `0` offers none. | [`core/config.py`](../../core/config.py) |
 | `RECONSOLIDATION_ENABLED` | `true` | Whether later sessions may revise what earlier episodes and beliefs mean. | [`core/config.py`](../../core/config.py) |
 | `RECONSOLIDATE_MAX_EPISODES` | `3` | Related past episodes re-read each time a session is written down. | [`core/config.py`](../../core/config.py) |
 | `RECONSOLIDATE_REFORMULATE_AT` | same as `SEMANTIC_RETIRE_CONTRADICTIONS` | Contradictions after which a belief is reworded rather than retired. | [`core/config.py`](../../core/config.py) |

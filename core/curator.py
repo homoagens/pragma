@@ -221,6 +221,73 @@ def _tokens(s: str) -> set[str]:
             if len(w) > 2 and w not in _EMPTY_WORDS}
 
 
+def _terms(s: str) -> list[str]:
+    """The same words as _tokens, every time they occur: how often a word is
+    used in a text is half of what makes it a match for that word."""
+    return [_singular(w) for w in (w.lower() for w in _WORD.findall(s or ""))
+            if len(w) > 2 and w not in _EMPTY_WORDS]
+
+
+# ── Words beside meaning ──────────────────────────────────────────────────────
+# Meaning finds what a request is ABOUT, in whatever words and whatever
+# language. It is poor at what a request NAMES: a surname, an acronym, the name
+# of a file, an identifier. Those carry almost no meaning to be near to - and
+# they are exactly what the words find at once, and what a person most often
+# has in mind when they ask after something by its name.
+#
+# So when the search goes by meaning, the best matches BY WORDS that meaning
+# did not offer are given a few seats of their own. The words are scored by
+# BM25: how often the request's words occur in a text, weighed by how rare each
+# is in this store and by how long the text is.
+#
+# ADDED, NOT FUSED. The two rankings could be joined into one, and with a
+# handful of seats that is a mistake: every text that enters for its words
+# takes the place of one that was there for its meaning, and when the request
+# and the memory are in different languages the words' ranking is noise - so
+# the right memory is pushed out by a wrong one that happens to share a number
+# or a name. Joined rankings suit a search that hands thirty candidates to a
+# reranker; here the one who reranks is the curator, and it is handed seven.
+# So nobody who had a seat loses it, as with the seats by date below, and the
+# price is a slightly longer list.
+#
+# Without an embedding server nothing here is used, and the search goes by
+# words as it always has.
+_BM25_K1, _BM25_B = 1.2, 0.75
+
+
+def _bm25(task: str, texts: list[str]) -> list[float]:
+    """How well each text matches the request's words: 0 for none in common."""
+    import math
+    from collections import Counter
+    docs = [_terms(t) for t in texts]
+    asked = set(_terms(task))
+    if not docs or not asked:
+        return [0.0] * len(docs)
+    mean = (sum(len(d) for d in docs) / len(docs)) or 1.0
+    found = Counter(t for d in docs for t in set(d) if t in asked)
+    out = []
+    for d in docs:
+        score = 0.0
+        for term, times in Counter(t for t in d if t in asked).items():
+            rarity = math.log(1 + (len(docs) - found[term] + 0.5) / (found[term] + 0.5))
+            score += rarity * times * (_BM25_K1 + 1) / (
+                times + _BM25_K1 * (1 - _BM25_B + _BM25_B * len(d) / mean))
+        out.append(score)
+    return out
+
+
+def _by_words(task: str, texts: list[str], have: set[int], seats: int) -> list[int]:
+    """Which texts get a seat for their words: the best matches that are not
+    offered already, best first, `seats` of them at most. A text that shares
+    no word with the request never gets one."""
+    if seats <= 0:
+        return []
+    scores = _bm25(task, texts)
+    found = sorted((i for i, score in enumerate(scores) if score > 0 and i not in have),
+                   key=lambda i: scores[i], reverse=True)
+    return found[:seats]
+
+
 def _truncate(text: str, limit: int) -> str:
     text = " ".join((text or "").split())
     return text if len(text) <= limit else text[:limit].rstrip() + "..."
@@ -375,6 +442,11 @@ def _episode_candidates(task: str, workspace: str,
             if id(c["ep"]) not in seen:
                 out.append(c)
                 seen.add(id(c["ep"]))
+        # And the ones the request names: see _by_words.
+        have = {i for i, c in enumerate(scored) if id(c["ep"]) in seen}
+        for i in _by_words(task, [_episode_text(c["ep"]) for c in scored], have,
+                           getattr(config, "CURATOR_CANDIDATES_WORDS", 2)):
+            out.append(scored[i])
         return _dated(task, scored, out), len(scored)
 
     # RELEVANCE IS THE KEYWORDS, NOT THE SCORE. The workspace boost is a
@@ -461,7 +533,9 @@ def _learning_candidates(task: str,
         for c, value in zip(out, near):
             c["near"] = value
         out.sort(key=lambda c: (c["near"], float(c["entry"].get("confidence", 0.5))), reverse=True)
-        return out[:m], pool
+        named = _by_words(task, [embed.belief_text(c["entry"]) for c in out], set(range(min(m, len(out)))),
+                          getattr(config, "CURATOR_CANDIDATES_WORDS", 2))
+        return out[:m] + [out[i] for i in named], pool
 
     matched = [c for c in out if c["kw"] > 0]
     matched.sort(key=lambda c: c["score"], reverse=True)

@@ -274,6 +274,8 @@ CONFIG = {
         "Contradictions after which a belief is retired."),
     "CURATOR_DATED": ("memory",
         "Whether a request that names a time (\"last week\", \"in June\") is also offered the episodes of those days. `false` offers it what any other request gets."),
+    "CURATOR_CANDIDATES_WORDS": ("memory",
+        "With an embedding server, how many more episodes and beliefs are offered for matching the request's words when meaning did not offer them. `0` offers none."),
     "RECONSOLIDATION_ENABLED": ("memory",
         "Whether later sessions may revise what earlier episodes and beliefs mean."),
     "RECONSOLIDATE_MAX_EPISODES": ("memory",
