@@ -106,14 +106,7 @@ ALIASES.update({f"/{action}": f"/projects {action}" for action in PROJECT_ACTION
 ROOT = Path(__file__).resolve().parent.parent
 
 
-def agent_alone() -> bool:
-    """Whether this run of Pragma is the agent alone - `pragma --agent`: nothing
-    recalled, nothing written to memory. Every page that would speak of the
-    memory asks here, and says less."""
-    return os.environ.get("PRAGMA_AGENT", "").strip().lower() in ("1", "true", "yes", "on")
-
-
-AGENT_ALONE_SAYS = "off for this run (--agent): nothing is recalled, nothing is written"
+from pragma_menu import AGENT_ALONE_SAYS, agent_alone  # noqa: E402,F401  shared with the launcher
 
 
 def rows() -> list[tuple[str, str]]:
@@ -451,6 +444,9 @@ def endpoint_lines() -> list[tuple[str, str, bool]]:
         roles = endpoints.assignments()
     except endpoints.EndpointError as e:
         return [("endpoints", f"catalogue unusable - {e} · /configure", False)]
+    # Only the roles this run asks anything of: see pragma_menu.roles_here.
+    from pragma_menu import roles_here
+    roles = {role: ep for role, ep in roles.items() if role in roles_here()}
     found = endpoints.probe_all(list(roles.values()))
 
     # What is served first, where it is last: the model is what someone came

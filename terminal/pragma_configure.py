@@ -80,8 +80,8 @@ sys.path[:0] = [str(ROOT), str(ROOT / "core"), str(ROOT / "terminal")]
 os.environ.setdefault("PRAGMA_NO_ENDPOINT_PROBE", "1")
 
 import endpoints  # noqa: E402
-from pragma_menu import (GREY, RESET, SEP, accent, ask, choose, clear,  # noqa: E402
-                         columns, confirm, pick, say, title, waiting)
+from pragma_menu import (GREY, RESET, SEP, accent, agent_alone, ask, choose, clear,  # noqa: E402,F401
+                         columns, confirm, pick, roles_here, say, title, waiting)
 
 CHANGED, UNCHANGED = 0, 3
 NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,31}$")
@@ -113,6 +113,17 @@ REASONS_BLURB = {
     "memory": "writing and revising what is remembered, after the turn",
     "critic": "judging the work against what was asked, before the answer",
 }
+
+
+def role_says(table: dict, role: str) -> str:
+    """What a role is, from one of the two tables above - but for the recall's
+    where Pragma runs as the agent alone: with no memory to choose from, the
+    one thing still asked of it is the line you will probably type next."""
+    if role == "recall" and agent_alone():
+        return "guessing the line you will type next"
+    return table[role]
+
+
 KNOB_BLURB = {
     "temperature":      "how far from the most likely word it will go",
     "top_p":            "keep the words that make up this much of the mass",
@@ -212,8 +223,9 @@ def roles_of(cat: dict, name: str) -> str:
     on the page you assign it from; what a server DOES belongs next to the
     server.
     """
-    serving = [r for r in endpoints.ROLES if role_target(cat, r)[0] == name]
-    if len(serving) == len(endpoints.ROLES):
+    roles = roles_here()
+    serving = [r for r in roles if role_target(cat, r)[0] == name]
+    if len(roles) > 1 and len(serving) == len(roles):
         return "everything"
     return " ".join(serving)
 
@@ -315,6 +327,8 @@ def front(state: dict, at: tuple) -> tuple | None:
     # Enter flips it.
     opts = cat.get("options") or {}
     for name, blurb, _handler in ACTIONS:
+        if name == "meaning" and agent_alone():
+            continue                 # what a memory is searched by, with no memory
         if name == "meaning":
             where = str((cat.get("embedding") or {}).get("url") or "")
             put(f"{name:<12}{endpoints.short_url(where) if where else 'off'}", blurb,
@@ -966,8 +980,9 @@ def reasons_text(entry: dict) -> str:
     """Who reasons on this endpoint, as one line - or "" if nothing can."""
     if entry.get("kind") != "thinking":
         return ""
-    on = [r for r in endpoints.ROLES if endpoints.reasons_for(entry, r)]
-    if len(on) == len(endpoints.ROLES):
+    roles = roles_here()
+    on = [r for r in roles if endpoints.reasons_for(entry, r)]
+    if len(roles) > 1 and len(on) == len(roles):
         return "all of them"
     return ", ".join(on) if on else "nobody"
 
@@ -988,13 +1003,14 @@ def who_reasons(entry: dict, name: str) -> bool:
         print()
         print("  " + grey("This model reasons. Each role can be asked"))
         print("  " + grey("to use it, or to answer at once instead."))
+        roles = roles_here()
         rows = [f"{role:<8}{'reasons' if endpoints.reasons_for(entry, role) else 'answers at once'}"
-                for role in endpoints.ROLES]
-        i = pick("", rows, [REASONS_BLURB[r] for r in endpoints.ROLES], at)
+                for role in roles]
+        i = pick("", rows, [role_says(REASONS_BLURB, r) for r in roles], min(at, len(roles) - 1))
         if i is None:
             return changed
         at = i
-        role = endpoints.ROLES[i]
+        role = roles[i]
         now = {r: endpoints.reasons_for(entry, r) for r in endpoints.ROLES}
         now[role] = not now[role]
         # Written only when it differs from what an endpoint that says nothing
@@ -1055,13 +1071,17 @@ def ask_serves(state: dict, name: str) -> bool:
         print()
         print("  " + grey(f"Who answers each role now. Enter gives it to {name};"))
         print("  " + grey("to take one away, give it to another endpoint from its page."))
-        rows = ["everything"] + [f"{role:<8}{role_target(cat, role)[0]}" for role in endpoints.ROLES]
-        i = pick("", rows, ["every role - what most setups are"]
-                 + [ROLE_BLURB[r] for r in endpoints.ROLES], at)
+        # "everything" is a row only where there is more than one thing, and
+        # it means the roles on this page: one that is not shown is not moved.
+        roles = roles_here()
+        every = ["everything"] if len(roles) > 1 else []
+        rows = every + [f"{role:<8}{role_target(cat, role)[0]}" for role in roles]
+        i = pick("", rows, ["every role - what most setups are"][:len(every)]
+                 + [role_says(ROLE_BLURB, r) for r in roles], min(at, len(rows) - 1))
         if i is None:
             return changed
         at = i
-        for role in (endpoints.ROLES if i == 0 else (endpoints.ROLES[i - 1],)):
+        for role in (roles if every and i == 0 else (roles[i - len(every)],)):
             if cat["roles"].get(role) != name:
                 cat["roles"][role] = name
                 changed = True

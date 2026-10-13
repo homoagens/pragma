@@ -1943,6 +1943,10 @@ def main() -> int:
 
     # Same resolution order as batch: --cwd > PRAGMA_WORKSPACE > current dir.
     cwd = Path(args.cwd or os.environ.get("PRAGMA_WORKSPACE") or Path.cwd()).resolve()
+    if not args.memory:
+        # /configure and /settings are other programs, opened from here: this
+        # is how they learn there is no memory to ask about.
+        os.environ.setdefault("PRAGMA_AGENT", "1")
     if not cwd.is_dir():
         print(f"ERROR: workspace not found: {cwd}", file=sys.stderr)
         return 1

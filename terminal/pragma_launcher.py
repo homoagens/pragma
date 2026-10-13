@@ -50,7 +50,7 @@ sys.path[:0] = [str(ROOT), str(ROOT / "core"), str(ROOT / "terminal")]
 import pragma_home as home                     # noqa: E402  the home prompt, shared
 # The arrows, the digits, the first letter, ctrl+D: one menu, every page that
 # offers a choice - this one and /configure.
-from pragma_menu import (SEP, accent, ask, choose, clear, confirm, menu,   # noqa: E402,F401
+from pragma_menu import (SEP, accent, ask, choose, clear, columns, confirm, menu,   # noqa: E402,F401
                          pause, pick, read_key, row, say, title)
 
 REGISTRY = Path.home() / ".pragma" / "registry.json"
@@ -171,6 +171,19 @@ LOGO = (
     " FT                       |___/",
 )
 BLOCKS = {"F": "█", "T": "▀", "B": "▄"}
+# The word the mark carries when Pragma runs as the agent alone, in the same
+# lettering, line for line beside the art above; and the column it starts at.
+LOGO_AGENT = (
+    "",
+    "",
+    "",
+    "                    _",
+    "  __ _ __ _ ___ _ _| |_",
+    r" / _` / _` / -_) ' \  _|",
+    r" \__,_\__, \___|_||_\__|",
+    "      |___/",
+)
+LOGO_AGENT_AT = 44
 
 
 def terminal_lines(fallback: int = 40) -> int:
@@ -212,18 +225,23 @@ def logo(compact: bool | None = None) -> None:
     if compact is None:
         compact = terminal_lines() < ROOM_FOR_THE_MARK
     a = accent()
+    alone = home.agent_alone()
     if compact:
         print()
-        print(f"  {a}Pragma{RESET if a else ''}")
+        print(f"  {a}Pragma{' agent' if alone else ''}{RESET if a else ''}")
         return
     r = RESET if a else ""
+    art = LOGO
+    if alone and columns() >= LOGO_AGENT_AT + 28:      # where there is room for it
+        art = tuple((line.ljust(LOGO_AGENT_AT) + word).rstrip()
+                    for line, word in zip(LOGO, LOGO_AGENT))
     glyph = BLOCKS
     try:                                   # a console that cannot encode them
         "".join(BLOCKS.values()).encode(sys.stdout.encoding or "ascii")
     except Exception:
         glyph = {"F": "#", "T": "#", "B": "#"}
     print()
-    for line in LOGO:
+    for line in art:
         print(f"  {a}" + "".join(glyph.get(c, c) for c in line) + r)
 
 

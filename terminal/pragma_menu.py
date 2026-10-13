@@ -113,6 +113,34 @@ def accent() -> str:
     return ESC + "[38;2;" + raw + "m" if sys.stdout.isatty() else ""
 
 
+def agent_alone() -> bool:
+    """Whether this run of Pragma is the agent alone - `pragma --agent`: nothing
+    recalled, nothing written to memory. Every page that would speak of the
+    memory asks here, and leaves out what there is nothing to do with."""
+    return os.environ.get("PRAGMA_AGENT", "").strip().lower() in ("1", "true", "yes", "on")
+
+
+AGENT_ALONE_SAYS = "off for this run (--agent): nothing is recalled, nothing is written"
+
+
+def roles_here() -> tuple:
+    """The roles that are asked something in this run: the ones these pages
+    show, assign and switch.
+
+    All of them, unless Pragma runs as the agent alone (`pragma --agent`).
+    Then the memory's is asked nothing, and the recall's and the critic's only
+    while the switch that uses each of them - prediction, critic - is on. What
+    the roles left out are set to is not touched: it is there for the next run
+    with the memory.
+    """
+    import endpoints                 # core/: on the path of every page that asks
+    if not agent_alone():
+        return endpoints.ROLES
+    used = {"agent": True, "recall": endpoints.option("prediction", False),
+            "critic": endpoints.option("critic", False)}
+    return tuple(r for r in endpoints.ROLES if used.get(r))
+
+
 def say(text: str = "", style: str = "") -> None:
     a = accent()
     if not a or not style:

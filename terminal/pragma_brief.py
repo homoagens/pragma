@@ -200,10 +200,12 @@ def brief(store: Path, since: str = "") -> dict:
     # already says all there is.
     try:
         import endpoints
+        sys.path.append(str(_ROOT / "terminal"))
+        from pragma_menu import roles_here      # only the roles this run asks
         roles = endpoints.assignments()
         agent_url = roles["agent"].base_url
         others = [(r, ep) for r, ep in roles.items()
-                  if r != "agent" and ep.base_url != agent_url]
+                  if r != "agent" and ep.base_url != agent_url and r in roles_here()]
         if others:
             found = endpoints.probe_all([ep for _r, ep in others])
             out["roles"] = [{"role": r, "name": ep.name,
