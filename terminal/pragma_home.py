@@ -55,6 +55,7 @@ from pathlib import Path
 
 REGISTRY = Path.home() / ".pragma" / "registry.json"
 GREY, RESET = "\033[38;5;242m", "\033[0m"
+GREEN, YELLOW = "\033[32m", "\033[33m"
 
 
 def _encodes(text: str) -> bool:
@@ -475,15 +476,20 @@ def embedding_line(found: dict | None) -> tuple[str, str]:
     return f"{where}{SEP}not answering - the memory is searched by words{SEP}/configure", "\033[33m"
 
 
-def mcp_line(wait: float = 3.0) -> tuple[str, str] | None:
-    """(text, colour) for the line that says which MCP servers are listed and
-    whether each answers, or None when none is listed: unlike the embedding
-    server, this is not something every machine could be expected to have.
+def mcp_rows(wait: float = 3.0) -> list[tuple[str, str]]:
+    """One (text, colour) per MCP server listed, in the order of the list, or
+    [] when none is: unlike the embedding server, this is not something every
+    machine could be expected to have.
 
-    Each server is asked on a thread of its own and the line waits `wait`
+    A ROW EACH, AND EACH IN ITS OWN COLOUR - green for a server that answers,
+    yellow for one that does not, grey for one switched off. They were one
+    line, yellow as soon as any server was down, which made the one that was
+    working look as broken as the one that was not; and one line does not hold
+    ten servers.
+
+    Each server is asked on a thread of its own and the rows wait `wait`
     seconds for all of them together, so one that is down costs the page no
-    more than the endpoints already do. Green only when every server that is
-    switched on answered.
+    more than the endpoints already do.
     """
     sys.path[:0] = [str(ROOT), str(ROOT / "core")]
     import threading
@@ -491,17 +497,17 @@ def mcp_line(wait: float = 3.0) -> tuple[str, str] | None:
     try:
         listed = mcp_client.read_list()
     except Exception:
-        return f"the list of servers cannot be read{SEP}/configure", "[33m"
+        return [(f"the list of servers cannot be read{SEP}/configure", YELLOW)]
     if not listed:
-        return None
+        return []
     on = {n: e for n, e in listed.items() if not e.get("off")}
-    counts: dict[str, int] = {}
+    counts: dict[str, tuple[int, int]] = {}
 
     def ask(name: str, entry: dict) -> None:
         try:
             out = set(mcp_client.tools_off(entry))
             tools = mcp_client.Server(name, entry["url"], mcp_client.key_of(entry)).tools()
-            counts[name] = sum(1 for t in tools if t["name"] not in out)
+            counts[name] = (sum(1 for t in tools if t["name"] not in out), len(tools))
         except Exception:
             pass
 
@@ -511,18 +517,22 @@ def mcp_line(wait: float = 3.0) -> tuple[str, str] | None:
     until = time.time() + wait
     for t in threads:
         t.join(max(0.0, until - time.time()))
-    parts = []
-    for name in on:
-        n = counts.get(name)
-        parts.append(f"{name} not answering" if n is None
-                     else f"{name} {n} tool{'' if n == 1 else 's'}")
-    out = len(listed) - len(on)
-    if out:
-        parts.append(f"{out} off")
-    if not on:
-        return SEP.join(parts) + f"{SEP}/configure", GREY
-    up = all(name in counts for name in on)
-    return SEP.join(parts) + ("" if up else f"{SEP}/configure"), "[32m" if up else "[33m"
+    # The names in one column, so that what each server says lines up under
+    # the one above it.
+    width = min(28, max(len(name) for name in listed))
+    rows = []
+    for name, entry in listed.items():
+        lead = f"{name:<{width}}  "
+        if entry.get("off"):
+            rows.append((lead + "off", GREY))
+        elif name not in counts:
+            rows.append((lead + f"not answering{SEP}/configure", YELLOW))
+        else:
+            given, of = counts[name]
+            said = (f"{given} tool{'' if given == 1 else 's'}" if given == of
+                    else f"{given} of {of} tools")
+            rows.append((lead + said, GREEN))
+    return rows
 
 
 def show_help(extra: dict | None = None) -> None:
@@ -599,7 +609,7 @@ def main() -> int:
 
     def ask_mcp() -> None:
         try:
-            tools["line"] = mcp_line()
+            tools["rows"] = mcp_rows()
         except Exception:
             pass
 
@@ -629,8 +639,8 @@ def main() -> int:
         row("embedding", *embedding_line(embedding.get("found")))
     # And the servers that publish tools, when any is listed.
     asking_mcp.join(3.5)
-    if tools.get("line"):
-        row("mcp", *tools["line"])
+    for i, (said, colour) in enumerate(tools.get("rows") or []):
+        row("mcp" if i == 0 else "", said, colour)
     print()
 
     # What the page says the memory is doing is a photograph taken as it was
