@@ -158,7 +158,7 @@ def _home_short(path: str) -> str:
     return "~" + p[len(home):] if home and p.startswith(home) else p
 
 
-def page(notice: str = "") -> None:
+def page(notice: str = "", fewer: int = 0) -> None:
     """The body of the home page, under the mark: the projects, the commands.
 
     Drawn here for BOTH launchers. The PowerShell one and the Python one each
@@ -174,7 +174,10 @@ def page(notice: str = "") -> None:
         print(f"  {grey}No projects yet.{reset}")
     else:
         entries.sort(key=lambda e: str(e.get("last_opened") or ""), reverse=True)
-        listed = entries[:RECENT]
+        # As many as the launcher found room for beside its mark, when it
+        # says: see home_fit() there. Unsaid, the most recent few.
+        shown = fewer if 0 < fewer < RECENT else RECENT
+        listed = entries[:shown]
         width = min(24, max(len(str(e["name"])) for e in listed))
         wheres = [_home_short(str(e.get("workspace") or "")) for e in listed]
         whens = [_when(str(e.get("last_opened") or "")) for e in listed]
@@ -186,7 +189,7 @@ def page(notice: str = "") -> None:
             if len(where) > span:
                 where = "…" + where[-(span - 1):]
             print(f"  {a}{str(e['name']):<{width}}{reset}  {grey}{where:<{span}}   {when}{reset}")
-        more = len(entries) - RECENT
+        more = len(entries) - shown
         if more > 0:
             print(f"  {grey}and {more} more - /projects lists them all{reset}")
     print()
@@ -577,6 +580,8 @@ def main() -> int:
     # both launchers, which draw only the mark above it. See page().
     ap.add_argument("--page", action="store_true",
                     help="draw the projects and the commands before the prompt")
+    ap.add_argument("--listed", type=int, default=0,
+                    help="how many projects the page lists, when fewer than usual")
     ap.add_argument("--notice", default="",
                     help="one line to say under the commands (a name not found, ...)")
     args = ap.parse_args()
@@ -597,7 +602,7 @@ def main() -> int:
         return 0
 
     if args.page:
-        page(args.notice)
+        page(args.notice, args.listed)
     # The embedding server is asked while the endpoints are, not after them:
     # one that is down must not add its wait to theirs.
     os.environ.setdefault("PRAGMA_NO_ENDPOINT_PROBE", "1")

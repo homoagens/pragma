@@ -819,7 +819,7 @@ def delete_project(entry: dict | None = None) -> dict | None:
 
 # ── the loop ──────────────────────────────────────────────────────────────────
 
-def home_prompt(notice: str = "") -> tuple[str, str]:
+def home_prompt(notice: str = "", listed: int = 0) -> tuple[str, str]:
     """The shared home prompt, as a (action, argument). It draws the body of
     the page - projects, commands, endpoints, the memory at work, the plugins -
     and reads the line. The mark above it is drawn by home_page()."""
@@ -829,7 +829,7 @@ def home_prompt(notice: str = "") -> tuple[str, str]:
     argv = sys.argv
     probe = os.environ.get("PRAGMA_NO_ENDPOINT_PROBE")
     try:
-        sys.argv = ["pragma_home", "--out", str(out), "--page"] + (
+        sys.argv = ["pragma_home", "--out", str(out), "--page", "--listed", str(listed)] + (
             ["--notice", notice] if notice else [])
         home.main()
     finally:
@@ -848,10 +848,38 @@ def home_prompt(notice: str = "") -> tuple[str, str]:
     return str(data.get("action") or ""), str(data.get("arg") or "")
 
 
-def home_page() -> None:
+# The fewest projects the home page lists for the sake of the mark. With room
+# for fewer than this the mark gives way instead: the list is what the page is
+# for.
+FEWEST_LISTED = 3
+
+
+def home_fit() -> tuple[bool, int]:
+    """(the mark as the word alone?, how many projects the page lists).
+
+    The page lists the most recent few, and each takes a line the mark may
+    need. It used to be all or nothing: on a window one line short - thirty
+    lines, as terminals open, with five projects - the mark went, for a line.
+    Now the page lists fewer first, the rest being a line away ("and 2 more"),
+    and gives the mark up only when it would be left with too few.
+    """
+    most = min(len(read_registry()), home.RECENT)
+    room = terminal_lines() - ROOM_FOR_THE_MARK      # the lines the list may take
+    if most <= room:
+        return False, most
+    fewer = room - 1                                 # one of them says how many more
+    if fewer >= FEWEST_LISTED:
+        return False, fewer
+    return True, most
+
+
+def home_page() -> int:
+    """Clears, draws the mark, and returns how many projects there is room to
+    list under it - which home_prompt() passes on to the page."""
     clear()
-    listed = min(len(read_registry()), home.RECENT)
-    logo(terminal_lines() < ROOM_FOR_THE_MARK + listed)
+    compact, listed = home_fit()
+    logo(compact)
+    return listed
 
 
 def projects_page() -> dict | None:
@@ -898,8 +926,7 @@ def run() -> int:
     notice = ""
     while True:
         if entry is None:
-            home_page()
-            action, arg = home_prompt(notice)
+            action, arg = home_prompt(notice, home_page())
             notice = ""
             if action in ("exit", ""):
                 clear()
