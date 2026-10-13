@@ -354,7 +354,20 @@ def _msg_chars(m: dict) -> int:
 # runs at 3.16 and a tool observation of JSON and paths at 1.23 (see
 # config.CHAT_COMPACT_TOKENS). Only a step or two of growth is ever estimated
 # this way, so erring high costs, at worst, a compression one step early.
+#
+# That was the whole cost while one step could add twelve thousand characters
+# at most. A tool on another server returns what it returns, and at two
+# characters a token a fifty-thousand-character answer was booked as twenty-five
+# thousand tokens when the server then counted eight: the third search of a
+# turn tripped the line with the window half empty, and the first two were
+# summarised a step after being read. So the pessimistic figure is the FLOOR
+# now, and above it stands what the server itself measured on this list -
+# characters over tokens for the prompt it last counted - up to a ceiling. An
+# estimate that turns out low costs a step with less room to answer in, or a
+# refused prompt, and both are caught on the next count; one that is high cost
+# the results.
 _CHARS_PER_TOKEN_SINCE = 2
+_CHARS_PER_TOKEN_MOST = 6
 
 
 def _prompt_tokens(messages, counted) -> Optional[int]:
@@ -368,7 +381,10 @@ def _prompt_tokens(messages, counted) -> Optional[int]:
         return None
     tokens, chars_then = counted
     grown = sum(_msg_chars(m) for m in messages) - chars_then
-    return tokens + max(0, grown) // _CHARS_PER_TOKEN_SINCE
+    per = _CHARS_PER_TOKEN_SINCE
+    if tokens > 0:
+        per = min(_CHARS_PER_TOKEN_MOST, max(per, chars_then / tokens))
+    return tokens + int(max(0, grown) / per)
 
 
 def _call_skill(cfg: AgentConfig, action: str, args: dict) -> str:
@@ -602,6 +618,9 @@ def run_agent(cfg: AgentConfig, user_task: str, log_path: Optional[Path] = None,
         """
         nonlocal _counted
         size = _prompt_tokens(msgs, _counted)
+        # Characters per token, as the server measured them on this very list:
+        # what tells a summarizer how much of it will fit.
+        ratio = (_counted[1] / _counted[0]) if (_counted and _counted[0]) else None
         if size is not None:
             over = size > config.COMPRESS_TOKENS
         else:
@@ -613,12 +632,19 @@ def run_agent(cfg: AgentConfig, user_task: str, log_path: Optional[Path] = None,
             over = True
         if not (over or _overflows):
             return msgs
-        fence = None if _overflows >= 2 else _task_fence
         if config.DEBUG:
             said = f"~{size} tokens" if size is not None else "estimated"
             console.print(f"[yellow]Prompt {said} - compressing...[/yellow]")
         _counted = None
-        return memory.compress(msgs, 0, label, model=model, protect=fence)
+
+        if _overflows >= 2:
+            # Refused twice: the fence was a preference, and so was keeping the
+            # latest messages word for word - the one that does not fit may be
+            # the very last. Everything but the system prompt is summarised.
+            return memory.compress(msgs, 0, label, model=model, protect=None,
+                                   recent=0, ratio=ratio)
+        return memory.compress(msgs, 0, label, model=model, protect=_task_fence,
+                               ratio=ratio)
 
     def _hash_args(a) -> str:
         try:
@@ -665,7 +691,13 @@ def run_agent(cfg: AgentConfig, user_task: str, log_path: Optional[Path] = None,
 
         if queued is None:
             # ── Memory compression ──────────────────────────────────────
-            messages = _fit(messages, f"loop {cfg.name}")
+            try:
+                messages = _fit(messages, f"loop {cfg.name}")
+            except llm_client.LLMInterrupted:
+                # Stopped while a summary was being written: the turn ends as
+                # any stopped turn does, not with a traceback.
+                _emit({"type": "stopped", "content": "Task interrupted by user."})
+                return None
 
         # ── LLM call (skipped entirely when serving a queued read) ───
         try:

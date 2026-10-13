@@ -160,7 +160,8 @@ CONFIG = {
         "Ceiling on those recent messages, in characters.",
         "a quarter of the window"),
     "MESSAGE_COMPRESS_TRUNC": ("compaction",
-        "Characters of each message handed to the summariser."),
+        "A fixed number of characters of each message handed to the summariser. "
+        "`0` hands over each one whole while they fit its window, and cuts the longest first."),
     "CHAT_COMPACT_TOKENS": ("compaction",
         "Prompt tokens above which a conversation hands its older turns to memory.",
         "about 80% of the window"),

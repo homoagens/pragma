@@ -87,7 +87,7 @@ A batch run summarises its older steps; a conversation turns its older turns int
 | `MAX_MESSAGES` | `0` | Also summarise above this many messages. `0` counts nothing. | [`core/config.py`](../../core/config.py) |
 | `MESSAGES_RECENT` | `6` | Most recent messages kept word for word when the rest is summarised. | [`core/config.py`](../../core/config.py) |
 | `RECENT_MAX_CHARS` | a quarter of the window | Ceiling on those recent messages, in characters. | [`core/config.py`](../../core/config.py) |
-| `MESSAGE_COMPRESS_TRUNC` | `2000` | Characters of each message handed to the summariser. | [`core/config.py`](../../core/config.py) |
+| `MESSAGE_COMPRESS_TRUNC` | `0` | A fixed number of characters of each message handed to the summariser. `0` hands over each one whole while they fit its window, and cuts the longest first. | [`core/config.py`](../../core/config.py) |
 | `CHAT_COMPACT_TOKENS` | about 80% of the window | Prompt tokens above which a conversation hands its older turns to memory. | [`core/config.py`](../../core/config.py) |
 | `CHAT_COMPACT_CHARS` | half the window | The same trigger in characters, used until the server has counted a request. | [`core/config.py`](../../core/config.py) |
 | `CHAT_COMPACT_MARGIN` | `4096` | Tokens kept free below the top of the window when that trigger is computed. | [`core/config.py`](../../core/config.py) |

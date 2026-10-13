@@ -1068,9 +1068,11 @@ COMPRESS_TOKENS = int(os.environ.get("COMPRESS_TOKENS", str(CHAT_COMPACT_TOKENS)
 CHAT_TRANSCRIPT_CHARS = int(os.environ.get("CHAT_TRANSCRIPT_CHARS", "2000"))
 
 # When compressing the message list, how many chars per message are kept
-# in the text fed to the summarizer. Too low loses information; too high
-# blows the summarizer's own token budget. 2000 is a balanced default.
-MESSAGE_COMPRESS_TRUNC = int(os.environ.get("MESSAGE_COMPRESS_TRUNC", "2000"))
+# in the text fed to the summarizer. 0, the default, is no fixed number: every
+# message whole while they fit the summarizer's window, the longest cut first
+# when they do not (core/memory.py). A number here is the old fixed cut, which
+# was 2000 and gave a summarizer the first lines of a long tool result.
+MESSAGE_COMPRESS_TRUNC = int(os.environ.get("MESSAGE_COMPRESS_TRUNC", "0"))
 
 # ─────────────────────────────────────────────
 # STORAGE — single cross-platform home for everything Pragma persists

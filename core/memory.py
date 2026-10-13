@@ -45,6 +45,89 @@ def summarize(text, context="conversation", model=None):
     return out
 
 
+# HOW MUCH OF A MESSAGE THE SUMMARIZER READS. It used to be a fixed number of
+# characters, 2000 a message, chosen when the largest thing in a history was a
+# file that had been read. A tool on another server returns what it returns -
+# fifty thousand characters of search results is an ordinary answer - and a
+# fixed cut gave the summarizer the first twenty-fifth of it and asked for a
+# faithful summary of the whole.
+#
+# So nothing is cut while everything fits. What "fits" means is the window of
+# the model doing the summarizing, less the summary it has to write. When the
+# text is larger than that, the LONGEST messages give way first, each down to
+# the same level, and each keeps its opening and its end: the short ones, which
+# are the requests and the decisions, are never touched to make room for one
+# long listing.
+#
+# The level is worked out in characters and the window is in tokens, so a ratio
+# stands between them. The caller passes the one the server last measured on
+# this very conversation when it has it; 3 otherwise, which is honest for prose
+# and optimistic for JSON - which is why a refused prompt halves it and tries
+# again.
+_RATIO = 3.0
+
+
+def _render(m: dict) -> tuple[str, str]:
+    """(role, text) of one message, with the calls it made written out.
+
+    Under the native tool protocol the action lives in `tool_calls` and
+    `content` is empty. Rendering it keeps the actions visible to the
+    summarizer: otherwise a compressed history would remember the observations
+    while forgetting what produced them.
+    """
+    body = m.get("content", "") or ""
+    for tc in (m.get("tool_calls") or []):
+        fn = tc.get("function") or {}
+        call = f"{fn.get('name', '?')}({fn.get('arguments', '')})"
+        body = (body + "\n" if body else "") + f"[ACTION] {call}"
+    return str(m.get("role", "?")).upper(), body
+
+
+def _level(sizes: list[int], budget: int) -> int:
+    """The length every message is held to so that they sum to `budget`.
+
+    Messages shorter than the level keep all of themselves; what they do not
+    use is shared among the longer ones. Returns a number larger than any
+    message when everything fits.
+    """
+    if sum(sizes) <= budget:
+        return max(sizes, default=0) + 1
+    left, level = budget, 0
+    for i, size in enumerate(sorted(sizes)):
+        share = left // (len(sizes) - i)
+        if size <= share:
+            left -= size
+            continue
+        level = share
+        break
+    return max(level, 200)
+
+
+def _text_for(messages, budget_chars: int, fixed: int = 0) -> str:
+    """The messages as one text a summarizer can read, inside `budget_chars`."""
+    rendered = [_render(m) for m in messages]
+    level = fixed if fixed > 0 else _level([len(b) for _r, b in rendered], budget_chars)
+    parts = []
+    for role, body in rendered:
+        if len(body) > level:
+            # The opening and the end: a result's last lines are as often what
+            # mattered as its first, and the marker says how much went.
+            head = body[: level * 2 // 3]
+            tail = body[len(body) - level // 3:] if fixed <= 0 else ""
+            gone = len(body) - len(head) - len(tail)
+            body = (f"{head} [+ {gone} more chars]" if not tail
+                    else f"{head}\n[... {gone} characters left out here ...]\n{tail}")
+        parts.append(f"{role}: {body}")
+    return "\n".join(parts)
+
+
+def _budget_chars(reply_tokens: int, ratio: float | None) -> int:
+    """Characters of conversation one summarizing call can be handed."""
+    window = int(getattr(config, "CONTEXT_WINDOW", 0) or 0) or 32768
+    room = max(1024, window - reply_tokens - 1024)
+    return int(room * min(max(ratio or _RATIO, 1.0), 6.0))
+
+
 # What stands in for a summary the summarizer could not write: the opening of
 # each earlier message, the newest kept when they do not all fit.
 _CUT_LINE  = 240
@@ -85,7 +168,7 @@ def _cut(msgs, why) -> str:
 
 
 def compress(messages, threshold=None, context="conversation", model=None,
-             protect=None):
+             protect=None, recent=None, ratio=None):
     """
     If the message list exceeds the threshold, compress old messages into a summary.
     With threshold=0 forces compression regardless of count - which is how the
@@ -103,6 +186,13 @@ def compress(messages, threshold=None, context="conversation", model=None,
     handled by consolidating those turns into episodes (agent/chat.py), and
     this function's job shrinks to the current turn's own tool traffic.
     Default None keeps the historical behaviour exactly: system prompt only.
+
+    `recent` overrides config.MESSAGES_RECENT. 0 keeps nothing verbatim: the
+    last resort, for a prompt the server has refused twice, where the message
+    that does not fit may be the very last one.
+
+    `ratio` is characters per token as the server last measured them on this
+    conversation, when the caller knows; see _RATIO.
 
     Returns the compressed list, or unchanged if below threshold.
     """
@@ -125,7 +215,8 @@ def compress(messages, threshold=None, context="conversation", model=None,
     # both claiming them. Harmless while nothing was compressed, a duplicated
     # conversation the moment something is.
     tail        = messages[head_n:]
-    recent_n    = min(config.MESSAGES_RECENT, len(tail))
+    recent_n    = min(config.MESSAGES_RECENT if recent is None else max(recent, 0),
+                      len(tail))
     to_compress = tail[:len(tail) - recent_n]
     recent      = tail[len(tail) - recent_n:]
 
@@ -151,41 +242,43 @@ def compress(messages, threshold=None, context="conversation", model=None,
             to_compress.append(recent.pop(0))
         while len(recent) > 1 and (recent[0].get("role") == "tool"):
             to_compress.append(recent.pop(0))
+        # And the other way round: a result is not left without its call. The
+        # two loops above stop at one message, and when that message is a tool
+        # result its call has just gone into the summary - the orphan again,
+        # by the back door. The call comes back, budget or no budget: a prompt
+        # that is then too large is refused and handled as one, which a
+        # malformed history is not.
+        if (recent and recent[0].get("role") == "tool" and to_compress
+                and to_compress[-1].get("tool_calls")):
+            recent.insert(0, to_compress.pop())
 
     if not to_compress:
         return messages
 
-    # Per-message truncation: 500 chars was too aggressive (file reads got
-    # gutted before they reached the summarizer). The cap is now configurable
-    # via MESSAGE_COMPRESS_TRUNC. A "[+ N more chars]" marker is appended
-    # when content is clipped so the summarizer knows information was lost.
-    trunc = getattr(config, "MESSAGE_COMPRESS_TRUNC", 2000)
-    parts = []
-    for m in to_compress:
-        body = m.get("content", "") or ""
-        # Under the native tool protocol the action lives in `tool_calls` and
-        # `content` is empty. Rendering it keeps the actions visible to the
-        # summarizer: otherwise a compressed history would remember the
-        # observations while forgetting what produced them.
-        for tc in (m.get("tool_calls") or []):
-            fn = tc.get("function") or {}
-            call = f"{fn.get('name', '?')}({fn.get('arguments', '')})"
-            body = (body + "\n" if body else "") + f"[ACTION] {call}"
-        if len(body) > trunc:
-            body = body[:trunc] + f" [+ {len(body) - trunc} more chars]"
-        parts.append(f"{m['role'].upper()}: {body}")
-    text = "\n".join(parts)
+    # What the summarizer reads of each message: all of it while it fits, and
+    # the longest cut first when it does not - see _RATIO. A fixed cut per
+    # message is still there for whoever sets MESSAGE_COMPRESS_TRUNC.
+    fixed = int(getattr(config, "MESSAGE_COMPRESS_TRUNC", 0) or 0)
 
     if config.DEBUG:
         print(f"[memory] Compressing {len(to_compress)} messages ({context})...")
-    try:
-        summary = summarize(text, context, model=model)
-    except llm_client.LLMInterrupted:
-        raise                   # a stop is a stop, not a failed summary
-    except Exception as e:
+    summary = None
+    for attempt in range(3):
+        text = _text_for(to_compress, _budget_chars(2048, ratio) >> attempt, fixed)
+        try:
+            summary = summarize(text, context, model=model)
+            break
+        except llm_client.LLMInterrupted:
+            raise                   # a stop is a stop, not a failed summary
+        except llm_client.ContextOverflow as e:
+            why = e                 # it did not fit after all: half as much
+        except Exception as e:
+            why = e
+            break
+    if summary is None:
         if config.DEBUG:
-            print(f"[memory] summarizer failed ({e}); cutting instead.")
-        summary = _cut(to_compress, e)
+            print(f"[memory] summarizer failed ({why}); cutting instead.")
+        summary = _cut(to_compress, why)
 
     summary_msg = {
         "role":    "user",
