@@ -122,6 +122,7 @@ _MEMORY_VIEWS = {
     "diff":    "meanings it has revised",
     "dormant": "what has faded out of use",
     "sizes":   "how much of it can reach a prompt",
+    "vectors": "what it is searched by when there is an embedding server; `rebuild` computes it again",
 }
 # Old names of the views. "oblio" is what the dormant zone was called before
 # the screen said "dormant" everywhere else.
@@ -169,7 +170,9 @@ def _normalise(line: str) -> tuple[str, str]:
         parts = _ALIASES[head].split()
         head = parts[0]
         if len(parts) > 1:
-            arg = parts[1]
+            # What was typed after an old name still follows the new one:
+            # "/vectors rebuild" is "/memory vectors rebuild".
+            arg = f"{parts[1]} {arg}".strip()
     return head, arg
 
 
@@ -1231,6 +1234,69 @@ def _status_lines() -> list[tuple[str, str]]:
     return out
 
 
+def _show_vectors(rebuild: bool) -> bool:
+    """The vectors this memory is searched by: what is kept beside the store
+    and for which model - and, asked for, all of it computed again.
+
+    They are a copy of what the store holds, made by the embedding server, and
+    nothing in them is memory: computing them again loses nothing. It is worth
+    doing when the server behind the name has changed and the check that looks
+    for that (embed._ready) had nothing to compare with, or simply to have it
+    done now instead of during the next recall.
+    """
+    import embed
+    a, r = _accent(), ("\033[0m" if _accent() else "")
+    grey = "\033[38;5;242m" if a else ""
+    print()
+    if rebuild:
+        if embed.server() is None:
+            print("  no embedding server is named, so there is nothing to compute them with.")
+            print("  /configure, then `meaning`.")
+            print()
+            return True
+        print("  computing every vector of this memory again - ctrl+C stops it")
+
+        def each(kind: str, done: int, todo: int) -> None:
+            print(f"\r    {kind:<10}{done} of {todo}", end="\n" if done >= todo else "", flush=True)
+
+        try:
+            said = embed.rebuild(each)
+        except KeyboardInterrupt:
+            print("\n  stopped. What was computed is kept; the rest is computed when it is needed.")
+            print()
+            return True
+        if said["error"]:
+            print(f"  stopped - {said['error']}")
+        else:
+            print(f"  done, with {said['model']}: "
+                  f"{_harness.plural(said['events'], 'event')}, "
+                  f"{_harness.plural(said['readings'], 'reading')}, "
+                  f"{_harness.plural(said['beliefs'], 'belief')}. "
+                  f"{said['dropped']} old vectors removed.")
+        print()
+        return True
+
+    print(f"  {a}vectors{r}   {grey}{embed._folder()}{r}")
+    print()
+    if embed.server() is None:
+        print("    no embedding server is named: the memory is searched by words.")
+    rows = embed.inventory()
+    if not rows:
+        print("    none kept yet" + (": they are computed at the first recall." if embed.server() else "."))
+    for row in rows:
+        size = row["bytes"]
+        size = f"{size / 1048576:.1f} MB" if size >= 1048576 else f"{size / 1024:.0f} KB"
+        print(f"    {row['model']:<26} {'in use    ' if row['in_use'] else grey + 'not in use' + r}  "
+              f"{_harness.plural(row['events'], 'event')} · "
+              f"{_harness.plural(row['readings'], 'reading')} · "
+              f"{_harness.plural(row['beliefs'], 'belief')} · {size}")
+    print()
+    print(f"  {grey}/memory vectors rebuild computes them all again with the model in use,"
+          f" and removes the others{r}")
+    print()
+    return True
+
+
 def _show_status() -> bool:
     a, r = _accent(), ("\033[0m" if _accent() else "")
     grey = "\033[38;5;242m" if a else ""
@@ -1283,10 +1349,13 @@ def _run_slash(line: str) -> bool:
     action = _COMMANDS[cmd][0]
     if action == "memory":
         # Bare /memory is the map: the view anyone means when they do not say.
-        view = _VIEW_ALIASES.get(arg, arg) or "map"
+        first, _, more = arg.partition(" ")
+        view = _VIEW_ALIASES.get(first, first) or "map"
         if view not in _MEMORY_VIEWS:
             print(f"  /memory takes one of: {', '.join(_MEMORY_VIEWS)}")
             return True
+        if view == "vectors":
+            return _show_vectors(more.strip() == "rebuild")
         return _show_memory(view)
     if action == "status":
         return _show_status()
@@ -1769,6 +1838,14 @@ def _recall(text: str, cwd, desk_ids: set[str], desk_rules: set[str],
             if say:
                 say(f"the memory was searched by words: the embedding server did not answer "
                     f"({info['search_error']})")
+        # The server kept its name and changed its vectors: the ones kept for
+        # this memory were dropped (embed._ready). Said once, when it happens.
+        import embed
+        if embed.NOTICE:
+            note, embed.NOTICE = embed.NOTICE, ""
+            say = getattr(renderer, "warning", None)
+            if say:
+                say(note)
     except Exception as e:
         renderer.faculty("CURATOR", f"recall unavailable — {e}")
         return ""

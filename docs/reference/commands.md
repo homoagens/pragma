@@ -37,7 +37,7 @@ Alone it opens the page; followed by one of these it goes straight there.
 
 | Command | What it does |
 |---|---|
-| `/memory` | look at the store: `map`, `beliefs`, `last`, `diff`, `dormant`, `sizes` |
+| `/memory` | look at the store: `map`, `beliefs`, `last`, `diff`, `dormant`, `sizes`, `vectors` |
 | `/settings` | how many steps a turn may take, and how much the memory brings to one |
 | `/status` | how this project is set up right now |
 | `/jobs` | what the memory is writing in the background: follow it, stop it, run it again |
@@ -58,6 +58,7 @@ Alone it shows `map`.
 | `diff` | meanings it has revised |
 | `dormant` | what has faded out of use |
 | `sizes` | how much of it can reach a prompt |
+| `vectors` | what it is searched by when there is an embedding server; `rebuild` computes it again |
 
 ### Commands that live at home
 
@@ -143,6 +144,7 @@ Offered by no list, and still working: a habit is not worth breaking.
 | `/diff` | `/memory diff` | in a project |
 | `/dormant` | `/memory dormant` | in a project |
 | `/sizes` | `/memory sizes` | in a project |
+| `/vectors` | `/memory vectors` | in a project |
 | `/oblio` | `/memory dormant` | in a project |
 | `/project` | `/settings` | in a project |
 | `/config` | `/configure` | in a project |
