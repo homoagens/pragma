@@ -80,7 +80,7 @@ sys.path[:0] = [str(ROOT), str(ROOT / "core"), str(ROOT / "terminal")]
 os.environ.setdefault("PRAGMA_NO_ENDPOINT_PROBE", "1")
 
 import endpoints  # noqa: E402
-from pragma_menu import (GREY, RESET, accent, ask, choose, clear,  # noqa: E402
+from pragma_menu import (GREY, RESET, SEP, accent, ask, choose, clear,  # noqa: E402
                          columns, confirm, pick, say, title, waiting)
 
 CHANGED, UNCHANGED = 0, 3
@@ -1431,6 +1431,16 @@ def mcp_probe(entry: dict) -> dict:
             "calls_itself": server.calls_itself}
 
 
+def mcp_tools_count(entry: dict, p: dict) -> str:
+    """"4", or "3 of 4" when some are switched off; "not known" when it is down."""
+    import mcp_client
+    if not p["up"]:
+        return "not known"
+    out = set(mcp_client.tools_off(entry))
+    on = sum(1 for t in p["tools"] if t["name"] not in out)
+    return str(on) if on == len(p["tools"]) else f"{on} of {len(p['tools'])}"
+
+
 def mcp_url(url: str) -> str:
     """The address as typed, with a scheme. The path is the server's own and is
     not guessed: /mcp is common and nothing says it has to be that."""
@@ -1494,19 +1504,73 @@ def mcp_add(state: dict, listed: dict) -> str:
     return name
 
 
-def mcp_show_tools(name: str, p: dict) -> None:
+def mcp_tools_page(state: dict, listed: dict, name: str, p: dict) -> None:
+    """The tools of one server, each a row: enter switches it on or off.
+
+    A tool that is offered travels with every request, description and all,
+    so being able to leave one out is the difference between connecting a
+    server and paying for all of it.
+    """
+    import mcp_client
+    entry = listed[name]
+    if not p["up"] or not p["tools"]:
+        step(f"mcp > {name} > tools")
+        print()
+        if not p["up"]:
+            say(f"  {p['text']}", "warn")
+        else:
+            print("  " + grey("It answers, and publishes no tools."))
+        ask("", hint="enter to go back")
+        return
+    at = 0
+    while True:
+        out = mcp_client.tools_off(entry)
+        step(f"mcp > {name} > tools")
+        told = state.pop("mcp_note", "")
+        if told:
+            print()
+            say(f"  {told}", "good")
+        print()
+        print("  " + grey("Enter switches a tool on or off. One that is on is described"))
+        print("  " + grey("to the agent with every request, whether it is used or not."))
+        options, notes = [], []
+        for spec in p["tools"]:
+            said = " ".join(str(spec.get("description") or "no description").split())
+            size = len(said) + len(json.dumps(spec.get("inputSchema") or {}))
+            options.append(f"{'off' if spec['name'] in out else 'on ':<5}{spec['name']}")
+            notes.append(f"{size} characters" + SEP + said)
+        options += ["", "read them"]
+        notes += ["", "every description in full, as the agent is given it"]
+        i = pick("", options, notes, at)
+        if i is None:
+            return
+        at = i
+        if i == len(p["tools"]) + 1:
+            mcp_show_tools(name, p, out)
+            continue
+        if i >= len(p["tools"]):
+            continue
+        tool = p["tools"][i]["name"]
+        now = [t for t in out if t != tool] if tool in out else out + [tool]
+        # Only names the server still publishes are kept: one it has dropped
+        # would stay in the file for ever, switched off and invisible.
+        now = [t["name"] for t in p["tools"] if t["name"] in now]
+        if now:
+            entry["tools_off"] = now
+        else:
+            entry.pop("tools_off", None)
+        mcp_save(state, listed)
+
+
+def mcp_show_tools(name: str, p: dict, out=()) -> None:
     """What the server publishes, under the names the agent is given."""
     import mcp_client
-    step(f"mcp > {name} > tools")
+    step(f"mcp > {name} > tools > read them")
     print()
-    if not p["up"]:
-        say(f"  {p['text']}", "warn")
-    elif not p["tools"]:
-        print("  " + grey("It answers, and publishes no tools."))
     for spec in p["tools"]:
         full = mcp_client._clean(name) + mcp_client.SEPARATOR + mcp_client._clean(spec["name"])
         takes = ", ".join(((spec.get("inputSchema") or {}).get("properties") or {})) or "nothing"
-        print(f"  {full}")
+        print(f"  {full}" + ("   " + grey("off - not offered") if spec["name"] in out else ""))
         for line in wrapped(" ".join(str(spec.get("description") or "no description").split()),
                             GREY if accent() else ""):
             print("      " + line)
@@ -1517,7 +1581,7 @@ def mcp_show_tools(name: str, p: dict) -> None:
 
 
 MCP_ROWS = [
-    ("tools",   "what it publishes, as the agent is shown it"),
+    ("tools",   "what it publishes: each one on or off"),
     ("offered", "whether the agent is given its tools"),
     ("name",    "what starts the name of each of its tools"),
     ("address", "where the server listens, path included"),
@@ -1543,7 +1607,7 @@ def mcp_server_page(state: dict, listed: dict, name: str) -> None:
         says = {
             # How many, not which: four names in a row push every note beside
             # them off the page, and the row opens the list anyway.
-            "tools": str(len(p["tools"])) if p["up"] else "not known",
+            "tools": mcp_tools_count(entry, p),
             "offered": "no" if entry.get("off") else "yes",
             "name": name,
             "address": re.sub(r"^https?://", "", entry["url"]),
@@ -1565,7 +1629,7 @@ def mcp_server_page(state: dict, listed: dict, name: str) -> None:
         at = labels[i]
         try:
             if at == "tools":
-                mcp_show_tools(name, p)
+                mcp_tools_page(state, listed, name, p)
             elif at == "offered":
                 if entry.get("off"):
                     entry.pop("off")
@@ -1655,7 +1719,10 @@ def cmd_mcp(state: dict) -> bool:
             options.append(name)
             notes.append("off - its tools are not offered" if entry.get("off") else "")
             key = key_text(entry)
-            under.append(wrapped(p["text"], ok_bad(p["up"]))
+            said = p["text"]
+            if p["up"] and mcp_tools_count(entry, p) != str(len(p["tools"])):
+                said += f" ({mcp_tools_count(entry, p)} offered)"
+            under.append(wrapped(said, ok_bad(p["up"]))
                          + wrapped(entry["url"] + ("" if key == "none" else f"  (key {key})"), dim))
             what.append(name)
             options.append("")

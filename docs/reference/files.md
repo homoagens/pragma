@@ -107,6 +107,7 @@ It is never part of a snapshot, so no address or key ends up in a zip.
 | `url` | The address the server answers at, over HTTP. The only field a server must have. |
 | `key`, `key_env` | A key sent as a bearer token, or the name of the environment variable that holds one. |
 | `off` | `true` leaves the server out without removing the entry. |
+| `tools_off` | The tools of this server that are not offered, by the names the server gives them. The rest are. |
 
 Written from the `mcp` row of `/configure`, or by hand. The file is read
 when a conversation or a run starts. A server that does not

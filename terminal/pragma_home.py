@@ -499,7 +499,9 @@ def mcp_line(wait: float = 3.0) -> tuple[str, str] | None:
 
     def ask(name: str, entry: dict) -> None:
         try:
-            counts[name] = len(mcp_client.Server(name, entry["url"], mcp_client.key_of(entry)).tools())
+            out = set(mcp_client.tools_off(entry))
+            tools = mcp_client.Server(name, entry["url"], mcp_client.key_of(entry)).tools()
+            counts[name] = sum(1 for t in tools if t["name"] not in out)
         except Exception:
             pass
 

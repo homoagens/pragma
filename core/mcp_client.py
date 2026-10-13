@@ -15,9 +15,15 @@
 #     {
 #       "servers": {
 #         "library": {"url": "http://127.0.0.1:8000/mcp",
-#                     "key": "", "key_env": "", "off": false}
+#                     "key": "", "key_env": "", "off": false,
+#                     "tools_off": ["delete_everything"]}
 #       }
 #     }
+#
+# `off` leaves a whole server out; `tools_off` leaves out the tools it names
+# and offers the rest. A tool that is offered costs its description on every
+# request, whether it is used or not, so the ones nobody needs are worth the
+# switch.
 #
 # It sits beside endpoints.json for the same reason that file is global: the
 # machines are the same whichever project is open, and it stays outside every
@@ -118,9 +124,16 @@ def save_list(servers: dict[str, dict]) -> None:
     os.replace(tmp, path)
 
 
+def tools_off(entry: dict) -> list[str]:
+    """The tools of this server that are switched off, as the server names them."""
+    listed = entry.get("tools_off")
+    return [str(t) for t in listed] if isinstance(listed, list) else []
+
+
 def load_servers() -> dict[str, dict]:
     """The servers in use, by name: the list without what is switched off."""
-    return {name: {"url": str(entry["url"]).strip(), "key": key_of(entry)}
+    return {name: {"url": str(entry["url"]).strip(), "key": key_of(entry),
+                   "tools_off": tools_off(entry)}
             for name, entry in read_list().items() if not entry.get("off")}
 
 
@@ -334,7 +347,11 @@ def offer(palette: dict) -> list[str]:
             notes.append(f"mcp: {name}: {e} - its tools are not offered")
             continue
         added, skipped = 0, []
+        out = set(entry.get("tools_off") or [])
+        held = sum(1 for spec in specs if spec["name"] in out)
         for spec in specs:
+            if spec["name"] in out:
+                continue
             full = (_clean(name) + SEPARATOR + _clean(spec["name"]))[:_NAME_LIMIT]
             if full in palette:
                 skipped.append(spec["name"])
@@ -344,6 +361,8 @@ def offer(palette: dict) -> list[str]:
         if added:
             _OFFERED[name] = " ".join(server.instructions.split())
         line = f"mcp: {name}: {added} tool{'' if added == 1 else 's'}"
+        if held:
+            line += f" ({held} switched off)"
         if skipped:
             line += f" ({', '.join(skipped)} left out: the name is taken)"
         notes.append(line)
