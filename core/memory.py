@@ -286,3 +286,74 @@ def compress(messages, threshold=None, context="conversation", model=None,
     }
 
     return list(head) + [summary_msg] + recent
+
+
+# -- compacting a conversation -------------------------------------------------
+# compress() above serves one turn: it folds the older steps of a piece of work
+# still in progress, and what it writes only has to carry that work to its end.
+# compact() serves the conversation. Everything said so far is traded for one
+# summary, and the agent goes on from that summary ALONE - the next request may
+# be about anything that was in it. So it is asked for differently: not "what
+# happened", but everything a colleague would need to pick the work up cold.
+
+SYSTEM_PROMPT_COMPACT = """You are compacting a conversation between a person and an AI agent, so that the agent can go on working from your summary alone. The agent will not see the conversation again: whatever you leave out is gone.
+
+Write the summary under these headings, and leave out a heading that has nothing under it:
+
+1. What the person asked for - every request, in order, in their own words where they are short, with what they said they wanted and did not want.
+2. What was done - the actions taken, in order, and what came of each.
+3. What was found - the facts, figures, names, identifiers, paths and quotations that came back from tools or were established along the way and that later work may need. Keep them exact: never round a number or paraphrase an identifier.
+4. Files - every file created or changed, with its full path and what it holds now.
+5. What went wrong - the errors met and how each was resolved, and anything the person corrected.
+6. Where things stand - what is finished, what is still open and, if something was in progress when the conversation was cut, exactly what it was and the next step.
+
+Be specific and complete rather than short. Do not address the person, do not comment on the conversation, and add nothing that is not in it. Respond with the summary only."""
+
+
+def compact(messages, instructions="", model=None, ratio=None, stop_event=None) -> str:
+    """One summary of `messages` to go on working from.
+
+    RAISES when it cannot be written - a server that is down, a model that
+    returns nothing - and the caller keeps the conversation it had. compress()
+    falls back to the opening of each message, because there a prompt has
+    already been refused and something has to give; here nothing has to. A
+    conversation swapped for two hundred characters of each message because
+    the backend blinked would be the tool destroying what it was asked to
+    keep.
+
+    `instructions` is what the person asked the summary to take care of, when
+    they asked for the compaction themselves.
+    """
+    reply = int(getattr(config, "COMPACT_SUMMARY_TOKENS", 4096) or 4096)
+    system = SYSTEM_PROMPT_COMPACT
+    if (instructions or "").strip():
+        system += ("\n\nThe person asked for this compaction, and asked that the summary "
+                   f"take particular care of this: {instructions.strip()}")
+    how = config.summary_call()
+    why = None
+    for attempt in range(3):
+        text = _text_for(messages, _budget_chars(reply, ratio) >> attempt)
+        try:
+            with llm_client.faculty("SUMMARIZER"):
+                out = llm_client.call_llm(
+                    messages=[{"role": "system", "content": system},
+                              {"role": "user", "content": f"Compact this conversation:\n\n{text}"}],
+                    model=model, temperature=how["temperature"], max_tokens=reply,
+                    stop_event=stop_event,
+                    template_kwargs=how["template_kwargs"], sampling=how["sampling"])
+        except llm_client.LLMInterrupted:
+            raise
+        except llm_client.ContextOverflow as e:
+            why = e
+            continue
+        except Exception as e:
+            why = e
+            break
+        marker = llm_client.TRUNCATION_PARTIAL_MARKER
+        if out.startswith(marker):
+            out = out[len(marker):].rstrip() + "\n[... the summary was cut short here]"
+        if out.strip():
+            return out.strip()
+        why = "the model returned nothing"
+        break
+    raise RuntimeError(f"the summary could not be written - {str(why)[:160]}")

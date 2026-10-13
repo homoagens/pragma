@@ -1041,11 +1041,32 @@ CHAT_KEEP_TURNS = int(os.environ.get("CHAT_KEEP_TURNS", "3"))
 # but never closer to the top than the answer needs plus room for the turn to
 # grow after it is measured - tool observations arrive AFTER the last request
 # of a turn was counted. On a small window the second term is what binds.
+#
+# CHAT_COMPACT_PERCENT is that percentage, for whoever wants the conversation
+# compacted sooner. Raising it past the second term changes nothing: the answer
+# still has to fit.
 CHAT_COMPACT_MARGIN = int(os.environ.get("CHAT_COMPACT_MARGIN", "4096"))
+CHAT_COMPACT_PERCENT = min(95, max(10, int(os.environ.get("CHAT_COMPACT_PERCENT", "80"))))
 CHAT_COMPACT_TOKENS = int(os.environ.get(
     "CHAT_COMPACT_TOKENS",
-    str(max(1024, min(int(CONTEXT_WINDOW * 0.80),
+    str(max(1024, min(int(CONTEXT_WINDOW * CHAT_COMPACT_PERCENT / 100),
                       CONTEXT_WINDOW - MAX_TOKENS - CHAT_COMPACT_MARGIN)))))
+
+# WHAT A FULL CONVERSATION IS TRADED FOR. `summary`: one summary written to go
+# on working from, and nothing else kept - what /compact does when it is typed,
+# done unasked when the line above is crossed, in the middle of a turn too. The
+# turns themselves still reach the memory, whole, when the project closes.
+#
+# `episodes` is what it was before: the older turns are consolidated into
+# episodes on the spot, the episodes stand in for them and the last
+# CHAT_KEEP_TURNS stay verbatim. It needs the memory on, it cannot act inside a
+# turn, and turns the memory judges not worth keeping leave nothing behind -
+# which is right for a memory and wrong for a context someone is working in.
+CHAT_COMPACT_MODE = (os.environ.get("CHAT_COMPACT_MODE", "summary").strip().lower()
+                     or "summary")
+# The most a compaction summary may run to. It has to carry a whole
+# conversation, so it is given more than a step summary's 2048.
+COMPACT_SUMMARY_TOKENS = int(os.environ.get("COMPACT_SUMMARY_TOKENS", "4096"))
 
 # The agent loop's own trigger, on the same line and for the same reasons: a
 # batch run summarises its step traffic above this many prompt tokens, and a

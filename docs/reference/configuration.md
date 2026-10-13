@@ -88,10 +88,13 @@ A batch run summarises its older steps; a conversation turns its older turns int
 | `MESSAGES_RECENT` | `6` | Most recent messages kept word for word when the rest is summarised. | [`core/config.py`](../../core/config.py) |
 | `RECENT_MAX_CHARS` | a quarter of the window | Ceiling on those recent messages, in characters. | [`core/config.py`](../../core/config.py) |
 | `MESSAGE_COMPRESS_TRUNC` | `0` | A fixed number of characters of each message handed to the summariser. `0` hands over each one whole while they fit its window, and cuts the longest first. | [`core/config.py`](../../core/config.py) |
-| `CHAT_COMPACT_TOKENS` | about 80% of the window | Prompt tokens above which a conversation hands its older turns to memory. | [`core/config.py`](../../core/config.py) |
+| `CHAT_COMPACT_MODE` | `summary` | What a full conversation is traded for: `summary` for one summary to go on from, `episodes` to consolidate its older turns into memory and keep the last ones. | [`core/config.py`](../../core/config.py) |
+| `CHAT_COMPACT_PERCENT` | `80` | Percentage of the window above which a conversation is compacted, before room for the answer is taken off. | [`core/config.py`](../../core/config.py) |
+| `COMPACT_SUMMARY_TOKENS` | `4096` | Most tokens the summary of a compacted conversation may run to. | [`core/config.py`](../../core/config.py) |
+| `CHAT_COMPACT_TOKENS` | `CHAT_COMPACT_PERCENT` of the window, less room for the answer | Prompt tokens above which a conversation is compacted. | [`core/config.py`](../../core/config.py) |
 | `CHAT_COMPACT_CHARS` | half the window | The same trigger in characters, used until the server has counted a request. | [`core/config.py`](../../core/config.py) |
 | `CHAT_COMPACT_MARGIN` | `4096` | Tokens kept free below the top of the window when that trigger is computed. | [`core/config.py`](../../core/config.py) |
-| `CHAT_KEEP_TURNS` | `3` | Most recent turns left in the conversation after it is compacted. | [`core/config.py`](../../core/config.py) |
+| `CHAT_KEEP_TURNS` | `3` | With `CHAT_COMPACT_MODE=episodes`, the most recent turns left in the conversation after it is compacted. | [`core/config.py`](../../core/config.py) |
 | `CHAT_TRANSCRIPT_CHARS` | `2000` | Characters of each model reply kept in the transcript memory is written from. | [`core/config.py`](../../core/config.py) |
 
 ## Watchdogs

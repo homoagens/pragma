@@ -108,7 +108,8 @@ _COMMANDS = {
     "/status":    ("status",    "how this project is set up right now"),
     "/jobs":      ("jobs",      "what the memory is writing in the background: follow it, stop it, run it again"),
     "/configure": ("configure", "point Pragma at an LLM endpoint"),
-    "/clear":     ("clear",     "clear the screen, keep the conversation"),
+    "/compact":   ("compact",   "summarise the conversation so far and go on from the summary"),
+    "/clear":     ("clear",     "start over with an empty context; what was said goes to the memory"),
     "/help":      ("help",      "this list"),
 }
 
@@ -1088,12 +1089,16 @@ def _status_lines() -> list[tuple[str, str]]:
         compact_at = int(getattr(cfg, "CHAT_COMPACT_CHARS", 0) / 4)
         answer = int(getattr(cfg, "MAX_TOKENS", 0))
         compact_tokens = int(getattr(cfg, "CHAT_COMPACT_TOKENS", 0))
+        # What a full conversation is traded for: see config.CHAT_COMPACT_MODE.
+        traded = ("consolidated into memory"
+                  if getattr(cfg, "CHAT_COMPACT_MODE", "summary") == "episodes"
+                  else "compacted into a summary")
         if compact_tokens:
-            out.append(("", f"the conversation is consolidated into memory above "
+            out.append(("", f"the conversation is {traded} above "
                             f"{compact_tokens} tokens ({round(compact_tokens * 100 / window)}%), "
-                            f"counted by the server"))
+                            f"counted by the server - /compact does it now"))
         elif compact_at:
-            out.append(("", f"the conversation is consolidated into memory above "
+            out.append(("", f"the conversation is {traded} above "
                             f"{compact_at} tokens ({round(compact_at * 100 / window)}%), estimated"))
         if prompt_cap:
             out.append(("", f"a turn's own steps are summarised above {prompt_cap} "
@@ -1292,12 +1297,22 @@ def _run_slash(line: str) -> bool:
         _slash_help()
         return True
     if action == "clear":
-        # The screen, not the conversation: the briefing above scrolls away
-        # with everything else and the header takes its place, because asking
-        # the launcher to draw it again would mean starting a second process
-        # and losing the turns this one is holding.
+        # The screen in either case: the briefing above scrolls away with
+        # everything else and the header takes its place, because asking the
+        # launcher to draw it again would mean starting a second process.
         _new_page()
         _show_chat_header()
+        if arg != "screen":
+            # And the conversation, which is what the word means everywhere
+            # else: it used to clear the screen alone, and a context that had
+            # filled up could only be emptied by closing the project. The
+            # conversation is the loop's to empty, so it is asked to.
+            _ASKED.append(("clear", ""))
+        return True
+    if action == "compact":
+        # The words after the command, as they were typed: _normalise lowers
+        # them, and what to keep is often a name.
+        _ASKED.append(("compact", line.strip().partition(" ")[2].strip()))
         return True
     if action == "jobs":
         _show_jobs()
@@ -1341,6 +1356,59 @@ def _run_slash(line: str) -> bool:
 
     print(f"  {cmd} is not wired up in this copy of Pragma.")
     return True
+
+
+# What a command asked of the conversation itself - emptying it, compacting it.
+# _run_slash cannot do either: the history lives in the loop that called it.
+_ASKED: list = []
+
+# How a compaction summary opens. It is how the loop tells a history that is
+# already a summary from one that could still be made into one.
+_COMPACTED = "[This conversation was compacted to make room in the context."
+
+
+def _compact_summary(history: list, renderer, instructions: str = "",
+                     stop_event=None, said: str = "") -> list | None:
+    """The conversation traded for one summary to go on working from.
+
+    WHAT /compact DOES, and what happens unasked when the context fills up.
+    Everything but the system prompt is handed to the summarizer, whole while
+    it fits, and replaced by what comes back. Nothing is kept verbatim: a
+    conversation worth keeping the last turns of is one that still fits.
+
+    The turns themselves are untouched. They are what the memory is written
+    from when the project closes, and a summary made to keep working is not
+    what an episode is made of.
+
+    Returns the new history, or None when there is nothing to compact - an
+    empty conversation, or one that is already nothing but a summary. Raises
+    what a stop raises; the caller keeps the history it had.
+    """
+    if not history:
+        return None
+    head = history[:1] if history[0].get("role") == "system" else []
+    body = history[len(head):]
+    if not body or (len(body) == 1
+                    and str(body[0].get("content") or "").startswith(_COMPACTED)):
+        return None
+    import time as _time
+
+    import memory
+    chars = sum(_msg_chars(m) for m in body)
+    weighed = renderer.last_prompt_tokens()
+    # Characters per token on this conversation, as the server last counted
+    # it; the summarizer's budget is worked out from it (memory._RATIO).
+    ratio = (sum(_msg_chars(m) for m in history) / weighed) if weighed else None
+    renderer.faculty_running("COMPACTOR", said or "summarising the conversation so far…")
+    t0 = _time.monotonic()
+    summary = memory.compact(body, instructions, ratio=ratio, stop_event=stop_event)
+    carried = {"role": "user", "content": (
+        f"{_COMPACTED} What follows is a summary of everything before this "
+        f"point; the messages themselves are gone.]\n\n{summary}")}
+    renderer.faculty("COMPACTOR",
+                     f"{_harness.plural(len(body), 'message')}, {chars:,} characters → one summary "
+                     f"of {len(summary):,} · {_time.monotonic() - t0:.0f}s")
+    return head + [carried]
 
 
 class Turn:
@@ -1935,6 +2003,34 @@ If the turn needed no tools at all, the conclusion is simply your reply.
     # by count rather than by an index earlier compactions have invalidated.
     turn_msgs: list[int] = []
     consolidated_upto = 0
+    compact_mode = getattr(baseline_config, "CHAT_COMPACT_MODE", "summary")
+    # (prompt tokens, characters) of the history as the server last counted
+    # it, for the next turn to start from; None when the history has changed
+    # since - emptied, compacted - or nothing has been counted yet.
+    weighed_at: tuple | None = None
+
+    def _compacted(history: list, instructions: str, said: str) -> list | None:
+        """The history after a compaction asked for from the prompt or decided
+        between turns; None when it was stopped, failed, or had nothing to do.
+        ctrl+C stops it like a turn, and leaves the conversation as it was."""
+        stop = threading.Event()
+        new = None
+        try:
+            with _stops_turn(stop, renderer):
+                new = _compact_summary(history, renderer, instructions, stop, said)
+        except (KeyboardInterrupt, llm_client.LLMInterrupted):
+            _say_dim("  not compacted: the conversation is as it was.")
+        except Exception as e:
+            _say_dim(f"  not compacted - {type(e).__name__}: {str(e)[:90]}")
+        finally:
+            renderer.idle()
+        if new is None:
+            return None
+        desk_ids.clear()          # those blocks are gone from the context
+        desk_rules.clear()
+        renderer.context_reset()
+        print()
+        return new
 
     # TWO SCREENS, NOT THREE. The launcher has just drawn the briefing - the
     # logo, the project, what the memory holds, what changed while you were
@@ -1990,6 +2086,56 @@ If the turn needed no tools at all, the conclusion is simply your reply.
             if text.startswith("/"):
                 if not _run_slash(text):
                     break        # a page the launcher owns
+                while _ASKED:
+                    asked, word = _ASKED.pop(0)
+                    if asked == "clear":
+                        # A NEW CONVERSATION IN THE SAME PROJECT. What was said
+                        # is not thrown away: it goes to the memory exactly as
+                        # it does when the project closes, and the context
+                        # starts empty.
+                        pending = turns[consolidated_upto:]
+                        if args.memory and pending:
+                            if not _consolidate_later(pending, cwd, note="before /clear"):
+                                print("\n  writing what was said to memory - ctrl+C stops it")
+                                try:
+                                    _consolidate(pending, cwd, renderer)
+                                except KeyboardInterrupt:
+                                    print("\n  stopped. What was written is kept; the "
+                                          "rest is still in the log.")
+                        elif pending:
+                            print(f"  {len(pending)} turn(s) stay in {log_path.name} "
+                                  f"(memory is off: nothing was consolidated)")
+                        turns, turn_msgs, consolidated_upto = [], [], 0
+                        history, weighed_at = None, None
+                        desk_ids.clear()
+                        desk_rules.clear()
+                        renderer.context_reset()
+                        _say_dim("  the context is empty: this is a new conversation.")
+                        print()
+                    elif asked == "compact":
+                        if not history:
+                            print("  nothing to compact yet.")
+                            continue
+                        if compact_mode == "episodes":
+                            # The old trade, for whoever switched it back on:
+                            # older turns for the episodes made of them.
+                            if not args.memory:
+                                print("  with CHAT_COMPACT_MODE=episodes, /compact needs the memory on.")
+                                continue
+                            was = len(history)
+                            history, consolidated_upto = _compact(
+                                history, turns, turn_msgs, consolidated_upto, cwd, renderer)
+                            if len(history) == was:
+                                print(f"  nothing old enough to trade for episodes: the last "
+                                      f"{getattr(baseline_config, 'CHAT_KEEP_TURNS', 3)} turns are kept.")
+                                continue
+                            desk_ids.clear()
+                            desk_rules.clear()
+                            weighed_at = None
+                            continue
+                        new = _compacted(history, word, "summarising the conversation so far…")
+                        if new is not None:
+                            history, weighed_at = new, None
                 continue
 
             # Only a real turn needs the model. Asked again rather than
@@ -2031,6 +2177,31 @@ If the turn needed no tools at all, the conclusion is simply your reply.
             _t_turn = _time.monotonic()
             cfg.stop_event = threading.Event()
             result = None
+            # What was on the desk before this turn. If the conversation is
+            # compacted while the turn runs, those blocks leave the context and
+            # may be recalled again; the ones this turn fetched are still in
+            # its own request, which is never summarised.
+            _desk_then = (set(desk_ids), set(desk_rules))
+
+            def _mid_turn(prefix: list, _stop=cfg.stop_event, _then=_desk_then):
+                try:
+                    new = _compact_summary(
+                        prefix, renderer, "", _stop,
+                        "the context is full - summarising the conversation before this request…")
+                except llm_client.LLMInterrupted:
+                    raise
+                except Exception as e:
+                    # The turn goes on: its own steps are summarised instead,
+                    # which is what happened before this existed.
+                    renderer.faculty("COMPACTOR", f"not compacted - {str(e)[:100]}")
+                    return None
+                if new is not None:
+                    desk_ids.difference_update(_then[0])
+                    desk_rules.difference_update(_then[1])
+                    # The turn's largest request so far was of a list that is
+                    # gone: the closing line counts from here.
+                    renderer.context_reset()
+                return new
             try:
                 # The recall is inside what can be stopped. It was outside: a
                 # ctrl+C while the curator was choosing closed the project,
@@ -2054,6 +2225,10 @@ If the turn needed no tools at all, the conclusion is simply your reply.
                         # The critic holds the work to what was typed, not to
                         # the recalled memory standing in front of it.
                         request=text,
+                        # And when the window fills up while the turn runs, the
+                        # conversation before it is what gives way first.
+                        compact_prefix=_mid_turn if compact_mode != "episodes" else None,
+                        counted=weighed_at,
                     )
             except KeyboardInterrupt:
                 result = None           # the second press: abandoned at once
@@ -2087,6 +2262,8 @@ If the turn needed no tools at all, the conclusion is simply your reply.
             turns.append(turn)
             history = result.get("messages") or history
             turn_msgs.append(max(len(history or []) - before, 1))
+            _last = renderer.last_prompt_tokens()
+            weighed_at = (_last, sum(_msg_chars(m) for m in history or [])) if _last else None
 
             renderer.conclusion(result.get("forced", False),
                                 _time.monotonic() - _t_turn, conclusion)
@@ -2096,10 +2273,11 @@ If the turn needed no tools at all, the conclusion is simply your reply.
             # one-slot server would otherwise be queued in front of it.
             _suggest_start(text, conclusion)
 
-            # Compaction happens BETWEEN turns, never inside one: a turn that
-            # is still running has no finished experience to consolidate, and
-            # a ~40s pause mid-answer is the worst possible moment for it.
-            if args.memory and history:
+            # Is the conversation full? Asked after every turn. By summary -
+            # the default - it is also asked inside one (see _mid_turn), and
+            # needs no memory. By episodes it happens only here, BETWEEN turns:
+            # a turn still running has no finished experience to consolidate.
+            if history and (args.memory or compact_mode != "episodes"):
                 # Is the conversation full? In tokens the server counted, once
                 # one request has been answered; in characters until then. The
                 # estimate is off by up to 3x on the content a coding session
@@ -2110,12 +2288,19 @@ If the turn needed no tools at all, the conclusion is simply your reply.
                 else:
                     full = (sum(_msg_chars(m) for m in history)
                             > getattr(baseline_config, "CHAT_COMPACT_CHARS", 0))
-                if full:
+                if full and compact_mode == "episodes":
                     history, consolidated_upto = _compact(
                         history, turns, turn_msgs, consolidated_upto,
                         cwd, renderer)
                     desk_ids.clear()      # those blocks are gone from context
                     desk_rules.clear()
+                    weighed_at = None
+                elif full:
+                    new = _compacted(
+                        history, "",
+                        "the context is nearly full - summarising the conversation so far…")
+                    if new is not None:
+                        history, weighed_at = new, None
 
             # The prompt comes back with the guess already on it, or without
             # one - never with one arriving under your fingers.

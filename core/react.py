@@ -480,7 +480,9 @@ def run_agent(cfg: AgentConfig, user_task: str, log_path: Optional[Path] = None,
               on_step: Optional[Callable] = None,
               history: Optional[list] = None,
               protect_prefix: int = 0,
-              request: Optional[str] = None) -> Optional[dict]:
+              request: Optional[str] = None,
+              compact_prefix: Optional[Callable] = None,
+              counted: Optional[tuple] = None) -> Optional[dict]:
     """
     Start the ReAct loop.
     cfg       : AgentConfig
@@ -493,6 +495,12 @@ def run_agent(cfg: AgentConfig, user_task: str, log_path: Optional[Path] = None,
     protect_prefix : messages at the head that compression may not touch.
     request   : the user's own words, when user_task carries more (the recalled
                 memory in front of them). What the critic holds the work to.
+    compact_prefix : optional, from a caller that owns a conversation. Called
+                with the messages BEFORE this run's request when the prompt
+                has outgrown the window; returns what to put in their place,
+                or None to leave them. See _fit.
+    counted   : optional, (prompt tokens, characters) of `history` as the
+                server last counted it, from a caller that knows.
 
     `protect_prefix` draws the line between two jobs that look alike and are
     not. Inside one turn, too many tool observations is a summarising problem
@@ -597,7 +605,14 @@ def run_agent(cfg: AgentConfig, user_task: str, log_path: Optional[Path] = None,
     # WHAT THE SERVER LAST COUNTED: (prompt tokens, characters of the list it
     # counted). None until the first reply, and again after a compression,
     # when the count describes a list that no longer exists.
-    _counted: Optional[tuple[int, int]] = None
+    #
+    # A conversation passes in what the server counted at the end of the turn
+    # before. Without it every turn began on the character estimate, which is
+    # cautious by a factor that depends on the content - and once the
+    # conversation itself could be compacted from here, a history two thirds
+    # empty was being traded for a summary at the first step of a turn because
+    # it was made of search results, which run to many characters a token.
+    _counted: Optional[tuple[int, int]] = counted if (counted and counted[0]) else None
     # Prompts refused in a row as too long for the window. Reset by any
     # request that fits.
     _overflows = 0
@@ -616,10 +631,11 @@ def run_agent(cfg: AgentConfig, user_task: str, log_path: Optional[Path] = None,
         conversation that fitted on the strength of a guess. Now it goes only
         when the server has refused the prompt twice running.
         """
-        nonlocal _counted
+        nonlocal _counted, _task_fence
         size = _prompt_tokens(msgs, _counted)
         # Characters per token, as the server measured them on this very list:
-        # what tells a summarizer how much of it will fit.
+        # what tells a summarizer how much of it will fit, and what the list
+        # weighs once part of it has been replaced.
         ratio = (_counted[1] / _counted[0]) if (_counted and _counted[0]) else None
         if size is not None:
             over = size > config.COMPRESS_TOKENS
@@ -636,6 +652,36 @@ def run_agent(cfg: AgentConfig, user_task: str, log_path: Optional[Path] = None,
             said = f"~{size} tokens" if size is not None else "estimated"
             console.print(f"[yellow]Prompt {said} - compressing...[/yellow]")
         _counted = None
+
+        # THE OLDER GOES FIRST. What stands before this run's request is a
+        # conversation already had; what follows it is the work in hand, the
+        # results just fetched and not yet used. When the two together no
+        # longer fit, the conversation is what is traded for a summary, and
+        # the work in hand is touched only if that was not enough. It used to
+        # be the other way round by construction: the conversation was fenced
+        # off and only this turn's steps could give way - so a turn that
+        # started in a history already three quarters full summarised its own
+        # search results one step after reading them.
+        #
+        # Only when the caller can do it (a batch run has no conversation),
+        # only when there is one to speak of, and never twice in a row on what
+        # is already a summary: a tenth of the list is the line.
+        if compact_prefix is not None and _overflows < 2 and _task_fence > 2:
+            before, rest = msgs[1:_task_fence - 1], msgs[_task_fence - 1:]
+            weight = sum(_msg_chars(m) for m in before)
+            if weight * 10 >= sum(_msg_chars(m) for m in msgs[1:]):
+                try:
+                    put = compact_prefix(msgs[:_task_fence - 1])
+                except llm_client.LLMInterrupted:
+                    raise
+                except Exception:
+                    put = None
+                if put is not None:
+                    msgs = list(put) + rest
+                    _task_fence = len(put) + 1
+                    est = sum(_msg_chars(m) for m in msgs) / (ratio or 3.0)
+                    if est <= config.COMPRESS_TOKENS and not _overflows:
+                        return msgs
 
         if _overflows >= 2:
             # Refused twice: the fence was a preference, and so was keeping the

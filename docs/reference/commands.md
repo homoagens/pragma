@@ -42,7 +42,8 @@ Alone it opens the page; followed by one of these it goes straight there.
 | `/status` | how this project is set up right now |
 | `/jobs` | what the memory is writing in the background: follow it, stop it, run it again |
 | `/configure` | point Pragma at an LLM endpoint |
-| `/clear` | clear the screen, keep the conversation |
+| `/compact` | summarise the conversation so far and go on from the summary |
+| `/clear` | start over with an empty context; what was said goes to the memory |
 | `/help` | this list |
 
 ### `/memory`

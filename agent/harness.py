@@ -745,6 +745,12 @@ class Harness:
         # estimating from characters - see config.CHAT_COMPACT_TOKENS.
         self._turn["prompt_tokens"] = int(stats.get("prompt") or 0)
 
+    def context_reset(self) -> None:
+        """The conversation was emptied or compacted: what the last request
+        weighed describes a list that no longer exists."""
+        self._turn["peak_total"] = 0
+        self._turn["prompt_tokens"] = 0
+
     def last_prompt_tokens(self) -> int:
         """What the last request of the turn actually weighed, or 0 if no
         server reported it - an endpoint that sends no usage, or a turn that

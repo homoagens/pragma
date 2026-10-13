@@ -18,6 +18,7 @@ answers it: see [Architecture](../explanation/architecture.md#which-server-answe
 | `project_contract` | [`agent/prompts.py`](../../agent/prompts.py) | Carries the workspace's `PRAGMA.md` into the prompt, with what it overrides. |
 | `session_block` | [`agent/prompts.py`](../../agent/prompts.py) | The folder and the date. Last, so that everything before it is the same from one session to the next. |
 | `SYSTEM_PROMPT_SUMMARY` | [`core/memory.py`](../../core/memory.py) | Summarises the older steps of a turn that has grown too long. |
+| `SYSTEM_PROMPT_COMPACT` | [`core/memory.py`](../../core/memory.py) | Writes the summary a conversation goes on from when it is compacted, by `/compact` or because the window filled up. |
 | `_ASK_SYSTEM` | [`core/tools/ask_user/tool.py`](../../core/tools/ask_user/tool.py) | Words a question for the person, where the question is not asked by ending the turn. |
 | `_SUMMARIZE_SYSTEM` | [`agent/server.py`](../../agent/server.py) | The browser interface's summary of a thread that has grown too long. |
 
