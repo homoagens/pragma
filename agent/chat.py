@@ -154,10 +154,26 @@ _ALIASES.update({"/project": "/settings", "/config": "/configure"})
 _ALIASES.update({"/close": "/exit"})
 
 
+def _memory_on() -> bool:
+    """Whether this conversation recalls and remembers. It does not without
+    --memory, which is how `pragma --agent` starts it: the pages then leave out
+    what they would say about the memory."""
+    return bool(_STATE.get("memory", True))
+
+
+# What a command is said to do where there is no memory for it to touch.
+_BLURB_ALONE = {
+    "/settings": "how many steps a turn may take",
+    "/clear":    "start over with an empty context",
+}
+
+
 def _blurb(name: str) -> str:
     """The help line for a command; a family lists what it takes."""
     if name == "/memory":
         return " · ".join(_MEMORY_VIEWS)
+    if not _memory_on() and name in _BLURB_ALONE:
+        return _BLURB_ALONE[name]
     return _COMMANDS[name][1]
 
 
@@ -963,7 +979,9 @@ def _prompt() -> str:
 # existed to leave it. Now the briefing is the page you land on and the prompt
 # under it is already the conversation's.
 def _allowed() -> set:
-    return set(_COMMANDS)
+    """The commands that are offered - in /help and by tab. Without the memory
+    its two are not: typed, they still answer."""
+    return set(_COMMANDS) - (set() if _memory_on() else {"/memory", "/jobs"})
 
 
 # What the conversation's page says at the top, kept so that clearing can put
@@ -1005,12 +1023,14 @@ def _slash_help() -> None:
         if name in _allowed():
             print(f"    {a}{name:<12}{r}{_blurb(name)}")
     print()
-    print("  /memory takes one of the words above; alone it shows what is remembered.")
+    if _memory_on():
+        print("  /memory takes one of the words above; alone it shows what is remembered.")
     print("  Anything without a slash is a message to the agent.")
     print()
     print(f"  {a}ctrl+C{r}  stops a reply that is running; the conversation goes on")
     print(f"  {a}ctrl+D{r}  while a reply is running, stops it too; at the prompt, closes")
-    print("          the project, and what was said goes into memory")
+    print("          the project, and what was said goes into memory" if _memory_on()
+          else "          the project; the memory is off, so nothing of it is remembered")
     print()
     print("  Starting, backing up or removing a project is done where none is")
     print("  open: ctrl+D, then /projects.")
@@ -1060,6 +1080,10 @@ def _status_lines() -> list[tuple[str, str]]:
         found = endpoints.probe_all(list(roles.values()))
         agent = roles["agent"]
         for role, ep in roles.items():
+            # Without the memory, the roles that serve it are asked nothing -
+            # but for the recall's, when it is also guessing your next line.
+            if not _memory_on() and (role == "memory" or (role == "recall" and not _suggesting(cfg))):
+                continue
             p = found.get(ep.base_url, {})
             same = role != "agent" and ep.base_url == agent.base_url
             out.append((role, f"{ep.name} · {endpoints.status_text(p)} · "
@@ -1167,8 +1191,9 @@ def _status_lines() -> list[tuple[str, str]]:
     if forced:
         out.append(("", f"AGENT_THINK={forced} is set in this window's environment and "
                         f"overrides the endpoint for the steps and the memory"))
-    out.append(("", f"memory calls carry seed {getattr(cfg, 'MEMORY_SEED', 42)}, "
-                    f"so a repeated one agrees with itself"))
+    if _memory_on():
+        out.append(("", f"memory calls carry seed {getattr(cfg, 'MEMORY_SEED', 42)}, "
+                        f"so a repeated one agrees with itself"))
     # What this project's own calls carry. A profile answers for all of them at
     # once and says which row of the table it is, because "temperature 0.6" on
     # its own is a number and "thinking-coding" is a reason.
@@ -1194,6 +1219,11 @@ def _status_lines() -> list[tuple[str, str]]:
                     else " · ".join([f"temperature {temp}" if temp is not None
                                      else "temperature: the endpoint"] + extra)))
 
+    if not _memory_on():
+        # No store to describe to an agent that neither reads it nor writes it.
+        out.append(("", ""))
+        out.append(("memory", "off for this run: nothing is recalled, nothing is written"))
+        return out
     # The store as it stands, from the same summary the briefing is built from.
     # It reads the endpoint too, so a server that is down or a tunnel that is
     # flapping makes it slow or makes it fail - and a page that then printed
@@ -1317,8 +1347,8 @@ def _show_status() -> bool:
         for more in parts[1:]:
             print(f"    {'':<11}{more}")
     print()
-    print(f"  {grey}/configure changes the endpoints · /settings the steps per turn "
-          f"and how much is recalled{r}")
+    print(f"  {grey}/configure changes the endpoints · /settings the steps per turn"
+          f"{' and how much is recalled' if _memory_on() else ''}{r}")
     print()
     return True
 
@@ -1336,8 +1366,11 @@ def _run_slash(line: str) -> bool:
         print("  you are already in the conversation - just say it.")
         return True
     if cmd in _LEAVING_WORDS:
-        print("  ctrl+D closes the project, and what was said is consolidated")
-        print("  on the way out. Another ctrl+D at the projects leaves Pragma.")
+        if _memory_on():
+            print("  ctrl+D closes the project, and what was said is consolidated")
+            print("  on the way out. Another ctrl+D at the projects leaves Pragma.")
+        else:
+            print("  ctrl+D closes the project. Another ctrl+D at the projects leaves Pragma.")
         return True
     if cmd in _AT_HOME:
         print(f"  {cmd} - {_AT_HOME[cmd]} - lives on the projects screen now:")
@@ -2129,7 +2162,8 @@ If the turn needed no tools at all, the conclusion is simply your reply.
         f"  {_STATE['project']} · talking to {_harness.pretty_model(served) or 'nothing - the backend is down'}"
         f" · memory {'on' if args.memory else 'off'}"
         f" · {max_steps} steps per turn",
-        "  ctrl+C or ctrl+D stops a reply · at the prompt, ctrl+D closes the project and remembers what was said",
+        "  ctrl+C or ctrl+D stops a reply · at the prompt, ctrl+D closes the project"
+        + (" and remembers what was said" if args.memory else ""),
     ]
     _slash_banner()
 
@@ -2412,7 +2446,7 @@ If the turn needed no tools at all, the conclusion is simply your reply.
                       "still in the log.")
     elif turns:
         print(f"\n  {len(turns)} turn(s) recorded in {log_path.name} "
-              f"(no --memory: nothing was consolidated)")
+              f"(memory is off: nothing was consolidated)")
     # NOTHING KEEPS TALKING AFTER THIS. The suggester runs in a daemon thread
     # and a faculty may still be mid-request; both notice at their next check
     # and stop, so the process ends when it says it is ending.

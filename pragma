@@ -7,6 +7,7 @@
 #
 #     ./pragma                  from the repository
 #     ln -s "$PWD/pragma" ~/.local/bin/pragma     from anywhere
+#     ./pragma --agent          the agent alone: no recall, nothing remembered
 #
 # It runs the repository's own venv when there is one, because that is where
 # rich and prompt_toolkit live; without it, whatever python3 is on the path.

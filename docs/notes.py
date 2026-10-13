@@ -339,6 +339,10 @@ CONFIG = {
     # -- dev --------------------------------------------------------------
     "PRAGMA_DEBUG": ("dev",
         "`1` prints diagnostic output."),
+    "PRAGMA_AGENT": ("memory",
+        "`1` runs the agent alone: nothing is recalled before a turn and nothing is "
+        "written to memory after the conversation. It is what `pragma --agent` sets, "
+        "for that run; the stores are left as they are."),
     "PRAGMA_LOOK": ("dev",
         "`classic` draws a turn the way it was drawn before: the name of each tool, "
         "its arguments and its output. Unset, the turn is a ledger."),

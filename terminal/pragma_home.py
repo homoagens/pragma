@@ -106,6 +106,16 @@ ALIASES.update({f"/{action}": f"/projects {action}" for action in PROJECT_ACTION
 ROOT = Path(__file__).resolve().parent.parent
 
 
+def agent_alone() -> bool:
+    """Whether this run of Pragma is the agent alone - `pragma --agent`: nothing
+    recalled, nothing written to memory. Every page that would speak of the
+    memory asks here, and says less."""
+    return os.environ.get("PRAGMA_AGENT", "").strip().lower() in ("1", "true", "yes", "on")
+
+
+AGENT_ALONE_SAYS = "off for this run (--agent): nothing is recalled, nothing is written"
+
+
 def rows() -> list[tuple[str, str]]:
     """The command rows for the home page, as the state makes them.
 
@@ -119,6 +129,10 @@ def rows() -> list[tuple[str, str]]:
                 ("/help", COMMANDS["/help"]),
                 ("/exit", COMMANDS["/exit"])]
     shown = ("/open", "/new", "/projects", "/jobs", "/configure", "/exit")
+    if agent_alone():
+        # Still there when typed: a memory written by an earlier run may be at
+        # work. It is not offered by a page that starts none.
+        shown = tuple(name for name in shown if name != "/jobs")
     return [(name, "backups" + SEP + "delete" + SEP + "the full list"
              if name == "/projects" else COMMANDS[name]) for name in shown]
 
@@ -634,8 +648,11 @@ def main() -> int:
     # there is NO embedding server is said only on a machine whose model
     # answers: on a first run the one line to read is the endpoint's, and a
     # second one about something optional would be read instead of it.
-    if embedding.get("asked") and (embedding.get("found") is not None
-                                   or any(up for _label, _status, up in lines)):
+    if agent_alone():
+        # What the memory is searched by is nothing to an agent without one.
+        row("memory", AGENT_ALONE_SAYS, "\033[33m")
+    elif embedding.get("asked") and (embedding.get("found") is not None
+                                     or any(up for _label, _status, up in lines)):
         row("embedding", *embedding_line(embedding.get("found")))
     # And the servers that publish tools, when any is listed.
     asking_mcp.join(3.5)

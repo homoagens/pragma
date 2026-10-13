@@ -107,6 +107,11 @@ RECALL = {
 # room a conversation needs. The same number pragma-session.ps1 falls back to,
 # because a project opened on one system and on the other must behave the same.
 DEFAULT_STEPS = "50"
+# `pragma --agent`: the agent alone. Nothing is recalled before a turn and
+# nothing is written to memory after the conversation, for this run of Pragma
+# and every project opened in it; the stores are left as they are. main() puts
+# it in the environment as PRAGMA_AGENT, which is where every page reads it:
+# see home.agent_alone().
 
 
 # ── the registry ──────────────────────────────────────────────────────────────
@@ -327,7 +332,10 @@ def show_brief(entry: dict, data: dict) -> None:
     if away is not None:
         memory += SEP + "last here " + ("today" if away < 1 else "yesterday" if away < 2
                                         else f"{away:.0f} days ago")
-    row("memory", memory)
+    if home.agent_alone():
+        row("memory", home.AGENT_ALONE_SAYS, ESC + "[33m")
+    else:
+        row("memory", memory)
 
     up = data.get("backend") == "up"
     if up:
@@ -370,7 +378,7 @@ def show_brief(entry: dict, data: dict) -> None:
         news.append("the last conversation left no memory: "
                     + _n(data.get("kept_nothing_turns"), "turn") + " read, none kept"
                     + (f' - "{why}"' if why else " - no reason was given"))
-    if news:
+    if news and not home.agent_alone():     # all of it is news of the memory
         print()
         say("  since you left", "dim")
         for line in news:
@@ -386,7 +394,9 @@ def talk(entry: dict, env: dict) -> str:
     request.unlink(missing_ok=True)
     env = dict(env, PRAGMA_REQUEST=str(request))
     steps = str((entry.get("settings") or {}).get("MaxSteps", "")).strip() or DEFAULT_STEPS
-    argv = [sys.executable, "-m", "agent.chat", "--cwd", str(entry.get("workspace") or Path.cwd()), "--memory"]
+    argv = [sys.executable, "-m", "agent.chat", "--cwd", str(entry.get("workspace") or Path.cwd())]
+    if not home.agent_alone():
+        argv.append("--memory")
     if steps:
         argv += ["--max-steps", steps]
     with child_owns_ctrl_c():
@@ -420,9 +430,12 @@ def choices_page(entry: dict) -> bool:
     while True:
         settings = (by_name(name) or entry).get("settings") or {}
         steps = str(settings.get("MaxSteps", "") or DEFAULT_STEPS)
-        keys = ["MaxSteps"] + list(RECALL)
+        # How much the memory brings to a turn is not asked of an agent that
+        # runs without one.
+        recall = {} if home.agent_alone() else RECALL
+        keys = ["MaxSteps"] + list(recall)
         options, notes = ["steps per turn"], [steps]
-        for key, (label, default, levels) in RECALL.items():
+        for key, (label, default, levels) in recall.items():
             level = str(settings.get(key, "") or default)
             options.append(label)
             notes.append(f"{level}{SEP}{dict(levels).get(level, '')}")
@@ -923,6 +936,9 @@ def main() -> int:
             stream.reconfigure(encoding="utf-8", errors="replace")
         except Exception:
             pass
+    if "--agent" in sys.argv[1:]:
+        sys.argv.remove("--agent")
+        os.environ["PRAGMA_AGENT"] = "1"
     try:
         if len(sys.argv) == 3 and sys.argv[1] == "--settings":
             # One page and back: what an open conversation runs for /settings,

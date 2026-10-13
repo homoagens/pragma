@@ -165,6 +165,7 @@ What stops a model that is repeating itself.
 | `AUTO_REFLECT` | `true` | Whether a reflection pass runs after a successful task. | [`core/config.py`](../../core/config.py) |
 | `BATCH_SEGMENT` | unset | `1` has a batch run judged before it becomes an episode. Unset, every batch run with `--memory` writes one. | [`core/config.py`](../../core/config.py) |
 | `MEMORY_SCHEMA` | `1` | `0` stops the memory faculties from asking the server to constrain their JSON. | [`core/config.py`](../../core/config.py) |
+| `PRAGMA_AGENT` | unset | `1` runs the agent alone: nothing is recalled before a turn and nothing is written to memory after the conversation. It is what `pragma --agent` sets, for that run; the stores are left as they are. | [`terminal/pragma_home.py`](../../terminal/pragma_home.py) |
 
 ## Optional faculties
 
