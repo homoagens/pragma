@@ -306,6 +306,12 @@ class Ledger(Harness):
             dry = str(args.get("dry_run", "")).lower() in ("true", "1", "yes")
             return ("looked" if dry else verb), what
         target = (args.get("path") or args.get("image_path") or args.get("file") or "")
+        if "__" in name and not target:
+            # A tool on an MCP server: nothing is known of it but its name and
+            # what it was called with, so that is what the line says. It used
+            # to say the name twice.
+            said = "  ".join(f"{k}={' '.join(str(v).split())[:48]}" for k, v in args.items())
+            return verb, said or "(no arguments)"
         return verb, self._near(target) or name
 
     def _outcome(self, name: str, args: dict, text: str, took: float,
