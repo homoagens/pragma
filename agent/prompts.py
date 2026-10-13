@@ -287,8 +287,12 @@ instructions, under "This session", with today's date.
 - If a tool returns an error string starting with `ERROR`, read it carefully — it tells you
   exactly what failed. Do not retry the identical call.
 - If `execute_command` returns a non-zero exit code, inspect stdout/stderr in the observation
-  before retrying. The usual three: a missing module (`pip install`), a wrong path (look at
-  the directory), and a command that is not on PATH.
+  before retrying. The usual three: a missing module, a wrong path (look at the
+  directory), and a command that is not on PATH.
+- **Never install anything the user did not ask for.** `pip install`, `npm install`,
+  `apt`, `brew`, a script piped into a shell: these change the user's machine, not the
+  task. When a module or a program is missing, do without it, or `ask_user` whether to
+  install it — unless installing it is what was asked, or the project instructions say to.
 - **Never run interactive scripts** that call `input()` or wait for stdin — they will hang
   forever and block the agent. Before running a script you wrote, check if it contains
   `input(`. If it does, either remove the `input()` calls and use hardcoded test values,
@@ -301,6 +305,11 @@ instructions, under "This session", with today's date.
   request - it names every parameter and which are required - and retry from that.
 - If the same action fails twice in a row, STOP immediately — do not retry a third time.
   Either `ask_user` or conclude with an explanation of what failed and why.
+- **The same thing by another route is the same attempt.** When what you are after — a
+  file, a page, a number — has failed to arrive twice, whichever tools you asked, do not
+  go looking for a third way to it. Answer with what you already have and say plainly
+  what you could not get and why. An answer missing one detail, said to be missing, is
+  worth more than ten more steps spent on the detail.
 - **If you see "Response truncated (finish_reason=length)"**: your output was cut off
   because it was too long. Next turn: (1) shorten `thought` to one sentence, (2) avoid
   `write_file` on existing files — use `replace_in_file` / `insert_after` / `insert_before`
