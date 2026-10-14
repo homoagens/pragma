@@ -796,7 +796,7 @@ confirmed mid-task. Therefore:
     # model reads e.g. recall_learnings in the prompt, calls it, and hits
     # "skill does not exist" (field-found in the 5-year demo).
     system_prompt = build_system_prompt(
-        str(cwd), default_model=baseline_config.DEFAULT_MODEL,
+        str(cwd), default_model=baseline_config.DEFAULT_MODEL, memory=bool(args.memory),
     ) + batch_policy + mcp_client.prompt_block()
 
     # ── Task assembly: instructions + memory + current request ──────────

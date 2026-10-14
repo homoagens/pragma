@@ -1,6 +1,6 @@
 # replace_in_file
 
-Deterministic find-and-replace in a file. No LLM involved — equivalent to Python's `str.replace`.
+Replace an exact substring in a file (`old` must appear verbatim; `count=-1` for every occurrence): the cheapest way to change part of a file you have seen. Deterministic; it takes no `overwrite`.
 
 ---
 

@@ -1467,8 +1467,8 @@ EPISODE_DELETE_AFTER_DAYS = int(
 # at runtime (Path(__file__)), so it is correct on every machine regardless
 # of where the repo was cloned — no path is hardcoded.
 #
-# This is the deterministic safety net behind the soft "## Self-integrity"
-# rule in the system prompt. Set PRAGMA_ALLOW_SELF_MODIFY=true ONLY if you
+# This is the deterministic safety net behind the first rule of "What you
+# never do" in the system prompt. Set PRAGMA_ALLOW_SELF_MODIFY=true ONLY if you
 # are intentionally developing Pragma itself through a Pragma session.
 ALLOW_SELF_MODIFY = os.environ.get(
     "PRAGMA_ALLOW_SELF_MODIFY", ""

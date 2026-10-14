@@ -1,6 +1,6 @@
 # append_file
 
-Append text to the end of an existing file. No LLM involved.
+Append text to the end of an existing file: how the next section of a large file is added, or anything that goes at its end. Deterministic; it takes no `overwrite`.
 
 ---
 

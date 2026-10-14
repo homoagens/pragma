@@ -1,6 +1,6 @@
 # execute_command
 
-Execute a shell command and return its stdout, stderr, and return code.
+Run a shell command and return its stdout, stderr and exit code. Each call is a new process: pass `cwd`, since `cd` does not carry over. Nothing can be typed at it: a program waiting for input meets the end of it at once. Anything meant to keep running - a server, a watcher - goes with `background=true`, or it ends only at the timeout.
 
 ---
 

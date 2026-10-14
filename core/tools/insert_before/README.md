@@ -1,6 +1,6 @@
 # insert_before
 
-Deterministic insert: place a block of content immediately before the first occurrence of an exact anchor string in a file. No LLM involved.
+Insert a block right before the first occurrence of an exact anchor string in a file: to add at a known place without rewriting the file. Deterministic; it takes no `overwrite`.
 
 ---
 

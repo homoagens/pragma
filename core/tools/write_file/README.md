@@ -1,6 +1,6 @@
 # write_file
 
-Create a NEW file with the given content. Refuses to overwrite existing files unless explicitly authorized.
+Create a NEW file. It refuses an existing one unless `overwrite=true`, which is for a small file regenerated whole and nothing else: change an existing file with replace_in_file, insert_after, insert_before, append_file or apply_patch. Build a large new file (a long list, a page with data, many functions) in parts: the scaffolding here, then one append_file per section; content over the size limit is refused with an error that says so.
 
 ---
 

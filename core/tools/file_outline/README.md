@@ -1,6 +1,6 @@
 # file_outline
 
-Cheap structural map of a file — no LLM call, no full content read into context.
+A file's map without its content: size, line count, top-level symbols and headings with their line numbers, and its last lines. Run it before reading a file you have not seen: it costs a fraction of the context and tells you which part to read, or where to anchor a change.
 
 ---
 

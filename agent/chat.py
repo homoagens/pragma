@@ -1975,53 +1975,31 @@ def main() -> int:
     # and the write, so an agent free to call them turns salience into a count
     # of how often a word recurred. The curator reinforces only what it chose.
     # palette() withholds them: see _NOT_AGENT_TOOLS.
-    # Chat-only addendum. The base prompt was written for one headless task,
-    # and two of its rules invert in a conversation - which is not the model
-    # misbehaving but the model obeying: told that `conclusion` is where recaps
-    # belong, it closes a warm exchange with "done, I updated journal.md".
-    # An instruction that is not followed is usually a contradiction nobody
-    # declared, so this declares which side wins.
-    #
-    # Overriding the 200-character thought rule is safe HERE and only here: the
-    # live session runs on the native channel, where the text is `content` and
-    # the arguments live in `tool_calls`, so a long reply cannot truncate the
-    # JSON of an action. On the text protocol it could, which is why the rule
-    # exists in the first place.
+    # What a conversation adds to the prompt. It used to open by declaring that
+    # it won over every rule above it, because two of the base prompt's rules,
+    # written for one headless task, inverted here. The base prompt now says
+    # what a reply is in terms that hold in both, so this only says what is
+    # particular to a person reading as the turn goes.
     chat_policy = """
 
-## Live session - this is a conversation
+## In a conversation
 
-Where the rules above disagree with this section, this section wins.
+The person is reading as the turn goes, and answers between turns.
 
-**`thought` IS NOT SHOWN TO THE PERSON.** It is your own note about the
-immediate next step - one short sentence - and anything else you put there
-is simply lost. Everything you want to say goes in `conclusion`, whole.
-
-    Prefer   thought:    "Checking the end of the journal before appending."
-             conclusion: <your whole reply to them>
-
-    Over     thought:    <your whole reply to them>
-             conclusion: "Done. I updated journal.md."
-
-The second shape is the one to avoid: it delivers the answer where nobody
-reads it, and the receipt where the answer belonged. Do not answer in the
-thought and then summarise at the end - answer once, at the end.
-
-**The conclusion closes the exchange**, it does not report on it. When what
-you were asked for IS the work, say what came of it, not which files it went
-through. Nobody wants the receipt for an operation they asked for and just
-watched happen.
-
-**To ask the person something, end the turn.** Put the question in your
-reply and stop; the answer arrives as their next message. Calling
-`ask_user` tells you the same, except for a yes-or-no confirmation, which
-it asks them directly.
-
-If the turn needed no tools at all, the conclusion is simply your reply.
+- **The sentence that goes with a tool call is not shown to them.** It is
+  your note on the next step; anything else put there is lost. Everything
+  meant for them goes in your final reply, once — not in the notes and then
+  summarised again at the end.
+- **The final reply is the answer, not a receipt.** When the work is what
+  they asked for, say what came of it, not which files it went through:
+  they watched it happen.
+- **To ask them something, end the turn** with the question in your reply;
+  the answer is their next message. `ask_user` does the same, except for a
+  yes-or-no confirmation, which it asks them directly.
 """
 
     system_prompt = build_system_prompt(
-        str(cwd), default_model=baseline_config.DEFAULT_MODEL,
+        str(cwd), default_model=baseline_config.DEFAULT_MODEL, memory=bool(args.memory),
     ) + chat_policy + mcp_client.prompt_block() + project_contract(cwd) + session_block(cwd)
 
     global _RENDERER
