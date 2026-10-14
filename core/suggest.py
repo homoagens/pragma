@@ -67,6 +67,10 @@ Rules:
   answer that closed the subject - answer with an empty string. A wrong guess
   costs more than no guess: it sits in the input box where the person is
   about to type, and they have to delete it.
+- Never write the person's consent to something that cannot be undone:
+  deleting, overwriting, pushing, installing. When the assistant has just
+  asked whether to do such a thing, answer with an empty string. That answer
+  is theirs to type: one key must never be enough to give it.
 
 Answer as JSON: {"question": "..."}"""
 
