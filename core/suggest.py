@@ -32,6 +32,7 @@ queue. /configure turns it on, once, for the whole harness.
 from __future__ import annotations
 
 import os
+import re
 
 import config
 import llm_client
@@ -186,4 +187,33 @@ def next_question(asked: str, answered: str, model=None, earlier=()) -> str:
     # paragraph. One line is the contract; anything longer is not a suggestion
     # and would not fit on the input line anyway.
     q = " ".join(str(data.get("question") or "").split())
-    return q if len(q) <= MAX_CHARS else ""
+    if len(q) > MAX_CHARS or consents(q, answered):
+        return ""
+    return q
+
+
+# The words a reply opens with when it gives a yes.
+_YES = re.compile(r"^\W*(yes|yeah|yep|sure|ok(ay)?|go ahead|proceed|do it|confirm(ed)?|approved?|"
+                  r"s[iì]|certo|va bene|procedi|vai|fallo|conferm[oa]|d'accordo)\b", re.I)
+
+
+def consents(guess: str, answered: str) -> bool:
+    """Would offering this line put a consent one key away?
+
+    The prompt asks the model never to write one, and a model that answers at
+    once wrote "Yes, go ahead and delete the files" under the very question
+    that asked. So it is checked here as well: a yes after an answer that
+    ends by asking something, and any line carrying a command that the
+    conversation would hold for the person (core/command_gate.py), are not
+    offered. The person types that answer, or nobody does.
+    """
+    try:
+        import command_gate
+        # A command inside a sentence: tried from every word on, since
+        # "now run rm build/*.o for me" starts with "now", not with `rm`.
+        words = (guess or "").split()
+        if any(command_gate.held(" ".join(words[i:])) for i in range(len(words))):
+            return True
+    except Exception:
+        pass
+    return bool(_YES.search(guess)) and "?" in (answered or "")[-400:]
