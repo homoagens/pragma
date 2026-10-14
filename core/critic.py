@@ -172,6 +172,7 @@ class Review:
     seconds: float = 0.0
     evidence_chars: int = 0
     round: int = 1
+    left: str = ""                        # why a revise was not sent back: see left_to_the_person
 
     def failing(self) -> list[dict]:
         return [r for r in self.requirements if r.get("status") != "met"]
@@ -419,7 +420,8 @@ def review(request: str, claim: str, ledger: list[dict], before: dict,
                 messages=[{"role": "system", "content": _SYSTEM},
                           {"role": "user", "content": text}],
                 model=model,
-                max_tokens=config.MEMORY_MAX_TOKENS,
+                # Wider with the window: see config.critic_max_tokens.
+                max_tokens=config.critic_max_tokens(len(_SYSTEM) + len(text)),
                 stop_event=stop_event,
                 **config.memory_call("select"),
                 response_schema=_SCHEMA,
@@ -459,9 +461,45 @@ def sent_back(rv: Review, n: int, most: int) -> str:
     return "\n".join(lines)
 
 
-def closing_note(rv: Review, sends: int) -> str:
+def left_to_the_person(rv: Review, ledger: list[dict]) -> str:
+    """Why this verdict must not send the work back, or "".
+
+    The prompt tells the critic both of these, and a critic that answers at
+    once ignored both: it proposed running the deletion the agent had stopped
+    to ask about, and after the person said no it sent the work back to ask
+    them again. So they are decided here, not by the model. The review is not
+    thrown away: what it found open is written under the answer, for the
+    person - the only one who can settle it.
+    """
+    if rv.verdict != "revise":
+        return ""
+    if any(str(e.get("observation", "")).lstrip().startswith("REFUSED by the person")
+           for e in ledger or []):
+        return "you refused a command in this turn"
+    try:
+        import command_gate
+        if command_gate.held(rv.proposal or ""):
+            return "only you can allow what it proposes"
+    except Exception:
+        pass
+    return ""
+
+
+def asks_already(claim: str) -> bool:
+    """Does the answer end by putting a question to the person?"""
+    return "?" in (claim or "").rstrip()[-400:]
+
+
+def closing_note(rv: Review, sends: int, claim: str = "") -> str:
     """What goes under an answer delivered with something still open."""
+    if rv.left:
+        open_ = "\n".join(f"> - {r['status']}: {r['text']}" for r in rv.failing())
+        return f"\n\n> **Critic, left to you** ({rv.left}):\n" + (open_ or f"> - {rv.proposal}")
     if rv.verdict == "ask_user":
+        # The agent has asked already: the same question twice, one under the
+        # other, is the critic getting in the way.
+        if asks_already(claim):
+            return ""
         return f"\n\n> **Critic, a question for you:** {rv.proposal}"
     if rv.verdict == "revise":
         open_ = "\n".join(f"> - {r['status']}: {r['text']}" for r in rv.failing())
@@ -482,6 +520,8 @@ def summary(rv: Review, sends: int, most: int) -> tuple[str, list[str]]:
         details.append(f"aside: {rv.aside}")
     if rv.verdict == "accept":
         return f"{count} · delivered{secs}", details
+    if rv.left:
+        return f"{count} · left to you: {rv.left}{secs}", details
     if rv.verdict == "ask_user":
         return f"{count} · a question for you: {rv.proposal}{secs}", details
     if sends < most:

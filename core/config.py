@@ -589,6 +589,51 @@ MEMORY_THINK_BUDGET = int(os.environ.get("MEMORY_THINK_BUDGET", "") or _THINK_DE
 # cut and the call asked again without thinking, as a memory call's is.
 RECALL_THINK_BUDGET = int(os.environ.get("RECALL_THINK_BUDGET", "") or 4000)
 
+# The critic's cap is neither of those. It used to be the recall's, inherited:
+# a critic told to reason was cut off at 4 000 characters, before it had got
+# through the record of the turn, and asked again without thinking - so the
+# reasoning cost half a minute and decided nothing. Judging a turn is what
+# reasoning is for, so its cap is derived for each call from what the call
+# can actually hold: the room the window has left after what the critic
+# reads, within what the call may write, less room for the verdict. Wide on a
+# large window, narrow by itself on a small one - and wide is cheap on a fast
+# model. A number here fixes it instead; 0 removes the cap.
+_CRITIC_THINK_RAW = os.environ.get("CRITIC_THINK_BUDGET", "").strip()
+_CRITIC_ANSWER_ROOM = 1500       # tokens kept back for the verdict's JSON
+_CRITIC_WINDOW_SHARE = 4         # the call may write up to a quarter of the window
+
+
+def critic_max_tokens(read_chars: int) -> int:
+    """What the critic's call may write: a quarter of the context window, and
+    never less than a memory call may - so a larger window gives the judgement
+    more room to reason - but never more than the window has left after what
+    the critic reads."""
+    window = int(globals().get("CONTEXT_WINDOW") or 0)
+    if not window:
+        return MEMORY_MAX_TOKENS
+    left = window - read_chars // 3 - 512
+    return max(1024, min(left, max(MEMORY_MAX_TOKENS, window // _CRITIC_WINDOW_SHARE)))
+
+
+def critic_think_budget(read_chars: int, max_tokens: int) -> int:
+    """Characters of reasoning the critic may spend on this call before it is
+    asked again without thinking. `read_chars` is what it is given to read,
+    `max_tokens` what the call may write."""
+    if _CRITIC_THINK_RAW:
+        try:
+            return max(0, int(_CRITIC_THINK_RAW))
+        except ValueError:
+            pass
+    window = int(globals().get("CONTEXT_WINDOW") or 0)
+    room = int(max_tokens or 0) or window
+    if window:
+        # Three characters a token, not four: the record is code and output,
+        # which counts more tokens per character than prose.
+        room = min(room, window - read_chars // 3)
+    # Never so small that a judgement cannot start: below this the call would
+    # be cut before it had read the request.
+    return max(4000, (room - _CRITIC_ANSWER_ROOM) * 4)
+
 
 def current_role() -> str:
     """Which of the roles is making the call happening right now.

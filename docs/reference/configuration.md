@@ -57,6 +57,7 @@ What a request sends when the endpoint's own table says nothing.
 | `AGENT_THINK` | the endpoint's own choice | `on` or `off` overrides, for one run, whether the model reasons before answering. | [`core/config.py`](../../core/config.py) |
 | `MEMORY_THINK_BUDGET` | derived from `MEMORY_MAX_TOKENS` | Characters of reasoning after which a memory call is asked again without it. `0` removes the cap. | [`core/config.py`](../../core/config.py) |
 | `RECALL_THINK_BUDGET` | `4000` | The same cap for the recall, which runs while you wait. | [`core/config.py`](../../core/config.py) |
+| `CRITIC_THINK_BUDGET` | derived for each call | The same cap for the critic. Unset, it is worked out for each call from the room the context window has left and what the call may write, so it widens with the window. | [`core/config.py`](../../core/config.py) |
 | `MEMORY_SEED` | `42` | Seed sent with every memory call, so the same prompt gives the same answer. | [`core/config.py`](../../core/config.py) |
 
 ## Budgets

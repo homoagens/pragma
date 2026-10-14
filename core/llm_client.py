@@ -898,13 +898,21 @@ def _post_streamed(url, headers, payload, timeout, label, stop_event):
     content, reasoning, finish, usage = "", "", "", {}
     guard = _make_loop_guard()
     # The cap is for the faculties only: the agent may think long on purpose,
-    # and its own loop has the step budget and the watchdogs. The recall and
-    # the critic both speak with the person waiting, so both get the short one.
-    budget = 0
+    # and its own loop has the step budget and the watchdogs. The recall
+    # speaks with the person waiting and gets the short one; the critic's is
+    # derived for each call from the room the call has (config.
+    # critic_think_budget); the memory faculties get theirs.
+    budget, knob = 0, ""
     if current_faculty():
-        budget = (getattr(config, "RECALL_THINK_BUDGET", 0)
-                  if endpoints.role_of(current_faculty()) in ("recall", "critic")
-                  else getattr(config, "MEMORY_THINK_BUDGET", 0))
+        role = endpoints.role_of(current_faculty())
+        if role == "critic":
+            read = sum(len(str(m.get("content") or "")) for m in payload.get("messages") or [])
+            budget, knob = (config.critic_think_budget(read, int(payload.get("max_tokens") or 0)),
+                            "CRITIC_THINK_BUDGET")
+        elif role == "recall":
+            budget, knob = getattr(config, "RECALL_THINK_BUDGET", 0), "RECALL_THINK_BUDGET"
+        else:
+            budget, knob = getattr(config, "MEMORY_THINK_BUDGET", 0), "MEMORY_THINK_BUDGET"
     try:
         for raw in resp.iter_lines():
             if stop_event is not None and stop_event.is_set():
@@ -934,9 +942,6 @@ def _post_streamed(url, headers, payload, timeout, label, stop_event):
                         pass
                 guard.observe(piece, reasoning)
                 if budget and not content and len(reasoning) > budget:
-                    knob = ("RECALL_THINK_BUDGET"
-                            if budget == getattr(config, "RECALL_THINK_BUDGET", -1)
-                            else "MEMORY_THINK_BUDGET")
                     raise LLMLooped(
                         f"reasoning passed {budget} characters without an answer",
                         said=f"it reasoned past {budget} characters without "

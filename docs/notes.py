@@ -116,6 +116,10 @@ CONFIG = {
         "derived from `MEMORY_MAX_TOKENS`"),
     "RECALL_THINK_BUDGET": ("sampling",
         "The same cap for the recall, which runs while you wait."),
+    "CRITIC_THINK_BUDGET": ("sampling",
+        "The same cap for the critic. Unset, it is worked out for each call from the room the "
+        "context window has left and what the call may write, so it widens with the window.",
+        "derived for each call"),
     "MEMORY_SEED": ("sampling",
         "Seed sent with every memory call, so the same prompt gives the same answer."),
 

@@ -950,19 +950,21 @@ def run_agent(cfg: AgentConfig, user_task: str, log_path: Optional[Path] = None,
             except llm_client.LLMInterrupted:
                 _emit({"type": "stopped", "content": "Task interrupted by user."})
                 return None
+            # What only the person can settle is not sent back: see there.
+            rv.left = critic.left_to_the_person(rv, _ledger)
             _reviews.append(rv)
             line, details = critic.summary(rv, sends, most)
             _emit({"type": "faculty", "tag": "CRITIC", "content": line,
                    "details": details, "review": rv.as_dict()})
             if log_path is not None:
                 _log_step(log_path, {"step": step, "critic": rv.as_dict()})
-            if rv.verdict == "revise" and sends < most:
+            if rv.verdict == "revise" and not rv.left and sends < most:
                 messages.append({"role": "assistant", "content": claim})
                 messages.append({"role": "user",
                                  "content": critic.sent_back(rv, sends + 1, most)})
                 step += 1
                 continue
-            note = critic.closing_note(rv, sends)
+            note = critic.closing_note(rv, sends, claim)
             if note:
                 response[final_key] = claim + note
         if final_key:
