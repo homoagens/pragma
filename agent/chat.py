@@ -300,6 +300,34 @@ def _chat_ask_user(topic: str = "", context: str = "", mode: str = "input",
             "two sentences. Their answer will arrive as their next message.")
 
 
+def _held_for_the_person(run):
+    """execute_command, with what cannot be undone held until the person
+    allows it.
+
+    The agent is told not to do such things on a guess, and so is the critic.
+    A model can still read "do the action items" as permission, and one did:
+    it deleted a file it had rightly asked about the turn before. So the
+    question is asked here, by the program, and does not depend on either of
+    them judging right. Which commands: core/command_gate.py.
+    """
+    import functools
+
+    import command_gate
+
+    @functools.wraps(run)
+    def gated(command: str = "", *args, **kwargs):
+        why = command_gate.held(command)
+        if why and _chat_ask_user(
+                topic=f"The agent wants to run a command that {why} - it cannot be undone. Allow it?",
+                context=command, mode="confirm") != "yes":
+            return ("REFUSED by the person: they did not allow this command, and it was not run:\n"
+                    f"  {command}\n"
+                    "Do not run it, or anything that does the same, another way. Carry on "
+                    "without it, and say in your answer what was not done.")
+        return run(command, *args, **kwargs)
+    return gated
+
+
 def _make_session():
     """A prompt with completion, or None to fall back to input().
 
@@ -1965,6 +1993,8 @@ def main() -> int:
 
     skills = skills_palette()
     skills["ask_user"] = _chat_ask_user
+    if "execute_command" in skills:
+        skills["execute_command"] = _held_for_the_person(skills["execute_command"])
     # And the tools of the MCP servers in ~/.pragma/mcp.json, when there are
     # any. What each server gave is said under the briefing, below.
     import mcp_client
@@ -1996,6 +2026,10 @@ The person is reading as the turn goes, and answers between turns.
 - **To ask them something, end the turn** with the question in your reply;
   the answer is their next message. `ask_user` does the same, except for a
   yes-or-no confirmation, which it asks them directly.
+- **A command that cannot be undone waits for them.** Deleting files,
+  pushing or discarding git history, installing software, anything run as
+  administrator: the command is shown to them and runs only if they allow
+  it. If they do not, it was not run — carry on without it, and say so.
 """
 
     system_prompt = build_system_prompt(

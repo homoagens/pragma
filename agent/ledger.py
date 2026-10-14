@@ -403,6 +403,9 @@ class Ledger(Harness):
                     "ok": True, "why": [], "mark": "plain", "took": took}
         if head.startswith("INTERRUPTED"):
             return {"word": "stopped", "ok": False, "why": [], "mark": "bad", "took": took}
+        if head.startswith("REFUSED by the person"):
+            # Held by the gate and not allowed (agent/chat.py): nothing ran.
+            return {"word": "not allowed", "ok": False, "why": [], "mark": "bad", "took": took}
         if head.upper().startswith("ERROR"):
             first = " ".join(head.split("\n", 1)[0].split())
             word = "timed out" if "timed out" in first else "failed"
