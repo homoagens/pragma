@@ -244,3 +244,19 @@ def held(command: str, allowed=(), where: str = "", root: str = "") -> str:
         if why and not free(raw):
             return why
     return ""
+
+
+def held_in(text: str) -> str:
+    """Why a command written somewhere in this prose would be held, or "".
+
+    For a sentence that carries a command rather than a command line - a
+    suggestion, a review's next step. It is tried from every word on, since
+    "Run rm tetris.py to finish" and "now run rm build/*.o for me" do not
+    open with the command.
+    """
+    words = (text or "").split()
+    for i in range(len(words)):
+        why = held(" ".join(words[i:]))
+        if why:
+            return why
+    return ""

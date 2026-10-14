@@ -209,10 +209,7 @@ def consents(guess: str, answered: str) -> bool:
     """
     try:
         import command_gate
-        # A command inside a sentence: tried from every word on, since
-        # "now run rm build/*.o for me" starts with "now", not with `rm`.
-        words = (guess or "").split()
-        if any(command_gate.held(" ".join(words[i:])) for i in range(len(words))):
+        if command_gate.held_in(guess):
             return True
     except Exception:
         pass
