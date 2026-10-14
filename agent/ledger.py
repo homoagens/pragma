@@ -579,7 +579,7 @@ class Ledger(Harness):
         self._commit(steps, aged=False)
         if said.strip():
             self.console.print()
-            self.console.print(_Block(said.strip()))
+            self.console.print(_Block(said.strip(), pictures=True))
             self._prev = "answer"
 
     def _promote(self) -> None:

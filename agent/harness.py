@@ -237,20 +237,68 @@ class _Block:
     rich opens a list on a blank line. In the middle of a document that is
     the space above the list; at the top of one it is a blank line too many,
     and a reply that began with a list had two above it.
+
+    With `pictures`, an image of the workspace that the text shows is drawn
+    under the paragraph that shows it: see agent/picture.py. Only for a block
+    printed for good - the paragraph still being written is laid out again
+    on every token.
     """
 
-    def __init__(self, text: str):
+    def __init__(self, text: str, pictures: bool = False):
         from rich.markdown import Markdown
-        self.markdown = Markdown(text)
+        self.parts = [(Markdown(part), drawn)
+                      for part, drawn in (_pictures(text) if pictures else [(text, [])])]
 
     def __rich_console__(self, console, options):
         from rich.segment import Segment
-        lines = console.render_lines(self.markdown, options, pad=False)
-        while lines and not "".join(s.text for s in lines[0]).strip():
-            lines.pop(0)
-        for line in lines:
-            yield from line
-            yield Segment.line()
+        for i, (markdown, drawn) in enumerate(self.parts):
+            if i:
+                yield Segment.line()
+            lines = console.render_lines(markdown, options, pad=False)
+            while lines and not "".join(s.text for s in lines[0]).strip():
+                lines.pop(0)
+            for line in lines:
+                yield from line
+                yield Segment.line()
+            for picture in drawn:
+                yield Segment.line()
+                yield from console.render(picture, options)
+
+
+def _pictures(text: str) -> list[tuple[str, list]]:
+    """The text in pieces, each with the pictures to draw under it.
+
+    A piece ends with a paragraph that shows an image of the workspace, so
+    that the picture comes under it and not at the end of the whole reply:
+    a reply that arrives in one piece - a short one, one that was not
+    streamed - shows three charts under the paragraphs that name them, the
+    way a streamed one does.
+    """
+    try:
+        try:
+            from agent import picture
+        except ImportError:                  # run from inside agent/
+            import picture  # type: ignore
+        root = picture.workspace()
+        if not picture.found(text, root):
+            return [(text, [])]
+        paragraphs, rest = _AnswerStream._split(text + "\n")
+        pieces, current, seen = [], [], set()
+        for paragraph in paragraphs + [rest]:
+            if not paragraph.strip():
+                continue
+            current.append(paragraph)
+            new = [p for p in picture.found(paragraph, root) if p not in seen]
+            if new:
+                seen.update(new)
+                pieces.append(("\n\n".join(current),
+                               [picture.Picture(path, root) for path in new]))
+                current = []
+        if current:
+            pieces.append(("\n\n".join(current), []))
+        return pieces
+    except Exception:
+        return [(text, [])]
 
 
 class _Rows:
@@ -349,7 +397,7 @@ class _AnswerStream:
             return
         if self.printed:
             self.console.print()
-        self.console.print(_Block(paragraph.strip("\n")))
+        self.console.print(_Block(paragraph.strip("\n"), pictures=True))
         self.printed = True
 
     @staticmethod
@@ -875,7 +923,7 @@ class Harness:
         # stream delivers the whole reply here, rendered the same way.
         if self._call["streamed"] == 0 and content:
             self.console.print()
-            self.console.print(_Block(str(content)))
+            self.console.print(_Block(str(content), pictures=True))
 
     def error(self, step, content):
         from rich.text import Text

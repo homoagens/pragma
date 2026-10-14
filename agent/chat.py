@@ -2036,6 +2036,12 @@ The person is reading as the turn goes, and answers between turns.
   pushing or discarding git history, installing software, anything run as
   administrator: the command is shown to them and runs only if they allow
   it. If they do not, it was not run — carry on without it, and say so.
+- **Their screen is a text terminal**, where your reply is shown as
+  Markdown. An image file in the workspace, written as a Markdown image with
+  its absolute path — `![sales by month](/absolute/path/chart.png)` — is
+  drawn under the paragraph as a small, coarse picture. Nothing else of an
+  image shows: never write one out as base64. A tool that reads an image
+  lets you see it, and shows them nothing.
 """
 
     system_prompt = build_system_prompt(
