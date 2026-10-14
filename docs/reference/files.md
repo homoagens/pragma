@@ -45,7 +45,7 @@ A list, one entry per project.
 | `workspace` | The folder the agent works in. |
 | `memory` | The folder holding this project's memory. |
 | `last_opened` | When it was last opened, in UTC. Orders the list on the home screen. |
-| `settings` | What this project decides for itself: `MaxSteps`, and any of the settings marked *project setting* in [Configuration](configuration.md). Empty until something is set. |
+| `settings` | What this project decides for itself: `MaxSteps`; `AllowedCommands`, a list of the commands that run in a conversation without asking although they cannot be undone, written as patterns from `/settings`; and any of the settings marked *project setting* in [Configuration](configuration.md). Empty until something is set. |
 
 The same file is read by the launcher on every system.
 

@@ -300,7 +300,7 @@ def _chat_ask_user(topic: str = "", context: str = "", mode: str = "input",
             "two sentences. Their answer will arrive as their next message.")
 
 
-def _held_for_the_person(run):
+def _held_for_the_person(run, root: str = ""):
     """execute_command, with what cannot be undone held until the person
     allows it.
 
@@ -316,7 +316,13 @@ def _held_for_the_person(run):
 
     @functools.wraps(run)
     def gated(command: str = "", *args, **kwargs):
-        why = command_gate.held(command)
+        # What the project lets through without asking, read at every command
+        # so a pattern added from /settings counts from the next one.
+        # Paths in a command are compared relative to the project's folder,
+        # `root`, from the folder the command runs in.
+        allowed = _project_settings().get("AllowedCommands") or []
+        why = command_gate.held(command, allowed=allowed if isinstance(allowed, list) else [allowed],
+                                where=str(kwargs.get("cwd") or root), root=root)
         if why and _chat_ask_user(
                 topic=f"The agent wants to run a command that {why} - it cannot be undone. Allow it?",
                 context=command, mode="confirm") != "yes":
@@ -1994,7 +2000,7 @@ def main() -> int:
     skills = skills_palette()
     skills["ask_user"] = _chat_ask_user
     if "execute_command" in skills:
-        skills["execute_command"] = _held_for_the_person(skills["execute_command"])
+        skills["execute_command"] = _held_for_the_person(skills["execute_command"], str(cwd))
     # And the tools of the MCP servers in ~/.pragma/mcp.json, when there are
     # any. What each server gave is said under the briefing, below.
     import mcp_client

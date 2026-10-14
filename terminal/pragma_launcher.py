@@ -137,15 +137,16 @@ def by_name(name: str) -> dict | None:
     return next((e for e in read_registry() if e["name"].lower() == (name or "").lower()), None)
 
 
-def save_setting(name: str, key: str, value: str) -> None:
+def save_setting(name: str, key: str, value) -> None:
     """One setting of one project. An empty value REMOVES it: absent means the
-    repository default, which is what someone clearing a field asked for."""
+    repository default, which is what someone clearing a field asked for. A
+    value is a string, or a list for the one setting that is one."""
     entries = read_registry()
     for e in entries:
         if e["name"] != name:
             continue
         settings = dict(e.get("settings") or {})
-        if value == "":
+        if value in ("", []):
             settings.pop(key, None)
         else:
             settings[key] = value
@@ -432,8 +433,8 @@ def talk(entry: dict, env: dict) -> str:
 # ── the pages ─────────────────────────────────────────────────────────────────
 
 def choices_page(entry: dict) -> bool:
-    """What a project decides for itself: how many steps a turn may take, and
-    how much its memory brings to one.
+    """What a project decides for itself: how many steps a turn may take, which
+    commands may run without asking, and how much its memory brings to a turn.
 
     Everything else a project used to decide - whether the agent reasons, how
     it samples, whether Pragma guesses your next question - belongs to the
@@ -451,8 +452,11 @@ def choices_page(entry: dict) -> bool:
         # How much the memory brings to a turn is not asked of an agent that
         # runs without one.
         recall = {} if home.agent_alone() else RECALL
-        keys = ["MaxSteps"] + list(recall)
-        options, notes = ["steps per turn"], [steps]
+        allowed = allowed_commands(settings)
+        keys = ["MaxSteps", "AllowedCommands"] + list(recall)
+        options = ["steps per turn", "commands allowed"]
+        notes = [steps, (f"{len(allowed)} without asking" if allowed
+                         else "none - every command that cannot be undone asks")]
         for key, (label, default, levels) in recall.items():
             level = str(settings.get(key, "") or default)
             options.append(label)
@@ -465,6 +469,9 @@ def choices_page(entry: dict) -> bool:
         key = keys[chosen]
         if key == "MaxSteps":
             changed = steps_question(name, steps) or changed
+            continue
+        if key == "AllowedCommands":
+            changed = allowed_page(name) or changed
             continue
         label, default, levels = RECALL[key]
         now = str(settings.get(key, "") or default)
@@ -480,6 +487,54 @@ def choices_page(entry: dict) -> bool:
         # ever changes.
         save_setting(name, key, "" if level == default else level)
         changed = True
+
+
+def allowed_commands(settings: dict) -> list[str]:
+    """The commands a project lets run without asking, as patterns."""
+    got = settings.get("AllowedCommands") or []
+    return [str(p).strip() for p in (got if isinstance(got, list) else [got]) if str(p).strip()]
+
+
+# What the page says above the list, once. The rules are core/command_gate.py's.
+ALLOWED_SAYS = (
+    "In a conversation, a command that cannot be undone - deleting files, pushing",
+    "or throwing away git history, installing software, sudo - waits for your yes.",
+    "The patterns here run without asking, in this project only.",
+    "",
+    "A pattern is compared word by word with one command at a time:",
+    "  rm build/*            rm build/a.o, not rm build/sub/a.o, not rm build/a.o x",
+    "  rm build/**           anything under build/, at any depth",
+    "  git push *            git push with any further words",
+    "Be specific: a pattern allows exactly what it says, and nothing asks again.",
+)
+
+
+def allowed_page(name: str) -> bool:
+    """The commands this project lets run without asking: add one, or take one
+    away. Whether the list was changed."""
+    changed = False
+    while True:
+        patterns = allowed_commands((by_name(name) or {}).get("settings") or {})
+        title("Settings", f"{name} > commands allowed")
+        print()
+        for line in ALLOWED_SAYS:
+            say(f"  {line}" if line else "", "dim")
+        chosen = pick("", ["add a pattern"] + patterns,
+                      ["a command, or a pattern of one"] + ["enter takes it away"] * len(patterns))
+        if chosen is None:
+            return changed
+        if chosen == 0:
+            print()
+            got = ask("pattern", "", hint="for example rm build/*  ·  ctrl+D goes back")
+            got = " ".join((got or "").split())
+            if got and got not in patterns:
+                save_setting(name, "AllowedCommands", patterns + [got])
+                changed = True
+            continue
+        gone = patterns[chosen - 1]
+        if confirm(f"Take away {gone}? It will ask again.", "yes, take it away"):
+            save_setting(name, "AllowedCommands", [p for p in patterns if p != gone])
+            changed = True
 
 
 # What the two questions about a recall mean, said once above the three levels.
