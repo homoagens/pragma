@@ -136,7 +136,7 @@ VERBS = {
     "list_dir": "looked", "glob_match": "looked", "grep_search": "looked",
     "git_status": "looked", "git_diff": "looked",
     "web_fetch": "fetched", "web_search": "searched",
-    "vision_interpret": "saw", "revert": "undid",
+    "vision_interpret": "saw", "revert": "undid", "show_image": "showed",
 }
 
 # Lines of a failed command worth showing: the ones that name the error.
@@ -391,6 +391,9 @@ class Ledger(Harness):
             word = plural(_lines(text), "line")
         elif name == "web_fetch":
             word = f"{len(text):,} chars"
+        elif name == "show_image":
+            size = re.search(r"\d+×\d+", text)
+            word = size.group(0) if size else "shown"
         else:
             word = _last(text.split("\n", 1)[0])[:28]
         return {"word": word, "ok": True, "why": [], "mark": "plain"}
@@ -723,6 +726,12 @@ class Ledger(Harness):
             self._steps.append(done)
             leaving, self._steps = self._steps[:-WINDOW], self._steps[-WINDOW:]
         self._commit(leaving, aged=True)
+        if self._shown is not None:
+            # A picture goes under the step that drew it: the window is
+            # printed for good first, this step last, and the picture after.
+            self._flush()
+            self._draw()
+            self._prev = "picture"
         self._hide()
 
     def faculty_running(self, tag, note):

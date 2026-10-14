@@ -9,7 +9,7 @@ Each name links to its README, which has the parameters, what comes back and exa
 
 ## Offered to the agent
 
-On Linux and macOS 6 of these 20 are left to the shell, which does the same job in one call: they are marked *Windows only*.
+On Linux and macOS 6 of these 21 are left to the shell, which does the same job in one call: they are marked *Windows only*. What needs a person watching the terminal is offered only *in a conversation*.
 
 | Skill | What it does | Call | Offered |
 |---|---|---|---|
@@ -29,6 +29,7 @@ On Linux and macOS 6 of these 20 are left to the shell, which does the same job 
 | [`replace_in_file`](../../core/tools/replace_in_file/README.md) | Replace an exact substring in a file (`old` must appear verbatim; `count=-1` for every occurrence): the cheapest way to change part of a file you have seen. Deterministic; it takes no `overwrite`. | `replace_in_file(path, old, new, count=1, encoding='utf-8')` | everywhere |
 | [`replace_in_files`](../../core/tools/replace_in_files/README.md) | Deterministic find-and-replace across many files at once — the multi-file counterpart of `replace_in_file`. Renaming a symbol project-wide costs one call instead of one per file. | `replace_in_files(old, new, path='.', file_glob='*', dry_run=False, max_files=0, encoding='utf-8')` | everywhere |
 | [`revert`](../../core/tools/revert/README.md) | Undo file edits made during this session. | `revert(path='', list_only=False)` | everywhere |
+| [`show_image`](../../core/tools/show_image/README.md) | Show the person an image file, PNG or JPEG: it is drawn in their terminal. Nothing needs installing. | `show_image(path)` | in a conversation |
 | [`vision_interpret`](../../core/tools/vision_interpret/README.md) | Send a local image to a vision-capable LLM and return its textual interpretation. | `vision_interpret(image_path, question, model='', detail='auto')` | everywhere |
 | [`web_fetch`](../../core/tools/web_fetch/README.md) | Perform an HTTP GET request and return the response body as text. | `web_fetch(url, timeout=30, max_chars=50000)` | everywhere |
 | [`web_search`](../../core/tools/web_search/README.md) | Query DuckDuckGo and return ranked snippets with URLs. | `web_search(query, num_results=10)` | everywhere |

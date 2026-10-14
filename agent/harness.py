@@ -265,6 +265,19 @@ class _Block:
                 yield from console.render(picture, options)
 
 
+def _picture_module():
+    """agent/picture.py, or None: how the screen is drawn must never be why
+    a turn fails."""
+    try:
+        try:
+            from agent import picture
+        except ImportError:                  # run from inside agent/
+            import picture  # type: ignore
+        return picture
+    except Exception:
+        return None
+
+
 def _pictures(text: str) -> list[tuple[str, list]]:
     """The text in pieces, each with the pictures to draw under it.
 
@@ -272,15 +285,13 @@ def _pictures(text: str) -> list[tuple[str, list]]:
     that the picture comes under it and not at the end of the whole reply:
     a reply that arrives in one piece - a short one, one that was not
     streamed - shows three charts under the paragraphs that name them, the
-    way a streamed one does.
+    way a streamed one does. An image already drawn in this turn - by
+    show_image, or higher up in the reply - is not drawn again.
     """
     try:
-        try:
-            from agent import picture
-        except ImportError:                  # run from inside agent/
-            import picture  # type: ignore
+        picture = _picture_module()
         root = picture.workspace()
-        if not picture.found(text, root):
+        if not [p for p in picture.found(text, root) if not picture.drawn(p)]:
             return [(text, [])]
         paragraphs, rest = _AnswerStream._split(text + "\n")
         pieces, current, seen = [], [], set()
@@ -288,7 +299,8 @@ def _pictures(text: str) -> list[tuple[str, list]]:
             if not paragraph.strip():
                 continue
             current.append(paragraph)
-            new = [p for p in picture.found(paragraph, root) if p not in seen]
+            new = [p for p in picture.found(paragraph, root)
+                   if p not in seen and not picture.drawn(p)]
             if new:
                 seen.update(new)
                 pieces.append(("\n\n".join(current),
@@ -458,6 +470,7 @@ class Harness:
         self._paused_label = ""
         self._sub = ""                  # one line under the status: the embedding server at work
         self._embedded = _no_embedding()
+        self._shown = None              # a picture show_image got ready for its step
         self._turn: dict = {}
         self.turn_begin()
         self._ticking = True
@@ -809,6 +822,39 @@ class Harness:
                       "out_tokens": 0, "peak_total": 0, "files": self._files()}
         self._boundary = True
         self._note = ""
+        self._shown = None
+        picture = _picture_module()
+        if picture is not None:
+            picture.forget()
+
+    def picture(self, path: str) -> str:
+        """Get the image at `path` ready to be drawn under the step that asked
+        for it, and say what came of it, for the agent: show_image in a
+        conversation (agent/chat.py). It is read now, so that what the agent
+        is told is what the person will see."""
+        picture = _picture_module()
+        if picture is None:
+            return "ERROR: not shown - the picture module could not be loaded"
+        root = picture.workspace()
+        full = os.path.expanduser(str(path or "").strip())
+        if not os.path.isabs(full):
+            full = os.path.join(root, full)
+        shown = picture.Picture(full, root)
+        if not shown.prepare(self.console, max(20, self.console.width - 4)):
+            return (f"ERROR: not shown - {shown.why}\n"
+                    f"Give the person the file's path instead: {full}")
+        self._shown = shown
+        width, height = shown.size
+        return (f"Shown to the person: {width}×{height}, drawn {shown.cols} characters wide "
+                f"in their terminal, under this step. It is coarse there: shapes and colours "
+                f"show, small text does not. It shows the image to them, not to you.")
+
+    def _draw(self) -> None:
+        """The picture show_image got ready, under the step that asked for it."""
+        shown, self._shown = self._shown, None
+        if shown is not None:
+            from rich.padding import Padding
+            self.console.print(Padding(shown, (0, 0, 0, 4)))
 
     def note_stats(self, stats: dict) -> None:
         """The token counts of the call that just ended, kept for the summary.
@@ -903,6 +949,7 @@ class Harness:
         for i, line in enumerate(lines):
             lead = f"    {self.g['out']} " if i == 0 else "      "
             self.console.print(Text(lead + line, style=style))
+        self._draw()
 
     def ask(self, question, context):
         from rich.text import Text

@@ -118,6 +118,11 @@ def skills_summary_for(names) -> str:
 _NOT_AGENT_TOOLS = ("recall_episodes", "recall_learnings",
                     "episode_consolidate", "session_reflect")
 
+# Tools for a person watching the terminal as the turn goes. Only a
+# conversation has one, and agent/chat.py puts in its own version of each;
+# anywhere else they would be offered and do nothing.
+_CONVERSATION_ONLY = ("show_image",)
+
 # Skills a Unix shell already does, and does better - so on a Unix system they
 # are not offered at all.
 #
@@ -153,10 +158,11 @@ def palette(base: dict | None = None) -> dict:
     on their own and the browser server did not, so the rule lives here.
 
     On a Unix system the shell-replaceable half goes too: see
-    _SHELL_DOES_THIS_BETTER.
+    _SHELL_DOES_THIS_BETTER. And what only a conversation can do is left to
+    the conversation to put back: see _CONVERSATION_ONLY.
     """
     out = dict(ALL_SKILLS if base is None else base)
-    for name in _NOT_AGENT_TOOLS:
+    for name in _NOT_AGENT_TOOLS + _CONVERSATION_ONLY:
         out.pop(name, None)
     if os.name != "nt":
         for name in _SHELL_DOES_THIS_BETTER:

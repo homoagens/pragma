@@ -2,28 +2,33 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 # This file is part of Pragma <https://github.com/homoagens/pragma>.
 
-"""An image the answer points at, drawn in the terminal.
+"""An image drawn in the terminal, for the person to see.
 
 A reply is shown as Markdown, and Markdown in a terminal has no way to show
 an image: `![Monthly sales](chart.png)` came out as "🌆 Monthly sales". The
 person who asked to see a chart saw its title, and the model, which had
 written the image into its reply, told them "here is the chart". Asked again,
-it filled its reply with base64, which showed nothing either.
+it filled its reply with base64, which showed nothing either; asked a third
+time, it went looking for an image viewer to install.
 
-So an image the answer points at is drawn under the paragraph that names it,
-two pixels to a character: `▀`, the upper pixel its colour and the lower one
-its background. It is coarse - a chart's bars and colours read, its small
-labels mostly do not - and the line under it names the file, to be opened for
-a close look.
+So an image is drawn here, two pixels to a character: `▀`, the upper pixel
+its colour and the lower one its background. It is coarse - a chart's bars
+and colours read, its small labels mostly do not - and the line under it
+names the file, to be opened for a close look. Two things draw one:
 
-ONLY A FILE IN THE WORKSPACE. Not a page on the web, which would be a request
-nobody asked for, and not an image written out as data, which a model will
-otherwise fill with bytes it cannot know. A path that leads out of the
-workspace is not followed.
+- THE `show_image` TOOL, in a conversation: the picture comes under the step
+  that asked for it, and what was drawn goes back to the agent - which is
+  also what tells the critic the image was shown. A weak model asked to show
+  an image looks for a tool to do it, and this is the one it finds.
+- AN IMAGE IN THE ANSWER, written as Markdown, is drawn under the paragraph
+  that names it - unless the tool drew it in the same turn. Only a file in
+  the workspace: not a page on the web, which would be a request nobody
+  asked for, and not an image written out as data, which a model will fill
+  with bytes it cannot know.
 
 Pillow reads the image when it is installed, whatever its format. Pragma does
-not need it for anything else, so when it is missing a PNG is read here, with
-zlib, and other formats are named and left undrawn.
+not need it for anything else, so when it is missing PNG and JPEG are read
+here, in Python: see png() and jpeg().
 """
 
 from __future__ import annotations
@@ -42,11 +47,13 @@ SUFFIXES = (".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp")
 # pixels is not any clearer, and it is one more thing pushing the reply up.
 MAX_COLS = 100
 
-# Files past these are not read. The pixel limit is for the reader here,
-# which decodes in Python: past it the person would wait seconds for a
-# thumbnail.
+# Files past these are not read. The pixel limits are for the readers here,
+# which decode in Python: past them the person would wait seconds for a
+# thumbnail. A JPEG of the same size costs less, since only as much of it is
+# decoded as the picture needs.
 MAX_BYTES = 30 * 1024 * 1024
 MAX_PIXELS = 4_000_000
+MAX_JPEG_PIXELS = 25_000_000
 
 # A Markdown image: ![alt](target) or ![alt](<target with spaces>), with an
 # optional title after the target.
@@ -59,6 +66,20 @@ _SPAN = re.compile(r"`[^`\n]*`")
 
 class Unreadable(Exception):
     """Why an image could not be drawn, in words for the person."""
+
+
+# What has been drawn in this turn, so that an image the tool showed is not
+# drawn again under the answer that mentions it. The harness forgets at the
+# start of every turn.
+_drawn: set[str] = set()
+
+
+def forget() -> None:
+    _drawn.clear()
+
+
+def drawn(path: str) -> bool:
+    return os.path.realpath(path) in _drawn
 
 
 # ── which images ────────────────────────────────────────────────────────────
@@ -114,21 +135,21 @@ class Picture:
     """The image at `path`, drawn to fit the window, with its name under it.
 
     It never fails to print: an image that cannot be drawn is a line that
-    says which file it was and why.
+    says which file it was and why. prepare() reads it ahead of printing,
+    for a caller that has to know whether it will be drawn.
     """
 
     def __init__(self, path: str, root: str = ""):
         self.path = path
-        root = root or workspace()
-        try:
-            self.name = os.path.relpath(path, root).replace(os.sep, "/")
-        except ValueError:
-            self.name = path
+        self.name = _name(path, root or workspace())
+        self.rows: list | None = None
+        self.size = (0, 0)
+        self.cols = 0
+        self.why = ""
 
-    def __rich_console__(self, console, options):
-        from rich.segment import Segment
-        from rich.style import Style
-        dim = Style(color="bright_black")
+    def prepare(self, console, width: int) -> bool:
+        """Read the image for this console, at most `width` columns wide:
+        whether there is a picture to draw. `why` says why not."""
         try:
             if console.color_system not in ("truecolor", "256"):
                 raise Unreadable("this terminal has too few colours for a picture")
@@ -140,37 +161,76 @@ class Picture:
                 height = console.size.height
             except Exception:
                 height = 24
-            size, pixels = read(self.path, min(MAX_COLS, options.max_width), max(8, height - 4))
-            rows = list(_segments(pixels))
-            caption = f"{self.name} · {size[0]}×{size[1]}"
+            self.size, pixels = read(self.path, min(MAX_COLS, width), max(8, height - 4))
+            self.rows = list(_segments(pixels))
+            self.cols = len(pixels[0]) if pixels else 0
         except Unreadable as e:
-            rows, caption = [], f"{self.name} · not drawn: {e}"
+            self.rows, self.why = [], str(e)
         except Exception as e:                        # a file that is not what it says
-            rows, caption = [], f"{self.name} · not drawn: {type(e).__name__}"
+            self.rows, self.why = [], f"it could not be read ({type(e).__name__})"
+        if self.rows:
+            _drawn.add(os.path.realpath(self.path))
+        return bool(self.rows)
+
+    def __rich_console__(self, console, options):
+        from rich.segment import Segment
+        from rich.style import Style
+        if self.rows is None:
+            self.prepare(console, options.max_width)
+        caption = (f"{self.name} · {self.size[0]}×{self.size[1]}" if self.rows
+                   else f"{self.name} · not drawn: {self.why}")
         try:
             caption.encode(console.encoding or "utf-8")
         except (UnicodeError, LookupError):
             caption = caption.replace("·", "-").replace("×", "x")
-        for row in rows:
+        for row in self.rows:
             yield from row
             yield Segment.line()
-        yield Segment(caption, dim)
+        yield Segment(caption, Style(color="bright_black"))
         yield Segment.line()
+
+
+def _name(path: str, root: str) -> str:
+    """A path as the person reads it: from the workspace when it is in it."""
+    try:
+        inside = os.path.relpath(path, root)
+        if not inside.startswith(".."):
+            return inside.replace(os.sep, "/")
+    except ValueError:
+        pass
+    home = os.path.expanduser("~")
+    return "~" + path[len(home):] if path.startswith(home + os.sep) else path
 
 
 def read(path: str, cols: int, rows: int) -> tuple[tuple[int, int], list[list[tuple]]]:
     """((width, height), pixels): the image's own size, and its pixels as
     (r, g, b, a), scaled down to fit `cols` columns and `rows` rows of two
     pixels each. Raises Unreadable."""
+    if not os.path.isfile(path):
+        raise Unreadable("there is no such file")
     if os.path.getsize(path) > MAX_BYTES:
         raise Unreadable("the file is too large")
     try:
         import PIL.Image  # noqa: F401
     except ImportError:
-        width, height, channels, lines = png(path)
-        size = _fit(width, height, cols, rows)
-        return (width, height), _scaled(width, height, channels, lines, *size)
+        return _without_pillow(path, cols, rows)
     return _with_pillow(path, cols, rows)
+
+
+def _without_pillow(path: str, cols: int, rows: int):
+    with open(path, "rb") as f:
+        head = f.read(8)
+    if head.startswith(_SIGNATURE):
+        width, height, channels, lines = png(path)
+        wide, tall = width, height
+    elif head.startswith(b"\xff\xd8"):
+        width, height, wide, tall, channels, lines = jpeg(path, cols, rows)
+    else:
+        raise Unreadable("only PNG and JPEG are drawn without Pillow installed")
+    size = _fit(width, height, cols, rows)
+    if size[0] > wide or size[1] > tall:             # a progressive JPEG, read at 1/8
+        size = _fit(wide, tall, cols, rows)
+    return (width, height), _scaled(wide, tall, channels, lines, *size)
 
 
 def _fit(width: int, height: int, cols: int, rows: int) -> tuple[int, int]:
@@ -193,7 +253,8 @@ def _with_pillow(path: str, cols: int, rows: int):
                 im.draft("RGB", (w, h))              # read at a fraction of its size
             box = getattr(Image, "Resampling", Image).BOX
             small = im.convert("RGBA").resize((w, h), box)
-            data = list(small.getdata())
+            data = list(small.get_flattened_data() if hasattr(small, "get_flattened_data")
+                        else small.getdata())
     except (OSError, ValueError, getattr(Image, "DecompressionBombError", OSError)) as e:
         raise Unreadable(str(e) or "Pillow could not read it")
     return size, [data[y * w:(y + 1) * w] for y in range(h)]
@@ -304,7 +365,7 @@ def png(path: str) -> tuple[int, int, int, list[bytes]]:
     with open(path, "rb") as f:
         data = f.read()
     if not data.startswith(_SIGNATURE):
-        raise Unreadable("only PNG can be drawn without Pillow installed")
+        raise Unreadable("not a PNG")
     header, palette, transparent, idat, pos = None, b"", b"", [], 8
     while pos + 8 <= len(data):
         length, kind = struct.unpack(">I4s", data[pos:pos + 8])
@@ -428,3 +489,349 @@ def _unfilter(kind: int, line: bytes, prev: bytes, bpp: int) -> bytes:
                 out[i] = (out[i] + c) & 255
         return bytes(out)
     raise Unreadable("the PNG is damaged")
+
+
+# ── a JPEG, without Pillow ──────────────────────────────────────────────────
+#
+# A JPEG keeps each 8x8 block of each colour component as 64 frequencies,
+# Huffman-coded, and the first of them is the block's mean. A picture of a
+# hundred columns needs a few thousand pixels, so the image is decoded at the
+# smallest scale that still has them: at 1/8 a block IS its first frequency,
+# with no transform to compute, and at 1/4 or 1/2 only the frequencies that a
+# 2x2 or 4x4 block can show are used. What is paid in full is reading the
+# codes, every one of them, since each is found only after the one before.
+
+# Where the k-th frequency of a block, in the order they are stored, sits in
+# the 8x8 grid: row * 8 + column.
+_ZIGZAG = (0, 1, 8, 16, 9, 2, 3, 10, 17, 24, 32, 25, 18, 11, 4, 5, 12, 19, 26, 33,
+           40, 48, 41, 34, 27, 20, 13, 6, 7, 14, 21, 28, 35, 42, 49, 56, 57, 50, 43, 36,
+           29, 22, 15, 23, 30, 37, 44, 51, 58, 59, 52, 45, 38, 31, 39, 46, 53, 60, 61, 54,
+           47, 55, 62, 63)
+_ONES = tuple((1 << n) - 1 for n in range(65))
+_WORD = struct.Struct(">I").unpack_from
+# Where the coded data of a scan ends: a marker that is neither a stuffed
+# zero nor a restart.
+_END_OF_SCAN = re.compile(rb"\xff[^\x00\xd0-\xd7]")
+_RESTART = re.compile(rb"\xff[\xd0-\xd7]")
+
+
+def jpeg(path: str, cols: int, rows: int) -> tuple[int, int, int, int, int, list[bytes]]:
+    """(width, height, decoded width, decoded height, channels, lines): a
+    JPEG decoded just large enough for a picture of `cols` x `rows`.
+
+    Baseline JPEGs are read whole. A progressive one stores the block means
+    in its first pass, and is drawn from that pass alone, at 1/8. Raises
+    Unreadable.
+    """
+    with open(path, "rb") as f:
+        data = f.read()
+    if not data.startswith(b"\xff\xd8"):
+        raise Unreadable("not a JPEG")
+    quant: dict = {}
+    codes: dict = {}
+    frame = None
+    restart, adobe, pos = 0, None, 2
+    while pos + 4 <= len(data):
+        if data[pos] != 0xFF:
+            raise Unreadable("the JPEG is damaged")
+        marker = data[pos + 1]
+        if marker == 0xFF:                               # a fill byte
+            pos += 1
+            continue
+        if marker == 0xD9:
+            break
+        if marker == 0x01 or 0xD0 <= marker <= 0xD8:     # no length follows these
+            pos += 2
+            continue
+        length = (data[pos + 2] << 8) | data[pos + 3]
+        body, pos = data[pos + 4:pos + 2 + length], pos + 2 + length
+        if marker == 0xDB:
+            _quantisers(body, quant)
+        elif marker == 0xC4:
+            _code_tables(body, codes)
+        elif marker == 0xDD:
+            restart = (body[0] << 8) | body[1]
+        elif marker == 0xEE and body.startswith(b"Adobe") and len(body) > 11:
+            adobe = body[11]
+        elif marker in (0xC0, 0xC1, 0xC2):
+            frame = _Frame(body, marker == 0xC2, cols, rows)
+        elif 0xC3 <= marker <= 0xCF and marker not in (0xC4, 0xC8, 0xCC):
+            raise Unreadable("a kind of JPEG only Pillow reads")
+        elif marker == 0xDA:
+            if frame is None:
+                raise Unreadable("the JPEG is damaged")
+            end = _END_OF_SCAN.search(data, pos)
+            end = end.start() if end else len(data)
+            frame.scan(body, data[pos:end], quant, codes, restart)
+            pos = end
+    if frame is None or not frame.scanned:
+        raise Unreadable("the JPEG has no image in it")
+    return frame.pixels(adobe)
+
+
+def _quantisers(body: bytes, quant: dict) -> None:
+    """The quantisation tables of a DQT segment, in stored order."""
+    i = 0
+    while i < len(body):
+        wide, slot = body[i] >> 4, body[i] & 15
+        if wide:
+            quant[slot] = struct.unpack(">64H", body[i + 1:i + 129])
+            i += 129
+        else:
+            quant[slot] = tuple(body[i + 1:i + 65])
+            i += 65
+
+
+def _code_tables(body: bytes, codes: dict) -> None:
+    """The Huffman tables of a DHT segment, keyed ("dc" | "ac", slot)."""
+    i = 0
+    while i + 17 <= len(body):
+        kind, slot = body[i] >> 4, body[i] & 15
+        counts = body[i + 1:i + 17]
+        symbols = body[i + 17:i + 17 + sum(counts)]
+        i += 17 + sum(counts)
+        codes[("ac" if kind else "dc", slot)] = _huffman(counts, symbols)
+
+
+def _huffman(counts: bytes, symbols: bytes) -> tuple:
+    """(look, longest, start, first, symbols): a code of up to nine bits is
+    found in `look` by the nine bits ahead; a longer one, length by length,
+    the way the standard describes it."""
+    look: list = [None] * 512
+    longest, start, first = [-1] * 17, [0] * 17, [0] * 17
+    code = k = 0
+    for length in range(1, 17):
+        n = counts[length - 1]
+        start[length], first[length] = k, code
+        for _ in range(n):
+            if length <= 9:
+                spare = 9 - length
+                for tail in range(1 << spare):
+                    look[(code << spare) | tail] = (length, symbols[k])
+            code += 1
+            k += 1
+        if n:
+            longest[length] = code - 1
+        code <<= 1
+    return look, longest, start, first, symbols
+
+
+def _long_code(acc: int, bits: int, table: tuple) -> tuple[int, int]:
+    _, longest, start, first, symbols = table
+    for length in range(10, 17):
+        code = (acc >> (bits - length)) & _ONES[length]
+        if code <= longest[length]:
+            return length, symbols[start[length] + code - first[length]]
+    raise Unreadable("the JPEG is damaged")
+
+
+@lru_cache(maxsize=None)
+def _basis(n: int) -> dict:
+    """For each frequency an n x n block can show - by its place in the 8x8
+    grid - what it adds to each of the block's n*n samples per unit."""
+    import math
+    out = {}
+    for place in range(64):
+        v, u = divmod(place, 8)
+        if u >= n or v >= n:
+            continue
+        cu = 0.5 * (math.sqrt(0.5) if u == 0 else 1.0)
+        cv = 0.5 * (math.sqrt(0.5) if v == 0 else 1.0)
+        out[place] = [cv * math.cos((2 * y + 1) * v * math.pi / (2 * n))
+                      * cu * math.cos((2 * x + 1) * u * math.pi / (2 * n))
+                      for y in range(n) for x in range(n)]
+    return out
+
+
+@lru_cache(maxsize=None)
+def _kept(n: int) -> tuple:
+    """Which of the 64 stored frequencies an n x n block uses."""
+    basis = _basis(n)
+    return tuple(_ZIGZAG[k] in basis for k in range(64))
+
+
+class _Frame:
+    """The image a JPEG describes, filled in one scan at a time."""
+
+    def __init__(self, body: bytes, progressive: bool, cols: int, rows: int):
+        precision, height, width, count = struct.unpack(">BHHB", body[:6])
+        if precision != 8:
+            raise Unreadable("a JPEG of 12-bit samples, which only Pillow reads")
+        if count not in (1, 3):
+            raise Unreadable("a CMYK JPEG, which only Pillow reads")
+        if not width or not height:
+            raise Unreadable("a kind of JPEG only Pillow reads")
+        if width * height > MAX_JPEG_PIXELS:
+            raise Unreadable(f"{width}×{height} is too large to draw without Pillow installed")
+        self.width, self.height, self.progressive = width, height, progressive
+        self.ids, self.h, self.v, self.slots = [], [], [], []
+        for i in range(count):
+            cid, hv, slot = body[6 + 3 * i:9 + 3 * i]
+            if not (1 <= hv >> 4 <= 4 and 1 <= hv & 15 <= 4):
+                raise Unreadable("the JPEG is damaged")
+            self.ids.append(cid)
+            self.h.append(hv >> 4)
+            self.v.append(hv & 15)
+            self.slots.append(slot)
+        self.hmax, self.vmax = max(self.h), max(self.v)
+        self.across = -(-width // (8 * self.hmax))
+        self.down = -(-height // (8 * self.vmax))
+        want = _fit(width, height, cols, rows)
+        self.n = 1 if progressive else next(
+            n for n in (1, 2, 4, 8)
+            if -(-width * n // 8) >= want[0] and -(-height * n // 8) >= want[1])
+        n = self.n
+        self.planes = [[bytearray(b"\x80" * (self.across * h * n)) for _ in range(self.down * v * n)]
+                       for h, v in zip(self.h, self.v)]
+        self.scanned = False
+
+    def scan(self, header: bytes, data: bytes, quant: dict, codes: dict, restart: int) -> None:
+        count = header[0]
+        members = []
+        for i in range(count):
+            cid, slots = header[1 + 2 * i], header[2 + 2 * i]
+            if cid not in self.ids:
+                raise Unreadable("the JPEG is damaged")
+            members.append((self.ids.index(cid), slots >> 4, slots & 15))
+        first, shifts = header[1 + 2 * count], header[3 + 2 * count]
+        shift = shifts & 15
+        if self.progressive:
+            # Only the first pass of the block means: the rest refine what a
+            # picture this size cannot show.
+            if first != 0 or shifts >> 4:
+                return
+            ac = False
+        else:
+            ac, shift = True, 0
+        tables = {}
+        for c, dc, ac_slot in members:
+            if ("dc", dc) not in codes or (ac and ("ac", ac_slot) not in codes) \
+                    or self.slots[c] not in quant:
+                raise Unreadable("the JPEG is damaged")
+            tables[c] = (codes[("dc", dc)], codes.get(("ac", ac_slot)), quant[self.slots[c]])
+        if count == 1:
+            # One component on its own goes block by block across its own
+            # width, not by the units the components share.
+            c = members[0][0]
+            across = -(-(-(-self.width * self.h[c] // self.hmax)) // 8)
+            down = -(-(-(-self.height * self.v[c] // self.vmax)) // 8)
+            units = [(c, 1, 1, 0, 0)]
+        else:
+            across, down = self.across, self.down
+            units = [(c, self.h[c], self.v[c], dx, dy) for c, _, _ in members
+                     for dy in range(self.v[c]) for dx in range(self.h[c])]
+        n = self.n
+        kept, basis = _kept(n), _basis(n)
+        total = across * down
+        per = restart or total
+        parts = _RESTART.split(data) if restart else [data]
+        m = 0
+        for part in parts:
+            if m >= total:
+                break
+            buf = part.replace(b"\xff\x00", b"\xff") + bytes(16)
+            size = len(buf) - 8
+            pos = acc = bits = 0
+            before = [0] * len(self.ids)
+            stop = min(m + per, total)
+            while m < stop:
+                mx, my = m % across, m // across
+                m += 1
+                for c, hm, vm, dx, dy in units:
+                    dc_table, ac_table, q = tables[c]
+                    if bits < 32:
+                        if pos > size:
+                            raise Unreadable("the JPEG is damaged")
+                        acc = ((acc & _ONES[bits]) << 32) | _WORD(buf, pos)[0]
+                        pos += 4
+                        bits += 32
+                    hit = dc_table[0][(acc >> (bits - 9)) & 511]
+                    length, s = hit if hit else _long_code(acc, bits, dc_table)
+                    bits -= length
+                    if s:
+                        diff = (acc >> (bits - s)) & _ONES[s]
+                        bits -= s
+                        if diff < 1 << (s - 1):
+                            diff -= _ONES[s]
+                        before[c] += diff
+                    found = None
+                    if ac:
+                        look = ac_table[0]
+                        k = 1
+                        while k < 64:
+                            if bits < 32:
+                                if pos > size:
+                                    raise Unreadable("the JPEG is damaged")
+                                acc = ((acc & _ONES[bits]) << 32) | _WORD(buf, pos)[0]
+                                pos += 4
+                                bits += 32
+                            hit = look[(acc >> (bits - 9)) & 511]
+                            length, rs = hit if hit else _long_code(acc, bits, ac_table)
+                            bits -= length
+                            s = rs & 15
+                            if not s:
+                                if rs != 0xF0:
+                                    break                    # the rest of the block is zero
+                                k += 16
+                                continue
+                            k += rs >> 4
+                            if k > 63:
+                                raise Unreadable("the JPEG is damaged")
+                            if kept[k]:
+                                value = (acc >> (bits - s)) & _ONES[s]
+                                if value < 1 << (s - 1):
+                                    value -= _ONES[s]
+                                if found is None:
+                                    found = []
+                                found.append((_ZIGZAG[k], value * q[k]))
+                            bits -= s
+                            k += 1
+                    self._put(c, mx * hm + dx, my * vm + dy, (before[c] << shift) * q[0], found, basis)
+        self.scanned = True
+
+    def _put(self, c: int, bx: int, by: int, mean: int, found, basis: dict) -> None:
+        """One decoded block into its component's plane, as n x n samples."""
+        n, plane = self.n, self.planes[c]
+        x0, y0 = bx * n, by * n
+        if y0 >= len(plane) or x0 >= len(plane[0]):
+            return
+        if n == 1:
+            value = (mean + 4) // 8 + 128
+            plane[y0][x0] = 0 if value < 0 else 255 if value > 255 else value
+            return
+        out = [mean / 8 + 128.5] * (n * n)
+        for place, f in found or ():
+            for i, b in enumerate(basis[place]):
+                out[i] += f * b
+        for y in range(n):
+            plane[y0 + y][x0:x0 + n] = bytes(0 if v < 0 else 255 if v > 255 else int(v)
+                                             for v in out[y * n:(y + 1) * n])
+
+    def pixels(self, adobe) -> tuple[int, int, int, int, int, list[bytes]]:
+        n = self.n
+        wide, tall = -(-self.width * n // 8), -(-self.height * n // 8)
+        if len(self.ids) == 1:
+            return (self.width, self.height, wide, tall, 1,
+                    [bytes(row[:wide]) for row in self.planes[0][:tall]])
+        # Three components are luma and two of colour, unless the file says
+        # they are red, green and blue.
+        as_is = adobe == 0 or bytes(self.ids) == b"RGB"
+        ia, ib, ic = ([x * h // self.hmax for x in range(wide)] for h in self.h)
+        lines = []
+        for y in range(tall):
+            a, b, c = (self.planes[i][y * self.v[i] // self.vmax] for i in range(3))
+            out = bytearray(3 * wide)
+            if as_is:
+                for x in range(wide):
+                    out[3 * x:3 * x + 3] = bytes((a[ia[x]], b[ib[x]], c[ic[x]]))
+            else:
+                for x in range(wide):
+                    luma, blue, red = a[ia[x]], b[ib[x]] - 128, c[ic[x]] - 128
+                    r = int(luma + 1.402 * red + 0.5)
+                    g = int(luma - 0.344136 * blue - 0.714136 * red + 0.5)
+                    bl = int(luma + 1.772 * blue + 0.5)
+                    out[3 * x] = 0 if r < 0 else 255 if r > 255 else r
+                    out[3 * x + 1] = 0 if g < 0 else 255 if g > 255 else g
+                    out[3 * x + 2] = 0 if bl < 0 else 255 if bl > 255 else bl
+            lines.append(bytes(out))
+        return self.width, self.height, wide, tall, 3, lines

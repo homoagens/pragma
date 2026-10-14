@@ -300,6 +300,16 @@ def _chat_ask_user(topic: str = "", context: str = "", mode: str = "input",
             "two sentences. Their answer will arrive as their next message.")
 
 
+def _chat_show_image(path: str) -> str:
+    """show_image for a live conversation: the renderer draws the picture
+    under the step that asked for it, and says what came of it. See
+    agent/picture.py."""
+    if _RENDERER is None or not hasattr(_RENDERER, "picture"):
+        return ("ERROR: not shown - there is no terminal to draw on here\n"
+                f"Give the person the file's path instead: {path}")
+    return _RENDERER.picture(path)
+
+
 def _held_for_the_person(run, root: str = ""):
     """execute_command, with what cannot be undone held until the person
     allows it.
@@ -1999,6 +2009,7 @@ def main() -> int:
 
     skills = skills_palette()
     skills["ask_user"] = _chat_ask_user
+    skills["show_image"] = _chat_show_image
     if "execute_command" in skills:
         skills["execute_command"] = _held_for_the_person(skills["execute_command"], str(cwd))
     # And the tools of the MCP servers in ~/.pragma/mcp.json, when there are
@@ -2036,12 +2047,8 @@ The person is reading as the turn goes, and answers between turns.
   pushing or discarding git history, installing software, anything run as
   administrator: the command is shown to them and runs only if they allow
   it. If they do not, it was not run — carry on without it, and say so.
-- **Their screen is a text terminal**, where your reply is shown as
-  Markdown. An image file in the workspace, written as a Markdown image with
-  its absolute path — `![sales by month](/absolute/path/chart.png)` — is
-  drawn under the paragraph as a small, coarse picture. Nothing else of an
-  image shows: never write one out as base64. A tool that reads an image
-  lets you see it, and shows them nothing.
+- **To show them an image file, call `show_image`.** Nothing needs
+  installing, and an image written out as base64 shows nothing.
 """
 
     system_prompt = build_system_prompt(
