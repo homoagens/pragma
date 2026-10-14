@@ -253,6 +253,21 @@ class _Block:
             yield Segment.line()
 
 
+class _Rows:
+    """The last `rows` rows of something, as the screen will lay it out."""
+
+    def __init__(self, renderable, rows: int):
+        self.renderable = renderable
+        self.rows = rows
+
+    def __rich_console__(self, console, options):
+        from rich.segment import Segment
+        lines = console.render_lines(self.renderable, options, pad=False)
+        for line in lines[-self.rows:]:
+            yield from line
+            yield Segment.line()
+
+
 class _AnswerStream:
     """The reply as the model writes it, one finished paragraph at a time.
 
@@ -266,7 +281,15 @@ class _AnswerStream:
     a document of its own to the renderer, which puts nothing between two
     documents. They used to follow one another with no space at all - except
     above a list, where the renderer's own blank line happened to fall.
+
+    THE REGION IS CUT BY THE ROWS IT TAKES ON THE SCREEN, not by its lines.
+    Twelve lines was the rule, and one line of base64 with no break in it
+    wrapped to sixty rows in a window of thirty: what scrolled off the top of
+    the region could not be erased, and every refresh left a copy of it in
+    the scrollback, a little longer each time.
     """
+
+    TAIL_ROWS = 12
 
     def __init__(self, console, legacy: bool):
         from rich.live import Live
@@ -287,17 +310,30 @@ class _AnswerStream:
         for paragraph in done:
             self._render(paragraph)
         self.buf = rest
-        tail = "\n".join(rest.splitlines()[-12:])
+        rows = self._rows()
+        tail = "\n".join(rest.splitlines()[-rows:])
+        # A first cut by characters, so that a paragraph of thousands is not
+        # laid out again on every token: the last rows hold no more than this.
+        tail = tail[-rows * (max(20, self.console.width) + 1):]
         # Rendered as it is written, not shown raw and rendered at the end:
         # "**Caveats:**" became "Caveats:" in bold the moment the paragraph
         # closed, and every paragraph flickered from one to the other.
         try:
             from rich.console import Group
-            body = _Block(tail)
+            body = _Rows(_Block(tail), rows)
             self.live.update(Group(self._text(""), body)
                              if self.printed and tail.strip() else body)
         except Exception:
-            self.live.update(self._text(tail))
+            self.live.update(_Rows(self._text(tail), rows))
+
+    def _rows(self) -> int:
+        """How many rows the paragraph in progress may take: room is left for
+        the blank line above it and the window's own last line."""
+        try:
+            height = self.console.size.height
+        except Exception:
+            height = 24
+        return max(3, min(self.TAIL_ROWS, height - 4))
 
     def close(self) -> None:
         try:
