@@ -55,11 +55,17 @@ shell profile so that `pragma` works in every new terminal.
 
 You also need a model served on an **OpenAI-compatible endpoint** —
 [llama.cpp](https://github.com/ggml-org/llama.cpp/releases), LM Studio,
-Ollama, vLLM, or a hosted one. Pragma is developed against **Qwen3.6 35B-A3B
-· Q5** on llama.cpp, with a 131072-token context and one slot
-(`-c 131072 -np 1`). With one slot, a memory being written in the background
-and your next turn wait for each other; `-np 2` lets them run side by side,
-each with half the context.
+Ollama, vLLM, or a hosted one. Pragma is developed on llama.cpp against two
+models, depending on the graphics card:
+
+| VRAM | Model |
+|---|---|
+| 12 GB | **Qwen3.6 35B-A3B · Q5**, with a 131072-token context and one slot (`-c 131072 -np 1`) |
+| 24 GB | **Qwen3.8 27B**, the one in the recording above |
+
+With one slot, a memory being written in the background and your next turn
+wait for each other; `-np 2` lets them run side by side, each with half the
+context.
 
 ## Run
 
