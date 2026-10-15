@@ -6,8 +6,8 @@ Ten minutes, start to finish. You will point Pragma at a model, make a
 project, ask for two small things, close it, and come back to find that it
 remembered the one that mattered.
 
-You need Pragma installed (the [README](../../README.md) has the two
-commands) and a model being served on your machine or one you can reach.
+You need Pragma installed (the [README](../../README.md) says how) and a
+model being served on your machine or one you can reach.
 The examples use llama.cpp on port 8290; yours will have its own address.
 
 What the agent writes back is in its own words, so your screen will not match

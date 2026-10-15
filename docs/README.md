@@ -20,6 +20,9 @@ says what differs.
 | point Pragma at my model | [Connect a model](how-to/connect-a-model.md) |
 | use a model that runs on another machine | [Use a model on another machine](how-to/use-a-model-on-another-machine.md) |
 | give the agent rules it must always follow | [Write rules for a project](how-to/write-project-rules.md) |
+| let a project run some commands without asking | [Allow commands](how-to/allow-commands.md) |
+| give the agent the tools of an MCP server | [Use MCP servers](how-to/use-mcp-servers.md) |
+| talk to the agent without touching any memory | [Use the agent without memory](how-to/use-the-agent-alone.md) |
 | keep a copy of what a project remembers | [Back up and restore memory](how-to/back-up-and-restore-memory.md) |
 | take a project to another computer | [Move a project](how-to/move-a-project.md) |
 | deal with "a consolidation did not finish" | [Recover a memory that did not finish writing](how-to/recover-unfinished-memory.md) |
@@ -44,7 +47,7 @@ page that tries to answer two answers neither.
 |---|---|
 | [`tutorial/`](tutorial/first-project.md) | One guided path, start to finish, for someone learning. |
 | `how-to/` | One page per task, for someone who knows what they want done. |
-| `reference/` | Facts to look up: commands, settings, files, skills, prompts. |
+| `reference/` | Facts to look up: commands, settings, files, tools, prompts. |
 | [`explanation/`](explanation/architecture.md) | How Pragma is put together, and where each of its interfaces stands. |
 | [`decisions/`](decisions/README.md) | One short, dated record per design decision. Never rewritten. |
 
@@ -62,7 +65,7 @@ python docs/build.py
 ```
 
 reads the code for what the code knows — which variables are read and their
-defaults, which commands exist, which skills are offered, where each prompt
+defaults, which commands exist, which tools are offered, where each prompt
 is — and [`notes.py`](notes.py) for the one thing it cannot know, what each
 of them is for. CI runs
 
@@ -74,7 +77,7 @@ and fails when a page has fallen behind the code, when a setting or a prompt
 has no description, when a link in any of these pages points at a file or a
 heading that is not there, or when a page is missing from the site's menu.
 
-So a change that adds, renames or removes a setting, a command, a skill or a
+So a change that adds, renames or removes a setting, a command, a tool or a
 prompt is finished when `python docs/build.py` has been run and its output
 committed with it. The build names what is missing.
 

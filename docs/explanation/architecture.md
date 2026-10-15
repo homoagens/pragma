@@ -53,7 +53,8 @@ flowchart TD
    project opened, from [`agent/prompts.py`](../../agent/prompts.py) and the
    workspace's `PRAGMA.md` if there is one; [Prompts](../reference/prompts.md)
    lists its parts. After it come the conversation so far and your message.
-   The [skills](../reference/tools.md) are offered to the model as tools.
+   The [skills](../reference/tools.md) are offered to the model as tools,
+   with those of any [MCP server](../how-to/use-mcp-servers.md) listed.
 4. **The loop.** [`core/react.py`](../../core/react.py) calls the model. The
    reply is either a tool call or the answer. A tool call runs the skill, what
    it returned goes back to the model, and the loop repeats until there is an
@@ -61,10 +62,13 @@ flowchart TD
 5. **The answer is drawn**, and the turn is appended to a transcript on disk
    before anything else can fail.
 
-Three things watch the loop while it runs:
+Four things watch the loop while it runs:
 
 - Before a skill writes to a file, [`core/checkpoint.py`](../../core/checkpoint.py)
   keeps the version that was there, so `revert` can put it back.
+- In a conversation, a shell command that cannot be undone is held until you
+  allow it; [`core/command_gate.py`](../../core/command_gate.py) decides which,
+  and a project can [allow some for good](../how-to/allow-commands.md).
 - A model that repeats its own reasoning, or the same failing call, is
   stopped or told to change approach.
 - When the steps of a long turn approach the context window, the older ones
@@ -76,7 +80,13 @@ Two optional faculties sit at the end of a turn, both off unless turned on in
 type next ([`core/suggest.py`](../../core/suggest.py)).
 
 [`agent/ledger.py`](../../agent/ledger.py) is what all of this looks like on
-screen while it happens.
+screen while it happens, and [`agent/picture.py`](../../agent/picture.py)
+draws an image the agent shows you, in the terminal itself.
+
+A conversation that grows too long for the context window is compacted, as
+`/compact` does by hand: what was said is traded for a summary written to go
+on working from, after a turn or inside one. The turns still reach the
+memory, whole, when the project closes.
 
 ## What happens when you close a project
 
@@ -96,9 +106,12 @@ The conversation files a job and exits. The memory worker picks it up:
 
 The job is a file. A worker that dies leaves it behind with the turns still
 inside, `/jobs` shows it, and it can be
-[run again](../how-to/recover-unfinished-memory.md). A conversation that
-grows too long for the context window goes through the same steps for its
-older turns, without closing.
+[run again](../how-to/recover-unfinished-memory.md). `/clear` files the same
+job and starts a new conversation in the same project.
+
+With `pragma --agent` none of this happens: no job is filed, and the stores
+are left as they are. [Use the agent without
+memory](../how-to/use-the-agent-alone.md).
 
 ## Which server answers which call
 
@@ -113,7 +126,7 @@ how it samples. With one endpoint, it serves all four.
 
 | Way in | Start it with | Entry point | Where it stands |
 |---|---|---|---|
-| The terminal on Linux | `pragma` | [`terminal/pragma_launcher.py`](../../terminal/pragma_launcher.py), then [`agent/chat.py`](../../agent/chat.py) | where Pragma is developed and tested |
+| The terminal on Linux | `pragma`, or `pragma --agent` without memory | [`terminal/pragma_launcher.py`](../../terminal/pragma_launcher.py), then [`agent/chat.py`](../../agent/chat.py) | where Pragma is developed and tested |
 | The terminal on Windows | `pragma`, in PowerShell | [`terminal/Pragma.psm1`](../../terminal/Pragma.psm1), then [`agent/chat.py`](../../agent/chat.py) | follows Linux |
 | One task, no interaction | `python -m agent.batch --task "..." --cwd DIR` | [`agent/batch.py`](../../agent/batch.py) | the same code everywhere |
 | The browser | `python -m agent.run` | [`agent/run.py`](../../agent/run.py), then [`agent/server.py`](../../agent/server.py) and [`interface-web/`](../../interface-web) | the old interface, not being worked on |
@@ -132,6 +145,7 @@ The short version. [Files](../reference/files.md) has what is inside each.
 |---|---|---|
 | The projects: name, folder, settings | `~/.pragma/registry.json` | the launcher |
 | The endpoints, the roles, the optional faculties | `~/.pragma/endpoints.json` | `/configure` |
+| The MCP servers whose tools the agent is offered | `~/.pragma/mcp.json` | `/configure`, or you |
 | A project's episodes | `~/.pragma/projects/NAME/episodes/`, with `dormant/` inside it | the memory worker |
 | A project's beliefs | `~/.pragma/projects/NAME/learnings.json` | the memory worker |
 | Memory work in flight, or that failed | `~/.pragma/projects/NAME/jobs/` | the conversation and the worker |
@@ -156,6 +170,7 @@ The short version. [Files](../reference/files.md) has what is inside each.
 | [`tool_schema.py`](../../core/tool_schema.py) | Describes the skills as the `tools` a model is offered. |
 | [`json_parser.py`](../../core/json_parser.py) | Finds the JSON object in a model's reply. |
 | [`checkpoint.py`](../../core/checkpoint.py) | Undo for file edits. |
+| [`command_gate.py`](../../core/command_gate.py) | Which shell commands cannot be undone, and so wait for the person. |
 | [`memory.py`](../../core/memory.py) | Summarises the older steps of a long turn. Not the long-term memory, despite the name. |
 | [`curator.py`](../../core/curator.py) | Recall: chooses what memory brings to a turn. |
 | [`embed.py`](../../core/embed.py) | Texts as vectors, for searching the memory by meaning. Used only when an embedding server is named. |
@@ -176,6 +191,7 @@ The short version. [Files](../reference/files.md) has what is inside each.
 | [`chat.py`](../../agent/chat.py) | A live conversation: the turns, the commands, handing over to memory. |
 | [`ledger.py`](../../agent/ledger.py) | What a turn looks like on screen: one line for each thing done. |
 | [`harness.py`](../../agent/harness.py) | What `ledger.py` is built on — the status line, the answer as it is written — and the look it replaced. |
+| [`picture.py`](../../agent/picture.py) | An image file drawn in the terminal, PNG or JPEG, with nothing to install. |
 | [`prompts.py`](../../agent/prompts.py) | The agent's system prompt. |
 | [`batch.py`](../../agent/batch.py) | One task, start to finish. |
 | [`server.py`](../../agent/server.py) | The server behind the browser interface. |
@@ -186,7 +202,7 @@ The short version. [Files](../reference/files.md) has what is inside each.
 | File | What it is |
 |---|---|
 | [`pragma_launcher.py`](../../terminal/pragma_launcher.py) | The launcher on Linux and macOS: the registry of projects, opening one. |
-| [`Pragma.psm1`](../../terminal/Pragma.psm1), [`pragma-session.ps1`](../../terminal/pragma-session.ps1) | The same launcher for Windows PowerShell. |
+| [`Pragma.psm1`](../../terminal/Pragma.psm1), [`pragma-session.ps1`](../../terminal/pragma-session.ps1) | The same launcher for Windows PowerShell. [`Pragma.psd1`](../../terminal/Pragma.psd1) is its module manifest, and [`install.bat`](../../terminal/install.bat) runs the installer from a double-click. |
 | [`pragma_home.py`](../../terminal/pragma_home.py) | The home prompt, its commands, the plugins. |
 | [`pragma_configure.py`](../../terminal/pragma_configure.py) | The `/configure` pages. |
 | [`pragma_menu.py`](../../terminal/pragma_menu.py) | The lists walked with the arrows. |
@@ -195,7 +211,7 @@ The short version. [Files](../reference/files.md) has what is inside each.
 | [`pragma_consolidate.py`](../../terminal/pragma_consolidate.py) | The memory worker. |
 | [`mem_map.py`](../../terminal/mem_map.py) | The views of a memory store behind `/memory`. |
 | [`pragma_endpoint.py`](../../terminal/pragma_endpoint.py) | Reports what an endpoint serves and how it samples. |
-| [`endpoint_monitor.py`](../../terminal/endpoint_monitor.py) | A dashboard for model servers. It stands alone and knows nothing of Pragma. |
+| [`endpoint_monitor.py`](../../terminal/endpoint_monitor.py) | A dashboard for model servers. It stands alone and knows nothing of Pragma; [`monitor.ps1`](../../terminal/monitor.ps1) opens it on Windows. |
 
 ### The repository root
 

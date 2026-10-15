@@ -18,9 +18,9 @@ macOS runs the Linux launcher. It is not what Pragma is tested on.
 
 ## The terminal on Linux
 
-Start it with `pragma`. The launcher is
-[`terminal/pragma_launcher.py`](../../terminal/pragma_launcher.py), and a project
-opens into [`agent/chat.py`](../../agent/chat.py).
+Start it with `pragma`, or `pragma --agent` for the agent without memory. The
+launcher is [`terminal/pragma_launcher.py`](../../terminal/pragma_launcher.py),
+and a project opens into [`agent/chat.py`](../../agent/chat.py).
 
 This is the reference. The [tutorial](../tutorial/first-project.md) and every
 guide were run here, and CI — the checks made on every push — runs on Linux
@@ -42,9 +42,15 @@ What the Windows launcher does with code of its own is where it can differ:
 | What | On Linux | On Windows |
 |---|---|---|
 | Snapshots of a project's memory | `~/.pragma/projects/backups/<name>/`, the memory only | `~/.pragma/backups/<name>/`, the memory, the workspace or both, in another layout. [Details](../how-to/back-up-and-restore-memory.md) |
-| A project's own settings | the steps per turn and how much is recalled, from `/settings` | the same page, not yet looked at there, plus `pragma -Set <key> <value>` for the others |
-| The tools the agent is given | 14: reading and searching are left to the shell | all 20. [Which ones](../reference/tools.md) |
+| A project's own settings | the steps per turn, the commands allowed without asking and how much is recalled, from `/settings` | the same page, not yet looked at there, plus `pragma -Set <key> <value>` for the others |
+| The tools the agent is given | 15: reading and searching are left to the shell | all 21. [Which ones](../reference/tools.md) |
+| The [agent without memory](../how-to/use-the-agent-alone.md) | `pragma --agent` | not there: the launcher does not have the flag |
 | Installing | `./install.sh` | `.\install.ps1` |
+
+The [commands that wait for you](../how-to/allow-commands.md), the
+[MCP servers](../how-to/use-mcp-servers.md), `/compact` and pictures drawn
+in the terminal are the conversation's own code, the same on both; on
+Windows they have been read, not tried.
 
 A change made on Linux reaches Windows when the two are next aligned. Until
 then the newest behaviour may be missing there, or untried.

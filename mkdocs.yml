@@ -30,6 +30,9 @@ nav:
       - Connect a model: how-to/connect-a-model.md
       - Use a model on another machine: how-to/use-a-model-on-another-machine.md
       - Write rules for a project: how-to/write-project-rules.md
+      - Allow commands: how-to/allow-commands.md
+      - Use MCP servers: how-to/use-mcp-servers.md
+      - Use the agent without memory: how-to/use-the-agent-alone.md
       - Back up and restore memory: how-to/back-up-and-restore-memory.md
       - Move a project: how-to/move-a-project.md
       - Recover unfinished memory: how-to/recover-unfinished-memory.md

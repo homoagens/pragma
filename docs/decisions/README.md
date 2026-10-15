@@ -31,6 +31,11 @@ the file that makes them.
 | 16 | 2026-10-06 | [The reference is generated from the code](0016-the-reference-is-generated-from-the-code.md) | accepted |
 | 17 | 2026-10-06 | [The Linux terminal comes first](0017-the-linux-terminal-comes-first.md) | accepted |
 | 18 | 2026-10-06 | [A turn is drawn as a ledger](0018-a-turn-is-drawn-as-a-ledger.md) | accepted |
+| 19 | 2026-10-12 | [The agent can be offered the tools of MCP servers](0019-the-tools-of-mcp-servers.md) | accepted |
+| 20 | 2026-10-13 | [A conversation that fills up is summarised](0020-a-full-conversation-is-summarised.md) | accepted |
+| 21 | 2026-10-13 | [The agent can run alone](0021-the-agent-alone.md) | accepted |
+| 22 | 2026-10-14 | [Commands that cannot be undone wait for the person](0022-commands-that-cannot-be-undone-wait.md) | accepted |
+| 23 | 2026-10-14 | [Pictures are drawn in the terminal](0023-pictures-are-drawn-in-the-terminal.md) | accepted |
 
 ## Adding one
 
