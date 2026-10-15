@@ -57,7 +57,8 @@ LOCAL = ("127.0.0.1", "localhost", "::1")
 # ── the list ─────────────────────────────────────────────────────────────────
 
 def read_list() -> dict:
-    """{project: {"host", "port", "key", "on"}}, in the order they were added."""
+    """{project: {"host", "port", "key", "on", "memory"}}, in the order they
+    were added. "memory" missing is on."""
     try:
         data = json.loads(LIST.read_text(encoding="utf-8"))
         got = data.get("projects") if isinstance(data, dict) else None
@@ -126,7 +127,7 @@ def start(name: str, entry: dict) -> str:
     steps = str((project.get("settings") or {}).get("MaxSteps", "")).strip() or pragma_launcher.DEFAULT_STEPS
     host, port = str(entry.get("host") or "127.0.0.1"), int(entry.get("port") or FIRST_PORT)
     argv = [sys.executable, "-m", "agent.serve", "--host", host, "--port", str(port),
-            "--max-steps", steps]
+            "--max-steps", steps] + ([] if entry.get("memory", True) else ["--no-memory"])
     STATE_DIR.mkdir(parents=True, exist_ok=True)
     log = open(STATE_DIR / f"{name}.log", "a", encoding="utf-8")
     log.write(f"\n--- {time.strftime('%Y-%m-%d %H:%M:%S')} started from /serve\n")
@@ -219,7 +220,8 @@ def home_rows() -> list[tuple[str, str]]:
         elif state is None:
             out.append((lead + f"on, but not running{SEP}/serve", "\033[33m"))
         else:
-            out.append((lead + f"{where}{SEP}{talking(state)}", "\033[32m"))
+            out.append((lead + f"{where}{SEP}{talking(state)}"
+                        + ("" if entry.get("memory", True) else f"{SEP}memory off"), "\033[32m"))
     return out
 
 
@@ -265,7 +267,8 @@ def page() -> None:
             elif state is None:
                 notes.append(f"on, but not running{SEP}{where}")
             else:
-                notes.append(f"on{SEP}{where}{SEP}{talking(state)}")
+                notes.append(f"on{SEP}{where}{SEP}{talking(state)}"
+                             + ("" if entry.get("memory", True) else f"{SEP}memory off"))
         options.append("add")
         notes.append("serve another project")
         chosen = pick("", options, notes)
@@ -332,8 +335,11 @@ def project_page(name: str) -> None:
         say("  For the program, in its settings or its .env:", "dim")
         for line in for_the_program(name, entry):
             print(f"    {line}")
-        rows = ["state", "address", "port", "key", "log", "remove"]
+        rows = ["state", "memory", "address", "port", "key", "log", "remove"]
         notes = ["on" if entry.get("on") else "off",
+                 "on - recalled before each turn, written when a conversation ends"
+                 if entry.get("memory", True) else
+                 "off - the agent alone: nothing recalled, nothing written",
                  str(entry.get("host")) + ("  this machine only" if entry.get("host") in LOCAL
                                            else "  open to the network"),
                  str(entry.get("port")),
@@ -359,6 +365,10 @@ def project_page(name: str) -> None:
                 if why:
                     say(f"  {why}", "warn")
                     pause()
+        elif what == "memory":
+            entry["memory"] = not entry.get("memory", True)
+            save_list(listed)
+            _restart(name, entry)
         elif what in ("address", "port"):
             print()
             if what == "address":

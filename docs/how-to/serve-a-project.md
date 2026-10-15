@@ -48,13 +48,15 @@ Enter on the project's name in `/serve` opens its page:
 | Row | What it does |
 |---|---|
 | `state` | Turns it on or off. Off, the program gets no answer. |
+| `memory` | On: recalled before each turn, written when a conversation ends. Off: the agent alone, as with `pragma --agent`; nothing is read from the memory or added to it. |
 | `address` | `127.0.0.1` is this machine only. `0.0.0.0` opens it to the network. |
 | `port` | The first free one from 8300 is chosen for you. |
 | `key` | Makes a new one. The program needs it in place of the old. |
 | `log` | The last lines of what the service has done. |
 | `remove` | Stops it and takes it off the list. |
 
-A change of address, port or key starts the service again.
+A change of memory, address, port or key starts the service again. The home
+screen's line says `memory off` for a project served without it.
 
 **The key.** A program on this machine may send none. Once the address is
 opened to the network, every request must carry the key, and one without it

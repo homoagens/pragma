@@ -123,7 +123,7 @@ Like `endpoints.json`, it is never part of a snapshot.
 ```json
 {
   "projects": {
-    "lezioni": {"host": "127.0.0.1", "port": 8300, "key": "pgk_...", "on": true}
+    "lezioni": {"host": "127.0.0.1", "port": 8300, "key": "pgk_...", "on": true, "memory": true}
   }
 }
 ```
@@ -134,6 +134,7 @@ Like `endpoints.json`, it is never part of a snapshot.
 | `port` | One port, one project. |
 | `key` | What a program must send as its API key; from this machine it may send none. |
 | `on` | Whether it should be running. The next `pragma` starts one that is on and is not. |
+| `memory` | `false` serves the agent alone: nothing recalled, nothing written. Missing is `true`. |
 
 Written from `/serve`, readable only by you: it holds the keys. Never part
 of a snapshot.
