@@ -34,6 +34,7 @@ nav:
       - Use MCP servers: how-to/use-mcp-servers.md
       - Use the agent without memory: how-to/use-the-agent-alone.md
       - Serve a project: how-to/serve-a-project.md
+      - Use Pragma from another program: how-to/use-pragma-from-a-program.md
       - Back up and restore memory: how-to/back-up-and-restore-memory.md
       - Move a project: how-to/move-a-project.md
       - Recover unfinished memory: how-to/recover-unfinished-memory.md

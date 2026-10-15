@@ -25,7 +25,9 @@ It starts at once, and its page shows what the program needs:
 Put those three into the program's settings, under whatever names it uses
 for the address of its model, the model's name and the key. The model's name
 is not needed to choose the project — the port does that — but some programs
-refuse to run without one.
+refuse to run without one. [Use Pragma from another
+program](use-pragma-from-a-program.md) has examples in code, and what a
+program should send.
 
 ## It keeps running
 

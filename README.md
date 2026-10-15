@@ -189,7 +189,8 @@ servers answer.
 panel, a presentation tool — talk to one of your projects instead, through
 the same OpenAI-compatible API, and get its memory and its tools with it. A
 served project keeps running when Pragma is closed, and the home screen
-always says which are on. [Serve a project](docs/how-to/serve-a-project.md).
+always says which are on. [Serve a project](docs/how-to/serve-a-project.md),
+and [use it from your own code](docs/how-to/use-pragma-from-a-program.md).
 
 **Plugins.** A folder in `~/.pragma/plugins` can add commands to the home
 screen without Pragma knowing what they do. The
