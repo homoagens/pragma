@@ -339,6 +339,13 @@ CONFIG = {
     "PRAGMA_ACCENT": ("launcher",
         "Accent colour of the screens, as `R;G;B`.",
         "`178;132;255`"),
+    "PRAGMA_SERVE_KEY": ("launcher",
+        "The key a served project asks of a program, given to it by `/serve`. "
+        "Not set by hand."),
+    "PRAGMA_SERVE_IDLE_MINUTES": ("launcher",
+        "Minutes after which a served project closes a conversation nobody is "
+        "writing to, and hands it to the memory.",
+        "`20`"),
 
     # -- dev --------------------------------------------------------------
     "PRAGMA_DEBUG": ("dev",

@@ -128,10 +128,11 @@ how it samples. With one endpoint, it serves all four.
 |---|---|---|---|
 | The terminal on Linux | `pragma`, or `pragma --agent` without memory | [`terminal/pragma_launcher.py`](../../terminal/pragma_launcher.py), then [`agent/chat.py`](../../agent/chat.py) | where Pragma is developed and tested |
 | The terminal on Windows | `pragma`, in PowerShell | [`terminal/Pragma.psm1`](../../terminal/Pragma.psm1), then [`agent/chat.py`](../../agent/chat.py) | follows Linux |
+| A project served to another program | `/serve`, on the home screen | [`terminal/pragma_serve.py`](../../terminal/pragma_serve.py), then [`agent/serve.py`](../../agent/serve.py) | Linux and macOS; [Serve a project](../how-to/serve-a-project.md) |
 | One task, no interaction | `python -m agent.batch --task "..." --cwd DIR` | [`agent/batch.py`](../../agent/batch.py) | the same code everywhere |
 | The browser | `python -m agent.run` | [`agent/run.py`](../../agent/run.py), then [`agent/server.py`](../../agent/server.py) and [`interface-web/`](../../interface-web) | the old interface, not being worked on |
 
-The first three run the same loop, the same skills and the same memory. The
+The first four run the same loop, the same skills and the same memory. The
 browser interface runs the same loop and the same skills and has not followed
 the rest: it does not read `PRAGMA.md`, and it does not write episodes.
 [Three interfaces, and where each stands](interfaces.md) has what differs
@@ -146,6 +147,7 @@ The short version. [Files](../reference/files.md) has what is inside each.
 | The projects: name, folder, settings | `~/.pragma/registry.json` | the launcher |
 | The endpoints, the roles, the optional faculties | `~/.pragma/endpoints.json` | `/configure` |
 | The MCP servers whose tools the agent is offered | `~/.pragma/mcp.json` | `/configure`, or you |
+| The projects served to other programs | `~/.pragma/serve.json`, and `~/.pragma/serve/` while they run | `/serve`, and each served project |
 | A project's episodes | `~/.pragma/projects/NAME/episodes/`, with `dormant/` inside it | the memory worker |
 | A project's beliefs | `~/.pragma/projects/NAME/learnings.json` | the memory worker |
 | Memory work in flight, or that failed | `~/.pragma/projects/NAME/jobs/` | the conversation and the worker |
@@ -194,6 +196,7 @@ The short version. [Files](../reference/files.md) has what is inside each.
 | [`picture.py`](../../agent/picture.py) | An image file drawn in the terminal, PNG or JPEG, with nothing to install. |
 | [`prompts.py`](../../agent/prompts.py) | The agent's system prompt. |
 | [`batch.py`](../../agent/batch.py) | One task, start to finish. |
+| [`serve.py`](../../agent/serve.py) | One project served to another program, as an OpenAI-compatible endpoint. |
 | [`server.py`](../../agent/server.py) | The server behind the browser interface. |
 | [`run.py`](../../agent/run.py) | Starts that server. |
 
@@ -205,6 +208,7 @@ The short version. [Files](../reference/files.md) has what is inside each.
 | [`Pragma.psm1`](../../terminal/Pragma.psm1), [`pragma-session.ps1`](../../terminal/pragma-session.ps1) | The same launcher for Windows PowerShell. [`Pragma.psd1`](../../terminal/Pragma.psd1) is its module manifest, and [`install.bat`](../../terminal/install.bat) runs the installer from a double-click. |
 | [`pragma_home.py`](../../terminal/pragma_home.py) | The home prompt, its commands, the plugins. |
 | [`pragma_configure.py`](../../terminal/pragma_configure.py) | The `/configure` pages. |
+| [`pragma_serve.py`](../../terminal/pragma_serve.py) | The `/serve` page, and starting and stopping what it serves. |
 | [`pragma_menu.py`](../../terminal/pragma_menu.py) | The lists walked with the arrows. |
 | [`pragma_brief.py`](../../terminal/pragma_brief.py) | The briefing shown when a project opens. |
 | [`pragma_jobs.py`](../../terminal/pragma_jobs.py) | The record of background memory work, and `/jobs`. |

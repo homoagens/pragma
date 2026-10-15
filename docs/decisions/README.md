@@ -36,6 +36,7 @@ the file that makes them.
 | 21 | 2026-10-13 | [The agent can run alone](0021-the-agent-alone.md) | accepted |
 | 22 | 2026-10-14 | [Commands that cannot be undone wait for the person](0022-commands-that-cannot-be-undone-wait.md) | accepted |
 | 23 | 2026-10-14 | [Pictures are drawn in the terminal](0023-pictures-are-drawn-in-the-terminal.md) | accepted |
+| 24 | 2026-10-15 | [A project can be served to other programs](0024-a-project-can-be-served.md) | accepted |
 
 ## Adding one
 

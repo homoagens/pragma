@@ -17,6 +17,8 @@ folder Pragma is installed in.
 | `projects/backups/<name>/` | Snapshots, on Linux and macOS. | `/projects backups` |
 | `backups/<name>/` | Snapshots, on Windows. | `/projects backups` |
 | `plugins/<name>/plugin.json` | Commands added to the home screen. | you |
+| `serve.json` | The projects served to other programs: address, port, key, on or off. | `/serve` |
+| `serve/<name>.json`, `serve/<name>.log` | What a served project is doing while it runs, and its log. | the served project |
 | `threads/` | Conversations of the browser interface. | the server |
 | `request-<pid>.json` | A note from an open conversation to the launcher. Gone when the conversation ends. | the conversation |
 
@@ -115,6 +117,31 @@ answer then has its tools left out, and a line says so. Only tools are used,
 and only what they return as text. `PRAGMA_MCP` names another file.
 
 Like `endpoints.json`, it is never part of a snapshot.
+
+### `serve.json`
+
+```json
+{
+  "projects": {
+    "lezioni": {"host": "127.0.0.1", "port": 8300, "key": "pgk_...", "on": true}
+  }
+}
+```
+
+| Field | What it is |
+|---|---|
+| `host` | The address it listens on. `127.0.0.1` is this machine only, `0.0.0.0` the network. |
+| `port` | One port, one project. |
+| `key` | What a program must send as its API key; from this machine it may send none. |
+| `on` | Whether it should be running. The next `pragma` starts one that is on and is not. |
+
+Written from `/serve`, readable only by you: it holds the keys. Never part
+of a snapshot.
+
+While a served project runs, `serve/<name>.json` holds its process, its
+address and the conversation it is in, and is removed when it stops; the
+home screen and `/serve` read it. `serve/<name>.log` is kept across runs.
+[Serve a project](../how-to/serve-a-project.md) has the rest.
 
 ### `projects/<name>/`
 

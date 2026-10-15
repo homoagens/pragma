@@ -80,11 +80,17 @@ COMMANDS = {
     "/new":       "start a project",
     "/projects":  "",                     # the actions fill the blurb in
     "/jobs":      "what the memory is writing in the background: follow it, stop it, run it again",
+    "/serve":     "projects other programs can talk to, as to a model",
     "/configure": "the model server Pragma talks to",
     "/clear":     "clear the screen",
     "/help":      "this list",
     "/exit":      "leave",
 }
+
+# A served project is a process the Linux launcher starts and keeps: the
+# Windows one has no /serve yet, so its page does not offer it.
+if os.name == "nt":
+    COMMANDS.pop("/serve", None)
 
 # What /projects takes. These are the things that are done TO a project rather
 # than inside one, which is why they live here and not in a conversation: from
@@ -121,7 +127,8 @@ def rows() -> list[tuple[str, str]]:
                 ("/configure", COMMANDS["/configure"]),
                 ("/help", COMMANDS["/help"]),
                 ("/exit", COMMANDS["/exit"])]
-    shown = ("/open", "/new", "/projects", "/jobs", "/configure", "/exit")
+    shown = tuple(c for c in ("/open", "/new", "/projects", "/jobs", "/serve", "/configure", "/exit")
+                  if c in COMMANDS)
     if agent_alone():
         # Still there when typed: a memory written by an earlier run may be at
         # work. It is not offered by a page that starts none.
@@ -659,6 +666,15 @@ def main() -> int:
     asking_mcp.join(3.5)
     for i, (said, colour) in enumerate(tools.get("rows") or []):
         row("mcp" if i == 0 else "", said, colour)
+    # And the projects served to other programs, every time: they run when
+    # Pragma does not, and one left on should never be a surprise.
+    if "/serve" in COMMANDS:
+        try:
+            import pragma_serve
+            for i, (said, colour) in enumerate(pragma_serve.home_rows()):
+                row("serve" if i == 0 else "", said, colour)
+        except Exception:
+            pass
     print()
 
     # What the page says the memory is doing is a photograph taken as it was

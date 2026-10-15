@@ -45,6 +45,7 @@ What the Windows launcher does with code of its own is where it can differ:
 | A project's own settings | the steps per turn, the commands allowed without asking and how much is recalled, from `/settings` | the same page, not yet looked at there, plus `pragma -Set <key> <value>` for the others |
 | The tools the agent is given | 15: reading and searching are left to the shell | all 21. [Which ones](../reference/tools.md) |
 | The [agent without memory](../how-to/use-the-agent-alone.md) | `pragma --agent` | not there: the launcher does not have the flag |
+| [Serving a project](../how-to/serve-a-project.md) to another program | `/serve` | not there: the home screen does not offer it |
 | Installing | `./install.sh` | `.\install.ps1` |
 
 The [commands that wait for you](../how-to/allow-commands.md), the

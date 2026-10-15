@@ -979,6 +979,14 @@ def configure_page() -> None:
 def run() -> int:
     entry: dict | None = None
     notice = ""
+    # What /serve left on keeps running when Pragma is closed, and is started
+    # again here when it is not - after a reboot, say. What could not start is
+    # said under the commands.
+    try:
+        import pragma_serve
+        notice = "; ".join(pragma_serve.autostart())
+    except Exception as e:
+        notice = f"/serve: the served projects could not be started - {type(e).__name__}: {e}"
     while True:
         if entry is None:
             action, arg = home_prompt(notice, home_page())
@@ -1002,6 +1010,10 @@ def run() -> int:
                     backups_page(chosen)
             elif action == "configure":
                 configure_page()
+            elif action == "serve":
+                with child_owns_ctrl_c():
+                    subprocess.run([sys.executable, str(ROOT / "terminal" / "pragma_serve.py")],
+                                   cwd=str(ROOT))
             elif action == "clear":
                 notice = arg
             continue

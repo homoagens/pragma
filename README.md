@@ -178,12 +178,18 @@ abstractor distilling beliefs.
 
 ---
 
-## More tools
+## Connecting it to other things
 
 **MCP servers.** The agent can be offered the tools of any
 [MCP](https://modelcontextprotocol.io) server: list them in `/configure`,
 `mcp`, and switch off the tools you do not want. The home screen says which
 servers answer.
+
+**Other programs.** `/serve` lets a program that talks to a model — a chat
+panel, a presentation tool — talk to one of your projects instead, through
+the same OpenAI-compatible API, and get its memory and its tools with it. A
+served project keeps running when Pragma is closed, and the home screen
+always says which are on. [Serve a project](docs/how-to/serve-a-project.md).
 
 **Plugins.** A folder in `~/.pragma/plugins` can add commands to the home
 screen without Pragma knowing what they do. The

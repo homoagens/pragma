@@ -23,6 +23,7 @@ says what differs.
 | let a project run some commands without asking | [Allow commands](how-to/allow-commands.md) |
 | give the agent the tools of an MCP server | [Use MCP servers](how-to/use-mcp-servers.md) |
 | talk to the agent without touching any memory | [Use the agent without memory](how-to/use-the-agent-alone.md) |
+| let another program talk to a project, as to a model | [Serve a project](how-to/serve-a-project.md) |
 | keep a copy of what a project remembers | [Back up and restore memory](how-to/back-up-and-restore-memory.md) |
 | take a project to another computer | [Move a project](how-to/move-a-project.md) |
 | deal with "a consolidation did not finish" | [Recover a memory that did not finish writing](how-to/recover-unfinished-memory.md) |
