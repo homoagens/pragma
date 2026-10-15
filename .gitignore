@@ -3,6 +3,9 @@
 .env.bak
 *.bak
 
+# Superseded copies kept beside what replaced them (harness.gif.old, ...)
+*.old
+
 # Local model profiles (PRAGMA_PROFILE) — holds local ports, like .env
 models.json
 
