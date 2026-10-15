@@ -47,6 +47,14 @@ _INSTALLING = {"install", "i", "add", "ci", "uninstall", "remove", "rm", "purge"
 
 _PIPED_SCRIPT = re.compile(r"\b(curl|wget|iwr|invoke-webrequest)\b[^|]*\|\s*(sudo\s+)?"
                            r"(ba|z|da|k|fi)?sh\b|\|\s*(iex|invoke-expression)\b", re.I)
+# A command line handed to another shell as a string: `bash -c "rm -rf x"`,
+# `eval '...'`, `cmd /c "..."`, `powershell -Command "..."`. Read as words it
+# is only `bash`; the string is read as a command line of its own.
+_SHELL_STRING = re.compile(
+    r"(?:\b(?:ba|z|da|k|fi|c)?sh(?:\.exe)?(?:\s+-[a-z]+)*?\s+-[a-z]*c[a-z]*"
+    r"|\beval|\bcmd(?:\.exe)?\s+/[ck]"
+    r"|\b(?:powershell|pwsh)(?:\.exe)?(?:\s+-\w+)*?\s+-(?:c|command))"
+    r"\s+(?:\"((?:[^\"\\]|\\.)*)\"|'([^']*)')", re.I)
 _PYTHON = re.compile(r"(^|[\s;&|(/\\])(python[\d.]*|py)(\.exe)?\s", re.I)
 _PYTHON_DELETES = re.compile(r"\b(shutil\.rmtree|os\.remove|os\.unlink|os\.rmdir|"
                              r"os\.removedirs|send2trash)\b|\.unlink\(|\.rmdir\(")
@@ -236,6 +244,11 @@ def held(command: str, allowed=(), where: str = "", root: str = "") -> str:
     # cut a `python -c "import shutil; shutil.rmtree(...)"` in two.
     if _PYTHON.search(text) and _PYTHON_DELETES.search(text) and not free(text):
         return "deletes files"
+    for m in _SHELL_STRING.finditer(text):
+        inner = m.group(1) if m.group(1) is not None else m.group(2)
+        why = held(inner.replace('\\"', '"'), allowed, where, root)
+        if why:
+            return why
     for segment in _SEGMENTS.split(text):
         raw = segment.strip()
         if not raw:
