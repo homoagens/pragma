@@ -1999,6 +1999,11 @@ def main() -> int:
         print(f"ERROR: refusing to work inside Pragma's own source tree ({cwd})",
               file=sys.stderr)
         return 1
+    # The launcher starts the conversation from Pragma's own folder. A command
+    # the agent runs without naming a folder ran there - `git status` read
+    # Pragma's repository, not the project's. A single task has always moved
+    # into its folder first; so does the conversation now.
+    os.chdir(cwd)
 
     # An unreachable endpoint used to end the program here. It should not:
     # most of what a memory is for still works with the model gone - the map,
