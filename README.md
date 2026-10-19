@@ -21,11 +21,11 @@
 </p>
 
 <p align="center">
-  <img src="harness.gif" alt="Pragma in a terminal: the memory writing a conversation down as two episodes and a belief, then the project reopened and asked who the person is and which model runs it, answered from what was recalled" width="800">
+  <img src="harness.gif" alt="Pragma in a terminal: a new project, a name given and a wrong claim about the model corrected, the memory writing it down as two episodes and a belief, then the project reopened and both answered from what was recalled" width="800">
 </p>
 
 <p align="center">
-  <a href="https://homoagens.github.io/pragma/assets/pragma-40s.mp4">▶ The whole session, in 40 seconds</a>: a name given, a wrong claim corrected, and both remembered the next time.
+  <a href="https://homoagens.github.io/pragma/assets/pragma-40s.mp4">▶ The same 40 seconds as a video</a>, to pause and read.
 </p>
 
 ---
