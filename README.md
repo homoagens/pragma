@@ -21,8 +21,14 @@
 </p>
 
 <p align="center">
-  <img src="harness.gif" alt="Pragma in a terminal: a new project, a conversation, the memory writing it down, and the project reopened with it recalled" width="800">
+  <img src="harness.gif" alt="Pragma in a terminal: the memory writing a conversation down as two episodes and a belief, then the project reopened and asked who the person is and which model runs it, answered from what was recalled" width="800">
 </p>
+
+<p align="center">
+  <sub>The whole session, in 40 seconds: a name given, a wrong claim corrected, and both remembered the next time.</sub>
+</p>
+
+https://github.com/user-attachments/assets/fa7bfde6-0fba-435f-9bac-0eee3fe5f113
 
 ---
 
