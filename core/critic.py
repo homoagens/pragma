@@ -549,6 +549,11 @@ def summary(rv: Review, sends: int, most: int) -> tuple[str, list[str]]:
         return f"not available ({rv.why}) · delivered as it stands{secs}", []
     total = len(rv.requirements)
     count = f"{rv.met()} of {total} requirement{'s' if total != 1 else ''} met" if total else "no requirements named"
+    if rv.verdict == "revise" and total and not rv.failing():
+        # Sent back with every requirement met: what it found is outside the
+        # list - most often a claim in the answer with no step behind it - and
+        # "1 of 1 met · sent back" read as a contradiction.
+        count += ", one point outside them open"
     details = [f"{r['status']}: {r['text']}" for r in rv.failing()]
     if rv.aside:
         details.append(f"aside: {rv.aside}")
