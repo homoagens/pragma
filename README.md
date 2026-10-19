@@ -25,10 +25,8 @@
 </p>
 
 <p align="center">
-  <sub>The whole session, in 40 seconds: a name given, a wrong claim corrected, and both remembered the next time.</sub>
+  <a href="https://homoagens.github.io/pragma/assets/pragma-40s.mp4">▶ The whole session, in 40 seconds</a>: a name given, a wrong claim corrected, and both remembered the next time.
 </p>
-
-https://github.com/user-attachments/assets/fa7bfde6-0fba-435f-9bac-0eee3fe5f113
 
 ---
 
