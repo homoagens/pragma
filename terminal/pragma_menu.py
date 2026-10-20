@@ -26,6 +26,8 @@ import sys
 import threading
 import time
 
+from pragma_line import line
+
 ESC = "\033"
 GREY, RESET = ESC + "[38;5;242m", ESC + "[0m"
 
@@ -325,7 +327,7 @@ def ask(question: str, default: str = "", hint: str = "") -> str | None:
     shown = f" [{default}]" if default else ""
     tip = f"  {grey}{hint}{reset}" if hint else ""
     try:
-        answer = input(f"  {question}{shown}{tip}{grey}:{reset} ").strip()
+        answer = line(f"  {question}{shown}{tip}{grey}:{reset} ").strip()
     except (EOFError, KeyboardInterrupt):
         print()
         return None
@@ -337,7 +339,7 @@ def pause(text: str = "enter to go back") -> None:
     a = accent()
     grey, reset = (GREY, RESET) if a else ("", "")
     try:
-        input(f"  {grey}{text}{reset} ")
+        line(f"  {grey}{text}{reset} ")
     except (EOFError, KeyboardInterrupt):
         print()
 

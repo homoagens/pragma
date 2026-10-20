@@ -123,6 +123,8 @@ An endpoint serves one or more of four roles:
 | tab, or right arrow | Take the suggested next line, when one is shown. |
 | tab | After a `/`: complete the command. |
 | arrows, a digit, a first letter | Move in a menu. Enter selects. |
+| ctrl+Enter, or alt+Enter | At the prompt of a project: a new line in the message; Enter sends the whole of it. A terminal that sends ctrl+Enter as plain Enter leaves alt+Enter. |
+| arrows, ctrl+arrows, home, end | Move along the line in anything you type - the prompts, a name, an address, a y/n. |
 
 ## Older names
 

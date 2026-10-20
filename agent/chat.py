@@ -67,6 +67,7 @@ import config as baseline_config          # noqa: E402
 import llm_client                          # noqa: E402
 from react import AgentConfig, run_agent, _msg_chars   # noqa: E402
 from tools import palette as skills_palette   # noqa: E402
+from pragma_line import line as _line   # noqa: E402  a typed line, with the arrows
 
 from agent.batch import (                  # noqa: E402
     _pool_line,
@@ -286,7 +287,7 @@ def _chat_ask_user(topic: str = "", context: str = "", mode: str = "input",
         if context:
             print(f"    {context}")
         try:
-            answer = input("  y/n > ").strip().lower()
+            answer = _line("  y/n > ").strip().lower()
         except (EOFError, KeyboardInterrupt):
             answer = ""
         for guard in _GUARD:
@@ -367,6 +368,9 @@ def _make_session():
             pass
 
         kb = KeyBindings()
+        # ctrl+Enter starts a new line; Enter sends the whole message.
+        from pragma_line import newline_keys
+        newline_keys(kb)
 
         @kb.add("tab", filter=Condition(lambda: bool(_NEXT)))
         def _take(event):
@@ -565,7 +569,7 @@ def _ask(session, typed: str = ""):
     `typed` is what was typed while the turn before ran: it is already on
     the line, to be finished or deleted."""
     if session is None:
-        return input(_prompt()).strip()
+        return _line(_prompt()).strip()
     from prompt_toolkit.formatted_text import ANSI
 
     # A callable, so the hint is decided when the line is drawn: with a
@@ -723,7 +727,7 @@ def _steps_here() -> None:
     print()
     while True:
         try:
-            raw = input(f"  steps per turn [{now}]: ").strip()
+            raw = _line(f"  steps per turn [{now}]: ").strip()
         except (EOFError, KeyboardInterrupt):
             print()
             return

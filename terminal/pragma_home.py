@@ -431,7 +431,8 @@ def read_line(session) -> str:
     from pragma_menu import MARK
     a = accent()
     if session is None:
-        return input(f"  {MARK} ")
+        from pragma_line import line
+        return line(f"  {MARK} ")
     from prompt_toolkit.formatted_text import ANSI
     return session.prompt(
         ANSI(f"  {a}{MARK}{RESET if a else ''} "),
