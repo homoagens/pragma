@@ -372,19 +372,15 @@ def _make_session():
         from pragma_line import newline_keys
         newline_keys(kb)
 
-        @kb.add("tab", filter=Condition(lambda: bool(_NEXT)))
+        @kb.add("tab", filter=Condition(
+            lambda: bool(_NEXT) and not session.default_buffer.text))
         def _take(event):
-            """Tab takes the guess - but only when it is the thing on offer.
-
-            The filter matters: with something typed, tab is still completion,
-            and a slash still opens the commands. This binding exists for the
-            empty line, where there is nothing to complete.
-            """
-            buff = event.current_buffer
-            if buff.text or not _NEXT:
-                buff.start_completion()
-                return
-            buff.insert_text(_NEXT[0])
+            """Tab takes the guess - but only on the empty line, where it is
+            the thing on offer. With something typed, tab is prompt_toolkit's
+            own completion, as at home: this binding used to take that case
+            too and only opened the menu, so with a guess waiting "/mem" + tab
+            completed nothing."""
+            event.current_buffer.insert_text(_NEXT[0])
 
         @kb.add("right", filter=Condition(
             lambda: bool(_NEXT) and not session.default_buffer.text))
