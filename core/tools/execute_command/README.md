@@ -6,7 +6,7 @@ Run a shell command and return its stdout, stderr and exit code. Each call is a 
 
 ## Parameters
 
-- `command` (str): Shell command to run, by `/bin/sh`.
+- `command` (str): Shell command to run, by `bash` (`/bin/sh` where there is no bash).
 - `cwd` (str, optional, default ""): Working directory; defaults to process cwd.
 - `timeout` (int, optional, default 60): Seconds before the process tree is killed.
 - `capture_stderr` (bool, optional, default True): Include stderr in the output.

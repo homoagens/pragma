@@ -6,8 +6,16 @@ from __future__ import annotations
 
 import os
 import re
+import shutil
 import subprocess
 from pathlib import Path
+
+# THE SHELL IS BASH. The prompt tells the model so, and the model writes for
+# it: `[[ ... ]]`, `{a,b}`, `source`, `$BASH_VERSION`. shell=True alone runs
+# /bin/sh, which on Debian and Ubuntu is dash, where all of those fail with
+# "not found" or a syntax error the model cannot explain to itself. /bin/sh
+# is what is left where there is no bash at all.
+_SHELL = shutil.which("bash") or "/bin/sh"
 
 # PRAGMA.md (the user-authored project contract) is read-only for the agent.
 # The file-mutating skills enforce that via config.self_modify_guard, but the
@@ -53,7 +61,7 @@ def _run_detached(command: str, work_dir: str | None) -> str:
     stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     log = Path(tempfile.gettempdir()) / f"pragma_bg_{stamp}_{os.getpid()}.log"
 
-    popen_kwargs: dict = dict(shell=True, cwd=work_dir,
+    popen_kwargs: dict = dict(shell=True, executable=_SHELL, cwd=work_dir,
                               stdin=subprocess.DEVNULL, start_new_session=True)
 
     # The child gets its own copy of the log's handle; this one is closed when
@@ -136,6 +144,7 @@ def execute_command(command: str, cwd: str = "", timeout: int = 60,
     # timeout - and to read whatever was typed at the keyboard meanwhile.
     popen_kwargs: dict = dict(
         shell=True,
+        executable=_SHELL,
         stdin=subprocess.DEVNULL,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
