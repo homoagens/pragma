@@ -42,7 +42,6 @@ from __future__ import annotations
 
 import os
 import re
-import sys
 import threading
 import time
 
@@ -1087,11 +1086,3 @@ def _json(v) -> str:
         return json.dumps(v, ensure_ascii=False, default=str)
     except Exception:
         return str(v)
-
-
-def can_draw() -> bool:
-    """Is there a terminal to draw on? Piped output gets the plain lines."""
-    try:
-        return sys.stdout.isatty()
-    except Exception:
-        return False

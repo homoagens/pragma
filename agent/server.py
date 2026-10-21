@@ -45,7 +45,6 @@ from react import AgentConfig, run_agent
 
 import config as baseline_config
 import memory as baseline_memory
-from tools import ALL_SKILLS, skills_summary_for  # noqa: F401  (ALL_SKILLS: public re-export)
 from tools import palette as skills_palette
 from agent.prompts import build_system_prompt, session_block
 
@@ -804,7 +803,6 @@ async def websocket_endpoint(ws: WebSocket):
     # ask_user state
     answer_event = threading.Event()
     answer_store: dict[str, str] = {"value": ""}
-    pending_ask_user: Optional[dict] = None
 
     # Lock to prevent two concurrent tasks on the same thread
     task_running = threading.Event()
@@ -817,7 +815,6 @@ async def websocket_endpoint(ws: WebSocket):
 
     def ws_ask_user(topic: str = "", context: str = "", mode: str = "input",
                     prompt: str = "", question: str = "") -> str:
-        nonlocal pending_ask_user
         # Accept common aliases for topic
         if not topic:
             topic = prompt or question
@@ -829,7 +826,6 @@ async def websocket_endpoint(ws: WebSocket):
             "hint":     hint,
             "mode":     mode,
         }
-        pending_ask_user = dict(ev)
         persist_message(ev)
         loop.call_soon_threadsafe(async_queue.put_nowait, ev)
 
@@ -847,17 +843,14 @@ async def websocket_endpoint(ws: WebSocket):
         answer_event.clear()
 
         if task_stop.is_set():
-            pending_ask_user = None
             return "(stopped)"
         if not answered:
-            pending_ask_user = None
             return "(no response)"
         val = answer_store["value"]
         # Persisti anche la risposta (associandola all'ultimo ask_user)
         if thread_data["messages"] and thread_data["messages"][-1].get("type") == "ask_user":
             thread_data["messages"][-1]["answer"] = val
             _save_thread(thread_data)
-        pending_ask_user = None
         if mode == "confirm":
             return "yes" if val.strip().lower() in ("y", "yes", "1") else "no"
         return val

@@ -2369,10 +2369,6 @@ The person is reading as the turn goes, and answers between turns.
                         raise KeyboardInterrupt     # asked to stop while recalling
                     result = run_agent(
                         cfg, prompt, on_step=on_step, history=history,
-                        # Everything already in the history is a finished turn.
-                        # The loop may compress its own step traffic; the
-                        # conversation is not its to blur.
-                        protect_prefix=before,
                         # The critic holds the work to what was typed, not to
                         # the recalled memory standing in front of it.
                         request=text,

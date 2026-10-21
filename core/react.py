@@ -479,7 +479,6 @@ def _forced_answer(text: str, final_keys) -> dict:
 def run_agent(cfg: AgentConfig, user_task: str, log_path: Optional[Path] = None,
               on_step: Optional[Callable] = None,
               history: Optional[list] = None,
-              protect_prefix: int = 0,
               request: Optional[str] = None,
               compact_prefix: Optional[Callable] = None,
               counted: Optional[tuple] = None) -> Optional[dict]:
@@ -492,7 +491,6 @@ def run_agent(cfg: AgentConfig, user_task: str, log_path: Optional[Path] = None,
                 Signature: on_step(event: dict) where event always has "type" and "content".
                 Types: "thought" | "action" | "observation" | "final" | "error" | "start"
                        | "faculty_running" | "faculty" (the critic, with "tag")
-    protect_prefix : messages at the head that compression may not touch.
     request   : the user's own words, when user_task carries more (the recalled
                 memory in front of them). What the critic holds the work to.
     compact_prefix : optional, from a caller that owns a conversation. Called
@@ -502,15 +500,13 @@ def run_agent(cfg: AgentConfig, user_task: str, log_path: Optional[Path] = None,
     counted   : optional, (prompt tokens, characters) of `history` as the
                 server last counted it, from a caller that knows.
 
-    `protect_prefix` draws the line between two jobs that look alike and are
-    not. Inside one turn, too many tool observations is a summarising problem
-    and this loop solves it. Across the turns of a conversation, the same
-    overflow is a MEMORY problem: those turns are finished experiences, and
-    blurring them into a summary throws away the very thing consolidation
-    exists to keep. A caller that owns the conversation (agent/chat.py) passes
-    the length of the history it handed in, so this loop compresses its own
-    step traffic and never the turns before it. The request this run was
-    given is fenced off too, in both cases: see _task_fence.
+    The line between two jobs that look alike and are not is _task_fence.
+    Inside one turn, too many tool observations is a summarising problem and
+    this loop solves it. Across the turns of a conversation, the same overflow
+    is a MEMORY problem: those turns are finished experiences, and blurring
+    them into a summary throws away the very thing consolidation exists to
+    keep. So this loop compresses its own step traffic and never the history
+    it was handed, nor the request this run was given.
 
     Returns the final dict (containing one of the final_keys) or None.
     The dict is enriched with: name, forced (bool).

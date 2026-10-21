@@ -289,7 +289,7 @@ class Conversation:
 
             before = len(self.history or [])
             result = run_agent(self.cfg, prompt, on_step=on_step, history=self.history,
-                               protect_prefix=before, request=text,
+                               request=text,
                                compact_prefix=self._mid_turn)
             self.last_used = time.monotonic()
             chat._append_raw_log(self.cwd / ".pragma_session.jsonl", turn)

@@ -52,7 +52,6 @@ DEBUG = os.environ.get("PRAGMA_DEBUG", "").lower() in ("1", "true", "yes")
 # PRAGMA_ARCHIVE_TAG still exists and is still what keeps an alternate model's
 # runs in their own archive subfolder; it is now set directly instead of being
 # inferred from a profile name.
-PROFILE = ""
 
 # ─────────────────────────────────────────────
 # LLM ENDPOINT (OpenAI-compatible)
@@ -333,25 +332,6 @@ def sampling_extras():
     if MIN_P is not None:
         out["min_p"] = MIN_P
     return out
-
-
-def sampling_line():
-    """One human-readable line: what this process will actually send."""
-    name, _ = agent_profile()
-    if name:
-        sent = ", ".join(f"{k} {v:g}" for k, v in sorted(sampling_extras().items()))
-        t = agent_temperature()
-        temp = "temp from the server" if t is None else f"temp {t:g}"
-        return f"{name} . {temp} / {sent}" if sent else f"{name} . {temp}"
-    if DEFAULT_TEMPERATURE is None:
-        parts = ["temp from the server"]
-    else:
-        parts = [f"temp {DEFAULT_TEMPERATURE:g}"]
-    for k, v in sampling_extras().items():
-        parts.append(f"{k} {v:g}")
-    if len(parts) == 1:
-        parts.append("top_k/top_p/min_p from the server")
-    return " / ".join(parts)
 
 # The model the endpoint is ACTUALLY serving, resolved at runtime by
 # llm_client.ping_models() via GET /models (llama.cpp reports the loaded
@@ -652,18 +632,6 @@ def current_role() -> str:
         return "agent"
 
 
-def memory_template_kwargs(kind="write"):
-    """chat_template_kwargs for a memory call: the endpoint's answer, explicit.
-
-    `kind` is kept in the signature - every call site passes "select" or
-    "write" - so that the distinction is still there to act on the day there
-    are numbers to justify acting on it. What the answer turns on today is the
-    ROLE: a curator may be asked to answer at once on the same endpoint where
-    a reconsolidator reasons.
-    """
-    return _thinking(thinking_for(current_role()))
-
-
 def role_knobs(role: str = "") -> dict:
     """The knobs a call in `role` sends: that role's row, for GENERAL work.
 
@@ -714,6 +682,12 @@ def memory_call(kind="write") -> dict:
     The seed travels with it. Sampling makes a call repeatable only if the
     dice are pinned, and a store that answers differently on a re-run is a
     store nobody can debug.
+
+    `kind` is kept in the signature - every call site passes "select" or
+    "write" - so that the distinction is still there to act on the day there
+    are numbers to justify acting on it. What the answer turns on today is the
+    ROLE: a curator may be asked to answer at once on the same endpoint where
+    a reconsolidator reasons.
     """
     role = current_role()
     knobs = dict(role_knobs(role))

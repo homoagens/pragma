@@ -5,7 +5,6 @@
 # tools/__init__.py
 from __future__ import annotations
 import importlib.util
-import inspect
 import os
 import sys
 from pathlib import Path
@@ -13,54 +12,14 @@ from pathlib import Path
 SKILLS_DIR = Path(__file__).parent
 
 
-def _format_signature(name: str, fn) -> str:
-    """Render an exact `name(param, opt=default, ...)` call signature from the
-    skill function itself.
-
-    This goes into the system prompt next to every skill. It is the cheapest
-    fix for the most common skill-call failure: the model inventing or
-    over-generalizing parameters (e.g. passing `overwrite` to append_file, or
-    `output_mode` to grep_search). Showing the precise parameter list — and,
-    by omission, which parameters do NOT exist — kills that whole error class.
-    Derived from the live function, so it can never go stale.
-    """
-    try:
-        sig = inspect.signature(fn)
-    except (ValueError, TypeError):
-        return f"{name}(...)"
-    parts = []
-    for p in sig.parameters.values():
-        if p.name in ("self", "cls"):
-            continue
-        if p.kind is inspect.Parameter.VAR_POSITIONAL:
-            parts.append(f"*{p.name}")
-            continue
-        if p.kind is inspect.Parameter.VAR_KEYWORD:
-            parts.append(f"**{p.name}")
-            continue
-        if p.default is inspect.Parameter.empty:
-            parts.append(p.name)
-        else:
-            d = repr(p.default)
-            if len(d) > 24:  # keep long string defaults from bloating the prompt
-                d = d[:21] + "..."
-            parts.append(f"{p.name}={d}")
-    return f"{name}({', '.join(parts)})"
-
-
 def _load_skills():
     registry = {}
-    # name -> "**name**: desc\n  Call: sig". Kept per-skill (not pre-joined)
-    # so a runner can rebuild the summary for a SUBSET of the palette — see
-    # skills_summary_for(). Insertion order follows the sorted folder scan.
-    summary_lines = {}
     for folder in sorted(SKILLS_DIR.iterdir()):
         # _template, _legacy and _future stay in the tree and are never
         # offered: a leading underscore is how a skill is retired.
         if not folder.is_dir() or folder.name.startswith("_"):
             continue
         skill_file = folder / "tool.py"
-        readme = folder / "README.md"
         if not skill_file.exists():
             continue
         mod_name = f"tools.{folder.name}.tool"
@@ -77,35 +36,12 @@ def _load_skills():
         if fn is None:
             continue
         registry[skill_name] = fn
-        if readme.exists():
-            text = readme.read_text(encoding="utf-8")
-            summary_part = text.split("---")[0].strip()
-            # Extract just the description line (after the # title)
-            lines = [ln for ln in summary_part.splitlines() if ln.strip() and not ln.startswith("#")]
-            summary = lines[0] if lines else summary_part
-            # Append the exact call signature on its own line so the model
-            # sees the precise parameters every turn, not only after a
-            # get_skill_details call.
-            sig = _format_signature(skill_name, fn)
-            summary_lines[skill_name] = f"**{skill_name}**: {summary}\n  Call: {sig}"
-    return registry, summary_lines
+    # What the model is told about each skill - its description and its exact
+    # parameters - is built from the README and the function by tool_schema.
+    return registry
 
 
-ALL_SKILLS, _SUMMARY_LINES = _load_skills()
-SKILLS_SUMMARY = "\n".join(_SUMMARY_LINES.values())
-
-
-def skills_summary_for(names) -> str:
-    """Build the skills-summary block for a SUBSET of skills, in the canonical
-    order. Use this to keep the system prompt in sync with the ACTUAL palette
-    when a runner hides skills from the agent (e.g. the base64 skills on the
-    native channel): otherwise the prompt would advertise skills the agent
-    cannot call, and the model wastes turns calling them ('skill does not
-    exist'). Names without a summary line are
-    skipped, exactly as in SKILLS_SUMMARY."""
-    wanted = set(names)
-    return "\n".join(line for name, line in _SUMMARY_LINES.items()
-                     if name in wanted)
+ALL_SKILLS = _load_skills()
 
 
 # Memory machinery that lives in skills/ for its imports, not for the agent.
@@ -170,5 +106,4 @@ def palette(base: dict | None = None) -> dict:
     return out
 
 
-__all__ = ["ALL_SKILLS", "SKILLS_SUMMARY", "skills_summary_for",
-           "palette"]
+__all__ = ["ALL_SKILLS", "palette"]
