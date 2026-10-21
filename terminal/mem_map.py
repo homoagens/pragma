@@ -198,8 +198,9 @@ def clock_set():
 # mean is said in words once, under the view, rather than as column headings
 # ("raw", "eff", "reint") that only the code could read.
 
-import shutil as _shutil
 import textwrap as _tw
+
+from pragma_style import accent_rgb, columns  # noqa: E402  this file runs from terminal/
 
 _TTY = sys.stdout.isatty()
 
@@ -213,18 +214,11 @@ def _grey(text):
 
 
 def _accent(text):
-    raw = (os.environ.get("PRAGMA_ACCENT") or "178;132;255").strip()
-    parts = raw.split(";")
-    if len(parts) != 3 or not all(p.isdigit() and int(p) < 256 for p in parts):
-        raw = "178;132;255"
-    return _c("38;2;" + raw, text)
+    return _c("38;2;" + accent_rgb(), text)
 
 
 def _width():
-    try:
-        return max(40, _shutil.get_terminal_size((100, 24)).columns - 1)
-    except Exception:
-        return 99
+    return max(40, columns(0, 100) - 1)
 
 
 def _dot():

@@ -54,7 +54,7 @@ import time
 from pathlib import Path
 
 REGISTRY = Path.home() / ".pragma" / "registry.json"
-GREY, RESET = "\033[38;5;242m", "\033[0m"
+from pragma_style import GREY, RESET, accent, columns  # noqa: E402
 GREEN, YELLOW = "\033[32m", "\033[33m"
 
 
@@ -190,7 +190,7 @@ def page(notice: str = "", fewer: int = 0) -> None:
         whens = [_when(str(e.get("last_opened") or "")) for e in listed]
         # The folder column is as wide as the longest folder, not as wide as
         # the window: "today" belongs next to its path, not at the far edge.
-        room = max(10, _columns() - 4 - width - 2 - max(len(w) for w in whens) - 3)
+        room = max(10, columns(40) - 4 - width - 2 - max(len(w) for w in whens) - 3)
         span = min(room, max(len(w) for w in wheres))
         for e, where, when in zip(listed, wheres, whens):
             if len(where) > span:
@@ -205,14 +205,6 @@ def page(notice: str = "", fewer: int = 0) -> None:
     if notice:
         print()
         print(f"  \033[33m{notice}{reset}" if a else f"  {notice}")
-
-
-def _columns() -> int:
-    try:
-        import shutil
-        return max(40, shutil.get_terminal_size((80, 24)).columns)
-    except Exception:
-        return 80
 
 
 def plugins_dir() -> Path:
@@ -272,15 +264,6 @@ def run_plugin(spec: dict, arg: str) -> int:
         return 1
     finally:
         print()
-
-
-def accent() -> str:
-    """The launcher's accent as an ANSI foreground, as the chat prompt uses it."""
-    raw = (os.environ.get("PRAGMA_ACCENT") or "178;132;255").strip()
-    parts = raw.split(";")
-    if len(parts) != 3 or not all(p.isdigit() and int(p) < 256 for p in parts):
-        raw = "178;132;255"
-    return "\033[38;2;" + raw + "m" if sys.stdout.isatty() else ""
 
 
 def registry_entries() -> list[dict]:

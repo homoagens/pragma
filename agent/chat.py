@@ -68,6 +68,8 @@ import llm_client                          # noqa: E402
 from react import AgentConfig, run_agent, _msg_chars   # noqa: E402
 from tools import palette as skills_palette   # noqa: E402
 from pragma_line import line as _line   # noqa: E402  a typed line, with the arrows
+# The prompt in the colour of the page it appears under.
+from pragma_style import accent as _accent   # noqa: E402
 
 from agent.batch import (                  # noqa: E402
     _pool_line,
@@ -402,21 +404,6 @@ def _make_session():
     except Exception:
         return None
 
-
-def _accent() -> str:
-    """The launcher's accent as an ANSI foreground, or nothing.
-
-    PRAGMA_ACCENT is set by whoever started this; matching it here keeps the
-    prompt the same colour as the page it appeared under, which is the whole
-    point of having chosen a colour.
-    """
-    raw = (os.environ.get("PRAGMA_ACCENT") or "178;132;255").strip()
-    parts = raw.split(";")
-    if len(parts) != 3 or not all(p.isdigit() and int(p) < 256 for p in parts):
-        raw = "178;132;255"
-    if not sys.stdout.isatty():
-        return ""
-    return "\033[38;2;" + raw + "m"
 
 
 def _suggesting(cfg) -> bool:

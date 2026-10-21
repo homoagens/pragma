@@ -21,15 +21,12 @@ from __future__ import annotations
 import contextlib
 import os
 import re
-import shutil
 import sys
 import threading
 import time
 
 from pragma_line import line
-
-ESC = "\033"
-GREY, RESET = ESC + "[38;5;242m", ESC + "[0m"
+from pragma_style import ESC, GREY, RESET, accent, columns  # noqa: F401  shared by every page
 
 _ANSI = re.compile(r"\x1b\[[0-9;]*[A-Za-z]")
 
@@ -37,14 +34,6 @@ _ANSI = re.compile(r"\x1b\[[0-9;]*[A-Za-z]")
 def visible(text: str) -> int:
     """How many columns a string occupies once the colours are taken out."""
     return len(_ANSI.sub("", text))
-
-
-def columns() -> int:
-    """The terminal's width, with a floor a menu can still be drawn in."""
-    try:
-        return max(24, shutil.get_terminal_size((80, 24)).columns)
-    except Exception:
-        return 80
 
 
 def lines() -> int:
@@ -104,15 +93,6 @@ def fit(body: str, note: str = "") -> str:
     if left < 7:
         return body
     return body + f"   {GREY}{plain[:left - 4]}{cut}{RESET}"
-
-
-def accent() -> str:
-    """The accent as an ANSI foreground, as every Pragma page uses it."""
-    raw = (os.environ.get("PRAGMA_ACCENT") or "178;132;255").strip()
-    parts = raw.split(";")
-    if len(parts) != 3 or not all(p.isdigit() and int(p) < 256 for p in parts):
-        raw = "178;132;255"
-    return ESC + "[38;2;" + raw + "m" if sys.stdout.isatty() else ""
 
 
 def agent_alone() -> bool:

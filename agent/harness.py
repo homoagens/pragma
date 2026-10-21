@@ -45,6 +45,10 @@ import re
 import threading
 import time
 
+# The accent, as the launcher set it: every process that draws a turn has
+# terminal/ on its path.
+from pragma_style import accent_hex  # noqa: F401  (pragma_jobs takes it from here)
+
 # How much of the reasoning is shown while it is being written: the last
 # THINK_LINES lines of it, wrapped to the terminal. Enough to read a thought,
 # not enough to become the screen.
@@ -72,15 +76,6 @@ FACULTY_COLOR = {
 # Notes the native channel writes when the model said nothing before a call.
 _PLACEHOLDER_NOTE = re.compile(r"^\s*(Calling \S+\.|\(batched with step above\).*|\(no tool called\))\s*$")
 _TOOLS_REQUESTED = re.compile(r"\[\d+ (read-only )?tools requested;[^\]]*\]")
-
-
-def accent_hex() -> str:
-    """PRAGMA_ACCENT ("R;G;B", set by the launcher) as a rich colour."""
-    raw = (os.environ.get("PRAGMA_ACCENT") or "178;132;255").strip()
-    parts = raw.split(";")
-    if len(parts) != 3 or not all(p.isdigit() and int(p) < 256 for p in parts):
-        parts = ["178", "132", "255"]
-    return "#{:02x}{:02x}{:02x}".format(*(int(p) for p in parts))
 
 
 # An escape sequence, and what is left of the C0 controls once newline and tab

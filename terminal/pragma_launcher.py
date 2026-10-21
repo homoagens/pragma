@@ -52,11 +52,10 @@ import pragma_home as home                     # noqa: E402  the home prompt, sh
 # offers a choice - this one and /configure.
 from pragma_menu import (SEP, accent, ask, choose, clear, columns, confirm, menu,   # noqa: E402,F401
                          pause, pick, read_key, row, say, title)
+from pragma_style import ESC, GREY, RESET   # noqa: E402
 
 REGISTRY = Path.home() / ".pragma" / "registry.json"
 PROJECTS = Path.home() / ".pragma" / "projects"
-ESC = "\033"
-GREY, RESET = ESC + "[38;5;242m", ESC + "[0m"
 
 # A project's settings, and the environment variable each one becomes. The
 # same table pragma-session.ps1 applies on Windows: one list, two launchers,
@@ -152,6 +151,7 @@ def save_setting(name: str, key: str, value) -> None:
             settings[key] = value
         e["settings"] = settings
     write_registry(entries)
+
 
 
 # ── the screen ────────────────────────────────────────────────────────────────

@@ -210,6 +210,8 @@ The short version. [Files](../reference/files.md) has what is inside each.
 | [`pragma_configure.py`](../../terminal/pragma_configure.py) | The `/configure` pages. |
 | [`pragma_serve.py`](../../terminal/pragma_serve.py) | The `/serve` page, and starting and stopping what it serves. |
 | [`pragma_menu.py`](../../terminal/pragma_menu.py) | The lists walked with the arrows. |
+| [`pragma_line.py`](../../terminal/pragma_line.py) | A line typed by the person, with the keys a terminal has: every field, and the conversation's prompt. |
+| [`pragma_style.py`](../../terminal/pragma_style.py) | The accent colour and the width every screen draws with. |
 | [`pragma_brief.py`](../../terminal/pragma_brief.py) | The briefing shown when a project opens. |
 | [`pragma_jobs.py`](../../terminal/pragma_jobs.py) | The record of background memory work, and `/jobs`. |
 | [`pragma_consolidate.py`](../../terminal/pragma_consolidate.py) | The memory worker. |
