@@ -1,7 +1,7 @@
 # 7. A leading underscore retires a skill
 
 - **Date:** 2026-09-10
-- **Status:** accepted
+- **Status:** superseded by [25](0025-what-is-not-used-is-removed.md): a skill no longer used is deleted
 - **Where:** [`core/tools/__init__.py`](../../core/tools/__init__.py)
 
 ## Context

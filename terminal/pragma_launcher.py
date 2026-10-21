@@ -75,7 +75,6 @@ ENV_OF = {
     "RecallBeliefsTaken": "CURATOR_TAKEN_LEARNINGS",
     "Temperature": "DEFAULT_TEMPERATURE", "TopK": "TOP_K", "TopP": "TOP_P", "MinP": "MIN_P",
 }
-NEW_PROJECT_SETTINGS: dict[str, str] = {}
 
 # What a recall is offered and what it may take, each few, medium or many. The
 # numbers are config's (RECALL_OFFERED, RECALL_TAKEN), repeated here because
@@ -121,7 +120,7 @@ by_name, save_setting = pragma_registry.by_name, pragma_registry.save_setting
 
 # ── the screen ────────────────────────────────────────────────────────────────
 
-# The mark from interface-web/logo.png beside the word, exactly as
+# The mark from docs/assets/logo.png beside the word, exactly as
 # Show-Logo draws it in terminal/Pragma.psm1 - one picture, two launchers.
 # F is a full cell, T an upper half, B a lower half: letters, so this file
 # stays readable, and so a terminal that cannot draw blocks needs one map
@@ -650,7 +649,7 @@ def new_project() -> dict | None:
     store = PROJECTS / name
     (store / "episodes").mkdir(parents=True, exist_ok=True)
     entry = {"name": name, "workspace": str(ws), "memory": str(store),
-             "last_opened": "", "settings": dict(NEW_PROJECT_SETTINGS)}
+             "last_opened": "", "settings": {}}
     write_registry(read_registry() + [entry])
     return by_name(name)
 

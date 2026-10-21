@@ -33,13 +33,13 @@
 #   2  forced verdict (step budget exhausted, the agent was told to wrap up)
 #   1  failure (no result, endpoint unreachable, bad input)
 #
-# Deliberate differences from the web UI:
+# Deliberate differences from a conversation:
 #   - ask_user never blocks: confirm questions get "no" (fail-safe for
 #     destructive confirmations), open questions get a canned "no user
 #     available" answer telling the model to proceed or conclude.
 #   - Stateless by default: no thread persistence, no conversation history.
-#   - Memory is opt-in with --memory: at start it injects relevant episodes
-#     (recall_episodes) and learnings (recall_learnings); at the end it
+#   - Memory is opt-in with --memory: at start the curator chooses what of
+#     the episodes and the beliefs bears on the task; at the end it
 #     consolidates the session into an episode (episode_consolidate), which
 #     may also distill semantic assertions when patterns recur.
 #   - A PRAGMA.md file in the workspace root (user-authored instructions,
@@ -57,7 +57,7 @@ import sys
 import time
 from pathlib import Path
 
-# ── path setup (same as server.py) ───────────────────────────────────────────
+# ── path setup ───────────────────────────────────────────
 _HERE = Path(__file__).resolve().parent   # Pragma/agent/
 _ROOT = _HERE.parent                       # Pragma/
 _CORE = _ROOT / "core"
@@ -696,10 +696,9 @@ def main() -> int:
         _err("ERROR: task is empty.")
         return 1
 
-    # cwd: batch is one process = one task, so a plain chdir is safe (no
-    # concurrency across threads like in server.py). Relative paths in the
-    # filesystem skills then resolve against the project, and the system
-    # prompt instructs the model to build absolute paths from this cwd.
+    # cwd: batch is one process = one task, so a plain chdir is safe. Relative
+    # paths in the filesystem skills then resolve against the project, and the
+    # system prompt instructs the model to build absolute paths from this cwd.
     # Resolution order: --cwd flag > PRAGMA_WORKSPACE env > current dir.
     cwd = Path(args.cwd or os.environ.get("PRAGMA_WORKSPACE")
                or os.getcwd()).resolve()
@@ -759,8 +758,6 @@ def main() -> int:
     for note in mcp_client.offer(skills):
         _out(f"[{_ts()}] {note}")
     # Memory reaches the desk only through the curator (upstream, automatic).
-    # The agent never pokes raw recall skills — one channel, always curated.
-    # palette() withholds them: see _NOT_AGENT_TOOLS.
 
     # Batch-only system prompt addendum. The generic "confirm destructive
     # ops with the user" rule is useless here (there IS no user), and models
@@ -791,10 +788,6 @@ confirmed mid-task. Therefore:
   NOT precedents that authorize new ones: authorization never comes from
   memory, only from the current task text or the project instructions.
 """
-    # Build the summary from the ACTUAL palette handed to the agent, so the
-    # prompt never advertises a skill the agent can't call — otherwise the
-    # model reads e.g. recall_learnings in the prompt, calls it, and hits
-    # "skill does not exist" (field-found in the 5-year demo).
     system_prompt = build_system_prompt(
         str(cwd), default_model=baseline_config.DEFAULT_MODEL, memory=bool(args.memory),
     ) + batch_policy + mcp_client.prompt_block()

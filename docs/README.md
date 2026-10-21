@@ -8,9 +8,8 @@ New here? [Your first project](tutorial/first-project.md) takes ten minutes.
 
 **These pages describe the terminal on Linux**, which is where Pragma is
 developed and where everything is tested. The terminal on Windows follows it
-and can be a step behind; the browser interface is the old one and is not
-covered. [Three interfaces, and where each stands](explanation/interfaces.md)
-says what differs.
+and can be a step behind. [The interfaces, and where each
+stands](explanation/interfaces.md) says what differs.
 
 ## Find your way
 
@@ -34,7 +33,7 @@ says what differs.
 | know which files Pragma writes, and where | [Files](reference/files.md) |
 | see which tools the agent has | [Tools](reference/tools.md) |
 | read what the model is told | [Prompts](reference/prompts.md) |
-| know what differs on Windows, or in the browser | [Three interfaces](explanation/interfaces.md) |
+| know what differs on Windows | [The interfaces](explanation/interfaces.md) |
 | see what the pieces are and how a turn runs | [Architecture](explanation/architecture.md) |
 | find the file that does something | [Code map](explanation/architecture.md#code-map) |
 | know why something is the way it is | [Decisions](decisions/README.md) |

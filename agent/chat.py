@@ -722,21 +722,11 @@ def _steps_here() -> None:
     if _CHAT_HEADER:
         _CHAT_HEADER[0] = re.sub(r"\d+ steps per turn", f"{steps} steps per turn",
                                  _CHAT_HEADER[0])
-    kept = _save_project_setting("MaxSteps", str(steps))
+    # Asked only where there is no project, so nowhere to keep it: inside one,
+    # /settings is the launcher's page and the registry keeps what it sets.
     print(f"  {steps} steps per turn, from the next turn"
-          + ("" if kept else " - for this conversation only (no project to keep it in)"))
+          " - for this conversation only (no project to keep it in)")
     print()
-
-
-def _save_project_setting(key: str, value: str) -> bool:
-    """One setting of the open project, in ~/.pragma/registry.json. Never raises."""
-    name = os.environ.get("PRAGMA_PROJECT", "").strip()
-    if not name:
-        return False
-    try:
-        return pragma_registry.save_setting(name, key, value)
-    except Exception:
-        return False
 
 
 def _say_dim(text: str) -> None:
@@ -1989,12 +1979,9 @@ def main() -> int:
     # any. What each server gave is said under the briefing, below.
     import mcp_client
     mcp_notes = mcp_client.offer(skills)
-    # One channel, always curated — the same rule as `agent.batch`. The raw
-    # recall skills would be a second, uncurated way in: they reinforce and
-    # revive on keyword overlap alone, with no judgment between the prefilter
-    # and the write, so an agent free to call them turns salience into a count
-    # of how often a word recurred. The curator reinforces only what it chose.
-    # palette() withholds them: see _NOT_AGENT_TOOLS.
+    # One channel, always curated - the same rule as `agent.batch`: memory
+    # reaches the agent only through the curator, which reinforces only what
+    # it chose.
     # What a conversation adds to the prompt. It used to open by declaring that
     # it won over every rule above it, because two of the base prompt's rules,
     # written for one headless task, inverted here. The base prompt now says
@@ -2029,16 +2016,14 @@ The person is reading as the turn goes, and answers between turns.
     ) + chat_policy + mcp_client.prompt_block() + project_contract(cwd) + session_block(cwd)
 
     global _RENDERER
-    # A turn is drawn as a ledger: see agent/ledger.py. PRAGMA_LOOK=classic
-    # gives back the look it replaced, which agent/harness.py still draws. A
-    # look that cannot be loaded falls back to that one without a word: how
-    # the screen is drawn must never be why a conversation does not start.
-    look = _harness.Harness
-    if os.environ.get("PRAGMA_LOOK", "").strip().lower() != "classic":
-        try:
-            from agent.ledger import Ledger as look
-        except Exception:
-            look = _harness.Harness
+    # A turn is drawn as a ledger: see agent/ledger.py. If it cannot be loaded
+    # the turn is drawn by agent/harness.py, which it is built on, without a
+    # word: how the screen is drawn must never be why a conversation does not
+    # start.
+    try:
+        from agent.ledger import Ledger as look
+    except Exception:
+        look = _harness.Harness
     renderer = look(
         verbose=args.show_thoughts,
         context_window=baseline_config.CONTEXT_WINDOW,

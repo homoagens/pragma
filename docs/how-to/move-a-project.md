@@ -1,6 +1,6 @@
 # Move a project to another machine
 
-*For the terminal. Tried on Linux; [what differs on Windows and in the browser](../explanation/interfaces.md).*
+*For the terminal. Tried on Linux; [what differs on Windows](../explanation/interfaces.md).*
 
 A project is two folders and one line in a list: the folder you work in, the
 memory Pragma keeps for it, and the entry that ties them together. Pragma has

@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="interface-web/logo.png" width="140" alt="Pragma">
+  <img src="docs/assets/logo.png" width="140" alt="Pragma">
 </p>
 
 <h2 align="center">Pragma</h2>
@@ -16,7 +16,7 @@
   <a href="./LICENSE"><img src="https://img.shields.io/badge/license-AGPL--3.0-5c6bc0?style=flat-square" alt="License"></a>
   <img src="https://img.shields.io/badge/python-3.10%2B-3776ab?style=flat-square" alt="Python 3.10+">
   <img src="https://img.shields.io/badge/platform-Linux-0078d4?style=flat-square" alt="Linux">
-  <img src="https://img.shields.io/badge/Windows%20%C2%B7%20browser-experimental-8a8f98?style=flat-square" alt="Windows and browser: experimental">
+  <img src="https://img.shields.io/badge/Windows-experimental-8a8f98?style=flat-square" alt="Windows: experimental">
   <img src="https://img.shields.io/badge/runs%20on-llama.cpp-f97316?style=flat-square" alt="llama.cpp">
 </p>
 
@@ -39,8 +39,8 @@ and it tells you what it still holds and what has gone quiet.
 *From the Greek pragma — something accomplished through action.*
 
 **Pragma is a Linux terminal program.** That is where it is developed, where
-everything is tested, and what this page describes. Windows and a browser
-interface exist and are [experimental](#windows-macos-and-the-browser).
+everything is tested, and what this page describes. Windows is
+[experimental](#windows-and-macos).
 
 ---
 
@@ -216,10 +216,10 @@ what.
 
 ---
 
-## Windows, macOS and the browser
+## Windows and macOS
 
 *Experimental.* They run, but new work reaches them later or not at all.
-[Three interfaces, and where each stands](docs/explanation/interfaces.md)
+[The interfaces, and where each stands](docs/explanation/interfaces.md)
 lists what differs.
 
 - **Windows** — `.\install.ps1`, then `pragma` in PowerShell. The same two
@@ -227,10 +227,6 @@ lists what differs.
   can be a step behind. A memory written on one system can be read on the
   other.
 - **macOS** — `./install.sh` and the Linux launcher. Not tested.
-- **The browser** — `venv/bin/python -m agent.run`, at
-  `http://localhost:8006`. The old interface, not being worked on: it has
-  threads instead of projects, does not read `PRAGMA.md`, and does not write
-  episodes.
 
 ---
 

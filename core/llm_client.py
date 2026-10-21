@@ -623,10 +623,10 @@ LAST_STATS: dict = {}
 # faculty added later inherits the behaviour by using the context manager.
 #
 # Per thread, not per module. Once the name picks an endpoint, a label set on
-# one thread must not reach another: the browser interface runs session_reflect
-# on a worker thread while the agent works on the request thread, and a shared
-# label would send the agent's steps to the memory endpoint for as long as the
-# reflection lasted.
+# one thread must not reach another: the conversation guesses the next line on
+# a worker thread while the agent works on the main one, and a shared label
+# would send the agent's steps to the recall endpoint for as long as the guess
+# lasted.
 _LOCAL = threading.local()
 
 

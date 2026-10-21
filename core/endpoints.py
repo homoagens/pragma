@@ -115,7 +115,6 @@ _ROLE_OF_FACULTY = {
     "CONSOLIDATOR":   "memory",
     "RECONSOLIDATOR": "memory",
     "ABSTRACTOR":     "memory",
-    "REFLECT":        "memory",
     # What you might ask next is a recall question in everything but name: it
     # reads the turn that just ended and answers at once, under a schema. It
     # belongs where the curator is, on the role you are free to keep fast.

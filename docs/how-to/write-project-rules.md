@@ -1,6 +1,6 @@
 # Write rules for a project
 
-*For the terminal. Tried on Linux; [what differs on Windows and in the browser](../explanation/interfaces.md).*
+*For the terminal. Tried on Linux; [what differs on Windows](../explanation/interfaces.md).*
 
 Memory is what the agent *learns*, and it can fade. A rule you want followed
 on every task, without exception, is something you *decide* — and it goes in
@@ -53,4 +53,4 @@ you edit the file.
   before the agent sees the file. A file holding only comments counts as
   empty.
 - It applies the same way to a conversation and to a
-  [single run](run-one-task.md). The browser interface does not read it.
+  [single run](run-one-task.md).

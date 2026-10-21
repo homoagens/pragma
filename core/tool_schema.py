@@ -83,11 +83,8 @@ def _json_type(annotation) -> dict:
 
 
 def _description(name: str, fn) -> str:
-    """One-line purpose, from the same README that feeds the text protocol.
-
-    Keeping a single source means the two protocols can never describe a skill
-    differently.
-    """
+    """One-line purpose: the first line of the skill's README, or of its
+    docstring when it has none."""
     readme = SKILLS_DIR / name / "README.md"
     if readme.is_file():
         try:

@@ -72,15 +72,15 @@ def _rel(path: Path) -> str:
 def _sources() -> list[Path]:
     """The Python the harness actually runs.
 
-    Not the retired skills: a folder under core/tools whose name starts with
-    an underscore is never loaded, so a variable read only there is not a
-    setting. Not the wip_ ones either - they are in nobody else's checkout.
+    Not the template: a folder under core/tools whose name starts with an
+    underscore is never loaded, so a variable read only there is not a
+    setting.
     """
     out = []
     for top in ("core", "agent", "terminal"):
         for path in sorted((ROOT / top).rglob("*.py")):
             parts = path.relative_to(ROOT).parts
-            if any(p.startswith(("_", "wip_")) and p != "__init__.py" for p in parts[:-1]):
+            if any(p.startswith("_") and p != "__init__.py" for p in parts[:-1]):
                 continue
             out.append(path)
     return out
@@ -416,7 +416,7 @@ def skills(notes) -> str:
 
     offered, withheld = [], []
     for folder in sorted(base.iterdir()):
-        if not folder.is_dir() or folder.name.startswith(("_", "wip_")):
+        if not folder.is_dir() or folder.name.startswith("_"):
             continue
         if not (folder / "tool.py").exists():
             continue
@@ -460,14 +460,9 @@ def skills(notes) -> str:
     out += [f"| {a} | {_cell(b)} | {c} |" for a, b, c in withheld]
 
     out.append("\n## In the tree and not loaded\n")
-    out.append("A folder whose name starts with an underscore is skipped by the loader.\n")
-    for folder, what in (("_legacy", "retired"), ("_future", "kept for later")):
-        names = sorted(p.name for p in (base / folder).iterdir()
-                       if p.is_dir() and (p / "tool.py").exists())
-        listed = ", ".join(f"`{n}`" for n in names)
-        out.append(f"- [`{folder}/`](../../core/tools/{folder}/README.md), {what}: {listed}")
-    out.append("- [`_template/`](../../core/tools/_template/README.md), the starting "
-               "point for a new one")
+    out.append("A folder whose name starts with an underscore is skipped by the loader: "
+               "[`_template/`](../../core/tools/_template/README.md) is the starting "
+               "point for a new skill.")
     return "\n".join(out).rstrip() + "\n"
 
 

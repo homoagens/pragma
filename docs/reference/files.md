@@ -19,7 +19,6 @@ folder Pragma is installed in.
 | `plugins/<name>/plugin.json` | Commands added to the home screen. | you |
 | `serve.json` | The projects served to other programs: address, port, key, on or off. | `/serve` |
 | `serve/<name>.json`, `serve/<name>.log` | What a served project is doing while it runs, and its log. | the served project |
-| `threads/` | Conversations of the browser interface. | the server |
 | `request-<pid>.json` | A note from an open conversation to the launcher. Gone when the conversation ends. | the conversation |
 
 `PRAGMA_DATA_DIR` moves the memory in use, and `PRAGMA_ENDPOINTS` names

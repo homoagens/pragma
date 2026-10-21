@@ -4,10 +4,10 @@
 
 """A turn drawn as a ledger: what was done to the world, and how it went.
 
-This is how a conversation looks. `PRAGMA_LOOK=classic` gives back the look
-it replaced, which agent/harness.py still draws; everything here is built on
-that module's status line and answer stream, and changes only how the steps
-of a turn are shown.
+This is how a conversation looks. It is built on agent/harness.py - its
+status line, its answer stream, and the look this one replaced, which still
+draws what the ledger leaves to it - and changes only how the steps of a
+turn are shown.
 
     python -m agent.ledger          a turn replayed with no model, to look at
 

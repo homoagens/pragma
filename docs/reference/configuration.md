@@ -131,8 +131,6 @@ What stops a model that is repeating itself.
 | `CURATOR_TAKEN_LEARNINGS` | unset | The same, for beliefs. *Project setting `RecallBeliefsTaken`.* | [`core/config.py`](../../core/config.py) |
 | `MEMORY_NARRATIVE_CHARS` | `400` | Characters shown of what a recalled episode records. | [`core/config.py`](../../core/config.py) |
 | `MEMORY_INTERPRETATION_CHARS` | `200` | Characters shown of what a recalled episode is taken to mean. | [`core/config.py`](../../core/config.py) |
-| `EPISODES_RECALL_TOP_K` | `3` | Episodes returned when the choice above is switched off. | [`core/config.py`](../../core/config.py) |
-| `LEARNINGS_RECALL_TOP_K` | `5` | Beliefs returned when the choice above is switched off. | [`core/config.py`](../../core/config.py) |
 | `EPISODE_WORKSPACE_BOOST` | `2` | Advantage, in the keyword match, of an episode written in the folder being worked in. | [`core/config.py`](../../core/config.py) |
 
 ## How memory is written and how it fades
@@ -163,7 +161,6 @@ What stops a model that is repeating itself.
 | `RECONSOLIDATE_BRIDGE_OVER_TIME` | `false` | `true` counts a belief's revised sources since it was last written or checked, not session by session. | [`core/config.py`](../../core/config.py) |
 | `RECONSOLIDATE_HINDSIGHT` | `true` | Where a later session's light on an earlier episode is written: beside what the episode meant at the time, as a dated line of hindsight. `false` rewrites the meaning instead. | [`core/config.py`](../../core/config.py) |
 | `RECONSOLIDATE_IMPORTANCE_FLOOR` | `0` | Above `0`, an episode whose importance is at or below this neither revises earlier episodes nor is revised by later ones. `0` leaves every episode in. | [`core/config.py`](../../core/config.py) |
-| `AUTO_REFLECT` | `true` | Whether a reflection pass runs after a successful task. | [`core/config.py`](../../core/config.py) |
 | `BATCH_SEGMENT` | unset | `1` has a batch run judged before it becomes an episode. Unset, every batch run with `--memory` writes one. | [`core/config.py`](../../core/config.py) |
 | `MEMORY_SCHEMA` | `1` | `0` stops the memory faculties from asking the server to constrain their JSON. | [`core/config.py`](../../core/config.py) |
 | `PRAGMA_AGENT` | unset | `1` runs the agent alone: nothing is recalled before a turn and nothing is written to memory after the conversation. It is what `pragma --agent` sets, for that run; the stores are left as they are. | [`terminal/pragma_menu.py`](../../terminal/pragma_menu.py) |
@@ -207,7 +204,6 @@ Written for the conversation it starts. Listed so that nobody sets them by hand.
 | Variable | Default | What it is | Read in |
 |---|---|---|---|
 | `PRAGMA_DEBUG` | unset | `1` prints diagnostic output. | [`core/config.py`](../../core/config.py) |
-| `PRAGMA_LOOK` | unset | `classic` draws a turn the way it was drawn before: the name of each tool, its arguments and its output. Unset, the turn is a ledger. | [`agent/chat.py`](../../agent/chat.py) |
 | `PRAGMA_ALLOW_SELF_MODIFY` | unset | `true` lets a session write inside Pragma's own repository, which is otherwise refused. | [`core/config.py`](../../core/config.py) |
 | `PRAGMA_CLOCK` | unset | Freezes the clock the memory reads at an ISO instant. | [`core/clock.py`](../../core/clock.py) |
 | `PRAGMA_CLOCK_OFFSET` | unset | Shifts that clock by a number of seconds. | [`core/clock.py`](../../core/clock.py) |

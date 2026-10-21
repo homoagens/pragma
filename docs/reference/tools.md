@@ -42,14 +42,7 @@ The memory is read and written by Pragma around a turn, not by the agent inside 
 | Skill | What it does | Call |
 |---|---|---|
 | [`episode_consolidate`](../../core/tools/episode_consolidate/README.md) | Consolidate a finished session transcript into a structured episodic memory record; when similar past episodes exist, also distill semantic assertions (with sources and confidence). | `episode_consolidate(transcript='', workspace='', source='', store_dir='', session_id='')` |
-| [`recall_episodes`](../../core/tools/recall_episodes/README.md) | Retrieve the most relevant episodes from the episodic memory store — keyword overlap plus a same-workspace boost, no LLM call. | `recall_episodes(query='', workspace='', top_k=0, store_dir='')` |
-| [`recall_learnings`](../../core/tools/recall_learnings/README.md) | Retrieve the most relevant entries from the cross-thread learnings store. Pure keyword overlap, no LLM call. | `recall_learnings(query='', top_k=0, store_path='', kinds='')` |
-| [`session_reflect`](../../core/tools/session_reflect/README.md) | Reflective pass over a completed task — extracts durable, generalizable learnings and appends them to a cross-thread learnings store. | `session_reflect(transcript='', store_path='', label='')` |
 
 ## In the tree and not loaded
 
-A folder whose name starts with an underscore is skipped by the loader.
-
-- [`_legacy/`](../../core/tools/_legacy/README.md), retired: `call_agent`, `code`, `context_compress`, `edit_file`, `llm_invoke`, `log_event`, `parse_document`, `replace_in_file_b64`, `session_broadcast`, `todo_create`, `todo_execute`, `understand_cwd`, `write_file_b64`
-- [`_future/`](../../core/tools/_future/README.md), kept for later: `critic_validate`, `schema_validate`
-- [`_template/`](../../core/tools/_template/README.md), the starting point for a new one
+A folder whose name starts with an underscore is skipped by the loader: [`_template/`](../../core/tools/_template/README.md) is the starting point for a new skill.

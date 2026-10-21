@@ -498,7 +498,7 @@ def agent_template_kwargs():
 # ONE SWITCH PER ROLE, and the roles are the three endpoints.py already routes
 # by: `agent` (the steps, and the summarizer that compresses them), `recall`
 # (the curator) and `memory` (segmenter, consolidator, reconsolidator,
-# abstractor, reflect). Three, not seven, because that is the division the
+# abstractor). Three, not six, because that is the division the
 # harness already makes and a fourth way of grouping the same faculties would
 # be a fourth thing to keep in your head.
 #
@@ -1025,10 +1025,6 @@ MESSAGES_RECENT  = int(os.environ.get("MESSAGES_RECENT", "6"))
 RECENT_MAX_CHARS = int(os.environ.get(
     "RECENT_MAX_CHARS", str(int(CONTEXT_WINDOW * 4 * 0.25))))
 
-# Character budget for conversation history carried across requests.
-# 15% of context window — enough for 4-6 detailed exchanges.
-HISTORY_MAX_CHARS = int(CONTEXT_WINDOW * 4 * 0.15)
-
 # ── Live session: when a conversation outgrows the window ────────────────────
 # A batch run that overflows is summarised. A conversation is not: its older
 # turns are finished experiences, so they are CONSOLIDATED into episodes and
@@ -1117,29 +1113,21 @@ MESSAGE_COMPRESS_TRUNC = int(os.environ.get("MESSAGE_COMPRESS_TRUNC", "0"))
 # ─────────────────────────────────────────────
 # STORAGE — single cross-platform home for everything Pragma persists
 # ─────────────────────────────────────────────
-# One folder holds it all: conversation threads, the learnings store, the
-# log, and (in a frozen build) the uploaded .env. The default is a ".pragma"
-# directory inside the user's home folder — writable WITHOUT admin rights on
-# Windows, macOS and Linux, and the SAME path on every OS. Override the whole
-# location with PRAGMA_DATA_DIR.
+# One folder holds it all: the projects, the learnings store, the log. The
+# default is a ".pragma" directory inside the user's home folder — writable
+# WITHOUT admin rights on Windows, macOS and Linux, and the SAME path on every
+# OS. Override the whole location with PRAGMA_DATA_DIR.
 DATA_DIR = Path(os.environ.get("PRAGMA_DATA_DIR", str(Path.home() / ".pragma")))
-
-# Conversation threads (one JSON file per conversation).
-THREADS_DIR = DATA_DIR / "threads"
 
 # Global learnings store (cross-thread semantic memory). Lives inside
 # DATA_DIR; LEARNINGS_PATH can still be overridden on its own if needed.
 LEARNINGS_PATH = os.environ.get("LEARNINGS_PATH", str(DATA_DIR / "learnings.json"))
-# Number of recent learnings to recall and inject at the start of each task.
-LEARNINGS_RECALL_TOP_K = int(os.environ.get("LEARNINGS_RECALL_TOP_K", "5"))
-# If True, run session_reflect automatically after each successful task.
-AUTO_REFLECT = os.environ.get("AUTO_REFLECT", "true").lower() in ("1", "true", "yes")
 
 # ─────────────────────────────────────────────
 # MEMORY — episodic store + semantic assertions
 # ─────────────────────────────────────────────
 # Episodic memory: one JSON file per consolidated session episode
-# (written by the episode_consolidate skill, retrieved by recall_episodes).
+# (written by the episode_consolidate skill, chosen from by the curator).
 EPISODES_DIR = DATA_DIR / "episodes"
 
 # Salience composition. An episode's initial salience is
@@ -1201,9 +1189,6 @@ EPISODE_RECALL_PROCEDURAL_FACTOR = float(
 # it on a long-lived store.
 EPISODE_IMPORTANCE_ANCHORS = int(
     os.environ.get("EPISODE_IMPORTANCE_ANCHORS", "5"))
-
-# How many episodes recall_episodes returns by default.
-EPISODES_RECALL_TOP_K = int(os.environ.get("EPISODES_RECALL_TOP_K", "3"))
 
 # Score bonus for episodes born in the same workspace as the current task
 # (episodes from other projects can still surface, but local ones win ties).

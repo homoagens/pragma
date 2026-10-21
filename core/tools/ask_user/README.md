@@ -15,8 +15,8 @@ Ask the user a question. In a live conversation, you ask by ending the turn.
 It depends on where Pragma is running:
 
 - **Live conversation.** `confirm` asks the person at the terminal and returns `"yes"` or `"no"`. Any other mode returns an instruction to end the turn with your question as the reply: the answer arrives as their next message.
+- **Served to another program** (`/serve`). Nobody can answer in the middle of a turn: `confirm` returns `"no"`, and every mode says to end the turn with your question as the reply.
 - **Batch run.** Nobody is there. `confirm` returns `"no"`; any other mode returns a notice to proceed on your best judgment or conclude with what is missing. Neither is ever an authorization.
-- **Browser interface.** The question appears in the page and the typed answer is returned; `"(no response)"` after ten minutes, `"(stopped)"` if the task is stopped.
 
 ## Do not
 

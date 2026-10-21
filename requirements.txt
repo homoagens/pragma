@@ -1,5 +1,3 @@
-fastapi
-uvicorn[standard]
 requests
 rich
 # The chat prompt: live completion of the / commands, plus line editing
@@ -8,6 +6,7 @@ prompt_toolkit
 ddgs
 python-dotenv
 json-repair
-# ripgrep binary for grep_search. Optional in practice: the skill falls back to
-# a pure-Python walk if the wheel has no build for the platform.
-ripgrep
+# ripgrep binary for grep_search, which is offered on Windows only: elsewhere
+# the shell's own grep does the job. Optional even there - the skill falls back
+# to a pure-Python walk if the wheel has no build for the platform.
+ripgrep; sys_platform == "win32"

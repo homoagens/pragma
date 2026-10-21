@@ -1,8 +1,8 @@
 # 17. The Linux terminal comes first
 
 - **Date:** 2026-10-06
-- **Status:** accepted
-- **Where:** [`terminal/pragma_launcher.py`](../../terminal/pragma_launcher.py), [`terminal/Pragma.psm1`](../../terminal/Pragma.psm1), [`agent/server.py`](../../agent/server.py)
+- **Status:** accepted; what it says of the browser interface superseded by [25](0025-what-is-not-used-is-removed.md)
+- **Where:** [`terminal/pragma_launcher.py`](../../terminal/pragma_launcher.py), [`terminal/Pragma.psm1`](../../terminal/Pragma.psm1), `agent/server.py`
 
 ## Context
 

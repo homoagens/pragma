@@ -47,7 +47,7 @@ nav:
       - Files: reference/files.md
   - Explanation:
       - Architecture: explanation/architecture.md
-      - Three interfaces: explanation/interfaces.md
+      - The interfaces: explanation/interfaces.md
   - Decisions: decisions/README.md
 
 # The decision records are reached from their list, which is generated: a new

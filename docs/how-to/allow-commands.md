@@ -1,6 +1,6 @@
 # Let a project run some commands without asking
 
-*For the terminal. Tried on Linux; [what differs on Windows and in the browser](../explanation/interfaces.md).*
+*For the terminal. Tried on Linux; [what differs on Windows](../explanation/interfaces.md).*
 
 In a conversation, a command that cannot be undone waits for your yes. In a
 project where some of those are routine — clearing `build/`, pushing,

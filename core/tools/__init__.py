@@ -15,8 +15,8 @@ SKILLS_DIR = Path(__file__).parent
 def _load_skills():
     registry = {}
     for folder in sorted(SKILLS_DIR.iterdir()):
-        # _template, _legacy and _future stay in the tree and are never
-        # offered: a leading underscore is how a skill is retired.
+        # A leading underscore is not a skill: _template is the starting point
+        # for a new one.
         if not folder.is_dir() or folder.name.startswith("_"):
             continue
         skill_file = folder / "tool.py"
@@ -28,14 +28,10 @@ def _load_skills():
         sys.modules[mod_name] = mod  # register BEFORE exec so late imports work
         sys.modules[f"tools.{folder.name}"] = mod
         spec.loader.exec_module(mod)
-        # Strip wip_ prefix to find the actual function name and registry key.
-        # This allows skill folders to be prefixed with wip_ for testing
-        # without changing the function name or the agent-visible skill name.
-        skill_name = folder.name[len("wip_"):] if folder.name.startswith("wip_") else folder.name
-        fn = getattr(mod, skill_name, None)
+        fn = getattr(mod, folder.name, None)
         if fn is None:
             continue
-        registry[skill_name] = fn
+        registry[folder.name] = fn
     # What the model is told about each skill - its description and its exact
     # parameters - is built from the README and the function by tool_schema.
     return registry
@@ -45,14 +41,9 @@ ALL_SKILLS = _load_skills()
 
 
 # Memory machinery that lives in skills/ for its imports, not for the agent.
-# The raw recall skills reinforce and revive on keyword overlap alone, with no
-# judgement between the prefilter and the write, so an agent free to call them
-# would turn salience into a count of how often a word recurred: memory reaches
-# the agent only through the curator. Consolidation and reflection run after a
-# task, never as a step inside one. Chat and batch each used to pop the recall
-# skills on their own and the browser server did not, so the rule lives here.
-_NOT_AGENT_TOOLS = ("recall_episodes", "recall_learnings",
-                    "episode_consolidate", "session_reflect")
+# Consolidation runs after a conversation, never as a step inside one, and
+# memory reaches the agent only through the curator.
+_NOT_AGENT_TOOLS = ("episode_consolidate",)
 
 # Tools for a person watching the terminal as the turn goes. Only a
 # conversation has one, and agent/chat.py puts in its own version of each;
@@ -82,22 +73,13 @@ _SHELL_DOES_THIS_BETTER = ("read_file", "list_dir", "glob_match",
                            "grep_search", "git_status", "git_diff")
 
 
-def palette(base: dict | None = None) -> dict:
-    """The skills offered to the agent.
-
-    Everything in the registry except the memory machinery: the raw recall
-    skills reinforce and revive on keyword overlap alone, with no judgement
-    between the prefilter and the write, so an agent free to call them would
-    turn salience into a count of how often a word recurred - memory reaches
-    the agent only through the curator. Consolidation and reflection run after
-    a task, never as a step inside one. Chat and batch each used to pop them
-    on their own and the browser server did not, so the rule lives here.
-
-    On a Unix system the shell-replaceable half goes too: see
-    _SHELL_DOES_THIS_BETTER. And what only a conversation can do is left to
-    the conversation to put back: see _CONVERSATION_ONLY.
+def palette() -> dict:
+    """The skills offered to the agent: everything in the registry but the
+    memory machinery (_NOT_AGENT_TOOLS). On a Unix system the shell-replaceable
+    half goes too: see _SHELL_DOES_THIS_BETTER. And what only a conversation
+    can do is left to the conversation to put back: see _CONVERSATION_ONLY.
     """
-    out = dict(ALL_SKILLS if base is None else base)
+    out = dict(ALL_SKILLS)
     for name in _NOT_AGENT_TOOLS + _CONVERSATION_ONLY:
         out.pop(name, None)
     if os.name != "nt":

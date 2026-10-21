@@ -35,8 +35,8 @@ from pathlib import Path  # noqa: F401
 #       content = read_file(path)
 #       ...
 
-# Shared utilities
-from tools._utils import _now   # noqa: F401  # UTC timestamp
+# Shared utilities: the folders a search should never walk
+from tools._utils import SKIP_DIRS   # noqa: F401
 
 
 # ── Internal helpers ──────────────────────────────────────────

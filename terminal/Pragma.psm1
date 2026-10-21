@@ -300,7 +300,7 @@ function script:New-Page {
 }
 
 function script:Show-Logo([switch]$Compact) {
-    # The mark from interface-web/logo.png, at eight rows against the word's
+    # The mark from docs/assets/logo.png, at eight rows against the word's
     # four. Twelve rows made a picture with a caption under it rather than a
     # logotype; at this ratio the mark reads as the letter the word starts
     # with, which is what it is.

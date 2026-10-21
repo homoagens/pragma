@@ -130,13 +130,10 @@ how it samples. With one endpoint, it serves all four.
 | The terminal on Windows | `pragma`, in PowerShell | [`terminal/Pragma.psm1`](../../terminal/Pragma.psm1), then [`agent/chat.py`](../../agent/chat.py) | follows Linux |
 | A project served to another program | `/serve`, on the home screen | [`terminal/pragma_serve.py`](../../terminal/pragma_serve.py), then [`agent/serve.py`](../../agent/serve.py) | Linux and macOS; [Serve a project](../how-to/serve-a-project.md) |
 | One task, no interaction | `python -m agent.batch --task "..." --cwd DIR` | [`agent/batch.py`](../../agent/batch.py) | the same code everywhere |
-| The browser | `python -m agent.run` | [`agent/run.py`](../../agent/run.py), then [`agent/server.py`](../../agent/server.py) and [`interface-web/`](../../interface-web) | the old interface, not being worked on |
 
-The first four run the same loop, the same skills and the same memory. The
-browser interface runs the same loop and the same skills and has not followed
-the rest: it does not read `PRAGMA.md`, and it does not write episodes.
-[Three interfaces, and where each stands](interfaces.md) has what differs
-between them.
+All four run the same loop, the same skills and the same memory.
+[The interfaces, and where each stands](interfaces.md) has what differs
+between the terminal on Linux and on Windows.
 
 ## Where state lives
 
@@ -157,7 +154,6 @@ The short version. [Files](../reference/files.md) has what is inside each.
 | What was said in every conversation held there | `.pragma_session.jsonl` in the workspace | the conversation |
 | Undo copies of edited files | `.pragma_checkpoints/` in the workspace | the loop |
 | Defaults for the whole machine | `.env` in the repository | you |
-| Threads of the browser interface | `~/.pragma/threads/` | the server |
 
 ## Code map
 
@@ -197,8 +193,6 @@ The short version. [Files](../reference/files.md) has what is inside each.
 | [`prompts.py`](../../agent/prompts.py) | The agent's system prompt. |
 | [`batch.py`](../../agent/batch.py) | One task, start to finish. |
 | [`serve.py`](../../agent/serve.py) | One project served to another program, as an OpenAI-compatible endpoint. |
-| [`server.py`](../../agent/server.py) | The server behind the browser interface. |
-| [`run.py`](../../agent/run.py) | Starts that server. |
 
 ### `terminal/` — the screens around a conversation
 
@@ -227,8 +221,6 @@ The short version. [Files](../reference/files.md) has what is inside each.
 | [`pragma`](../../pragma) | The command on Linux and macOS. |
 | [`install.sh`](../../install.sh), [`install.ps1`](../../install.ps1) | Build the Python environment and put `pragma` in every shell. |
 | [`start.bat`](../../start.bat) | The terminal interface from a double-click, on Windows. |
-| [`pragma-gui.bat`](../../pragma-gui.bat) | The browser interface, on Windows. |
 | [`.env.example`](../../.env.example) | The few settings a new installation needs. |
-| [`interface-web/`](../../interface-web) | The browser interface: one page, one script, one stylesheet. |
 | [`docs/`](../README.md) | These pages, and the program that generates the reference. |
 | [`mkdocs.yml`](../../mkdocs.yml) | The menu and the theme of these pages as a site. |

@@ -2,16 +2,6 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 # This file is part of Pragma <https://github.com/homoagens/pragma>.
 
-try:                      # core/ is normally on sys.path directly
-    import clock
-except ImportError:       # imported as a package instead
-    from core import clock
-
-
-def _now() -> str:
-    return clock.stamp()
-
-
 # Directories that are never the answer to a code search: dependencies, build
 # output, caches, VCS internals. Without skipping these, a search from a
 # project root walks the virtualenv and returns library internals instead of

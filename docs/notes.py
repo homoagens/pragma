@@ -238,10 +238,6 @@ CONFIG = {
         "Characters shown of what a recalled episode records."),
     "MEMORY_INTERPRETATION_CHARS": ("recall",
         "Characters shown of what a recalled episode is taken to mean."),
-    "EPISODES_RECALL_TOP_K": ("recall",
-        "Episodes returned when the choice above is switched off."),
-    "LEARNINGS_RECALL_TOP_K": ("recall",
-        "Beliefs returned when the choice above is switched off."),
     "EPISODE_WORKSPACE_BOOST": ("recall",
         "Advantage, in the keyword match, of an episode written in the folder being worked in."),
 
@@ -295,8 +291,6 @@ CONFIG = {
         "Where a later session's light on an earlier episode is written: beside what the episode meant at the time, as a dated line of hindsight. `false` rewrites the meaning instead."),
     "RECONSOLIDATE_IMPORTANCE_FLOOR": ("memory",
         "Above `0`, an episode whose importance is at or below this neither revises earlier episodes nor is revised by later ones. `0` leaves every episode in."),
-    "AUTO_REFLECT": ("memory",
-        "Whether a reflection pass runs after a successful task."),
     "BATCH_SEGMENT": ("memory",
         "`1` has a batch run judged before it becomes an episode. Unset, every batch run with `--memory` writes one."),
     "MEMORY_SCHEMA": ("memory",
@@ -354,9 +348,6 @@ CONFIG = {
         "`1` runs the agent alone: nothing is recalled before a turn and nothing is "
         "written to memory after the conversation. It is what `pragma --agent` sets, "
         "for that run; the stores are left as they are."),
-    "PRAGMA_LOOK": ("dev",
-        "`classic` draws a turn the way it was drawn before: the name of each tool, "
-        "its arguments and its output. Unset, the turn is a ledger."),
     "PRAGMA_ALLOW_SELF_MODIFY": ("dev",
         "`true` lets a session write inside Pragma's own repository, which is otherwise refused."),
     "PRAGMA_CLOCK": ("dev",
@@ -439,10 +430,6 @@ PROMPTS = {
         "Summarises the older steps of a turn that has grown too long."),
     "core/memory.py:SYSTEM_PROMPT_COMPACT": ("agent",
         "Writes the summary a conversation goes on from when it is compacted, by `/compact` or because the window filled up."),
-    "core/tools/ask_user/tool.py:_ASK_SYSTEM": ("agent",
-        "Words a question for the person, where the question is not asked by ending the turn."),
-    "agent/server.py:_SUMMARIZE_SYSTEM": ("agent",
-        "The browser interface's summary of a thread that has grown too long."),
 
     "core/curator.py:_CURATOR_SYSTEM": ("recall",
         "Chooses, before a turn, what the memory holds that is worth showing."),
@@ -466,8 +453,6 @@ PROMPTS = {
         "Rewords a belief that has been contradicted."),
     "core/reconsolidate.py:_REVIEW_SYSTEM": ("memory",
         "Checks a belief against episodes whose meaning was revised."),
-    "core/tools/session_reflect/tool.py:_REFLECT_SYSTEM": ("memory",
-        "A reflection pass over a finished task."),
 
     "core/critic.py:_SYSTEM": ("critic",
         "Checks the work of a turn against what was asked. Optional."),
