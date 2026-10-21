@@ -110,7 +110,8 @@ def load(sub):
     out = []
     for f in sorted(glob.glob(pat)):
         try:
-            out.append(json.load(open(f, encoding="utf-8")))
+            with open(f, encoding="utf-8") as fh:
+                out.append(json.load(fh))
         except Exception:
             pass
     return out

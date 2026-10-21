@@ -74,10 +74,13 @@ def _run_detached(command: str, work_dir: str | None) -> str:
     else:
         popen_kwargs["start_new_session"] = True
 
+    # The child gets its own copy of the log's handle; this one is closed when
+    # it has started, or every background command left one open for as long
+    # as the conversation ran.
     try:
-        fh = open(log, "w", encoding="utf-8", errors="replace")
-        proc = subprocess.Popen(command, stdout=fh, stderr=subprocess.STDOUT,
-                                **popen_kwargs)
+        with open(log, "w", encoding="utf-8", errors="replace") as fh:
+            proc = subprocess.Popen(command, stdout=fh, stderr=subprocess.STDOUT,
+                                    **popen_kwargs)
     except Exception as e:
         return f"ERROR starting background command: {e}"
 

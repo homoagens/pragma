@@ -58,7 +58,7 @@ def _beliefs(store: Path) -> list[dict]:
 
 def brief(store: Path, since: str = "") -> dict:
     now = clock.now()
-    half_life = float(getattr(config, "MEMORY_HALF_LIFE_DAYS", 30.0) or 30.0)
+    half_life = float(config.EPISODE_DECAY_HALF_LIFE_DAYS or 30.0)
     out: dict = {"store": str(store), "ok": True}
 
     active, dormant = _episodes(store)
