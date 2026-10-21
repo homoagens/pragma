@@ -72,7 +72,7 @@ def main() -> int:
 
     ok, detail = llm_client.ping_models(timeout=4)
     out["up"] = bool(ok)
-    out["serving"] = (getattr(config, "SERVED_MODEL", "")
+    out["serving"] = (config.SERVED_MODEL
                       or config.DEFAULT_MODEL) if ok else ""
     out["detail"] = "" if ok else str(detail)[:120]
     out["configured_model"] = config.DEFAULT_MODEL
@@ -80,7 +80,7 @@ def main() -> int:
     # compare it with the server's own n_ctx instead of showing one of
     # the two and leaving the reader to remember the other.
     out["context_window"] = config.CONTEXT_WINDOW
-    out["context_source"] = getattr(config, "CONTEXT_WINDOW_SOURCE", "")
+    out["context_source"] = config.CONTEXT_WINDOW_SOURCE
 
     # What the server would apply if this window sent nothing.
     server = {}

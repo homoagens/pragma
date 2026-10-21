@@ -130,8 +130,8 @@ def reinforced(salience: float, factor: float = 1.0) -> float:
     revision, under which four recalls were worth the whole judgement.
     """
     s = float(salience)
-    boost = getattr(config, "EPISODE_RECALL_BOOST", 0.10) * max(0.0, float(factor))
-    if getattr(config, "EPISODE_RECALL_RULE", "asymptotic") == "additive":
+    boost = config.EPISODE_RECALL_BOOST * max(0.0, float(factor))
+    if config.EPISODE_RECALL_RULE == "additive":
         return min(1.0, s + boost)
     return s + boost * (1.0 - s)
 
@@ -149,7 +149,7 @@ def effective_salience(ep: dict, now: datetime | None = None) -> float:
     """Stored salience discounted by time since last recall. A recall
     resets the age, so remembering literally keeps the memory alive."""
     raw = float(ep.get("salience", 0.5))
-    half = getattr(config, "EPISODE_DECAY_HALF_LIFE_DAYS", 30.0)
+    half = config.EPISODE_DECAY_HALF_LIFE_DAYS
     if half <= 0:
         return raw  # decay disabled
     return raw * (0.5 ** (age_days(ep, now) / half))
@@ -277,14 +277,14 @@ def sweep(store=None, learnings_path=None) -> dict:
     """
     result = {"dormant": [], "deleted": []}
     try:
-        threshold = getattr(config, "EPISODE_DORMANT_THRESHOLD", 0.15)
+        threshold = config.EPISODE_DORMANT_THRESHOLD
         now = clock.now()
         for p, ep in load(active_dir(store)):
             if effective_salience(ep, now) < threshold:
                 to_dormant(p, ep, store)
                 result["dormant"].append(ep.get("id", p.stem))
 
-        delete_after = getattr(config, "EPISODE_DELETE_AFTER_DAYS", 0)
+        delete_after = config.EPISODE_DELETE_AFTER_DAYS
         if delete_after > 0:
             protected = _protected_ids(store, learnings_path)
             if protected is None:

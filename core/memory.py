@@ -123,7 +123,7 @@ def _text_for(messages, budget_chars: int, fixed: int = 0) -> str:
 
 def _budget_chars(reply_tokens: int, ratio: float | None) -> int:
     """Characters of conversation one summarizing call can be handed."""
-    window = int(getattr(config, "CONTEXT_WINDOW", 0) or 0) or 32768
+    window = int(config.CONTEXT_WINDOW or 0) or 32768
     room = max(1024, window - reply_tokens - 1024)
     return int(room * min(max(ratio or _RATIO, 1.0), 6.0))
 
@@ -234,7 +234,7 @@ def compress(messages, threshold=None, context="conversation", model=None,
     # assistant turn before it, and a result whose call has been summarised away
     # is an orphan that most servers reject outright. So after trimming, any
     # leading `tool` messages follow their call into the summary.
-    budget = getattr(config, "RECENT_MAX_CHARS", 0)
+    budget = config.RECENT_MAX_CHARS
     if budget > 0 and recent:
         def _size(ms):
             return sum(len(m.get("content") or "") for m in ms)
@@ -258,7 +258,7 @@ def compress(messages, threshold=None, context="conversation", model=None,
     # What the summarizer reads of each message: all of it while it fits, and
     # the longest cut first when it does not - see _RATIO. A fixed cut per
     # message is still there for whoever sets MESSAGE_COMPRESS_TRUNC.
-    fixed = int(getattr(config, "MESSAGE_COMPRESS_TRUNC", 0) or 0)
+    fixed = int(config.MESSAGE_COMPRESS_TRUNC or 0)
 
     if config.DEBUG:
         print(f"[memory] Compressing {len(to_compress)} messages ({context})...")
@@ -324,7 +324,7 @@ def compact(messages, instructions="", model=None, ratio=None, stop_event=None) 
     `instructions` is what the person asked the summary to take care of, when
     they asked for the compaction themselves.
     """
-    reply = int(getattr(config, "COMPACT_SUMMARY_TOKENS", 4096) or 4096)
+    reply = int(config.COMPACT_SUMMARY_TOKENS or 4096)
     system = SYSTEM_PROMPT_COMPACT
     if (instructions or "").strip():
         system += ("\n\nThe person asked for this compaction, and asked that the summary "

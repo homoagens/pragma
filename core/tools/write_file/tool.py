@@ -99,7 +99,7 @@ def write_file(path: str, content: str, encoding: str = "utf-8",
         # so on subsequent edits it prefers insert_* / replace_in_file / apply_patch.
         try:
             import config
-            soft = getattr(config, "WRITE_FILE_SOFT_LIMIT", 0)
+            soft = config.WRITE_FILE_SOFT_LIMIT
         except Exception:
             soft = 0
 

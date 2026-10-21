@@ -910,9 +910,9 @@ def _post_streamed(url, headers, payload, timeout, label, stop_event):
             budget, knob = (config.critic_think_budget(read, int(payload.get("max_tokens") or 0)),
                             "CRITIC_THINK_BUDGET")
         elif role == "recall":
-            budget, knob = getattr(config, "RECALL_THINK_BUDGET", 0), "RECALL_THINK_BUDGET"
+            budget, knob = config.RECALL_THINK_BUDGET, "RECALL_THINK_BUDGET"
         else:
-            budget, knob = getattr(config, "MEMORY_THINK_BUDGET", 0), "MEMORY_THINK_BUDGET"
+            budget, knob = config.MEMORY_THINK_BUDGET, "MEMORY_THINK_BUDGET"
     try:
         for raw in resp.iter_lines():
             if stop_event is not None and stop_event.is_set():
@@ -1015,7 +1015,7 @@ def _call_openai_compatible(messages, model, temperature, max_tokens, timeout, b
     if api_key:
         headers["Authorization"] = f"Bearer {api_key}"
     streamed = None
-    if getattr(config, "STREAM_CALLS", True):
+    if config.STREAM_CALLS:
         streamed = _post_streamed(f"{base_url}/chat/completions", headers, payload,
                                   timeout, model, stop_event)
     if streamed is not None:
@@ -1460,7 +1460,7 @@ def call_llm(messages, model=None, temperature=None, max_tokens=None, timeout=No
     # An endpoint that rejected a json_schema once is remembered, so a server
     # without structured output costs one failed request per process instead
     # of one per faculty call - remembered for that endpoint only.
-    if not getattr(config, "MEMORY_SCHEMA", True) or known.schema_unsupported:
+    if not config.MEMORY_SCHEMA or known.schema_unsupported:
         response_schema = None
 
     # WHAT TO SEND WHEN THE SERVER REFUSES. Two optional fields can make an

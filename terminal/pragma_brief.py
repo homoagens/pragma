@@ -115,7 +115,7 @@ def brief(store: Path, since: str = "") -> dict:
     out["revised_n"] = len(revised)
 
     # Episodes close enough to the threshold to fade before you next look.
-    threshold = float(getattr(config, "EPISODE_DORMANT_THRESHOLD", 0.15))
+    threshold = float(config.EPISODE_DORMANT_THRESHOLD)
     fading = []
     for _p, ep in active:
         try:
@@ -162,7 +162,7 @@ def brief(store: Path, since: str = "") -> dict:
     try:
         import llm_client
         ok, detail = llm_client.ping_models(timeout=4)
-        out["serving"] = (getattr(config, "SERVED_MODEL", "")
+        out["serving"] = (config.SERVED_MODEL
                           or config.DEFAULT_MODEL) if ok else ""
         # The window the server will actually accept, per slot - llama.cpp has
         # already divided by --parallel. The launcher hands this to the
@@ -171,7 +171,7 @@ def brief(store: Path, since: str = "") -> dict:
         # request halfway through an evening.
         out["n_ctx"] = config._endpoint_context_window() if ok else 0
         out["context_window"] = config.CONTEXT_WINDOW
-        out["context_source"] = getattr(config, "CONTEXT_WINDOW_SOURCE", "")
+        out["context_source"] = config.CONTEXT_WINDOW_SOURCE
         # Trimmed to the first clause: the caller shows this under the
         # serving line, and a urllib traceback fragment is noise there.
         # The useful half is before the em dash; what follows it is the

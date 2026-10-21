@@ -561,7 +561,7 @@ def _make_on_step(renderer, obs_limit: int, transcript: list[str],
         secs = s.get("seconds") or 0.0
         tps = (s.get("completion", 0) / secs) if secs > 0 else 0.0
         line = f"{s['total']:,} tok · {secs:.0f}s · {tps:.1f} t/s"
-        ctxw = getattr(baseline_config, "CONTEXT_WINDOW", 0)
+        ctxw = baseline_config.CONTEXT_WINDOW
         if ctxw:
             line += f" · ctx {s['total'] * 100 // ctxw}%"
         renderer.stats(line)
@@ -714,7 +714,7 @@ def main() -> int:
     # same flag that already unlocks self-modification elsewhere.
     _repo = Path(__file__).resolve().parent.parent
     if (cwd == _repo or _repo in cwd.parents) \
-            and not getattr(baseline_config, "ALLOW_SELF_MODIFY", False):
+            and not baseline_config.ALLOW_SELF_MODIFY:
         _err(f"ERROR: refusing to work inside Pragma's own source tree: {cwd}")
         _err("Pass --cwd <workspace> or set PRAGMA_WORKSPACE to a dedicated "
              "folder. (Deliberate self-development requires "
@@ -742,7 +742,7 @@ def main() -> int:
     # Banner shows the model the endpoint is ACTUALLY serving (resolved by
     # ping_models above); the .env label is only the fallback. When you swap
     # models on the same port, the truth comes from the server, not the label.
-    served = getattr(baseline_config, "SERVED_MODEL", "")
+    served = baseline_config.SERVED_MODEL
     model_line = served or baseline_config.DEFAULT_MODEL
     if served and served != baseline_config.DEFAULT_MODEL:
         model_line += f"  (label: {baseline_config.DEFAULT_MODEL})"
@@ -898,7 +898,7 @@ confirmed mid-task. Therefore:
         # A failing segmenter keeps the episode, like everywhere else: this
         # decides what is stored, and the cost of a dull memory is far below
         # the cost of a lost one.
-        if getattr(baseline_config, "BATCH_SEGMENT", False):
+        if baseline_config.BATCH_SEGMENT:
             try:
                 import segmenter
                 renderer.faculty_running("SEGMENTER",

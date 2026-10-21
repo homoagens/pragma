@@ -126,7 +126,7 @@ def _caps() -> tuple[int, int] | None:
     episodes, rules = _taken()
     if episodes == "few" and rules == "few":
         return None
-    table = getattr(config, "RECALL_TAKEN", {"few": 3, "medium": 5, "many": 8})
+    table = config.RECALL_TAKEN
     return int(table[episodes]), int(table[rules])
 
 
@@ -333,7 +333,7 @@ def _nearness(task: str, texts: list[str], kind: str) -> list[float] | None:
 def _days(task: str) -> list[tuple[str, str, str]]:
     """The stretches of days a request names, as the dates episodes carry:
     (first day, last day, the words that named them). See when.py."""
-    if not getattr(config, "CURATOR_DATED", True):
+    if not config.CURATOR_DATED:
         return []
     try:
         return [(a.isoformat(), b.isoformat(), words)
@@ -361,8 +361,8 @@ def _dated(task: str, scored: list[dict], out: list[dict]) -> list[dict]:
     and on those only.
     """
     SEARCH["days"] = days = _days(task)
-    n = getattr(config, "CURATOR_CANDIDATES_EPISODES", 10)
-    seats = max(n - max(getattr(config, "CURATOR_CANDIDATES_RECENT", 3), 0), 0)
+    n = config.CURATOR_CANDIDATES_EPISODES
+    seats = max(n - max(config.CURATOR_CANDIDATES_RECENT, 0), 0)
     if not days or not seats:
         return out
     have = {id(c["ep"]) for c in out}
@@ -399,8 +399,8 @@ def _episode_candidates(task: str, workspace: str,
     occupying one of the n slots for the rest of the conversation. Filtering
     afterwards would let the same memory crowd out every newcomer.
     """
-    n = getattr(config, "CURATOR_CANDIDATES_EPISODES", 10)
-    boost = getattr(config, "EPISODE_WORKSPACE_BOOST", 2)
+    n = config.CURATOR_CANDIDATES_EPISODES
+    boost = config.EPISODE_WORKSPACE_BOOST
     skip = exclude_ids or set()
     qtok = _tokens(task)
     scored = []
@@ -433,7 +433,7 @@ def _episode_candidates(task: str, workspace: str,
             c["near"] = value
         ranked = sorted(scored, key=lambda c: (c["near"], estore.effective_salience(c["ep"])),
                         reverse=True)
-        r = max(getattr(config, "CURATOR_CANDIDATES_RECENT", 3), 0)
+        r = max(config.CURATOR_CANDIDATES_RECENT, 0)
         out = ranked[:max(n - r, 0)]
         seen = {id(c["ep"]) for c in out}
         for c in sorted(scored, key=lambda c: c["ep"].get("ts", ""), reverse=True):
@@ -445,7 +445,7 @@ def _episode_candidates(task: str, workspace: str,
         # And the ones the request names: see _by_words.
         have = {i for i, c in enumerate(scored) if id(c["ep"]) in seen}
         for i in _by_words(task, [_episode_text(c["ep"]) for c in scored], have,
-                           getattr(config, "CURATOR_CANDIDATES_WORDS", 2)):
+                           config.CURATOR_CANDIDATES_WORDS):
             out.append(scored[i])
         return _dated(task, scored, out), len(scored)
 
@@ -469,7 +469,7 @@ def _episode_candidates(task: str, workspace: str,
         # still decides - so the cost of offering them is a few lines of
         # prompt, while the cost of withholding them is a memory that cannot
         # answer the most ordinary question there is.
-        r = max(getattr(config, "CURATOR_CANDIDATES_RECENT", 3), 0)
+        r = max(config.CURATOR_CANDIDATES_RECENT, 0)
         out = matched[:max(n - r, 0)]
         seen = {id(c["ep"]) for c in out}
         for c in sorted(scored, key=lambda c: c["ep"].get("ts", ""),
@@ -503,7 +503,7 @@ def _episode_candidates(task: str, workspace: str,
 
 def _learning_candidates(task: str,
                          exclude_texts: set[str] | None = None) -> tuple[list[dict], int]:
-    m = getattr(config, "CURATOR_CANDIDATES_LEARNINGS", 8)
+    m = config.CURATOR_CANDIDATES_LEARNINGS
     skip = exclude_texts or set()
     path = Path(config.LEARNINGS_PATH)
     if not path.exists():
@@ -534,7 +534,7 @@ def _learning_candidates(task: str,
             c["near"] = value
         out.sort(key=lambda c: (c["near"], float(c["entry"].get("confidence", 0.5))), reverse=True)
         named = _by_words(task, [embed.belief_text(c["entry"]) for c in out], set(range(min(m, len(out)))),
-                          getattr(config, "CURATOR_CANDIDATES_WORDS", 2))
+                          config.CURATOR_CANDIDATES_WORDS)
         return out[:m] + [out[i] for i in named], pool
 
     matched = [c for c in out if c["kw"] > 0]
@@ -689,7 +689,7 @@ def _ask_curator(task: str, eps: list[dict], lns: list[dict],
     # Keep only well-formed, existing refs, in the model's order, deduped.
     valid = {f"E{i}" for i in range(1, len(eps) + 1)} | \
             {f"L{i}" for i in range(1, len(lns) + 1)}
-    cap = getattr(config, "CURATOR_MAX_FRAGMENTS", 6)
+    cap = config.CURATOR_MAX_FRAGMENTS
     # "uses" is positional against the model's own list, so it is read before
     # the refs are filtered - dropping an invalid ref must not shift the labels
     # of the ones after it.
@@ -804,7 +804,7 @@ def _reinforce(c: dict, workspace: str,
             # Recorded, not just applied: an operator reading the episode has
             # to be able to see why a recall moved it as little as it did.
             ep["last_recall_use"] = use
-            factor = (getattr(config, "EPISODE_RECALL_PROCEDURAL_FACTOR", 0.25)
+            factor = (config.EPISODE_RECALL_PROCEDURAL_FACTOR
                       if use == "procedural" else 1.0)
             ep["salience"] = estore.reinforced(ep.get("salience", 0.5), factor)
         estore.save(path, ep)
@@ -852,7 +852,7 @@ def _fallback(eps: list[dict], lns: list[dict], workspace: str,
               no_reinforce: set[str] | None = None) -> tuple[str, list[str]]:
     """Deterministic top-k when the curator LLM call fails — never lose the
     context to a curator error. Returns (block, the refs it used)."""
-    cap = getattr(config, "CURATOR_MAX_FRAGMENTS", 6)
+    cap = config.CURATOR_MAX_FRAGMENTS
     refs = [f"E{i}" for i in range(1, len(eps) + 1)]
     refs += [f"L{i}" for i in range(1, len(lns) + 1)]
     caps = _caps()
@@ -931,7 +931,7 @@ def curate_knowledge_detailed(task: str, workspace: str = "", model=None,
         info["empty"] = True
         return info
 
-    if not getattr(config, "CURATOR_ENABLED", True):
+    if not config.CURATOR_ENABLED:
         info["block"], refs = _fallback(eps, lns, workspace, no_reinforce)
         info["episode_ids"], info["rule_texts"] = _placed(refs, eps, lns)
         info["fallback"] = True

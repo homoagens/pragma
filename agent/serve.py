@@ -264,7 +264,7 @@ class Conversation:
         try:
             turn = chat.Turn(text)
             inner = _make_on_step(self.relay, 0, turn.transcript,
-                                  text_limit=getattr(baseline_config, "CHAT_TRANSCRIPT_CHARS", 2000))
+                                  text_limit=baseline_config.CHAT_TRANSCRIPT_CHARS)
             core = text
             if self.memory:
                 block = chat._recall(text, self.cwd, self.desk_ids, self.desk_rules, self.reinforced,
@@ -272,7 +272,7 @@ class Conversation:
                 if block:
                     core = f"{block}\n\n{text}"
             prompt = core
-            window = int(getattr(baseline_config, "CONTEXT_WINDOW", 0) or 0)
+            window = int(baseline_config.CONTEXT_WINDOW or 0)
             if context:
                 cap = max(1000, min(CONTEXT_CHARS, int(window * 4 * CONTEXT_SHARE))) if window else CONTEXT_CHARS
                 shown = context[:cap]
@@ -335,10 +335,10 @@ class Conversation:
         if not self.history:
             return
         if weighed:
-            full = weighed > getattr(baseline_config, "CHAT_COMPACT_TOKENS", 0)
+            full = weighed > baseline_config.CHAT_COMPACT_TOKENS
         else:
             full = (sum(_msg_chars(m) for m in self.history)
-                    > getattr(baseline_config, "CHAT_COMPACT_CHARS", 0))
+                    > baseline_config.CHAT_COMPACT_CHARS)
         if not full:
             return
         try:

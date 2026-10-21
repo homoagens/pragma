@@ -620,7 +620,7 @@ def episode_consolidate_detailed(transcript: str = "", workspace: str = "",
     # scale, not a consolidation that fails.
     try:
         anchors = _anchor_block(_importance_anchors(
-            store, getattr(config, "EPISODE_IMPORTANCE_ANCHORS", 5)))
+            store, config.EPISODE_IMPORTANCE_ANCHORS))
     except Exception:
         anchors = ""
 
@@ -687,10 +687,10 @@ def episode_consolidate_detailed(transcript: str = "", workspace: str = "",
     # but crucial one (a student's persistent weak spot). Now importance lifts
     # those too. See config.SALIENCE_*.
     salience = min(
-        getattr(config, "SALIENCE_CAP", 0.95),
-        getattr(config, "SALIENCE_BASE", 0.30)
-        + getattr(config, "SALIENCE_SURPRISE_WEIGHT", 0.12) * len(surprises)
-        + getattr(config, "SALIENCE_IMPORTANCE_WEIGHT", 0.40) * importance,
+        config.SALIENCE_CAP,
+        config.SALIENCE_BASE
+        + config.SALIENCE_SURPRISE_WEIGHT * len(surprises)
+        + config.SALIENCE_IMPORTANCE_WEIGHT * importance,
     )
 
     # Every record this consolidation writes - the episode, reinterpretations,
@@ -782,14 +782,14 @@ def episode_consolidate_detailed(transcript: str = "", workspace: str = "",
     # thematic `link` is recorded (which also protects both episodes from
     # eventual hard-deletion — see episodes._protected_ids).
     recon_interps: dict[str, str] = {}   # id → new interpretation (for the A→B bridge)
-    if getattr(config, "RECONSOLIDATION_ENABLED", True):
+    if config.RECONSOLIDATION_ENABLED:
         try:
-            targets = similar[:getattr(config, "RECONSOLIDATE_MAX_EPISODES", 3)]
+            targets = similar[:config.RECONSOLIDATE_MAX_EPISODES]
             # WHAT HARDLY MATTERED RE-READS NOTHING AND IS NOT RE-READ, when a
             # floor is set (config.RECONSOLIDATE_IMPORTANCE_FLOOR). The episodes
             # passed over are named in the result, and the Abstractor is still
             # shown them: only the re-reading leaves them out.
-            floor = getattr(config, "RECONSOLIDATE_IMPORTANCE_FLOOR", 0.0)
+            floor = config.RECONSOLIDATE_IMPORTANCE_FLOOR
             if floor > 0 and targets:
                 new_is_slight = _slight(ep, floor)
                 over = [t for t in targets if new_is_slight or _slight(t, floor)]
@@ -799,7 +799,7 @@ def episode_consolidate_detailed(transcript: str = "", workspace: str = "",
             # WHERE THE RE-READING IS WRITTEN: beside what the episode meant
             # when it happened, as a line of hindsight - or, the way it used to
             # be, over it. See config.RECONSOLIDATE_HINDSIGHT.
-            in_hindsight = getattr(config, "RECONSOLIDATE_HINDSIGHT", True)
+            in_hindsight = config.RECONSOLIDATE_HINDSIGHT
             rewrites = (reconsolidate.hindsight_episodes(ep, targets) if in_hindsight
                         else reconsolidate.reconsolidate_episodes(ep, targets))
             linked: list[str] = []
@@ -921,7 +921,7 @@ def episode_consolidate_detailed(transcript: str = "", workspace: str = "",
     # New assertions — enforced deterministically, whatever the model says:
     # distinct sources, all from the episodes it was shown, at least
     # SEMANTIC_MIN_SOURCES of them, and no duplicate text.
-    min_sources = getattr(config, "SEMANTIC_MIN_SOURCES", 2)
+    min_sources = config.SEMANTIC_MIN_SOURCES
     for a in sem.get("new_assertions") or []:
         if not isinstance(a, dict):
             continue
@@ -942,7 +942,7 @@ def episode_consolidate_detailed(transcript: str = "", workspace: str = "",
             known["sources"] = sorted(set(known.get("sources") or []) | set(sources))
             known["confirmations"] = known.get("confirmations", 0) + 1
             known["confidence"] = min(0.95, known.get("confidence", 0.5)
-                                      + getattr(config, "SEMANTIC_CONFIRM_BONUS", 0.1))
+                                      + config.SEMANTIC_CONFIRM_BONUS)
             result["confirmed"].append(known["text"])
             continue
         entry = {"kind": kind, "text": text, "label": workspace or "", "ts": ts,
@@ -954,11 +954,10 @@ def episode_consolidate_detailed(transcript: str = "", workspace: str = "",
 
     # Confirmations strengthen; contradictions weaken — but never one alone
     # retires consolidated knowledge (see config.SEMANTIC_RETIRE_CONTRADICTIONS).
-    bonus  = getattr(config, "SEMANTIC_CONFIRM_BONUS", 0.1)
-    malus  = getattr(config, "SEMANTIC_CONTRADICT_MALUS", 0.2)
-    retire = getattr(config, "SEMANTIC_RETIRE_CONTRADICTIONS", 2)
-    reformulate_at = getattr(config, "RECONSOLIDATE_REFORMULATE_AT", retire)
-    recon_on = getattr(config, "RECONSOLIDATION_ENABLED", True)
+    bonus  = config.SEMANTIC_CONFIRM_BONUS
+    malus  = config.SEMANTIC_CONTRADICT_MALUS
+    reformulate_at = config.RECONSOLIDATE_REFORMULATE_AT
+    recon_on = config.RECONSOLIDATION_ENABLED
     # id → episode, so a contradicted belief's sources can be summarized for
     # the reformulation call (the "facts" that must keep supporting it).
     ep_by_id = {e.get("id", ""): e for e in past}
@@ -1029,8 +1028,8 @@ def episode_consolidate_detailed(transcript: str = "", workspace: str = "",
     # has a faculty of its own (reconsolidate.review_belief): here the usual
     # answer is that the belief still stands.
     # This path never retires: it only rewrites when a better version exists.
-    bridge_min = getattr(config, "RECONSOLIDATE_BRIDGE_MIN_SOURCES", 2)
-    over_time = getattr(config, "RECONSOLIDATE_BRIDGE_OVER_TIME", False)
+    bridge_min = config.RECONSOLIDATE_BRIDGE_MIN_SOURCES
+    over_time = config.RECONSOLIDATE_BRIDGE_OVER_TIME
     if recon_on and recon_interps and bridge_min > 0:
         handled = ({r["from"] for r in result["reformulated"]}
                    | set(result["retired"])

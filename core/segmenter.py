@@ -174,7 +174,7 @@ def segment(user_turns: list[str], model=None) -> tuple[list[tuple[list[int], bo
             raise ValueError("non-object reply")
         return _validate(data.get("segments"), n), str(data.get("reason", ""))[:200]
     except Exception as e:
-        if getattr(config, "DEBUG", False):
+        if config.DEBUG:
             print(f"[segmenter] failed ({e}); one kept segment per turn")
         return ([([i], True, "") for i in range(n)],
                 "segmenter unavailable — kept every turn separately")

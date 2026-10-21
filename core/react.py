@@ -1116,13 +1116,13 @@ def run_agent(cfg: AgentConfig, user_task: str, log_path: Optional[Path] = None,
         # The full observation is still emitted to the UI (for the user) and
         # logged to disk; only the copy stored for the next LLM turn gets
         # truncated, so the model doesn't carry a 10kB file content forward.
-        soft_limit = getattr(config, "OBSERVATION_SOFT_LIMIT", 0)
+        soft_limit = config.OBSERVATION_SOFT_LIMIT
         # What an MCP server returns is kept whole unless a limit of its own
         # is set: it is what was asked for, and there is no going back for the
         # part that was dropped. A long one is paid for in the window instead.
         _remote = hasattr(cfg.skills.get(action), "__mcp__")
         if _remote:
-            soft_limit = getattr(config, "MCP_OBSERVATION_LIMIT", 0)
+            soft_limit = config.MCP_OBSERVATION_LIMIT
         if soft_limit > 0 and len(observation) > soft_limit:
             head = observation[: soft_limit // 2]
             tail = observation[-soft_limit // 4 :]
@@ -1179,12 +1179,12 @@ def run_agent(cfg: AgentConfig, user_task: str, log_path: Optional[Path] = None,
         # Record this (action, args, was_error) triple and check if the
         # model is hammering the same failing call. If yes, append a coercive
         # recovery hint to nudge it toward a different strategy.
-        if getattr(config, "ACTION_LOOP_ENABLED", True):
+        if config.ACTION_LOOP_ENABLED:
             is_error = isinstance(observation, str) and observation.lstrip().startswith("ERROR")
             _recent_actions.append((action, _hash_args(args), is_error))
             if len(_recent_actions) > 10:
                 _recent_actions[:] = _recent_actions[-10:]
-            threshold = getattr(config, "ACTION_LOOP_THRESHOLD", 3)
+            threshold = config.ACTION_LOOP_THRESHOLD
             tail = _recent_actions[-threshold:]
             if (len(tail) == threshold
                     and all(t[0] == action and t[1] == tail[0][1] and t[2]
@@ -1231,9 +1231,9 @@ def run_agent(cfg: AgentConfig, user_task: str, log_path: Optional[Path] = None,
         # "thrashing across different skills, all erroring" pattern where
         # the model tries 5 different things and none work. The strict
         # watchdog misses this case by design.
-        if getattr(config, "ACTION_LOOP_ENABLED", True) and _recent_actions:
-            window = getattr(config, "ERROR_RATE_WINDOW", 5)
-            thresh = getattr(config, "ERROR_RATE_THRESHOLD", 0.75)
+        if config.ACTION_LOOP_ENABLED and _recent_actions:
+            window = config.ERROR_RATE_WINDOW
+            thresh = config.ERROR_RATE_THRESHOLD
             recent = _recent_actions[-window:]
             if len(recent) >= window:
                 err_n = sum(1 for t in recent if t[2])

@@ -1785,7 +1785,7 @@ def _compact(history: list, turns: list[Turn], turn_msgs: list[int],
     remembering it failed; it will simply be compacted again next turn, or
     fall back to the loop's own compression if it grows past the window.
     """
-    keep_n = getattr(baseline_config, "CHAT_KEEP_TURNS", 3)
+    keep_n = baseline_config.CHAT_KEEP_TURNS
     cut_at = len(turns) - keep_n
     if cut_at <= done_upto:
         return history, done_upto        # nothing old enough to trade away
@@ -2041,7 +2041,7 @@ The person is reading as the turn goes, and answers between turns.
             look = _harness.Harness
     renderer = look(
         verbose=args.show_thoughts,
-        context_window=getattr(baseline_config, "CONTEXT_WINDOW", 0),
+        context_window=baseline_config.CONTEXT_WINDOW,
         envelope=False)
     _RENDERER = renderer
     # Every model call - the curator's, the segmenter's, the agent's - reports
@@ -2054,7 +2054,7 @@ The person is reading as the turn goes, and answers between turns.
         embed.STATUS_HOOK = renderer
     except Exception:
         pass
-    served = getattr(baseline_config, "SERVED_MODEL", "") or baseline_config.DEFAULT_MODEL
+    served = baseline_config.SERVED_MODEL or baseline_config.DEFAULT_MODEL
     max_steps = args.max_steps or baseline_config.MAX_STEPS
     _STATE.update(project=os.environ.get("PRAGMA_PROJECT") or cwd.name,
                   model=served if online else "backend down",
@@ -2121,7 +2121,7 @@ The person is reading as the turn goes, and answers between turns.
     # by count rather than by an index earlier compactions have invalidated.
     turn_msgs: list[int] = []
     consolidated_upto = 0
-    compact_mode = getattr(baseline_config, "CHAT_COMPACT_MODE", "summary")
+    compact_mode = baseline_config.CHAT_COMPACT_MODE
     # (prompt tokens, characters) of the history as the server last counted
     # it, for the next turn to start from; None when the history has changed
     # since - emptied, compacted - or nothing has been counted yet.
@@ -2282,7 +2282,7 @@ The person is reading as the turn goes, and answers between turns.
             # the replies short before the consolidator ever saw them.
             inner = _make_on_step(
                 renderer, 0, turn.transcript,
-                text_limit=getattr(baseline_config, "CHAT_TRANSCRIPT_CHARS", 2000))
+                text_limit=baseline_config.CHAT_TRANSCRIPT_CHARS)
 
             def on_step(ev: dict, _inner=inner) -> None:
                 # The token counts of the call that just ended, before the
@@ -2399,10 +2399,10 @@ The person is reading as the turn goes, and answers between turns.
                 # is made of, which is why it is only the fallback.
                 weighed = renderer.last_prompt_tokens()
                 if weighed:
-                    full = weighed > getattr(baseline_config, "CHAT_COMPACT_TOKENS", 0)
+                    full = weighed > baseline_config.CHAT_COMPACT_TOKENS
                 else:
                     full = (sum(_msg_chars(m) for m in history)
-                            > getattr(baseline_config, "CHAT_COMPACT_CHARS", 0))
+                            > baseline_config.CHAT_COMPACT_CHARS)
                 if full and compact_mode == "episodes":
                     history, consolidated_upto = _compact(
                         history, turns, turn_msgs, consolidated_upto,

@@ -401,7 +401,7 @@ def project_contract(cwd) -> str:
     text = re.sub(r"<!--.*?-->", "", _read_contract(p), flags=re.S).strip()
     if not text:
         return ""
-    cap = getattr(config, "PRAGMA_MD_MAX_CHARS", 4000)
+    cap = config.PRAGMA_MD_MAX_CHARS
     if len(text) > cap:
         text = text[:cap] + "\n[... truncated]"
     return _CONTRACT_HEADER + text
