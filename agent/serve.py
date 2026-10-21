@@ -70,7 +70,7 @@ import llm_client                          # noqa: E402
 from react import AgentConfig, run_agent, _msg_chars   # noqa: E402
 from tools import palette as skills_palette   # noqa: E402
 
-from agent import chat                     # noqa: E402
+from agent import conversation             # noqa: E402
 from agent.batch import _make_on_step      # noqa: E402
 from agent.prompts import build_system_prompt, project_contract, session_block   # noqa: E402
 
@@ -190,7 +190,7 @@ def _held_unless_allowed(run, root: str):
 
     @functools.wraps(run)
     def gated(command: str = "", *args, **kwargs):
-        allowed = chat._project_settings().get("AllowedCommands") or []
+        allowed = conversation.project_settings().get("AllowedCommands") or []
         why = command_gate.held(command, allowed=allowed if isinstance(allowed, list) else [allowed],
                                 where=str(kwargs.get("cwd") or root), root=root)
         if why:
@@ -262,12 +262,12 @@ class Conversation:
             inner(ev)
 
         try:
-            turn = chat.Turn(text)
+            turn = conversation.Turn(text)
             inner = _make_on_step(self.relay, 0, turn.transcript,
                                   text_limit=baseline_config.CHAT_TRANSCRIPT_CHARS)
             core = text
             if self.memory:
-                block = chat._recall(text, self.cwd, self.desk_ids, self.desk_rules, self.reinforced,
+                block = conversation.recall(text, self.cwd, self.desk_ids, self.desk_rules, self.reinforced,
                                      self.relay, first_turn=not self.turns)
                 if block:
                     core = f"{block}\n\n{text}"
@@ -292,7 +292,7 @@ class Conversation:
                                request=text,
                                compact_prefix=self._mid_turn)
             self.last_used = time.monotonic()
-            chat._append_raw_log(self.cwd / ".pragma_session.jsonl", turn)
+            conversation.append_raw_log(self.cwd / ".pragma_session.jsonl", turn)
             self.turns.append(turn)
             if result is None:
                 return {"stopped": True}
@@ -319,7 +319,7 @@ class Conversation:
 
     def _mid_turn(self, prefix: list):
         try:
-            new = chat._compact_summary(prefix, self.relay, "", self.cfg.stop_event,
+            new = conversation.compact_summary(prefix, self.relay, "", self.cfg.stop_event,
                                         "the context is full - summarising the conversation before this request")
         except llm_client.LLMInterrupted:
             raise
@@ -342,7 +342,7 @@ class Conversation:
         if not full:
             return
         try:
-            new = chat._compact_summary(self.history, self.relay, "", None,
+            new = conversation.compact_summary(self.history, self.relay, "", None,
                                         "the context is nearly full - summarising the conversation so far")
         except Exception as e:
             _say(f"not compacted - {type(e).__name__}: {str(e)[:100]}")
@@ -362,8 +362,8 @@ class Conversation:
         if not self.memory or not self.turns:
             return
         try:
-            if not chat._consolidate_later(self.turns, self.cwd, note=f"served conversation {self.id}"):
-                chat._consolidate(self.turns, self.cwd, self.relay)
+            if not conversation.consolidate_later(self.turns, self.cwd, note=f"served conversation {self.id}"):
+                conversation.consolidate(self.turns, self.cwd, self.relay)
         except Exception:
             traceback.print_exc()
 

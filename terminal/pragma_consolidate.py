@@ -248,7 +248,7 @@ def run(path: Path) -> int:
 
         # Imported here, not at the top: it pulls in the whole agent, and a
         # job that cannot even be read should fail without paying for that.
-        from agent.chat import Turn, _consolidate
+        from agent.conversation import Turn, consolidate
 
         turns = []
         for t in job.get("turns") or []:
@@ -268,7 +268,7 @@ def run(path: Path) -> int:
         import embed
         import llm_client
         llm_client.STATUS_HOOK = embed.STATUS_HOOK = _JobHook(renderer)
-        written = _consolidate(turns, Path(job.get("workspace") or os.getcwd()),
+        written = consolidate(turns, Path(job.get("workspace") or os.getcwd()),
                                renderer, note=job.get("note") or "a session")
         job["episodes"] = [e.get("id", "") for e in written if e]
         job["status"] = "done"

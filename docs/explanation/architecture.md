@@ -185,7 +185,8 @@ The short version. [Files](../reference/files.md) has what is inside each.
 
 | File | What it is |
 |---|---|
-| [`chat.py`](../../agent/chat.py) | A live conversation: the turns, the commands, handing over to memory. |
+| [`chat.py`](../../agent/chat.py) | A live conversation in the terminal: the prompt, the commands, the screen. |
+| [`conversation.py`](../../agent/conversation.py) | What a conversation is apart from who shows it: the recall before a turn, the record of it, compaction, handing over to memory. |
 | [`ledger.py`](../../agent/ledger.py) | What a turn looks like on screen: one line for each thing done. |
 | [`harness.py`](../../agent/harness.py) | What `ledger.py` is built on — the status line, the answer as it is written — and the look it replaced. |
 | [`picture.py`](../../agent/picture.py) | An image file drawn in the terminal, PNG or JPEG, with nothing to install. |

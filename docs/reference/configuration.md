@@ -190,7 +190,7 @@ Written for the conversation it starts. Listed so that nobody sets them by hand.
 
 | Variable | Default | What it is | Read in |
 |---|---|---|---|
-| `PRAGMA_PROJECT` | unset | Name of the open project. | [`agent/chat.py`](../../agent/chat.py), [`agent/serve.py`](../../agent/serve.py) |
+| `PRAGMA_PROJECT` | unset | Name of the open project. | [`agent/chat.py`](../../agent/chat.py), [`agent/conversation.py`](../../agent/conversation.py), [`agent/serve.py`](../../agent/serve.py) |
 | `PRAGMA_WORKSPACE` | unset | Folder of the open project. A batch run uses it when `--cwd` is not given. | [`agent/batch.py`](../../agent/batch.py), [`agent/chat.py`](../../agent/chat.py), [`agent/serve.py`](../../agent/serve.py) |
 | `PRAGMA_REQUEST` | unset | File through which the conversation asks the launcher to do something on the way out. | [`agent/chat.py`](../../agent/chat.py) |
 | `PRAGMA_SESSION_ID` | unset | Identifies a session, so that writing it down twice produces one episode. | [`core/tools/episode_consolidate/tool.py`](../../core/tools/episode_consolidate/tool.py) |
@@ -206,5 +206,5 @@ Written for the conversation it starts. Listed so that nobody sets them by hand.
 | `PRAGMA_ALLOW_SELF_MODIFY` | unset | `true` lets a session write inside Pragma's own repository, which is otherwise refused. | [`core/config.py`](../../core/config.py) |
 | `PRAGMA_CLOCK` | unset | Freezes the clock the memory reads at an ISO instant. | [`core/clock.py`](../../core/clock.py) |
 | `PRAGMA_CLOCK_OFFSET` | unset | Shifts that clock by a number of seconds. | [`core/clock.py`](../../core/clock.py) |
-| `PRAGMA_CONSOLIDATE_SYNC` | unset | `1` writes memory in the foreground on leaving, instead of in a background process. | [`agent/chat.py`](../../agent/chat.py) |
+| `PRAGMA_CONSOLIDATE_SYNC` | unset | `1` writes memory in the foreground on leaving, instead of in a background process. | [`agent/conversation.py`](../../agent/conversation.py) |
 | `PRAGMA_CRITIC_SNAPSHOT` | unset | Folder that receives a copy of the workspace when a turn first delivers, for tests. | [`core/config.py`](../../core/config.py) |
