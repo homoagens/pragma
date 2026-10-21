@@ -952,8 +952,3 @@ def curate_knowledge_detailed(task: str, workspace: str = "", model=None,
                               no_reinforce, uses)    # [] → "" (empty desk)
     info["empty"] = not info["block"]
     return info
-
-
-def curate_knowledge(task: str, workspace: str = "", model=None) -> str:
-    """Thin wrapper: return only the assembled knowledge-zone block."""
-    return curate_knowledge_detailed(task, workspace, model)["block"]

@@ -29,8 +29,6 @@
 
 from __future__ import annotations
 
-import json
-
 import config
 import llm_client
 from json_parser import extract_json
@@ -214,11 +212,3 @@ def describe(segments, total: int) -> str:
     if dropped and kept:
         line += f" ({dropped} dropped)"
     return line
-
-
-def as_json(segments, total: int) -> str:
-    """Compact record of the decision."""
-    return json.dumps({"of": total,
-                       "segments": [{"turns": [i + 1 for i in t],
-                                     "keep": k, "why": w}
-                                    for t, k, w in segments]})
