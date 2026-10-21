@@ -64,13 +64,12 @@ for p in (str(_ROOT), str(_CORE), str(_TOOLS)):
 
 import config as baseline_config          # noqa: E402
 import llm_client                          # noqa: E402
-from react import AgentConfig, run_agent, _msg_chars   # noqa: E402
+from react import AgentConfig   # noqa: E402
 from tools import palette as skills_palette   # noqa: E402
 from pragma_line import line as _line   # noqa: E402  a typed line, with the arrows
 # The prompt in the colour of the page it appears under.
 from pragma_style import accent as _accent   # noqa: E402
 
-from agent.batch import _make_on_step   # noqa: E402
 from agent.prompts import (build_system_prompt, project_contract,  # noqa: E402
                            session_block)
 from agent import harness as _harness       # noqa: E402
@@ -1659,54 +1658,15 @@ The person is reading as the turn goes, and answers between turns.
     )
     _CFG[:] = [cfg]
 
-    history: list | None = None
     session = _make_session()
-    turns: list[Turn] = []
-    # What the curator has already put in front of the agent, for the whole
-    # conversation. It is not a cache: the desk IS the history, because the
-    # block is prepended to the turn it was fetched for and stays there. The
-    # sets are what stops it being fetched a second time.
-    desk_ids: set[str] = set()
-    desk_rules: set[str] = set()
-    # Two sets, deliberately. `desk_ids` is what is IN FRONT of the agent and
-    # empties when compaction drops the turns those blocks were attached to.
-    # `reinforced` is what this conversation has already counted as recalled
-    # and never empties: a memory may legitimately be fetched twice, but
-    # reinforcing it twice would make salience record how often the context
-    # overflowed instead of what mattered in the conversation.
-    reinforced: set[str] = set()
-    # Messages each turn added to the history, so compaction can take the tail
-    # by count rather than by an index earlier compactions have invalidated.
-    turn_msgs: list[int] = []
-    consolidated_upto = 0
-    compact_mode = baseline_config.CHAT_COMPACT_MODE
-    # (prompt tokens, characters) of the history as the server last counted
-    # it, for the next turn to start from; None when the history has changed
-    # since - emptied, compacted - or nothing has been counted yet.
-    weighed_at: tuple | None = None
-
-    def _compacted(history: list, instructions: str, said: str) -> list | None:
-        """The history after a compaction asked for from the prompt or decided
-        between turns; None when it was stopped, failed, or had nothing to do.
-        ctrl+C stops it like a turn, and leaves the conversation as it was."""
-        stop = threading.Event()
-        new = None
-        try:
-            with _stops_turn(stop, renderer):
-                new = _compact_summary(history, renderer, instructions, stop, said)
-        except (KeyboardInterrupt, llm_client.LLMInterrupted):
-            _say_dim("  not compacted: the conversation is as it was.")
-        except Exception as e:
-            _say_dim(f"  not compacted - {type(e).__name__}: {str(e)[:90]}")
-        finally:
-            renderer.idle()
-        if new is None:
-            return None
-        desk_ids.clear()          # those blocks are gone from the context
-        desk_rules.clear()
-        renderer.context_reset()
-        print()
-        return new
+    # The conversation itself - what was said, what the curator has put in
+    # front of the agent, the context and when it is full, the memory at the
+    # end - is agent/conversation.py's, shared with /serve. What stays here is
+    # what a person at a terminal adds to it: the prompt, the commands, ctrl+C
+    # and ctrl+D around a turn, and the screen.
+    conv = conversation.Conversation(
+        cwd, cfg, renderer, bool(args.memory), log_path=log_path, state=_STATE,
+        guard=lambda stop: _stops_turn(stop, renderer), say=_say_dim)
 
     # TWO SCREENS, NOT THREE. The launcher has just drawn the briefing - the
     # logo, the project, what the memory holds, what changed while you were
@@ -1714,14 +1674,6 @@ The person is reading as the turn goes, and answers between turns.
     # cleared here: clearing it threw away the page that had just been drawn
     # and replaced it with two lines saying less.
     #
-    # The undo net for this conversation. Batch opens one per run; the
-    # conversation never did, so `revert` was offered with nothing behind it
-    # and answered that no file had changed, whatever had.
-    try:
-        import checkpoint
-        checkpoint.begin_session(str(cwd))
-    except Exception:
-        pass
     # What /clear puts back, since the briefing above cannot be redrawn from
     # here without starting a second process.
     _CHAT_HEADER[:] = [
@@ -1735,7 +1687,7 @@ The person is reading as the turn goes, and answers between turns.
 
     try:
         while True:
-            _STATE["turns"] = len(turns)
+            _STATE["turns"] = len(conv.turns)
             _STATE["ctx"] = renderer.ctx_pct()
             _STATE["writing"] = _writing_now()
             try:
@@ -1770,49 +1722,24 @@ The person is reading as the turn goes, and answers between turns.
                         # is not thrown away: it goes to the memory exactly as
                         # it does when the project closes, and the context
                         # starts empty.
-                        pending = turns[consolidated_upto:]
-                        if args.memory and pending:
-                            if not _consolidate_later(pending, cwd, note="before /clear"):
-                                print("\n  writing what was said to memory - ctrl+C stops it")
-                                try:
-                                    _consolidate(pending, cwd, renderer)
-                                except KeyboardInterrupt:
-                                    print("\n  stopped. What was written is kept; the "
-                                          "rest is still in the log.")
-                        elif pending:
-                            print(f"  {len(pending)} turn(s) stay in {log_path.name} "
-                                  f"(memory is off: nothing was consolidated)")
-                        turns, turn_msgs, consolidated_upto = [], [], 0
-                        history, weighed_at = None, None
-                        desk_ids.clear()
-                        desk_rules.clear()
-                        renderer.context_reset()
+                        conv.clear()
                         _say_dim("  the context is empty: this is a new conversation.")
                         print()
                     elif asked == "compact":
-                        if not history:
+                        if not conv.history:
                             print("  nothing to compact yet.")
                             continue
-                        if compact_mode == "episodes":
+                        if conv.compact_mode == "episodes":
                             # The old trade, for whoever switched it back on:
                             # older turns for the episodes made of them.
                             if not args.memory:
                                 print("  with CHAT_COMPACT_MODE=episodes, /compact needs the memory on.")
                                 continue
-                            was = len(history)
-                            history, consolidated_upto = _compact(
-                                history, turns, turn_msgs, consolidated_upto, cwd, renderer)
-                            if len(history) == was:
+                            if not conv.compact_by_episodes_now():
                                 print(f"  nothing old enough to trade for episodes: the last "
-                                      f"{getattr(baseline_config, 'CHAT_KEEP_TURNS', 3)} turns are kept.")
-                                continue
-                            desk_ids.clear()
-                            desk_rules.clear()
-                            weighed_at = None
+                                      f"{baseline_config.CHAT_KEEP_TURNS} turns are kept.")
                             continue
-                        new = _compacted(history, word, "summarising the conversation so far…")
-                        if new is not None:
-                            history, weighed_at = new, None
+                        conv.compact(word, "summarising the conversation so far…")
                 continue
 
             # Only a real turn needs the model. Asked again rather than
@@ -1828,87 +1755,9 @@ The person is reading as the turn goes, and answers between turns.
                     continue
                 print("  backend is back.")
 
-            # The Turn — and so the raw log, and so what the segmenter reads
-            # on exit — keeps the user's words alone. Only the prompt carries
-            # the recalled memory: a knowledge block replayed as if the user
-            # had typed it would corrupt segmentation and then the episodes.
-            turn = Turn(text)
-            prompt = text
-            before = len(history or [])
-            # A wider budget for what the model said: in a conversation the
-            # thought field is where it talks to you, and the batch cap cut
-            # the replies short before the consolidator ever saw them.
-            inner = _make_on_step(
-                renderer, 0, turn.transcript,
-                text_limit=baseline_config.CHAT_TRANSCRIPT_CHARS)
-
-            def on_step(ev: dict, _inner=inner) -> None:
-                # The token counts of the call that just ended, before the
-                # adapter consumes them: the harness adds them up for the
-                # closing line instead of printing one per step.
-                if ev.get("type") in ("thought", "final"):
-                    renderer.note_stats(dict(getattr(llm_client, "LAST_STATS", {}) or {}))
-                _inner(ev)
-
-            import time as _time
-            _t_turn = _time.monotonic()
             cfg.stop_event = threading.Event()
-            result = None
-            # What was on the desk before this turn. If the conversation is
-            # compacted while the turn runs, those blocks leave the context and
-            # may be recalled again; the ones this turn fetched are still in
-            # its own request, which is never summarised.
-            _desk_then = (set(desk_ids), set(desk_rules))
-
-            def _mid_turn(prefix: list, _stop=cfg.stop_event, _then=_desk_then):
-                try:
-                    new = _compact_summary(
-                        prefix, renderer, "", _stop,
-                        "the context is full - summarising the conversation before this request…")
-                except llm_client.LLMInterrupted:
-                    raise
-                except Exception as e:
-                    # The turn goes on: its own steps are summarised instead,
-                    # which is what happened before this existed.
-                    renderer.faculty("COMPACTOR", f"not compacted - {str(e)[:100]}")
-                    return None
-                if new is not None:
-                    desk_ids.difference_update(_then[0])
-                    desk_rules.difference_update(_then[1])
-                    # The turn's largest request so far was of a list that is
-                    # gone: the closing line counts from here.
-                    renderer.context_reset()
-                return new
-            try:
-                # The recall is inside what can be stopped. It was outside: a
-                # ctrl+C while the curator was choosing closed the project,
-                # where a moment later it would only have stopped the reply.
-                with _stops_turn(cfg.stop_event, renderer):
-                    if args.memory:
-                        block = _recall(text, cwd, desk_ids, desk_rules, reinforced,
-                                        renderer, first_turn=not turns)
-                        if block:
-                            prompt = f"{block}\n\n{text}"
-                    renderer.turn_begin()
-                    _t_turn = _time.monotonic()
-                    if cfg.stop_event.is_set():
-                        raise KeyboardInterrupt     # asked to stop while recalling
-                    result = run_agent(
-                        cfg, prompt, on_step=on_step, history=history,
-                        # The critic holds the work to what was typed, not to
-                        # the recalled memory standing in front of it.
-                        request=text,
-                        # And when the window fills up while the turn runs, the
-                        # conversation before it is what gives way first.
-                        compact_prefix=_mid_turn if compact_mode != "episodes" else None,
-                        counted=weighed_at,
-                    )
-            except KeyboardInterrupt:
-                result = None           # the second press: abandoned at once
-            finally:
-                # Whatever ended the turn, nothing may be left spinning.
-                renderer.idle()
-            if result is None:          # stopped mid-turn
+            done = conv.turn(text)
+            if done.get("stopped"):
                 # A STOPPED TURN IS NOT A CLOSED PROJECT. It used to be: the
                 # loop broke, the project closed, and the operator who pressed
                 # ctrl+C to stop a reply running on was thrown out of the
@@ -1916,64 +1765,20 @@ The person is reading as the turn goes, and answers between turns.
                 # _stops_turn.) What happened so far is kept for the memory;
                 # the history does not get the half-turn, so the next message
                 # starts from the last one that finished.
-                _append_raw_log(log_path, turn)
-                turns.append(turn)
                 print()
                 _say_dim("  stopped. Say what to do instead - or ctrl+D closes the project.")
                 print()
                 continue
 
-            conclusion = result.get("conclusion", "") or ""
-            turn.transcript.append(f"FINAL: {conclusion[:2000]}")
-
-            # Persist BEFORE displaying. Rendering is the least important thing
-            # here and one of the likelier to fail — an emoji in the reply was
-            # enough to kill the session on a cp1252 console, and with the write
-            # after the render the turn was lost with it. The order is the
-            # guarantee, so it has to be this way round.
-            _append_raw_log(log_path, turn)
-            turns.append(turn)
-            history = result.get("messages") or history
-            turn_msgs.append(max(len(history or []) - before, 1))
-            _last = renderer.last_prompt_tokens()
-            weighed_at = (_last, sum(_msg_chars(m) for m in history or [])) if _last else None
-
-            renderer.conclusion(result.get("forced", False),
-                                _time.monotonic() - _t_turn, conclusion)
+            renderer.conclusion(done["forced"], done["elapsed"], done["conclusion"])
 
             # What you might ask next, started here - after the answer is on
-            # the screen and before the consolidation below, which on a
-            # one-slot server would otherwise be queued in front of it.
-            _suggest_start(text, conclusion)
+            # the screen and before the compaction below, which on a one-slot
+            # server would otherwise be queued in front of it.
+            _suggest_start(text, done["conclusion"])
 
-            # Is the conversation full? Asked after every turn. By summary -
-            # the default - it is also asked inside one (see _mid_turn), and
-            # needs no memory. By episodes it happens only here, BETWEEN turns:
-            # a turn still running has no finished experience to consolidate.
-            if history and (args.memory or compact_mode != "episodes"):
-                # Is the conversation full? In tokens the server counted, once
-                # one request has been answered; in characters until then. The
-                # estimate is off by up to 3x on the content a coding session
-                # is made of, which is why it is only the fallback.
-                weighed = renderer.last_prompt_tokens()
-                if weighed:
-                    full = weighed > baseline_config.CHAT_COMPACT_TOKENS
-                else:
-                    full = (sum(_msg_chars(m) for m in history)
-                            > baseline_config.CHAT_COMPACT_CHARS)
-                if full and compact_mode == "episodes":
-                    history, consolidated_upto = _compact(
-                        history, turns, turn_msgs, consolidated_upto,
-                        cwd, renderer)
-                    desk_ids.clear()      # those blocks are gone from context
-                    desk_rules.clear()
-                    weighed_at = None
-                elif full:
-                    new = _compacted(
-                        history, "",
-                        "the context is nearly full - summarising the conversation so far…")
-                    if new is not None:
-                        history, weighed_at = new, None
+            # Is the conversation full? Asked after every turn.
+            conv.compact_if_full()
 
             # The prompt comes back with the guess already on it, or without
             # one - never with one arriving under your fingers.
@@ -1981,34 +1786,7 @@ The person is reading as the turn goes, and answers between turns.
     except KeyboardInterrupt:
         print()
 
-    if args.memory:
-        # Only what compaction has not already remembered. Without the
-        # watermark a long session would write every early turn twice: once
-        # when the context filled up, once again on the way out.
-        pending = turns[consolidated_upto:]
-        if not _consolidate_later(pending, cwd):
-            # CLOSING IS NOT LEAVING, until this is done. A segmenter and one
-            # consolidator per segment are calls that can each run a minute,
-            # and they start AFTER the conversation has said goodbye - so from
-            # the outside the window is gone while the process is still
-            # talking to the server. Stopping the conversation used to stop
-            # the loop and nothing else: you would reopen Pragma and find the
-            # old one still writing memories nobody was watching.
-            #
-            # So the way out is said, and it works: ctrl+C here aborts the
-            # call in flight and every call after it. Nothing is left half
-            # written - an episode is saved whole or not at all - so what is
-            # lost is the segments that had not been reached yet.
-            print("\n  writing what was said to memory - ctrl+C stops it")
-            try:
-                _consolidate(pending, cwd, renderer)
-            except KeyboardInterrupt:
-                llm_client.stop_everything()
-                print("\n  stopped. What was written is kept; the rest is "
-                      "still in the log.")
-    elif turns:
-        print(f"\n  {len(turns)} turn(s) recorded in {log_path.name} "
-              f"(memory is off: nothing was consolidated)")
+    conv.close()
     # NOTHING KEEPS TALKING AFTER THIS. The suggester runs in a daemon thread
     # and a faculty may still be mid-request; both notice at their next check
     # and stop, so the process ends when it says it is ending.
