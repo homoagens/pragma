@@ -17,10 +17,11 @@
 # come back until consolidation had finished - which is the thing being fixed.
 # Detached, the conversation exits at once and the work outlives it.
 #
-# The consolidation itself is NOT reimplemented here: it is agent.chat's own
-# _consolidate, called with a renderer that writes into the job instead of onto
-# a screen. Two implementations of what becomes an episode would disagree, and
-# the one running unattended is the worse one to have drift.
+# The consolidation itself is NOT reimplemented here: it is the conversation's
+# own consolidate (agent/conversation.py), called with a renderer that writes
+# into the job instead of onto a screen. Two implementations of what becomes an
+# episode would disagree, and the one running unattended is the worse one to
+# have drift.
 from __future__ import annotations
 
 import argparse
@@ -58,7 +59,7 @@ def _utc() -> str:
 
 
 class _JobRenderer:
-    """The renderer _consolidate expects, writing to the job file.
+    """The renderer consolidate expects, writing to the job file.
 
     Flushed on every line rather than at the end: the whole point is that the
     launcher can show progress while this runs, and a log written once at the

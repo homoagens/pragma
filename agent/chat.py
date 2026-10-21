@@ -74,23 +74,6 @@ from agent.prompts import (build_system_prompt, project_contract,  # noqa: E402
                            session_block)
 from agent import harness as _harness       # noqa: E402
 from agent import conversation  # noqa: E402
-from agent.conversation import (  # noqa: E402,F401  the old names, for one round
-    Turn,
-    _say_written,
-    append_raw_log as _append_raw_log,
-    compact_by_episodes as _compact,
-    compact_summary as _compact_summary,
-    consolidate as _consolidate,
-    consolidate_later as _consolidate_later,
-    load_episode as _load_episode,
-    project_settings as _project_settings,
-)
-
-
-def _recall(*args, **kwargs) -> str:
-    """conversation.recall, with the toolbar this conversation draws."""
-    return conversation.recall(*args, state=_STATE, **kwargs)
-
 
 # The renderer of the conversation in progress, for the one caller that is
 # not handed it: ask_user, which needs the screen for a question.
@@ -346,7 +329,7 @@ def _held_for_the_person(run, root: str = ""):
         # so a pattern added from /settings counts from the next one.
         # Paths in a command are compared relative to the project's folder,
         # `root`, from the folder the command runs in.
-        allowed = _project_settings().get("AllowedCommands") or []
+        allowed = conversation.project_settings().get("AllowedCommands") or []
         why = command_gate.held(command, allowed=allowed if isinstance(allowed, list) else [allowed],
                                 where=str(kwargs.get("cwd") or root), root=root)
         if why and _chat_ask_user(
@@ -662,7 +645,7 @@ def _settings_here() -> None:
         return
     _new_page()
     _show_chat_header()
-    settings = _project_settings()
+    settings = conversation.project_settings()
     cfg = _CFG[0] if _CFG else None
     said = []
     steps = str(settings.get("MaxSteps", "")).strip()
