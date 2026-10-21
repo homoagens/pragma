@@ -418,7 +418,7 @@ class _AnswerStream:
         current: list[str] = []
         fence = False
         lines = text.split("\n")
-        for i, line in enumerate(lines[:-1]):          # the last piece may be unfinished
+        for line in lines[:-1]:          # the last piece may be unfinished
             if line.strip().startswith("```"):
                 fence = not fence
             if not line.strip() and not fence:

@@ -939,7 +939,7 @@ def curate_knowledge_detailed(task: str, workspace: str = "", model=None,
 
     refs, reason, uses = _ask_curator(task, eps, lns, model=model)
     if refs is None:                       # LLM failed → deterministic fallback
-        info["reason"] = reason            # perche', non solo che
+        info["reason"] = reason            # why, not only that it failed
         info["block"], refs = _fallback(eps, lns, workspace, no_reinforce)
         info["episode_ids"], info["rule_texts"] = _placed(refs, eps, lns)
         info["fallback"] = True

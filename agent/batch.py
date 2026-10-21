@@ -750,8 +750,8 @@ def main() -> int:
 
     renderer.banner(str(cwd), model_line, detail, max_steps, task)
 
-    # palette() withholds the base64 skills on the native channel, where the
-    # server escapes arguments and the model's own encoding is the risk.
+    # palette() leaves out the memory machinery and, on Unix, what the shell
+    # does better: see tools.palette().
     skills = skills_palette()
     skills["ask_user"] = batch_ask_user
     # And the tools of the MCP servers in ~/.pragma/mcp.json, when there are any.

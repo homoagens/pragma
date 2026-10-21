@@ -1,4 +1,4 @@
-﻿# Copyright (C) 2026 Homo Agens
+# Copyright (C) 2026 Homo Agens
 # SPDX-License-Identifier: AGPL-3.0-or-later
 # This file is part of Pragma <https://github.com/homoagens/pragma>.
 
@@ -48,7 +48,7 @@ import memory as baseline_memory
 from tools import palette as skills_palette
 from agent.prompts import build_system_prompt, session_block
 
-# Same palette rule as batch: no base64 variants on the native channel.
+# The same palette as the terminal: see tools.palette().
 AGENT_SKILLS: dict = skills_palette()
 
 
@@ -847,7 +847,7 @@ async def websocket_endpoint(ws: WebSocket):
         if not answered:
             return "(no response)"
         val = answer_store["value"]
-        # Persisti anche la risposta (associandola all'ultimo ask_user)
+        # Keep the answer too, with the ask_user it answers.
         if thread_data["messages"] and thread_data["messages"][-1].get("type") == "ask_user":
             thread_data["messages"][-1]["answer"] = val
             _save_thread(thread_data)

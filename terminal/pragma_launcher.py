@@ -763,7 +763,7 @@ def _workspace_kept(doomed: dict, entries: list) -> str:
 def _folder_holds(folder: Path) -> tuple[int, int, bool]:
     """(files, bytes, is a git repository) of a folder, without following links."""
     files = size = 0
-    for base, dirs, names in os.walk(folder, followlinks=False):
+    for base, _dirs, names in os.walk(folder, followlinks=False):
         for name in names:
             files += 1
             try:
