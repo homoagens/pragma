@@ -52,6 +52,7 @@ import re
 import subprocess
 import sys
 import threading
+import time
 from pathlib import Path
 
 _HERE = Path(__file__).resolve().parent
@@ -66,7 +67,7 @@ import config as baseline_config          # noqa: E402
 import llm_client                          # noqa: E402
 from react import AgentConfig   # noqa: E402
 from tools import palette as skills_palette   # noqa: E402
-from pragma_line import line as _line   # noqa: E402  a typed line, with the arrows
+from pragma_line import REDRAW, line as _line   # noqa: E402  a typed line, with the arrows
 # The prompt in the colour of the page it appears under.
 from pragma_style import accent as _accent   # noqa: E402
 
@@ -367,8 +368,10 @@ def _make_session():
 
         kb = KeyBindings()
         # ctrl+Enter starts a new line; Enter sends the whole message.
-        from pragma_line import newline_keys
+        # ctrl+L draws the page again: see _redraw.
+        from pragma_line import newline_keys, redraw_key
         newline_keys(kb)
+        redraw_key(kb, _TYPED)
 
         @kb.add("tab", filter=Condition(
             lambda: bool(_NEXT) and not session.default_buffer.text))
@@ -654,9 +657,6 @@ def _settings_here() -> None:
         if cfg is not None:
             cfg.max_steps = int(steps)
         _STATE["max_steps"] = int(steps)
-        if _CHAT_HEADER:
-            _CHAT_HEADER[0] = re.sub(r"\d+ steps per turn", f"{steps} steps per turn",
-                                     _CHAT_HEADER[0])
         said.append(f"{steps} steps per turn")
     before = _recall_says()
     try:
@@ -701,9 +701,6 @@ def _steps_here() -> None:
     if cfg is not None:
         cfg.max_steps = steps
     _STATE["max_steps"] = steps
-    if _CHAT_HEADER:
-        _CHAT_HEADER[0] = re.sub(r"\d+ steps per turn", f"{steps} steps per turn",
-                                 _CHAT_HEADER[0])
     # Asked only where there is no project, so nowhere to keep it: inside one,
     # /settings is the launcher's page and the registry keeps what it sets.
     print(f"  {steps} steps per turn, from the next turn"
@@ -946,9 +943,22 @@ def _allowed() -> set:
     return set(_COMMANDS) - (set() if _memory_on() else {"/memory", "/jobs"})
 
 
-# What the conversation's page says at the top, kept so that clearing can put
-# it back. A cleared screen with nothing on it is not the same page any more.
-_CHAT_HEADER: list = []
+def _chat_header() -> list[str]:
+    """What the conversation's page says at the top, put back whenever the
+    screen is cleared: a cleared screen with nothing on it is not the same
+    page any more. Made from _STATE each time, so a page drawn again says
+    what is true now - the endpoint that came up, the steps /settings
+    changed - and not what was true when the project opened."""
+    model = _STATE.get("model") or ""
+    talking = "" if model == _harness.DOWN else _harness.pretty_model(model)
+    memory = bool(_STATE.get("memory"))
+    return [
+        f"  {_STATE.get('project')} · talking to {talking or 'nothing - the backend is down'}"
+        f" · memory {'on' if memory else 'off'}"
+        f" · {_STATE.get('max_steps')} steps per turn",
+        "  ctrl+C or ctrl+D stops a reply · at the prompt, ctrl+D closes the project"
+        + (" and remembers what was said" if memory else ""),
+    ]
 
 
 def _new_page() -> None:
@@ -960,9 +970,61 @@ def _new_page() -> None:
 
 def _show_chat_header() -> None:
     print()
-    for line in _CHAT_HEADER:
+    for line in _chat_header():
         print(line)
     print()
+
+
+def _model_now(model: str) -> str:
+    """The model to name, asked of the endpoint again. `model` is the one
+    named now, and stays when the endpoint is only slow to answer: one slot
+    busy writing a memory is a server that is there. Down is a server that
+    nothing is listening for."""
+    ok, detail = llm_client.ping_models(timeout=3)
+    if ok:
+        return baseline_config.SERVED_MODEL or baseline_config.DEFAULT_MODEL
+    return _harness.DOWN if "not connected" in str(detail) else model
+
+
+def _redraw() -> None:
+    """ctrl+L: the conversation's page again, saying what is true now. The
+    conversation itself is untouched; emptying it is /clear."""
+    _STATE["writing"] = _writing_now()
+    _STATE["model"] = _model_now(_STATE.get("model") or "")
+    _new_page()
+    _show_chat_header()
+
+
+# How often the line under the prompt is held up against the world while the
+# prompt waits: whether the memory is writing is a file read, so often; the
+# endpoint is a request, so seldom.
+_WATCH_SECONDS = 2
+_PING_SECONDS = 15
+
+
+def _watch(session) -> None:
+    """THE LINE UNDER THE PROMPT STAYS TRUE WHILE NOTHING IS TYPED. It was
+    brought up to date between turns only, so a memory that had finished
+    was still "writing", and an endpoint started after the project opened
+    was still down, until something was sent. Looked at only while the
+    prompt waits: during a turn the line is not drawn, and the endpoint has
+    better things to do. A daemon thread, started once; never raises."""
+    pinged = time.monotonic()           # the start has just asked
+    while True:
+        time.sleep(_WATCH_SECONDS)
+        try:
+            app = session.app
+            if not app.is_running:
+                continue
+            before = (_STATE.get("writing"), _STATE.get("model"))
+            _STATE["writing"] = _writing_now()
+            if time.monotonic() - pinged >= _PING_SECONDS:
+                pinged = time.monotonic()
+                _STATE["model"] = _model_now(_STATE.get("model") or "")
+            if (_STATE.get("writing"), _STATE.get("model")) != before:
+                app.invalidate()
+        except Exception:
+            pass
 
 
 def _slash_banner() -> None:
@@ -993,6 +1055,7 @@ def _slash_help() -> None:
     print(f"  {a}ctrl+D{r}  while a reply is running, stops it too; at the prompt, closes")
     print("          the project, and what was said goes into memory" if _memory_on()
           else "          the project; the memory is off, so nothing of it is remembered")
+    print(f"  {a}ctrl+L{r}  draws this page again, as things are now; the conversation stays")
     print()
     print("  Starting, backing up or removing a project is done where none is")
     print("  open: ctrl+D, then /projects.")
@@ -1597,7 +1660,7 @@ The person is reading as the turn goes, and answers between turns.
     served = baseline_config.SERVED_MODEL or baseline_config.DEFAULT_MODEL
     max_steps = args.max_steps or baseline_config.MAX_STEPS
     _STATE.update(project=os.environ.get("PRAGMA_PROJECT") or cwd.name,
-                  model=served if online else "backend down",
+                  model=served if online else _harness.DOWN,
                   # The budget in force, which is not config's: a project's
                   # MaxSteps arrives as --max-steps, because it is an argument
                   # of this process and not a setting of the machine. /status
@@ -1642,6 +1705,9 @@ The person is reading as the turn goes, and answers between turns.
     _CFG[:] = [cfg]
 
     session = _make_session()
+    if session is not None:
+        threading.Thread(target=_watch, args=(session,), daemon=True,
+                         name="toolbar-watch").start()
     # The conversation itself - what was said, what the curator has put in
     # front of the agent, the context and when it is full, the memory at the
     # end - is agent/conversation.py's, shared with /serve. What stays here is
@@ -1655,17 +1721,9 @@ The person is reading as the turn goes, and answers between turns.
     # logo, the project, what the memory holds, what changed while you were
     # away - and the prompt under it is the conversation's. The screen is NOT
     # cleared here: clearing it threw away the page that had just been drawn
-    # and replaced it with two lines saying less.
-    #
-    # What /clear puts back, since the briefing above cannot be redrawn from
-    # here without starting a second process.
-    _CHAT_HEADER[:] = [
-        f"  {_STATE['project']} · talking to {_harness.pretty_model(served) or 'nothing - the backend is down'}"
-        f" · memory {'on' if args.memory else 'off'}"
-        f" · {max_steps} steps per turn",
-        "  ctrl+C or ctrl+D stops a reply · at the prompt, ctrl+D closes the project"
-        + (" and remembers what was said" if args.memory else ""),
-    ]
+    # and replaced it with two lines saying less. /clear and ctrl+L put
+    # _chat_header() in its place, since the briefing above cannot be
+    # redrawn from here without starting a second process.
     _slash_banner()
 
     try:
@@ -1689,6 +1747,9 @@ The person is reading as the turn goes, and answers between turns.
                 # into the key that ends the conversation - one press too many
                 # and the evening's context was consolidated and gone.
                 _say_dim("  ctrl+D closes the project")
+                continue
+            if text == REDRAW:
+                _redraw()
                 continue
             if not text:
                 continue
@@ -1737,6 +1798,7 @@ The person is reading as the turn goes, and answers between turns.
                     print("  the memory commands still work; /help lists them.")
                     continue
                 print("  backend is back.")
+                _STATE["model"] = baseline_config.SERVED_MODEL or baseline_config.DEFAULT_MODEL
 
             cfg.stop_event = threading.Event()
             done = conv.turn(text)

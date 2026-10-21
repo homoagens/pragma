@@ -16,7 +16,8 @@ same keys everywhere; readline where prompt_toolkit cannot run.
     name = line("  name: ")            # raises EOFError / KeyboardInterrupt, as input()
 
 The conversation's own prompt takes newline_keys(): ctrl+Enter starts a new
-line instead of sending.
+line instead of sending. It and the home prompt take redraw_key(): ctrl+L
+draws the page again.
 """
 from __future__ import annotations
 
@@ -52,6 +53,23 @@ def newline_keys(kb) -> None:
     @kb.add("escape", "enter")
     def _newline(event):
         event.current_buffer.insert_text("\n")
+
+
+# What a prompt returns when ctrl+L asked for its page again: nothing a
+# person can type, so it is never taken for a line.
+REDRAW = "\x00redraw"
+
+
+def redraw_key(kb, keep: list) -> None:
+    """ctrl+L draws the page again, saying what is true now - an endpoint
+    that came up, a memory that finished writing. prompt_toolkit's own ctrl+L
+    cleared the screen and left the prompt alone on it, page and all gone.
+    What was typed goes into keep[0], to be back on the line under the page."""
+
+    @kb.add("c-l")
+    def _redraw(event):
+        keep[0] = event.current_buffer.text
+        event.app.exit(result=REDRAW)
 
 
 def line(prompt: str) -> str:

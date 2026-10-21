@@ -48,6 +48,7 @@ import time
 from pathlib import Path
 
 from pragma_registry import read as registry_entries  # noqa: E402
+from pragma_line import REDRAW  # noqa: E402
 from pragma_style import GREY, RESET, accent, columns  # noqa: E402
 GREEN, YELLOW = "\033[32m", "\033[33m"
 
@@ -76,7 +77,7 @@ COMMANDS = {
     "/jobs":      "what the memory is writing in the background: follow it, stop it, run it again",
     "/serve":     "projects other programs can talk to, as to a model",
     "/configure": "the model server Pragma talks to",
-    "/clear":     "clear the screen",
+    "/clear":     "draw this page again, as things are now (ctrl+L)",
     "/help":      "this list",
     "/exit":      "leave",
 }
@@ -343,6 +344,7 @@ def make_session(extra: dict | None = None):
     try:
         from prompt_toolkit import PromptSession
         from prompt_toolkit.completion import Completer, Completion
+        from prompt_toolkit.key_binding import KeyBindings
     except Exception:
         return None
 
@@ -380,8 +382,15 @@ def make_session(extra: dict | None = None):
     # menu is showing or not, so on a short window it is six lines of page
     # pushed off the top. Four is still two commands and their blurbs, which
     # is what the completion is for here.
+    kb = KeyBindings()
+    from pragma_line import redraw_key
+    redraw_key(kb, _TYPED)
     return PromptSession(completer=HomeCompleter(), complete_while_typing=True,
-                         reserve_space_for_menu=4)
+                         reserve_space_for_menu=4, key_bindings=kb)
+
+
+# What was on the line when ctrl+L drew the page again, to be put back on it.
+_TYPED = [""]
 
 
 def read_line(session) -> str:
@@ -392,9 +401,11 @@ def read_line(session) -> str:
         from pragma_line import line
         return line(f"  {MARK} ")
     from prompt_toolkit.formatted_text import ANSI
+    typed, _TYPED[0] = _TYPED[0], ""
     return session.prompt(
         ANSI(f"  {a}{MARK}{RESET if a else ''} "),
-        placeholder=ANSI(f"{GREY}a project's name, or /help{SEP}ctrl+D to exit{RESET}"))
+        placeholder=ANSI(f"{GREY}a project's name, or /help{SEP}ctrl+D to exit{RESET}"),
+        default=typed)
 
 
 def endpoint_lines() -> list[tuple[str, str, bool]]:
@@ -670,6 +681,8 @@ def prompt(notice: str = "", listed: int = 0) -> tuple[str, str]:
                 raise
             session = None
             continue
+        if line == REDRAW:
+            return choose("clear")
         if not line:
             continue
         # A project's name, typed as it is, opens it: the page lists them, and

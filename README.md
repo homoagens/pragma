@@ -111,7 +111,9 @@ the store, `/settings` is what the project decides for itself, `/status` how
 it is set up. `/compact` summarises a long conversation and goes on from the
 summary, and `/clear` starts over with an empty context. **ctrl+D** closes
 the project and hands the conversation to the memory; a second one, at home,
-leaves.
+leaves. **ctrl+L**, at home or in a project, draws the page again as things
+are now, and the line under the prompt keeps up on its own: an endpoint that
+comes up, a memory that finishes writing.
 
 **While a turn runs** you watch it happen, drawn as a ledger: one line for
 each thing done — what, to what, and how it came out. The newest lines are

@@ -19,7 +19,7 @@ Where no project is open: what is done *to* a project lives here.
 | `/jobs` | what the memory is writing in the background: follow it, stop it, run it again |
 | `/serve` | projects other programs can talk to, as to a model |
 | `/configure` | the model server Pragma talks to |
-| `/clear` | clear the screen |
+| `/clear` | draw this page again, as things are now (ctrl+L) |
 | `/help` | this list |
 | `/exit` | leave |
 

@@ -199,6 +199,10 @@ def summary_line(steps: int, tools: int, seconds: float, out_tokens: int,
     return f" {dot} ".join(parts)
 
 
+# The toolbar's model while the endpoint does not answer.
+DOWN = "backend down"
+
+
 def toolbar(state: dict) -> list:
     """The line under the prompt, as prompt_toolkit formatted text.
 
@@ -209,9 +213,11 @@ def toolbar(state: dict) -> list:
     """
     dot = ("class:toolbar.dim", "  ·  ")
     out = [("class:toolbar", f" {state.get('project') or 'no project'}")]
-    model = pretty_model(state.get("model") or "")
-    if model:
-        out += [dot, ("class:toolbar.dim", model[:40])]
+    model = state.get("model") or ""
+    if model == DOWN:
+        out += [dot, ("class:toolbar.warn", DOWN)]
+    elif pretty_model(model):
+        out += [dot, ("class:toolbar.dim", pretty_model(model)[:40])]
     ctx = state.get("ctx")
     if ctx is not None:
         style = "class:toolbar.warn" if ctx >= 80 else "class:toolbar.dim"
