@@ -37,6 +37,16 @@ step() { printf '  %s\n' "$1"; }
 done_() { printf '  \033[32m%s\033[0m\n' "$1"; }
 warn() { printf '  \033[33m%s\033[0m\n' "$1"; }
 
+# Windows runs Pragma inside WSL (docs/decisions/0026). Git Bash or MSYS would
+# build a Windows environment the launcher cannot use, and fail later and
+# further from the cause.
+case "$(uname -s)" in
+    MINGW*|MSYS*|CYGWIN*)
+        warn "On Windows, Pragma runs inside WSL: run 'wsl --install' in PowerShell"
+        warn "once, then clone Pragma and run ./install.sh in the WSL terminal."
+        exit 1 ;;
+esac
+
 # The profile file: the one the login shell actually reads. bash reads
 # ~/.bashrc in an interactive shell, zsh ~/.zshrc; anything else gets
 # ~/.profile, which every POSIX shell reads.

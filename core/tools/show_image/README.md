@@ -16,7 +16,7 @@ It shows the image to the person, not to you. To look at an image yourself, use 
 
 ## Where it is offered
 
-Only in a conversation, where a person is watching the terminal: `agent/chat.py` offers its own version, and the picture is drawn under the step that called it. A batch run and the browser interface do not offer it.
+Only in a conversation, where a person is watching the terminal: `agent/chat.py` offers its own version, and the picture is drawn under the step that called it. A batch run and a [served project](../../../docs/how-to/serve-a-project.md) do not offer it.
 
 Without Pillow, PNG and JPEG are read by Pragma itself: a progressive JPEG from its first pass only, and other formats not at all. With Pillow installed, any format it reads.
 

@@ -20,10 +20,11 @@ and a project opens into [`agent/chat.py`](../../agent/chat.py).
 
 ## Windows, inside WSL
 
-Install WSL with a Linux distribution (Ubuntu is the usual one), open its
-terminal, and install Pragma there as on Linux: `./install.sh`, then
-`pragma`. Its projects and its memory live in the Linux home folder,
-`~/.pragma`.
+Install WSL with a Linux distribution — `wsl --install` in PowerShell does it
+once, with Ubuntu — open its terminal, and install Pragma there as on Linux:
+`git clone`, `./install.sh`, then `pragma`. Run from Git Bash instead,
+`./install.sh` stops and says to use WSL. Its projects and its memory live
+in the Linux home folder, `~/.pragma`.
 
 What crosses between the two sides:
 

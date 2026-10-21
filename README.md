@@ -52,6 +52,9 @@ cd pragma
 ./install.sh
 ```
 
+On Windows, run these in a WSL terminal: `wsl --install` in PowerShell sets
+WSL up once, with Ubuntu ([more below](#windows-and-macos)).
+
 You need **Python 3.10 or newer**. The installer builds Pragma its own
 environment, so nothing is added to your system Python (on Debian and
 Ubuntu, `sudo apt install python3-venv` first), and adds one line to your
@@ -218,10 +221,11 @@ what.
 
 ## Windows and macOS
 
-- **Windows** — inside WSL: install a Linux distribution with WSL, then
-  follow the Linux steps above in its terminal. It is the Linux Pragma, not
-  a port of it. [Where Pragma runs](docs/explanation/interfaces.md) says what
-  crosses between WSL and Windows.
+- **Windows** — inside WSL: `wsl --install` in PowerShell installs it with
+  Ubuntu, once; then follow the Linux steps above in the Ubuntu terminal. It
+  is the Linux Pragma, not a port of it; `./install.sh` run from Git Bash
+  stops and says so. [Where Pragma runs](docs/explanation/interfaces.md)
+  says what crosses between WSL and Windows.
 - **macOS** — `./install.sh` and the Linux launcher. Not tested.
 
 ---
