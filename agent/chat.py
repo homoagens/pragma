@@ -65,6 +65,7 @@ for p in (str(_ROOT), str(_CORE), str(_TOOLS)):
 
 import config as baseline_config          # noqa: E402
 import llm_client                          # noqa: E402
+import rule_packs                          # noqa: E402
 from react import AgentConfig   # noqa: E402
 from tools import palette as skills_palette   # noqa: E402
 from pragma_line import REDRAW, line as _line   # noqa: E402  a typed line, with the arrows
@@ -565,6 +566,11 @@ def _ask(session, typed: str = ""):
 # The conversation's own AgentConfig, for the commands that change it while it
 # runs. Set once by main(); a list for the same reason _SESSION is one.
 _CFG: list = []
+# And the Conversation, for /settings to hand a rule pack turned on midway.
+_CONV: list = []
+# The system prompt in its three parts - what comes before the rule packs,
+# the packs, what comes after - so that /settings can change the middle one.
+_PROMPT: dict = {}
 
 
 
@@ -667,13 +673,51 @@ def _settings_here() -> None:
         print(f"  the recall was not changed - {type(e).__name__}: {str(e)[:100]}")
     if _recall_says() != before:
         said.append(_recall_says())
+    packs = _packs_here(settings)
     if said:
         for line in said:
             print(f"  {line}")
         _say_dim("  from the next turn")
-    else:
+    for line in packs:
+        print(f"  {line}")
+    if not said and not packs:
         _say_dim("  unchanged")
     print()
+
+
+def _packs_here(settings: dict) -> list[str]:
+    """The rule packs /settings changed, applied to the conversation that is
+    open; what to say about them. The system prompt takes the new list at
+    once, for every conversation that starts from it - /clear's, or this one
+    if nothing has been sent yet. A conversation already under way has read
+    its system prompt and will not again: a pack turned on goes in front of
+    its next request instead, and one turned off stays until /clear, since
+    what the model has read cannot be taken back."""
+    if not _PROMPT or not _CFG or not _CONV:
+        return []
+    now, was = rule_packs.active(settings), _PROMPT["packs"]
+    if now == was:
+        return []
+    _PROMPT["packs"] = now
+    _CFG[0].system_prompt = _PROMPT["head"] + rule_packs.block(now) + _PROMPT["tail"]
+    conv = _CONV[0]
+    if conv.history is None:
+        return [f"rule packs: {', '.join(now) or 'none'} - from the next turn"]
+    # What this conversation has read: the system prompt it started with, and
+    # any pack handed to it since. A pack turned on and off again before the
+    # next request is simply not handed.
+    read = _PROMPT["read"]
+    added = [n for n in now if n not in read]
+    gone = [n for n in read if n not in now]
+    conv.notes = [rule_packs.note(added)] if added else []
+    _PROMPT["handing"] = added
+    said = []
+    if added:
+        said.append(f"rule packs on: {', '.join(added)} - from the next turn")
+    if gone:
+        said.append(f"rule packs off: {', '.join(gone)} - from the next conversation;"
+                    " this one has read them (/clear starts one)")
+    return said
 
 
 def _steps_here() -> None:
@@ -1171,6 +1215,8 @@ def _status_lines() -> list[tuple[str, str]]:
     out.append(("actions", line))
     out.append(("", ""))
     out.append(("steps", f"{_STATE.get('max_steps') or getattr(cfg, 'MAX_STEPS', 0)} per turn"))
+    if _PROMPT.get("packs"):
+        out.append(("rule packs", ", ".join(_PROMPT["packs"]) + " · /settings"))
     # Only when it is on. A line saying a thing is off, on a page read to find
     # out what IS on, is a line to skip past every time.
     if _suggesting(cfg):
@@ -1372,7 +1418,7 @@ def _show_status() -> bool:
         for more in parts[1:]:
             print(f"    {'':<11}{more}")
     print()
-    print(f"  {grey}/configure changes the endpoints · /settings the steps per turn"
+    print(f"  {grey}/configure changes the endpoints · /settings the steps per turn, the rule packs"
           f"{' and how much is recalled' if _memory_on() else ''}{r}")
     print()
     return True
@@ -1629,9 +1675,15 @@ The person is reading as the turn goes, and answers between turns.
   installing, and an image written out as base64 shows nothing.
 """
 
-    system_prompt = build_system_prompt(
-        str(cwd), default_model=baseline_config.DEFAULT_MODEL, memory=bool(args.memory),
-    ) + chat_policy + mcp_client.prompt_block() + project_contract(cwd) + session_block(cwd)
+    # The rule packs the project has on go after its own rules and before the
+    # session block: see core/rule_packs.py.
+    packs = rule_packs.active(conversation.project_settings())
+    _PROMPT.update(
+        head=build_system_prompt(
+            str(cwd), default_model=baseline_config.DEFAULT_MODEL, memory=bool(args.memory),
+        ) + chat_policy + mcp_client.prompt_block() + project_contract(cwd),
+        tail=session_block(cwd), packs=packs, read=list(packs), handing=[])
+    system_prompt = _PROMPT["head"] + rule_packs.block(packs) + _PROMPT["tail"]
 
     global _RENDERER
     # A turn is drawn as a ledger: see agent/ledger.py. If it cannot be loaded
@@ -1716,6 +1768,7 @@ The person is reading as the turn goes, and answers between turns.
     conv = conversation.Conversation(
         cwd, cfg, renderer, bool(args.memory), log_path=log_path, state=_STATE,
         guard=lambda stop: _stops_turn(stop, renderer), say=_say_dim)
+    _CONV[:] = [conv]
 
     # TWO SCREENS, NOT THREE. The launcher has just drawn the briefing - the
     # logo, the project, what the memory holds, what changed while you were
@@ -1767,6 +1820,7 @@ The person is reading as the turn goes, and answers between turns.
                         # it does when the project closes, and the context
                         # starts empty.
                         conv.clear()
+                        _PROMPT.update(read=list(_PROMPT["packs"]), handing=[])
                         _say_dim("  the context is empty: this is a new conversation.")
                         print()
                     elif asked == "compact":
@@ -1801,7 +1855,15 @@ The person is reading as the turn goes, and answers between turns.
                 _STATE["model"] = baseline_config.SERVED_MODEL or baseline_config.DEFAULT_MODEL
 
             cfg.stop_event = threading.Event()
+            first = conv.history is None
             done = conv.turn(text)
+            if not done.get("stopped"):
+                # What the conversation has now read: the system prompt, if
+                # this was its first request, and the packs handed to it.
+                if first:
+                    _PROMPT["read"] = list(_PROMPT["packs"])
+                _PROMPT["read"] += [n for n in _PROMPT["handing"] if n not in _PROMPT["read"]]
+                _PROMPT["handing"] = []
             if done.get("stopped"):
                 # A STOPPED TURN IS NOT A CLOSED PROJECT. It used to be: the
                 # loop broke, the project closed, and the operator who pressed

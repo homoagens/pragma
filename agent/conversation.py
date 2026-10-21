@@ -477,6 +477,9 @@ class Conversation:
     weighed_at       (prompt tokens, characters) of the history as the server
                      last counted it, for the next turn to start from
     prompt_tokens    what the agent's last request weighed, 0 when unknown
+    notes            words for the agent, not the person's, put in front of
+                     the next request and kept in the conversation with it -
+                     a rule pack turned on midway; emptied when a turn ends
     """
 
     def __init__(self, cwd, cfg, renderer, memory: bool, *, log_path=None,
@@ -500,6 +503,7 @@ class Conversation:
         self.consolidated_upto = 0
         self.weighed_at: tuple | None = None
         self.prompt_tokens = 0
+        self.notes: list[str] = []
         # The undo net for this conversation: without it `revert` is offered
         # with nothing behind it.
         try:
@@ -586,6 +590,8 @@ class Conversation:
                                    state=self.state, stop_event=stop)
                     if block:
                         core = f"{block}\n\n{text}"
+                if self.notes:
+                    core = "\n\n".join(self.notes + [core])
                 prompt = core
                 if context:
                     prompt = f"[PROGRAM CONTEXT]\n{context}\n[/PROGRAM CONTEXT]\n\n{core}"
@@ -622,6 +628,7 @@ class Conversation:
         append_raw_log(self.log_path, turn)
         self.turns.append(turn)
         self.history = result.get("messages") or self.history
+        self.notes = []                 # in the history now, with the request
         # Weighed on the list the server counted - with the program's context,
         # if there was one: taking the context out below is a change the next
         # count measures as growth, negative.
@@ -728,6 +735,7 @@ class Conversation:
                   f"(memory is off: nothing was consolidated)")
         self.turns, self.turn_msgs, self.consolidated_upto = [], [], 0
         self.history, self.weighed_at = None, None
+        self.notes = []
         self.desk_ids.clear()
         self.desk_rules.clear()
         self.renderer.context_reset()

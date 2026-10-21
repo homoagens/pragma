@@ -16,6 +16,7 @@ folder Pragma is installed in.
 | `projects/<name>/` | One project's memory. In it, `vectors/` is kept only when an embedding server is in use, and can be deleted: it is rebuilt. | the memory worker |
 | `projects/backups/<name>/` | Snapshots. | `/projects backups` |
 | `plugins/<name>/plugin.json` | Commands added to the home screen. | you |
+| `rules/<name>.md` | Your own [rule packs](../how-to/use-rule-packs.md), beside Pragma's. Optional. | you |
 | `serve.json` | The projects served to other programs: address, port, key, on or off. | `/serve` |
 | `serve/<name>.json`, `serve/<name>.log` | What a served project is doing while it runs, and its log. | the served project |
 | `request-<pid>.json` | A note from an open conversation to the launcher. Gone when the conversation ends. | the conversation |
@@ -45,7 +46,7 @@ A list, one entry per project.
 | `workspace` | The folder the agent works in. |
 | `memory` | The folder holding this project's memory. |
 | `last_opened` | When it was last opened, in UTC. Orders the list on the home screen. |
-| `settings` | What this project decides for itself: `MaxSteps`; `AllowedCommands`, a list of the commands that run in a conversation without asking although they cannot be undone, written as patterns from `/settings`; and any of the settings marked *project setting* in [Configuration](configuration.md). Empty until something is set. |
+| `settings` | What this project decides for itself: `MaxSteps`; `AllowedCommands`, a list of the commands that run in a conversation without asking although they cannot be undone, written as patterns from `/settings`; `RulePacks`, the [rule packs](../how-to/use-rule-packs.md) it has on; and any of the settings marked *project setting* in [Configuration](configuration.md). Empty until something is set. |
 
 The same file is read by the launcher on every system.
 

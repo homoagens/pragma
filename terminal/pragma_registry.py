@@ -58,7 +58,7 @@ def save_setting(name: str, key: str, value) -> bool:
     """One setting of one project; whether there was such a project. An empty
     value REMOVES it: absent means the repository default, which is what
     someone clearing a field asked for. A value is a string, or a list for the
-    one setting that is one."""
+    settings that are lists."""
     entries = read()
     found = False
     for e in entries:

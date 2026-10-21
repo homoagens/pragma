@@ -40,6 +40,7 @@ the file that makes them.
 | 25 | 2026-10-21 | [What is not used is removed](0025-what-is-not-used-is-removed.md) | accepted |
 | 26 | 2026-10-21 | [Windows runs Pragma inside WSL](0026-windows-runs-pragma-in-wsl.md) | accepted |
 | 27 | 2026-10-21 | [One conversation, for the terminal and for /serve](0027-one-conversation-for-the-terminal-and-serve.md) | accepted |
+| 28 | 2026-10-21 | [Rule packs are turned on by the person](0028-rule-packs-are-turned-on-by-the-person.md) | accepted |
 
 ## Adding one
 

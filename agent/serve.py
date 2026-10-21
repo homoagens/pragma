@@ -67,6 +67,7 @@ for _p in (str(_ROOT), str(_ROOT / "core"), str(_ROOT / "terminal")):
 
 import config as baseline_config          # noqa: E402
 import llm_client                          # noqa: E402
+import rule_packs                          # noqa: E402
 from react import AgentConfig   # noqa: E402
 from tools import palette as skills_palette   # noqa: E402
 
@@ -237,7 +238,11 @@ class Session:
             name="Pragma",
             system_prompt=build_system_prompt(str(cwd), default_model=baseline_config.DEFAULT_MODEL,
                                               memory=memory)
-            + SERVE_POLICY + mcp_client.prompt_block() + project_contract(cwd) + session_block(cwd),
+            + SERVE_POLICY + mcp_client.prompt_block() + project_contract(cwd)
+            # The rule packs the project has on, as in the terminal: read when
+            # a conversation starts, so a change in /settings counts from the next.
+            + rule_packs.block(rule_packs.active(conversation.project_settings()))
+            + session_block(cwd),
             skills=skills,
             final_keys=("conclusion",),
             temperature=None,

@@ -71,6 +71,7 @@ ENV_OF = {
 # numbers are core/recall_levels.py's, the same table config applies; what is
 # written under a level is what the page says, and the only place it is said.
 import recall_levels as _levels  # noqa: E402
+import rule_packs  # noqa: E402
 
 _E, _R, _L, _T = (_levels.OFFERED["episodes"], _levels.OFFERED["recent"],
                   _levels.OFFERED["learnings"], _levels.TAKEN)
@@ -388,7 +389,8 @@ def talk(entry: dict, env: dict) -> str:
 
 def choices_page(entry: dict) -> bool:
     """What a project decides for itself: how many steps a turn may take, which
-    commands may run without asking, and how much its memory brings to a turn.
+    commands may run without asking, which rule packs the agent follows, and
+    how much its memory brings to a turn.
 
     Everything else a project used to decide - whether the agent reasons, how
     it samples, whether Pragma guesses your next question - belongs to the
@@ -407,10 +409,12 @@ def choices_page(entry: dict) -> bool:
         # runs without one.
         recall = {} if home.agent_alone() else RECALL
         allowed = allowed_commands(settings)
-        keys = ["MaxSteps", "AllowedCommands"] + list(recall)
-        options = ["steps per turn", "commands allowed"]
+        packs = rule_packs.chosen(settings)
+        keys = ["MaxSteps", "AllowedCommands", rule_packs.SETTING] + list(recall)
+        options = ["steps per turn", "commands allowed", "rule packs"]
         notes = [steps, (f"{len(allowed)} without asking" if allowed
-                         else "none - every command that cannot be undone asks")]
+                         else "none - every command that cannot be undone asks"),
+                 ", ".join(packs) if packs else "none - the agent's own way of working"]
         for key, (label, default, levels) in recall.items():
             level = str(settings.get(key, "") or default)
             options.append(label)
@@ -426,6 +430,9 @@ def choices_page(entry: dict) -> bool:
             continue
         if key == "AllowedCommands":
             changed = allowed_page(name) or changed
+            continue
+        if key == rule_packs.SETTING:
+            changed = packs_page(name) or changed
             continue
         label, default, levels = RECALL[key]
         now = str(settings.get(key, "") or default)
@@ -489,6 +496,70 @@ def allowed_page(name: str) -> bool:
         if confirm(f"Take away {gone}? It will ask again.", "yes, take it away"):
             save_setting(name, "AllowedCommands", [p for p in patterns if p != gone])
             changed = True
+
+
+# What the page says above the packs, once.
+PACKS_SAYS = (
+    "A rule pack is a short set of rules for a kind of work - how to check",
+    "Rust or Python code, what a web page must have. The agent follows the",
+    "ones turned on here, in this project only; each one costs its tokens on",
+    "every request, so turn on what the project is for.",
+    "",
+    "Your own: a Markdown file in ~/.pragma/rules/, its first line saying what",
+    "it is for. One with the name of Pragma's own takes its place.",
+)
+
+# The file in a project's folder that says a pack is probably for it. Only
+# said on the page: nothing is turned on because of it.
+PACK_HINTS = {
+    "rust": ("Cargo.toml",),
+    "python": ("pyproject.toml", "requirements.txt", "setup.py"),
+    "html": ("index.html",),
+}
+
+
+def packs_page(name: str) -> bool:
+    """The rule packs this project follows: enter turns one on or off.
+    Whether anything was changed."""
+    changed = False
+    at = 0
+    while True:
+        entry = by_name(name) or {}
+        on = rule_packs.chosen(entry.get("settings") or {})
+        packs = rule_packs.available()
+        folder = Path(str(entry.get("workspace") or ""))
+        names = list(packs) + [n for n in on if n not in packs]
+        options, notes = [], []
+        for n in names:
+            pack = packs.get(n)
+            if pack is None:
+                options.append(f"[x] {n}")
+                notes.append("its file is gone - enter takes it away")
+                continue
+            note = f"{pack['what']}{SEP}~{pack['tokens']} tokens"
+            if pack["yours"]:
+                note += f"{SEP}yours"
+            seen = next((f for f in PACK_HINTS.get(n, ()) if (folder / f).is_file()), "")
+            if seen and n not in on:
+                note += f"{SEP}this folder has {seen}"
+            options.append(f"[{'x' if n in on else ' '}] {n}")
+            notes.append(note)
+        title("Settings", f"{name} > rule packs")
+        print()
+        for line in PACKS_SAYS:
+            say(f"  {line}" if line else "", "dim")
+        if not names:
+            print()
+            say("  No packs: Pragma's own are missing from this copy.", "warn")
+            return changed
+        chosen = pick("", options, notes, at)
+        if chosen is None:
+            return changed
+        at = chosen
+        n = names[chosen]
+        now = [p for p in on if p != n] if n in on else on + [n]
+        save_setting(name, rule_packs.SETTING, now)
+        changed = True
 
 
 # What the two questions about a recall mean, said once above the three levels.

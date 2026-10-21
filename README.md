@@ -130,6 +130,11 @@ project runs all the time can be allowed once, in `/settings`. A file the
 agent changes with its own tools is copied aside first: ask, and the session's
 edits are undone.
 
+**Rule packs, when you want them.** Short sets of rules for a kind of work —
+`coding`, `python`, `rust`, `html`, or your own in `~/.pragma/rules/` — are
+turned on per project in `/settings`, and only then: the agent never decides
+to load them. [Turn on rule packs](docs/how-to/use-rule-packs.md).
+
 **It can show you a picture.** A chart or an image it made is drawn in the
 terminal, under the step that showed it — coarse, but there, with nothing to
 install.

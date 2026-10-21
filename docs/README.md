@@ -19,6 +19,7 @@ WSL: [where Pragma runs](explanation/interfaces.md).
 | use a model that runs on another machine | [Use a model on another machine](how-to/use-a-model-on-another-machine.md) |
 | give the agent rules it must always follow | [Write rules for a project](how-to/write-project-rules.md) |
 | let a project run some commands without asking | [Allow commands](how-to/allow-commands.md) |
+| have the agent check Rust, Python or web code the way it should | [Turn on rule packs](how-to/use-rule-packs.md) |
 | give the agent the tools of an MCP server | [Use MCP servers](how-to/use-mcp-servers.md) |
 | talk to the agent without touching any memory | [Use the agent without memory](how-to/use-the-agent-alone.md) |
 | let another program talk to a project, as to a model | [Serve a project](how-to/serve-a-project.md) |

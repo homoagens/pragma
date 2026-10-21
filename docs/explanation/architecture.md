@@ -149,6 +149,7 @@ The short version. [Files](../reference/files.md) has what is inside each.
 | Snapshots of a project's memory | `~/.pragma/projects/backups/NAME/` | `/projects backups` |
 | Plugins of the home screen | `~/.pragma/plugins/NAME/plugin.json` | you |
 | [Rules](../how-to/write-project-rules.md) the agent must follow in a project | `PRAGMA.md` in the workspace | you; the agent is refused |
+| [Rule packs](../how-to/use-rule-packs.md) a project can turn on | `core/rules/`, and your own in `~/.pragma/rules/` | Pragma, and you |
 | What was said in every conversation held there | `.pragma_session.jsonl` in the workspace | the conversation |
 | Undo copies of edited files | `.pragma_checkpoints/` in the workspace | the loop |
 | Defaults for the whole machine | `.env` in the repository | you |
@@ -168,6 +169,7 @@ The short version. [Files](../reference/files.md) has what is inside each.
 | [`json_parser.py`](../../core/json_parser.py) | Finds the JSON object in a model's reply. |
 | [`checkpoint.py`](../../core/checkpoint.py) | Undo for file edits. |
 | [`command_gate.py`](../../core/command_gate.py) | Which shell commands cannot be undone, and so wait for the person. |
+| [`rule_packs.py`](../../core/rule_packs.py) | The rule packs: which there are, and the words a project's packs add to the agent's instructions. |
 | [`memory.py`](../../core/memory.py) | Summarises the older steps of a long turn. Not the long-term memory, despite the name. |
 | [`curator.py`](../../core/curator.py) | Recall: chooses what memory brings to a turn. |
 | [`embed.py`](../../core/embed.py) | Texts as vectors, for searching the memory by meaning. Used only when an embedding server is named. |
