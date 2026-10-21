@@ -67,6 +67,20 @@ GLYPHS = {"prompt": "❯", "tool": "●", "out": "⎿", "fac": "◆",
 GLYPHS_LEGACY = {"prompt": ">", "tool": "*", "out": "|", "fac": "+",
                  "ok": "OK", "bad": "X", "note": "!", "dot": "-"}
 
+
+def plain_only(console) -> bool:
+    """Whether the output cannot carry the glyphs above, and wants ASCII.
+
+    Not the terminal's locale: Python reads LANG=C as UTF-8 and so does
+    rich. What is left is an encoding someone set on purpose -
+    PYTHONIOENCODING=ascii, a Latin-1 pipe - where the glyphs would come out
+    as question marks."""
+    try:
+        ("".join(GLYPHS.values()) + "▶│⠋").encode(getattr(console, "encoding", None) or "utf-8")
+        return False
+    except (UnicodeEncodeError, LookupError):
+        return True
+
 # Faculty colours, the same ones the batch renderer uses, so a session and a
 # batch log read alike: the sequence curator -> agent -> consolidator ->
 # abstractor is a sequence of hues before it is a sequence of words.
@@ -447,7 +461,7 @@ class Harness:
         # block above, like a faculty's, and vanishes with it; the conclusion
         # is printed by final(), rendered.
         self.envelope = bool(envelope)
-        self.legacy = bool(getattr(self.console, "legacy_windows", False))
+        self.legacy = plain_only(self.console)
         self.g = GLYPHS_LEGACY if self.legacy else GLYPHS
         self.accent = accent_hex()
         self._lock = threading.RLock()

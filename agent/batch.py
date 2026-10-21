@@ -370,11 +370,10 @@ class _PrettyRenderer:
         from rich.console import Console
         self.console = Console(highlight=False)
         self._last_step = None
-        # Legacy conhost (pre-Windows Terminal) can't print ▶ or │ — rich
-        # substitutes its OWN drawing chars (rules, panel borders) there,
-        # but characters we embed in Text are our problem. Fall back to
-        # ASCII on legacy consoles, keep the nicer glyphs elsewhere.
-        legacy = getattr(self.console, "legacy_windows", False)
+        # An output that cannot carry ▶ or │ gets ASCII: rich draws its own
+        # rules and borders, but what is embedded in Text is ours.
+        from agent.harness import plain_only
+        legacy = plain_only(self.console)
         self._arrow  = "  > " if legacy else "  ▶ "
         self._gutter = "  | " if legacy else "  │ "
 

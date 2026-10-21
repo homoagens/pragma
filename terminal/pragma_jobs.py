@@ -302,12 +302,12 @@ def step_of(job: dict) -> str:
 def _look():
     """The console, and the conversation's colours and marks for it."""
     from rich.console import Console
-    from agent.harness import GLYPHS, GLYPHS_LEGACY, accent_hex
+    from agent.harness import GLYPHS, GLYPHS_LEGACY, accent_hex, plain_only
     console = Console(highlight=False)
-    poor = bool(getattr(console, "legacy_windows", False))
+    poor = plain_only(console)
     colours = console.color_system if console.is_terminal else None
     return console, {"accent": accent_hex(), "g": GLYPHS_LEGACY if poor else GLYPHS, "poor": poor,
-                     "colours": "standard" if colours == "windows" else colours,
+                     "colours": colours,
                      "tones": ("", "bright_black", "bright_black") if poor else ("", "grey66", "grey42")}
 
 
@@ -389,7 +389,7 @@ def _drawn(look: dict, parts: list, width: int) -> list[str]:
     from rich.console import Console
     out = io.StringIO()
     console = Console(file=out, force_terminal=bool(look["colours"]), color_system=look["colours"],
-                      width=width, highlight=False, legacy_windows=False)
+                      width=width, highlight=False)
     for part in parts:
         console.print(part)
     return out.getvalue().splitlines()
