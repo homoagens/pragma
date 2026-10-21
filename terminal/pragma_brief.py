@@ -16,11 +16,10 @@
 # a briefing is a courtesy, and no memory should be unopenable because the
 # summary of it could not be built.
 #
-# WHY THIS IS PYTHON AND NOT POWERSHELL. Effective salience, dormancy and tau
-# are the deterministic layer of the architecture. Reimplementing the decay in
-# the launcher would give the system two implementations of its own physics,
-# free to disagree. This asks core/episodes.py the same questions the agent
-# asks it.
+# WHY IT ASKS core/episodes.py. Effective salience, dormancy and tau are the
+# deterministic layer of the architecture. Reimplementing the decay here would
+# give the system two implementations of its own physics, free to disagree.
+# This asks core/episodes.py the same questions the agent asks it.
 from __future__ import annotations
 
 import argparse
@@ -233,11 +232,8 @@ def main() -> int:
     except Exception as e:                       # never block the launcher
         data = {"store": str(store), "ok": False,
                 "error": f"{type(e).__name__}: {str(e)[:160]}"}
-    # ASCII on the wire, every other character escaped. PowerShell reads a
-    # native command's output in the console's OEM code page, so raw UTF-8
-    # arrived as mojibake: the middle dot drawn as a box corner, and every
-    # accented letter of an Italian goal or belief mangled in the Windows
-    # briefing. An escape means the same thing in any code page.
+    # ASCII on the wire, every other character escaped: an escape means the
+    # same thing whatever encoding the reader assumes.
     sys.stdout.write(json.dumps(data, ensure_ascii=True))
     return 0
 

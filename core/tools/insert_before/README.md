@@ -23,7 +23,7 @@ Insert a block right before the first occurrence of an exact anchor string in a 
 ## Examples
 
 ```json
-{ "action": "insert_before", "args": { "path": "C:\\proj\\app.py", "anchor": "if __name__ ==", "content": "def helper():\n    return 42\n\n" } }
+{ "action": "insert_before", "args": { "path": "/home/me/proj/app.py", "anchor": "if __name__ ==", "content": "def helper():\n    return 42\n\n" } }
 ```
 
 ## Do not

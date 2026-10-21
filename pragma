@@ -3,7 +3,7 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 # This file is part of Pragma <https://github.com/homoagens/pragma>.
 #
-# Pragma, on Linux and macOS: the same two screens the Windows launcher draws.
+# Pragma: the home screen, the projects, and a conversation opened from them.
 #
 #     ./pragma                  from the repository
 #     ln -s "$PWD/pragma" ~/.local/bin/pragma     from anywhere

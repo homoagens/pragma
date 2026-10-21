@@ -31,8 +31,8 @@ from pathlib import Path  # noqa: F401
 # Cross-skill imports — ALWAYS late (inside the function) to avoid
 # circular dependencies during loading. Example:
 #   def my_skill(path: str) -> str:
-#       from tools.read_file.tool import read_file   # <- late import
-#       content = read_file(path)
+#       from tools.file_outline.tool import file_outline   # <- late import
+#       outline = file_outline(path)
 #       ...
 
 # Shared utilities: the folders a search should never walk

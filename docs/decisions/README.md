@@ -22,14 +22,14 @@ the file that makes them.
 | 7 | 2026-09-10 | [A leading underscore retires a skill](0007-a-leading-underscore-retires-a-skill.md) | superseded by [25](0025-what-is-not-used-is-removed.md): a skill no longer used is deleted |
 | 8 | 2026-09-11 | [Calls are routed by role, from one catalogue, with no fallback](0008-calls-are-routed-by-role.md) | accepted |
 | 9 | 2026-09-16 | [Two families of commands, not twenty commands](0009-two-families-of-commands.md) | accepted |
-| 10 | 2026-09-20 | [One set of screens for every system](0010-one-set-of-screens-for-every-system.md) | accepted |
+| 10 | 2026-09-20 | [One set of screens for every system](0010-one-set-of-screens-for-every-system.md) | superseded by [26](0026-windows-runs-pragma-in-wsl.md) |
 | 11 | 2026-09-24 | [Tools are the only way an action travels](0011-tools-are-the-only-way-an-action-travels.md) | accepted |
 | 12 | 2026-09-24 | [On Unix the shell is the tool](0012-on-unix-the-shell-is-the-tool.md) | accepted |
 | 13 | 2026-09-25 | [What is not set, the server decides](0013-what-is-not-set-the-server-decides.md) | accepted |
 | 14 | 2026-09-25 | [Optional faculties are off, and chosen once for the machine](0014-optional-faculties-are-off.md) | accepted |
 | 15 | 2026-10-01 | [The folder and the date go last in the prompt](0015-the-folder-and-the-date-go-last.md) | accepted |
 | 16 | 2026-10-06 | [The reference is generated from the code](0016-the-reference-is-generated-from-the-code.md) | accepted |
-| 17 | 2026-10-06 | [The Linux terminal comes first](0017-the-linux-terminal-comes-first.md) | accepted; what it says of the browser interface superseded by [25](0025-what-is-not-used-is-removed.md) |
+| 17 | 2026-10-06 | [The Linux terminal comes first](0017-the-linux-terminal-comes-first.md) | superseded: the browser part by [25](0025-what-is-not-used-is-removed.md), the rest by [26](0026-windows-runs-pragma-in-wsl.md) |
 | 18 | 2026-10-06 | [A turn is drawn as a ledger](0018-a-turn-is-drawn-as-a-ledger.md) | accepted |
 | 19 | 2026-10-12 | [The agent can be offered the tools of MCP servers](0019-the-tools-of-mcp-servers.md) | accepted |
 | 20 | 2026-10-13 | [A conversation that fills up is summarised](0020-a-full-conversation-is-summarised.md) | accepted |
@@ -38,6 +38,7 @@ the file that makes them.
 | 23 | 2026-10-14 | [Pictures are drawn in the terminal](0023-pictures-are-drawn-in-the-terminal.md) | accepted |
 | 24 | 2026-10-15 | [A project can be served to other programs](0024-a-project-can-be-served.md) | accepted |
 | 25 | 2026-10-21 | [What is not used is removed](0025-what-is-not-used-is-removed.md) | accepted |
+| 26 | 2026-10-21 | [Windows runs Pragma inside WSL](0026-windows-runs-pragma-in-wsl.md) | accepted |
 
 ## Adding one
 

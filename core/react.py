@@ -90,13 +90,9 @@ _MUTATING_SKILLS = {
 #
 # This is an explicit allow-list, NOT the complement of _MUTATING_SKILLS: most
 # non-writing skills are still unsafe to batch. execute_command runs code;
-# web_fetch and web_search reach outside; vision_interpret spends a model call;
-# and recall_* reinforce salience, which is a memory write even though it
-# reads. Anything not listed here keeps the one-action-per-step contract.
-_READ_ONLY_SKILLS = frozenset({
-    "read_file", "list_dir", "file_outline", "grep_search", "glob_match",
-    "git_status", "git_diff",
-})
+# web_fetch and web_search reach outside; vision_interpret spends a model call.
+# Anything not listed here keeps the one-action-per-step contract.
+_READ_ONLY_SKILLS = frozenset({"file_outline"})
 
 
 def _malformed_args_hint(action: str, kwargs: dict) -> str:
@@ -589,7 +585,7 @@ def run_agent(cfg: AgentConfig, user_task: str, log_path: Optional[Path] = None,
     # ── Action-loop watchdog state ──
     # Tracks (action_name, args_hash, was_error) for the most recent steps.
     # When N identical entries in a row all return ERROR, we inject a coercive
-    # hint to force the model to change strategy (typically: read_file first
+    # hint to force the model to change strategy (typically: read the file first
     # to see the real state instead of guessing). See config.ACTION_LOOP_*.
     _recent_actions: list[tuple[str, str, bool]] = []
     _NO_TOOL_STREAK[0] = 0     # per-run: a previous run must not end this one
@@ -1046,9 +1042,9 @@ def run_agent(cfg: AgentConfig, user_task: str, log_path: Optional[Path] = None,
                 feedback += (
                     ". Your JSON was MALFORMED and had to be repaired; these "
                     f"keys were dropped during recovery: {_lost_keys or '(unknown)'}. "
-                    "The most common cause is unescaped backslashes in "
-                    "Windows paths: inside JSON strings every backslash must "
-                    'be doubled, e.g. "C:\\\\Users\\\\name\\\\file.txt"'
+                    "The most common cause is an unescaped backslash - in a "
+                    "regular expression, an escape sequence: inside JSON "
+                    'strings every backslash must be doubled, e.g. "\\\\d+"'
                 )
             feedback += (
                 ". Re-emit ONE complete JSON object with `thought` plus "
@@ -1092,7 +1088,7 @@ def run_agent(cfg: AgentConfig, user_task: str, log_path: Optional[Path] = None,
                 observation
                 + f"\n\n[JSON-REPAIR NOTE]: parsed via lenient recovery; "
                 f"these keys may have been dropped from your args: {_lost_keys}. "
-                "Verify the next read_file shows the file in the expected state."
+                "Read the file again to check it is in the expected state."
             )
 
         # Stop may have been raised during the skill (e.g. ask_user, execute_command)
@@ -1134,8 +1130,8 @@ def run_agent(cfg: AgentConfig, user_task: str, log_path: Optional[Path] = None,
                            "Ask for less at a time - fewer results, less of each, "
                            "a narrower request")
             else:
-                way_out = ("Use read_file with start_line/end_line or grep_search "
-                           "for targeted access")
+                way_out = ("Read a slice at a time - `sed -n '120,180p' FILE`, "
+                           "`grep -n PATTERN FILE` - instead of the whole")
             stored_obs = (
                 f"{head}\n"
                 f"\n[... observation truncated — full length {len(observation)} chars. "
@@ -1207,8 +1203,8 @@ def run_agent(cfg: AgentConfig, user_task: str, log_path: Optional[Path] = None,
                         f"reality. STOP repeating this call.\n\n"
                         f"Mandatory recovery — pick whichever fits the situation:\n"
                         f"a) If the error is 'substring not found' or you don't "
-                        f"know the file's actual current state: call `read_file` "
-                        f"(or `file_outline` for large files) FIRST, then base "
+                        f"know the file's actual current state: read it "
+                        f"(`sed -n`, or `file_outline` for large files) FIRST, then base "
                         f"your next action on what you READ — not on what you "
                         f"remember writing.\n"
                         f"b) If you've already tried multiple different "
@@ -1255,8 +1251,8 @@ def run_agent(cfg: AgentConfig, user_task: str, log_path: Optional[Path] = None,
                             "  a) Call `ask_user` with a clear summary of what "
                             "you tried, what failed, and a SPECIFIC question or "
                             "list of options. The user can unblock you.\n"
-                            "  b) Call `read_file` / `file_outline` / `list_dir` "
-                            "to ground yourself in the actual current state, "
+                            "  b) Read the file or list the folder (`sed -n`, "
+                            "`ls`, `file_outline`) to ground yourself in the actual current state, "
                             "then start fresh with one small action.\n"
                             "  c) If the task is too ambiguous to proceed, "
                             "produce a `conclusion` explaining what you tried, "

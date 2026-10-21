@@ -433,35 +433,30 @@ def _hint() -> str:
 class _no_typing:
     """Keys pressed while the block runs go nowhere: not echoed, not kept.
 
-    For the moments when the screen is busy and the prompt is not up yet. On
-    a POSIX terminal a key typed then is echoed on top of whatever is being
-    drawn and is still waiting when the prompt appears; on Windows it is not
-    echoed but waits the same way. Either way the line you get is not the
-    line you typed. ctrl+C is not a key in this sense: it still interrupts.
+    For the moments when the screen is busy and the prompt is not up yet. A
+    key typed then is echoed on top of whatever is being
+    drawn and is still waiting when the prompt appears, so the line you get
+    is not the line you typed. ctrl+C is not a key in this sense: it still
+    interrupts.
     """
 
     def __enter__(self):
         self.saved = None
-        if os.name != "nt":
-            try:
-                import termios
-                if sys.stdin.isatty():
-                    fd = sys.stdin.fileno()
-                    self.saved = termios.tcgetattr(fd)
-                    quiet = termios.tcgetattr(fd)
-                    quiet[3] &= ~termios.ECHO
-                    termios.tcsetattr(fd, termios.TCSANOW, quiet)
-            except Exception:
-                self.saved = None
+        try:
+            import termios
+            if sys.stdin.isatty():
+                fd = sys.stdin.fileno()
+                self.saved = termios.tcgetattr(fd)
+                quiet = termios.tcgetattr(fd)
+                quiet[3] &= ~termios.ECHO
+                termios.tcsetattr(fd, termios.TCSANOW, quiet)
+        except Exception:
+            self.saved = None
         return self
 
     def __exit__(self, *_exc):
         try:
-            if os.name == "nt":
-                import msvcrt
-                while msvcrt.kbhit():
-                    msvcrt.getwch()
-            elif self.saved is not None:
+            if self.saved is not None:
                 import termios
                 fd = sys.stdin.fileno()
                 termios.tcflush(fd, termios.TCIFLUSH)
@@ -808,12 +803,8 @@ class _stops_turn:
             self._first()
             return
         try:
-            if os.name == "nt":
-                import _thread
-                _thread.interrupt_main()
-            else:
-                import signal
-                os.kill(os.getpid(), signal.SIGINT)
+            import signal
+            os.kill(os.getpid(), signal.SIGINT)
         except Exception:
             pass
 
@@ -838,22 +829,6 @@ class _stops_turn:
 
     def _watch(self) -> None:
         import time as _time
-        if os.name == "nt":
-            import msvcrt
-            while not self.done.is_set():
-                if self.paused.is_set() or not msvcrt.kbhit():
-                    self.idle.set()
-                    _time.sleep(0.05)
-                    continue
-                self.idle.clear()
-                ch = msvcrt.getwch()
-                if ch in ("\x00", "\xe0"):          # a special key arrives as two
-                    msvcrt.getwch()
-                elif ch == "\x04":
-                    self._key()
-                else:
-                    self.raw.extend(ch.encode("utf-8", "ignore"))
-            return
         import select
         while not self.done.is_set():
             if self.paused.is_set():
@@ -919,11 +894,10 @@ class _stops_turn:
             self.old = None
         try:
             if sys.stdin.isatty() and sys.stdout.isatty():
-                if os.name != "nt":
-                    import termios
-                    self.fd = sys.stdin.fileno()
-                    self.saved = termios.tcgetattr(self.fd)
-                    self._quiet()
+                import termios
+                self.fd = sys.stdin.fileno()
+                self.saved = termios.tcgetattr(self.fd)
+                self._quiet()
                 self.thread = threading.Thread(target=self._watch, daemon=True)
                 self.thread.start()
         except Exception:
@@ -938,19 +912,18 @@ class _stops_turn:
         if self.thread is not None:
             self.done.set()
             self.thread.join(0.5)
-            if os.name != "nt":
-                try:
-                    # What arrived in the last instant. A ctrl+D among it is
-                    # let go: left there, the prompt would read it and close
-                    # the project.
-                    import select
-                    while select.select([self.fd], [], [], 0)[0]:
-                        data = os.read(self.fd, 256)
-                        if not data:
-                            break
-                        self._take(data, stopping=False)
-                except Exception:
-                    pass
+            try:
+                # What arrived in the last instant. A ctrl+D among it is let
+                # go: left there, the prompt would read it and close the
+                # project.
+                import select
+                while select.select([self.fd], [], [], 0)[0]:
+                    data = os.read(self.fd, 256)
+                    if not data:
+                        break
+                    self._take(data, stopping=False)
+            except Exception:
+                pass
             _TYPED[0] = self._typed()
         if self.saved is not None:
             try:
@@ -993,7 +966,7 @@ _CHAT_HEADER: list = []
 
 def _new_page() -> None:
     try:
-        os.system("cls" if os.name == "nt" else "clear")
+        os.system("clear")
     except Exception:
         pass
 
@@ -1934,9 +1907,10 @@ def main() -> int:
                     help="consolidate the session into episodes on exit")
     args = ap.parse_args()
 
-    # A model reply containing an emoji must not end the conversation: the
-    # Windows console defaults to cp1252 and raises on the first one it cannot
-    # encode. Same treatment batch gives its own output.
+    # A model reply containing an emoji must not end the conversation: a
+    # terminal whose locale is not UTF-8 (LANG=C over ssh, a bare container)
+    # raises on the first one it cannot encode. Same treatment batch gives its
+    # own output.
     for stream in (sys.stdout, sys.stderr):
         try:
             stream.reconfigure(encoding="utf-8", errors="replace")

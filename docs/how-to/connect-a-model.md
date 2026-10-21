@@ -1,6 +1,6 @@
 # Connect a model
 
-*For the terminal. Tried on Linux; [what differs on Windows](../explanation/interfaces.md).*
+*For the terminal on Linux; on Windows, inside WSL. [Where Pragma runs](../explanation/interfaces.md).*
 
 Pragma needs one thing from outside: a model served on an OpenAI-compatible
 endpoint — llama.cpp, LM Studio, Ollama, vLLM, or a hosted one. This is how

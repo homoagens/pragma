@@ -11,8 +11,6 @@ name whatever its case and one exactly, one removed a setting given an empty
 value and one stored it. Nothing broke only because a new project may not take
 a name that differs from another by case alone. One copy now, standard library
 only, so the conversation loads it as readily as the launcher.
-
-The Windows launcher reads and writes the same file, in Pragma.psm1.
 """
 from __future__ import annotations
 

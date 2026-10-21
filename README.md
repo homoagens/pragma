@@ -16,7 +16,7 @@
   <a href="./LICENSE"><img src="https://img.shields.io/badge/license-AGPL--3.0-5c6bc0?style=flat-square" alt="License"></a>
   <img src="https://img.shields.io/badge/python-3.10%2B-3776ab?style=flat-square" alt="Python 3.10+">
   <img src="https://img.shields.io/badge/platform-Linux-0078d4?style=flat-square" alt="Linux">
-  <img src="https://img.shields.io/badge/Windows-experimental-8a8f98?style=flat-square" alt="Windows: experimental">
+  <img src="https://img.shields.io/badge/Windows-via%20WSL-8a8f98?style=flat-square" alt="Windows: via WSL">
   <img src="https://img.shields.io/badge/runs%20on-llama.cpp-f97316?style=flat-square" alt="llama.cpp">
 </p>
 
@@ -39,8 +39,8 @@ and it tells you what it still holds and what has gone quiet.
 *From the Greek pragma — something accomplished through action.*
 
 **Pragma is a Linux terminal program.** That is where it is developed, where
-everything is tested, and what this page describes. Windows is
-[experimental](#windows-and-macos).
+everything is tested, and what this page describes. On Windows it runs
+[inside WSL](#windows-and-macos).
 
 ---
 
@@ -218,14 +218,10 @@ what.
 
 ## Windows and macOS
 
-*Experimental.* They run, but new work reaches them later or not at all.
-[The interfaces, and where each stands](docs/explanation/interfaces.md)
-lists what differs.
-
-- **Windows** — `.\install.ps1`, then `pragma` in PowerShell. The same two
-  screens, brought into line with Linux after each round of changes, so it
-  can be a step behind. A memory written on one system can be read on the
-  other.
+- **Windows** — inside WSL: install a Linux distribution with WSL, then
+  follow the Linux steps above in its terminal. It is the Linux Pragma, not
+  a port of it. [Where Pragma runs](docs/explanation/interfaces.md) says what
+  crosses between WSL and Windows.
 - **macOS** — `./install.sh` and the Linux launcher. Not tested.
 
 ---

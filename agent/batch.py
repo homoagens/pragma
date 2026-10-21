@@ -8,7 +8,7 @@
 # step (thought / action / observation) streams to stdout so the whole
 # run can be watched live or redirected to a log file:
 #
-#   python -m agent.batch --task "fix the failing test" --cwd C:\proj
+#   python -m agent.batch --task "fix the failing test" --cwd /proj
 #   python -m agent.batch --task-file task.txt --cwd /proj > run.md
 #   echo "list all TODOs in this repo" | python -m agent.batch --cwd /proj
 #
@@ -291,7 +291,7 @@ class _MarkdownRenderer:
         self._flush()
         shown, clipped = _clip(content, limit)
         # A longer fence keeps the block intact if the content itself
-        # contains ``` (e.g. a read_file of a markdown document).
+        # contains ``` (e.g. a markdown document printed by `cat`).
         fence = "````" if "```" in shown else "```"
         _out(f"{fence}text")
         _out(shown)
@@ -673,9 +673,9 @@ def main() -> int:
                      help="force raw markdown output even on a terminal")
     args = parser.parse_args()
 
-    # UTF-8-safe printing even when stdout/stderr are redirected on Windows
-    # (redirected streams default to the locale codepage, e.g. cp1252, and a
-    # unicode char in an observation would crash the printer mid-run).
+    # UTF-8-safe printing even when the locale is not UTF-8 (LANG=C, a bare
+    # container): a unicode char in an observation would crash the printer
+    # mid-run.
     for stream in (sys.stdout, sys.stderr):
         try:
             stream.reconfigure(encoding="utf-8", errors="replace")

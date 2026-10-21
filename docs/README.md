@@ -7,9 +7,8 @@ way around, getting something done, looking something up, changing the code.
 New here? [Your first project](tutorial/first-project.md) takes ten minutes.
 
 **These pages describe the terminal on Linux**, which is where Pragma is
-developed and where everything is tested. The terminal on Windows follows it
-and can be a step behind. [The interfaces, and where each
-stands](explanation/interfaces.md) says what differs.
+developed and where everything is tested. On Windows Pragma runs inside
+WSL: [where Pragma runs](explanation/interfaces.md).
 
 ## Find your way
 
@@ -33,7 +32,7 @@ stands](explanation/interfaces.md) says what differs.
 | know which files Pragma writes, and where | [Files](reference/files.md) |
 | see which tools the agent has | [Tools](reference/tools.md) |
 | read what the model is told | [Prompts](reference/prompts.md) |
-| know what differs on Windows | [The interfaces](explanation/interfaces.md) |
+| run it on Windows, or on macOS | [Where Pragma runs](explanation/interfaces.md) |
 | see what the pieces are and how a turn runs | [Architecture](explanation/architecture.md) |
 | find the file that does something | [Code map](explanation/architecture.md#code-map) |
 | know why something is the way it is | [Decisions](decisions/README.md) |

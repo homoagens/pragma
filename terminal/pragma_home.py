@@ -7,17 +7,12 @@ r"""The launcher's home prompt: /open, /new, /configure, /help, /exit.
 
 The screen before any project is open speaks the same slash commands as the
 conversation, so it gets the same prompt: commands completed as they are
-typed, and a grey hint on the empty line. PowerShell reading a line has
-neither, which is why the line is read here.
+typed, and a grey hint on the empty line.
 
-    venv\Scripts\python.exe terminal\pragma_home.py --out <file>
-
-The launcher draws the page and runs this for the line. /help and mistakes
-are answered here, under the page, and the prompt asks again. Anything the
-launcher has to do is written to --out as
-{"action": "projects" | "open" | "new" | "backups" | "delete"
-          | "configure" | "exit", "arg": "..."}
-and the process ends.
+The launcher draws the mark and calls prompt() for the rest. /help and
+mistakes are answered here, under the page, and the prompt asks again.
+Anything the launcher has to do comes back as (action, argument): "projects",
+"open", "new", "backups", "delete", "configure", "exit", ...
 
 MEMORY AT WORK. A consolidation runs in its own process and outlives the
 conversation that started it, so this screen says when one is going: a `memory`
@@ -44,7 +39,6 @@ cannot replace a built-in command, and one that cannot be read is skipped with
 a line saying why. With no plugins, nothing on this screen changes.
 """
 
-import argparse
 import json
 import os
 import re
@@ -86,11 +80,6 @@ COMMANDS = {
     "/help":      "this list",
     "/exit":      "leave",
 }
-
-# A served project is a process the Linux launcher starts and keeps: the
-# Windows one has no /serve yet, so its page does not offer it.
-if os.name == "nt":
-    COMMANDS.pop("/serve", None)
 
 # What /projects takes. These are the things that are done TO a project rather
 # than inside one, which is why they live here and not in a conversation: from
@@ -168,10 +157,7 @@ def _home_short(path: str) -> str:
 def page(notice: str = "", fewer: int = 0) -> None:
     """The body of the home page, under the mark: the projects, the commands.
 
-    Drawn here for BOTH launchers. The PowerShell one and the Python one each
-    drew their own copy, with a comment asking whoever changed one to change
-    the other - which is how the two came to disagree about what the page
-    said. Now the page is one function and the launchers draw the mark.
+    The launcher draws the mark above it.
     """
     a = accent()
     grey, reset = (GREY, RESET) if a else ("", "")
@@ -548,45 +534,20 @@ def show_help(extra: dict | None = None) -> None:
     print()
 
 
-def main() -> int:
-    ap = argparse.ArgumentParser(prog="pragma_home")
-    ap.add_argument("--out", help="where to write the chosen action")
-    # The launcher leaves for good from two places, and only one of them is
-    # this prompt. --jobs answers the other one: what the memory is writing,
-    # as JSON, without a page or a prompt.
-    ap.add_argument("--jobs", action="store_true",
-                    help="print the memory work in flight as JSON and stop")
-    # The body of the page - the projects and the commands - drawn here for
-    # both launchers, which draw only the mark above it. See page().
-    ap.add_argument("--page", action="store_true",
-                    help="draw the projects and the commands before the prompt")
-    ap.add_argument("--listed", type=int, default=0,
-                    help="how many projects the page lists, when fewer than usual")
-    ap.add_argument("--notice", default="",
-                    help="one line to say under the commands (a name not found, ...)")
-    args = ap.parse_args()
-    if args.jobs:
-        print(json.dumps([{"project": p, "step": s} for p, s in memory_jobs()]))
-        return 0
-    if not args.out:
-        ap.error("--out is required")
-    for stream in (sys.stdout, sys.stderr):
-        try:
-            stream.reconfigure(encoding="utf-8", errors="replace")
-        except Exception:
-            pass
+def prompt(notice: str = "", listed: int = 0) -> tuple[str, str]:
+    """The body of the page - projects, commands, endpoints, the memory at
+    work, the plugins - and the line read under it, as (action, argument).
+    The mark above it is the launcher's to draw. `listed` is how many
+    projects the page lists, when fewer than usual; `notice` one line to say
+    under the commands (a name not found, ...)."""
 
-    def choose(action: str, arg: str = "") -> int:
-        Path(args.out).write_text(json.dumps({"action": action, "arg": arg}),
-                                  encoding="utf-8")
-        return 0
+    def choose(action: str, arg: str = "") -> tuple[str, str]:
+        return action, arg
 
-    if args.page:
-        page(args.notice, args.listed)
+    page(notice, listed)
     # The embedding server is asked while the endpoints are, not after them:
     # one that is down must not add its wait to theirs.
     os.environ.setdefault("PRAGMA_NO_ENDPOINT_PROBE", "1")
-    sys.path[:0] = [str(ROOT), str(ROOT / "core")]
     embedding: dict = {}
 
     def ask_embedding() -> None:
@@ -641,13 +602,12 @@ def main() -> int:
         row("mcp" if i == 0 else "", said, colour)
     # And the projects served to other programs, every time: they run when
     # Pragma does not, and one left on should never be a surprise.
-    if "/serve" in COMMANDS:
-        try:
-            import pragma_serve
-            for i, (said, colour) in enumerate(pragma_serve.home_rows()):
-                row("serve" if i == 0 else "", said, colour)
-        except Exception:
-            pass
+    try:
+        import pragma_serve
+        for i, (said, colour) in enumerate(pragma_serve.home_rows()):
+            row("serve" if i == 0 else "", said, colour)
+    except Exception:
+        pass
     print()
 
     # What the page says the memory is doing is a photograph taken as it was
@@ -698,9 +658,7 @@ def main() -> int:
 
     while True:
         try:
-            # A byte-order mark is what a pipe from PowerShell puts in front of
-            # the first line; typed or piped, the command is the same.
-            line = read_line(session).lstrip("﻿").strip()
+            line = read_line(session).strip()
         except (EOFError, KeyboardInterrupt):
             if again() or not held_back():
                 return choose("exit")
@@ -775,6 +733,3 @@ def main() -> int:
             print(f"  {head} is not a command here. /help lists them.")
             print()
 
-
-if __name__ == "__main__":
-    sys.exit(main())

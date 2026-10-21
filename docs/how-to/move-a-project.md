@@ -1,14 +1,14 @@
 # Move a project to another machine
 
-*For the terminal. Tried on Linux; [what differs on Windows](../explanation/interfaces.md).*
+*For the terminal on Linux; on Windows, inside WSL. [Where Pragma runs](../explanation/interfaces.md).*
 
 A project is two folders and one line in a list: the folder you work in, the
 memory Pragma keeps for it, and the entry that ties them together. Pragma has
 no command that moves all three, so this is done by hand. It takes five
 minutes.
 
-`~` below is your home folder: `/home/you` on Linux, `/Users/you` on macOS,
-`C:\Users\you` on Windows.
+`~` below is your home folder: `/home/you` on Linux and in WSL, `/Users/you`
+on macOS.
 
 ## On the old machine
 
@@ -42,8 +42,7 @@ Every episode records the folder it was written in, and an episode written in
 the folder you are working in has a small advantage over the rest when Pragma
 decides what to recall.
 
-If the folder has a different path on the new machine — it always does
-between Windows and Linux — the episodes you brought are treated as written
+If the folder has a different path on the new machine, the episodes you brought are treated as written
 somewhere else. They are all still there and still recalled; they have only
 lost that edge over episodes made from now on.
 

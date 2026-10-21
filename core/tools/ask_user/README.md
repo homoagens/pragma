@@ -20,7 +20,7 @@ It depends on where Pragma is running:
 
 ## Do not
 
-- Ask for what a skill can find out (`list_dir`, `read_file`, `file_outline`).
+- Ask for what you can find out yourself (the shell, `file_outline`).
 - Ask several questions in one call: one topic per call.
 - Ask trivial questions the user should not need to answer ("should I read the file?" — just read it).
 - Treat a `"no"`, a notice, or silence as permission for a destructive action.

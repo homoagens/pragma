@@ -86,17 +86,6 @@ def alive(pid) -> bool:
         return False
     if pid <= 0:
         return False
-    if os.name == "nt":
-        import ctypes
-        SYNCHRONIZE = 0x00100000
-        h = ctypes.windll.kernel32.OpenProcess(SYNCHRONIZE, False, pid)
-        if not h:
-            return False
-        # WAIT_TIMEOUT (258) means it is still running; WAIT_OBJECT_0 (0) that
-        # it has exited and the handle is merely still open.
-        rc = ctypes.windll.kernel32.WaitForSingleObject(h, 0)
-        ctypes.windll.kernel32.CloseHandle(h)
-        return rc == 258
     try:
         os.kill(pid, 0)
         return True
@@ -519,24 +508,11 @@ def start(path) -> bool:
         job.update(status="pending", pid=0, error="", finished="", log=[])
         write(path, job)
     worker = _ROOT / "terminal" / "pragma_consolidate.py"
-    exe = sys.executable
-    kwargs: dict = {}
-    if os.name == "nt":
-        # NO WINDOW. DETACHED_PROCESS detaches the console but lets Windows
-        # give a console application one of its own - a black window for the
-        # length of the consolidation. pythonw.exe never allocates a console;
-        # CREATE_NO_WINDOW says the same to Windows where it is missing. Its
-        # own process group keeps a Ctrl+C aimed at the shell from reaching it
-        # halfway through writing an episode.
-        pyw = Path(exe).with_name("pythonw.exe")
-        if pyw.is_file():
-            exe = str(pyw)
-        kwargs["creationflags"] = (subprocess.CREATE_NO_WINDOW
-                                   | subprocess.CREATE_NEW_PROCESS_GROUP)
-    else:
-        kwargs["start_new_session"] = True
-    subprocess.Popen([exe, str(worker), str(path)], cwd=str(_ROOT), stdin=subprocess.DEVNULL,
-                     stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, close_fds=True, **kwargs)
+    # Its own session: a ctrl+C aimed at the shell must not reach it halfway
+    # through writing an episode.
+    subprocess.Popen([sys.executable, str(worker), str(path)], cwd=str(_ROOT), stdin=subprocess.DEVNULL,
+                     stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, close_fds=True,
+                     start_new_session=True)
     return True
 
 
@@ -568,17 +544,14 @@ def stop(job: dict) -> bool:
         pid = 0
     if pid > 0 and not _gone(pid):
         try:
-            if os.name == "nt":
-                subprocess.run(["taskkill", "/PID", str(pid), "/T", "/F"], capture_output=True, timeout=15)
+            import signal
+            os.kill(pid, signal.SIGTERM)
+            for _ in range(30):
+                if _gone(pid):
+                    break
+                time.sleep(0.1)
             else:
-                import signal
-                os.kill(pid, signal.SIGTERM)
-                for _ in range(30):
-                    if _gone(pid):
-                        break
-                    time.sleep(0.1)
-                else:
-                    os.kill(pid, signal.SIGKILL)
+                os.kill(pid, signal.SIGKILL)
         except ProcessLookupError:
             pass
         except Exception:

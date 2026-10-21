@@ -51,7 +51,7 @@ jobs:
         run: |
           PYTHONPATH=core:. python -c "
           from tools import ALL_SKILLS, palette
-          for name in ('execute_command', 'read_file', 'write_file', 'ask_user'):
+          for name in ('execute_command', 'file_outline', 'write_file', 'ask_user'):
               assert name in ALL_SKILLS, name + ' missing'
           # Memory machinery is kept importable, never offered to the agent.
           offered = palette()

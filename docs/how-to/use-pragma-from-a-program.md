@@ -1,6 +1,6 @@
 # Use Pragma from another program
 
-*For the terminal on Linux and macOS, which serve the project; the program can run anywhere that reaches it. [Where each interface stands](../explanation/interfaces.md).*
+*For the terminal on Linux, which serves the project (on Windows, inside WSL); the program can run anywhere that reaches it. [Where Pragma runs](../explanation/interfaces.md).*
 
 Pragma can be the model of another program. The program talks to it exactly
 as it would talk to any OpenAI-compatible model, and behind that one address

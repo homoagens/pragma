@@ -1,17 +1,8 @@
 # Line endings, decided here rather than by whoever cloned.
 #
-# core.autocrlf is on by default on Windows, which rewrites every checked-out
-# text file to CRLF. cmd.exe wants exactly that, and a .bat with bare LF can
-# mis-execute a multi-line command - so the Windows entry points are pinned
-# rather than left to a setting each clone decides for itself.
-
-*.bat   text eol=crlf
-*.ps1   text eol=crlf
-*.psm1  text eol=crlf
-*.psd1  text eol=crlf
-
-# The shell entry point is the other way round: a #!/bin/sh with CRLF is
-# a script Linux refuses to run.
+# The shell entry point keeps LF wherever it is checked out: a #!/bin/sh with
+# CRLF is a script Linux refuses to run, and a clone made on Windows, with
+# core.autocrlf on, is still opened from WSL.
 pragma  text eol=lf
 *.sh    text eol=lf
 
@@ -21,5 +12,6 @@ pragma  text eol=lf
 # Binary, never touched.
 *.png   binary
 *.gif   binary
+*.mp4   binary
 *.zip   binary
 *.gguf  binary

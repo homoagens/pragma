@@ -9,7 +9,7 @@ Each name links to its README, which has the parameters, what comes back and exa
 
 ## Offered to the agent
 
-On Linux and macOS 6 of these 21 are left to the shell, which does the same job in one call: they are marked *Windows only*. What needs a person watching the terminal is offered only *in a conversation*.
+Reading, listing and searching files, and asking git, are left to the shell, which does each in one call: there is no skill for them. What needs a person watching the terminal is offered only *in a conversation*.
 
 | Skill | What it does | Call | Offered |
 |---|---|---|---|
@@ -18,14 +18,8 @@ On Linux and macOS 6 of these 21 are left to the shell, which does the same job 
 | [`ask_user`](../../core/tools/ask_user/README.md) | Ask the user a question. In a live conversation, you ask by ending the turn. | `ask_user(topic='', context='', mode='input', prompt='', question='')` | everywhere |
 | [`execute_command`](../../core/tools/execute_command/README.md) | Run a shell command and return its stdout, stderr and exit code. Each call is a new process: pass `cwd`, since `cd` does not carry over. Nothing can be typed at it: a program waiting for input meets the end of it at once. Anything meant to keep running - a server, a watcher - goes with `background=true`, or it ends only at the timeout. | `execute_command(command, cwd='', timeout=60, capture_stderr=True, max_output_chars=10000, background=False, stop_event=None)` | everywhere |
 | [`file_outline`](../../core/tools/file_outline/README.md) | A file's map without its content: size, line count, top-level symbols and headings with their line numbers, and its last lines. Run it before reading a file you have not seen: it costs a fraction of the context and tells you which part to read, or where to anchor a change. | `file_outline(path, tail_lines=5, encoding='utf-8')` | everywhere |
-| [`git_diff`](../../core/tools/git_diff/README.md) | Show what actually changed in the working tree, as a unified diff. | `git_diff(path='.', staged=False, file='', context_lines=3, max_chars=0)` | Windows only |
-| [`git_status`](../../core/tools/git_status/README.md) | Show the state of the git repository: current branch, position relative to upstream, and which files are staged, modified or untracked, plus the last few commits. | `git_status(path='.', max_files=60)` | Windows only |
-| [`glob_match`](../../core/tools/glob_match/README.md) | Find files matching a glob pattern, relative to a base directory. | `glob_match(pattern, base_path='.', max_results=0, include_ignored=False)` | Windows only |
-| [`grep_search`](../../core/tools/grep_search/README.md) | Search for a regex pattern inside file contents, returning matching lines with file path and line number. | `grep_search(pattern, path='.', file_glob='*', ignore_case=False, max_results=100)` | Windows only |
 | [`insert_after`](../../core/tools/insert_after/README.md) | Insert a block right after the first occurrence of an exact anchor string in a file: to add at a known place without rewriting the file. Deterministic; it takes no `overwrite`. | `insert_after(path, anchor, content, encoding='utf-8')` | everywhere |
 | [`insert_before`](../../core/tools/insert_before/README.md) | Insert a block right before the first occurrence of an exact anchor string in a file: to add at a known place without rewriting the file. Deterministic; it takes no `overwrite`. | `insert_before(path, anchor, content, encoding='utf-8')` | everywhere |
-| [`list_dir`](../../core/tools/list_dir/README.md) | List the contents of a directory with type, size, and modification time. | `list_dir(path='.', show_hidden=False, max_entries=200)` | Windows only |
-| [`read_file`](../../core/tools/read_file/README.md) | Read the contents of a local file, optionally selecting a line range. | `read_file(path, encoding='utf-8', start_line=0, end_line=0, max_chars=0)` | Windows only |
 | [`replace_in_file`](../../core/tools/replace_in_file/README.md) | Replace an exact substring in a file (`old` must appear verbatim; `count=-1` for every occurrence): the cheapest way to change part of a file you have seen. Deterministic; it takes no `overwrite`. | `replace_in_file(path, old, new, count=1, encoding='utf-8')` | everywhere |
 | [`replace_in_files`](../../core/tools/replace_in_files/README.md) | Deterministic find-and-replace across many files at once — the multi-file counterpart of `replace_in_file`. Renaming a symbol project-wide costs one call instead of one per file. | `replace_in_files(old, new, path='.', file_glob='*', dry_run=False, max_files=0, encoding='utf-8')` | everywhere |
 | [`revert`](../../core/tools/revert/README.md) | Undo file edits made during this session. | `revert(path='', list_only=False)` | everywhere |

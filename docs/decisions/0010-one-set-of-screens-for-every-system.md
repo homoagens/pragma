@@ -1,8 +1,8 @@
 # 10. One set of screens for every system
 
 - **Date:** 2026-09-20
-- **Status:** accepted
-- **Where:** [`terminal/pragma_launcher.py`](../../terminal/pragma_launcher.py), [`terminal/Pragma.psm1`](../../terminal/Pragma.psm1)
+- **Status:** superseded by [26](0026-windows-runs-pragma-in-wsl.md)
+- **Where:** [`terminal/pragma_launcher.py`](../../terminal/pragma_launcher.py), `terminal/Pragma.psm1`
 
 ## Context
 

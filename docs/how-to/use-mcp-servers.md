@@ -1,6 +1,6 @@
 # Give the agent the tools of an MCP server
 
-*For the terminal. Tried on Linux; [what differs on Windows](../explanation/interfaces.md).*
+*For the terminal on Linux; on Windows, inside WSL. [Where Pragma runs](../explanation/interfaces.md).*
 
 An [MCP](https://modelcontextprotocol.io) server publishes tools: a search
 over a library, a company's documents, a calendar. Pragma can offer them to

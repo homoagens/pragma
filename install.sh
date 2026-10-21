@@ -10,8 +10,7 @@
 #     ./install.sh --uninstall    remove the profile line (keeps venv and data)
 #     ./install.sh --python <exe> build the venv with that interpreter
 #
-# The mirror of install.ps1 on Linux and macOS. The profile line is written
-# between markers and replaced in place on a re-run, so installing twice, or
+# The profile line is written between markers and replaced in place on a re-run, so installing twice, or
 # after moving the repository, updates the path instead of leaving a second
 # stale line behind.
 set -e

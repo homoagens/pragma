@@ -1,6 +1,6 @@
 # Write rules for a project
 
-*For the terminal. Tried on Linux; [what differs on Windows](../explanation/interfaces.md).*
+*For the terminal on Linux; on Windows, inside WSL. [Where Pragma runs](../explanation/interfaces.md).*
 
 Memory is what the agent *learns*, and it can fade. A rule you want followed
 on every task, without exception, is something you *decide* — and it goes in

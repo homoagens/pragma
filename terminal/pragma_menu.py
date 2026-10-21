@@ -171,15 +171,14 @@ def clear() -> None:
     the new page below the old one, which looks like the screen sliding down
     with the page half off the top.
 
-    The hand-written escape stays as the fallback: a terminal with no TERM,
-    and Windows, where there is no terminfo to ask.
+    The hand-written escape stays as the fallback, for a terminal with no TERM.
     """
     global _CLEAR_SEQ
     if not sys.stdout.isatty():
         return
     if _CLEAR_SEQ is None:
         _CLEAR_SEQ = b""
-        if os.name != "nt" and os.environ.get("TERM"):
+        if os.environ.get("TERM"):
             try:
                 import curses
                 curses.setupterm()
@@ -278,11 +277,7 @@ def waiting(message: str):
 def _drop_typed() -> None:
     """Forget the keys pressed and not yet read."""
     try:
-        if os.name == "nt":
-            import msvcrt
-            while msvcrt.kbhit():
-                msvcrt.getwch()
-        elif sys.stdin.isatty():
+        if sys.stdin.isatty():
             import termios
             termios.tcflush(sys.stdin.fileno(), termios.TCIFLUSH)
     except Exception:
@@ -340,9 +335,8 @@ _KEYS_HELD = [False]
 
 @contextlib.contextmanager
 def keyboard():
-    """Keys one at a time, unechoed, for the length of the block. POSIX only;
-    on Windows msvcrt already reads that way and this does nothing."""
-    if os.name == "nt" or _KEYS_HELD[0] or not sys.stdin.isatty():
+    """Keys one at a time, unechoed, for the length of the block."""
+    if _KEYS_HELD[0] or not sys.stdin.isatty():
         yield
         return
     import termios
@@ -372,34 +366,13 @@ def read_key(timeout: float | None = None) -> str:
     """One keypress, as a word: up, down, home, end, pageup, pagedown, enter,
     back - or the character, lower-cased.
 
-    ctrl+C is `back`, as ctrl+D and Esc are, on both systems. It used to raise
-    on Linux, and nothing above a menu caught it: ctrl+C on the projects page
-    or in /configure ended Pragma with a traceback, while on Windows the same
-    key went back one page.
+    ctrl+C is `back`, as ctrl+D and Esc are. It used to raise, and nothing
+    above a menu caught it: ctrl+C on the projects page or in /configure ended
+    Pragma with a traceback.
 
     With a `timeout` it waits that many seconds and then answers "" - for a
     page that has something of its own to redraw while nobody presses a key.
     """
-    if os.name == "nt":
-        import msvcrt
-        try:
-            # Waited for in short steps rather than inside getwch(): Python
-            # only runs its ctrl+C handler between calls, and getwch() blocks
-            # until a key comes - so ctrl+C on a Windows menu did nothing
-            # until the NEXT key was pressed.
-            until = None if timeout is None else time.time() + timeout
-            while not msvcrt.kbhit():
-                if until is not None and time.time() >= until:
-                    return ""
-                time.sleep(0.02)
-            ch = msvcrt.getwch()
-            if ch in ("\x00", "\xe0"):      # a special key arrives as two
-                return {"H": "up", "P": "down", "G": "home", "O": "end",
-                        "I": "pageup", "Q": "pagedown"}.get(msvcrt.getwch(), "")
-        except KeyboardInterrupt:
-            return "back"
-        return {"\r": "enter", "\n": "enter",
-                "\x04": "back", "\x1b": "back", "\x03": "back"}.get(ch, ch.lower())
     import select as _select
     with keyboard():
         fd = sys.stdin.fileno()
@@ -438,9 +411,8 @@ def menu(options: list[str], notes: list[str] | None = None, start: int = 0,
          live=None, every: float = 0.0) -> int | None:
     """The list, walked with the arrows.
 
-    Drawn once and then redrawn over itself from where the drawing ended -
-    the same trick Show-Menu uses in the PowerShell launcher, for the same
-    reason: a menu that scrolls the page is not a menu.
+    Drawn once and then redrawn over itself from where the drawing ended: a
+    menu that scrolls the page is not a menu.
 
     THE NOTES ARE A COLUMN. Each used to start three spaces after its own
     option, so a list of words of different lengths had its explanations

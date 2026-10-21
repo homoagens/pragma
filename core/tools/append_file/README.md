@@ -24,5 +24,5 @@ Append text to the end of an existing file: how the next section of a large file
 ## Examples
 
 ```json
-{ "action": "append_file", "args": { "path": "C:\\proj\\sim.js", "content": "\nfunction newFeature() {\n  return 1;\n}\n" } }
+{ "action": "append_file", "args": { "path": "/home/me/proj/sim.js", "content": "\nfunction newFeature() {\n  return 1;\n}\n" } }
 ```

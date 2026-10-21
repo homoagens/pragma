@@ -1,6 +1,6 @@
 # Run one task without the terminal interface
 
-*No interface involved: the same on every system. Tried on Linux. [Where each interface stands](../explanation/interfaces.md).*
+*No interface involved: the same wherever Pragma runs. Tried on Linux. [Where Pragma runs](../explanation/interfaces.md).*
 
 For a script, a scheduled job, or a task you want to hand over and read the
 result of later. One request goes in, the agent works until it has an answer,
@@ -13,8 +13,6 @@ From the folder where Pragma is installed, with Pragma's own Python:
 ```
 venv/bin/python -m agent.batch --task "list every TODO in this repository" --cwd /path/to/project
 ```
-
-On Windows the interpreter is `venv\Scripts\python.exe`.
 
 The task can also come from a file (`--task-file task.txt`) or from standard
 input:
@@ -70,9 +68,6 @@ memory, name that project's folder:
 ```
 PRAGMA_DATA_DIR=~/.pragma/projects/first venv/bin/python -m agent.batch --memory --task "..." --cwd ~/first
 ```
-
-In PowerShell the variable is set on a line of its own first:
-`$env:PRAGMA_DATA_DIR = "$HOME\.pragma\projects\first"`.
 
 Avoid running it while that project's memory is still being written; `/jobs`
 shows when it is.

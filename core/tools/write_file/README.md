@@ -28,9 +28,9 @@ Create a NEW file. It refuses an existing one unless `overwrite=true`, which is 
 ## Examples
 
 ```json
-{ "action": "write_file", "args": { "path": "C:\\project\\hello.py", "content": "print('hello')\n" } }
-{ "action": "write_file", "args": { "path": "C:\\project\\config.json", "content": "{\"debug\": false, \"port\": 8080}\n" } }
-{ "action": "write_file", "args": { "path": "C:\\project\\plan.json", "content": "{...}", "overwrite": true } }
+{ "action": "write_file", "args": { "path": "/home/me/project/hello.py", "content": "print('hello')\n" } }
+{ "action": "write_file", "args": { "path": "/home/me/project/config.json", "content": "{\"debug\": false, \"port\": 8080}\n" } }
+{ "action": "write_file", "args": { "path": "/home/me/project/plan.json", "content": "{...}", "overwrite": true } }
 ```
 
 ## When to use it

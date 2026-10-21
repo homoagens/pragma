@@ -852,8 +852,8 @@ REASONING_LOOP_ENABLED     = os.environ.get(
 # turn while observations keep returning ERROR. The agent's mental model of
 # the system state has diverged from reality. This watchdog detects that
 # pattern at the action layer and injects a coercive recovery hint that
-# tells the model to STOP repeating and CHANGE STRATEGY (typically: read_file
-# first to see the actual state).
+# tells the model to STOP repeating and CHANGE STRATEGY (typically: read the
+# file first to see the actual state).
 #   _THRESHOLD : N identical (action, args) calls in a row, all returning
 #                ERROR, before the hint fires.
 #   _ENABLED   : kill switch.

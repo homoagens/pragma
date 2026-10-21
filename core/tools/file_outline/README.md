@@ -25,15 +25,15 @@ A multi-line summary with:
 ## Notes
 
 - Pure regex + plain file read. Cannot hit the LLM token limit.
-- Use this BEFORE `read_file` on any file you don't already know.
-- Lets you decide whether to read fully, read with `start_line`/`end_line`, or skip
+- Use this BEFORE reading any file you don't already know.
+- Lets you decide whether to read it whole, read a slice (`sed -n '40,120p'`), or skip
   straight to `insert_after`/`replace_in_file` with the anchor of interest.
 
 ## Examples
 
 ```json
-{ "action": "file_outline", "args": { "path": "C:\\proj\\app.py" } }
-{ "action": "file_outline", "args": { "path": "C:\\proj\\sim.js", "tail_lines": 10 } }
+{ "action": "file_outline", "args": { "path": "/home/me/proj/app.py" } }
+{ "action": "file_outline", "args": { "path": "/home/me/proj/sim.js", "tail_lines": 10 } }
 ```
 
 ## When to prefer this

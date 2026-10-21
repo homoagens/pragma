@@ -24,8 +24,8 @@ Insert a block right after the first occurrence of an exact anchor string in a f
 ## Examples
 
 ```json
-{ "action": "insert_after", "args": { "path": "C:\\proj\\sim.js", "anchor": "];", "content": "\nlet comets = [];\n" } }
-{ "action": "insert_after", "args": { "path": "C:\\proj\\app.py", "anchor": "def __init__(self):", "content": "\n        self.cache = {}\n" } }
+{ "action": "insert_after", "args": { "path": "/home/me/proj/sim.js", "anchor": "];", "content": "\nlet comets = [];\n" } }
+{ "action": "insert_after", "args": { "path": "/home/me/proj/app.py", "anchor": "def __init__(self):", "content": "\n        self.cache = {}\n" } }
 ```
 
 ## Do not

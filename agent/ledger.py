@@ -128,13 +128,11 @@ _VERDICT = re.compile(r"\b(\d+ passed(?:, \d+ (?:skipped|deselected|xfailed|xpas
 # a skill added tomorrow shows up, plainly, rather than not at all.
 VERBS = {
     "execute_command": "ran",
-    "read_file": "read", "file_outline": "looked",
+    "file_outline": "looked",
     "write_file": "wrote",
     "replace_in_file": "changed", "replace_in_files": "changed",
     "insert_after": "changed", "insert_before": "changed",
     "append_file": "changed", "apply_patch": "changed",
-    "list_dir": "looked", "glob_match": "looked", "grep_search": "looked",
-    "git_status": "looked", "git_diff": "looked",
     "web_fetch": "fetched", "web_search": "searched",
     "vision_interpret": "saw", "revert": "undid", "show_image": "showed",
 }
@@ -287,12 +285,6 @@ class Ledger(Harness):
             return verb, f'"{args.get("query", "")}"'
         if name == "web_fetch":
             return verb, re.sub(r"^https?://", "", str(args.get("url", "")))
-        if name in ("glob_match", "grep_search"):
-            where = self._near(args.get("base_path") or args.get("path") or "")
-            what = str(args.get("pattern", ""))
-            return verb, f"{what}  in {where}" if where and where != "." else what
-        if name in ("git_status", "git_diff"):
-            return verb, name.replace("_", " ")
         if name == "apply_patch":
             files = re.findall(r"^\+\+\+ (?:b/)?(\S+)", str(args.get("diff", "")), re.MULTILINE)
             return verb, ", ".join(self._near(f) for f in files[:3]) or "a patch"
@@ -338,17 +330,6 @@ class Ledger(Harness):
             # two.
             stated = re.search(r"^lines\s*:\s*(\d+)", text, re.MULTILINE)
             word = plural(int(stated.group(1)), "line") if stated else ""
-        elif name == "read_file":
-            # The file's own length, not the length of what came back: a long
-            # file is cut short, and a notice is written under what is left.
-            count = _lines(text)
-            try:
-                if not (args.get("start_line") or args.get("end_line")):
-                    with open(str(args.get("path", "")), encoding="utf-8", errors="replace") as fh:
-                        count = sum(1 for _ in fh)
-            except Exception:
-                pass
-            word = plural(count, "line")
         elif name == "write_file":
             new = str(args.get("content", ""))
             if before is None:
@@ -387,8 +368,6 @@ class Ledger(Harness):
                             "what": ", ".join(names) + more}
             else:
                 word = _last(text.split("\n", 1)[0])[:28]
-        elif name in ("list_dir", "glob_match", "grep_search", "git_status", "git_diff"):
-            word = plural(_lines(text), "line")
         elif name == "web_fetch":
             word = f"{len(text):,} chars"
         elif name == "show_image":
@@ -919,7 +898,7 @@ def demo(fast: bool = False) -> None:
 
     root = r._root()
     report = os.path.join(root, "report.py")
-    step("read_file", {"path": report}, "\n".join(f"line {i}" for i in range(141)))
+    step("file_outline", {"path": report}, "lines : 141\ndef load():\ndef main(argv):")
     step("replace_in_file", {"path": report, "old": "def main(argv):\n    rows = load()",
                              "new": "def main(argv):\n    as_json = '--json' in argv\n"
                                     "    rows = load()\n    if as_json:\n        return dump(rows)"},

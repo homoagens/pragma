@@ -3,19 +3,12 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 # This file is part of Pragma <https://github.com/homoagens/pragma>.
 
-r"""The launcher, in Python: the same two screens, on Linux and macOS too.
+r"""The launcher: the home screen, the projects, and a conversation opened
+from them.
 
-    python -m terminal.pragma_launcher            (or the `pragma` script)
+    pragma            (the script at the root of the repository)
 
-WHY IT EXISTS. The launcher was PowerShell - a Windows program for a Windows
-desktop - while everything it launches is Python that already runs anywhere:
-the skills, the memory, the harness, the endpoint catalogue. Running Pragma on
-the machine that holds the model meant either a Windows box or no launcher at
-all, which is to say no projects, no briefing, no pages.
-
-WHAT IT IS. The same two screens the PowerShell launcher draws, built out of
-the pieces both share, so there is one implementation of each thing and not
-two to keep in step:
+It is built out of pieces that each do one thing:
 
     the home prompt      terminal/pragma_home.py  (commands, endpoints, plugins)
     the endpoint pages   terminal/pragma_configure.py
@@ -23,12 +16,13 @@ two to keep in step:
     the background work  terminal/pragma_jobs.py
     the conversation     python -m agent.chat, with the project's environment
 
-What is only here is what PowerShell used to own: the registry of projects,
-opening one (its settings become the environment), the pages for choices and
-backups, and the loop between the two screens.
+What is only here: the registry of projects (terminal/pragma_registry.py
+reads and writes it), opening one - its settings become the environment -
+the pages for choices and backups, and the loop between the two screens.
 
-THE REGISTRY IS THE SAME FILE. ~/.pragma/registry.json, with the same keys, so
-a store written by the Windows launcher opens here and the other way round.
+It runs on Linux, and on macOS untried. On Windows, Pragma runs inside WSL:
+there used to be a second launcher in PowerShell, and keeping two in step
+meant that one of them was always behind.
 """
 
 from __future__ import annotations
@@ -57,10 +51,7 @@ import pragma_registry                       # noqa: E402
 
 PROJECTS = Path.home() / ".pragma" / "projects"
 
-# A project's settings, and the environment variable each one becomes. The
-# same table pragma-session.ps1 applies on Windows: one list, two launchers,
-# and a setting that means one thing on one system and another elsewhere is
-# not a thing that can happen quietly.
+# A project's settings, and the environment variable each one becomes.
 ENV_OF = {
     "Endpoint": "LLM_BASE_URL", "ContextWindow": "CONTEXT_WINDOW", "MaxTokens": "MAX_TOKENS",
     "SkillMaxTokens": "SKILL_MAX_TOKENS", "MemoryMaxTokens": "MEMORY_MAX_TOKENS",
@@ -102,8 +93,7 @@ RECALL = {
 # The step budget a project runs at when it has never said. It is not a setting
 # of the machine but an argument of the conversation, so config's own default
 # (15, for a single batch task) never applies here: a conversation gets the
-# room a conversation needs. The same number pragma-session.ps1 falls back to,
-# because a project opened on one system and on the other must behave the same.
+# room a conversation needs.
 DEFAULT_STEPS = "50"
 # `pragma --agent`: the agent alone. Nothing is recalled before a turn and
 # nothing is written to memory after the conversation, for this run of Pragma
@@ -120,8 +110,7 @@ by_name, save_setting = pragma_registry.by_name, pragma_registry.save_setting
 
 # ── the screen ────────────────────────────────────────────────────────────────
 
-# The mark from docs/assets/logo.png beside the word, exactly as
-# Show-Logo draws it in terminal/Pragma.psm1 - one picture, two launchers.
+# The mark from docs/assets/logo.png beside the word.
 # F is a full cell, T an upper half, B a lower half: letters, so this file
 # stays readable, and so a terminal that cannot draw blocks needs one map
 # rather than a second copy of the art.
@@ -183,9 +172,8 @@ ROOM_FOR_THE_MARK = 26
 def logo(compact: bool | None = None) -> None:
     """The mark, or the word alone on a terminal too short to hold it.
 
-    The PowerShell launcher has had the compact form since the beginning, for
-    exactly this: eight rows of block characters are worth the space on a
-    window that has it, and are the first thing to lose on one that does not.
+    Eight rows of block characters are worth the space on a window that has
+    it, and are the first thing to lose on one that does not.
     """
     if compact is None:
         compact = terminal_lines() < ROOM_FOR_THE_MARK
@@ -295,8 +283,7 @@ def _n(count, one: str, many: str = "") -> str:
 
 def show_brief(entry: dict, data: dict) -> None:
     """Two questions: can I start, and what changed while I was away. Plus one
-    line for each thing that wants you. The same page the Windows launcher
-    draws - see Show-Brief in terminal/Pragma.psm1."""
+    line for each thing that wants you."""
     a = accent()
     r = RESET if a else ""
     g = GREY if a else ""
@@ -755,9 +742,6 @@ def delete_project(entry: dict | None = None) -> dict | None:
     this project's (see _workspace_kept) is the one thing left alone, and the
     page says so. Snapshots stay: they are the way back from exactly this.
 
-    Windows still keeps the workspace (Invoke-DeleteProject): the two are to
-    be brought back into line.
-
     Returns the project still open afterwards, or None when it was the one
     deleted (or when there was none to begin with).
     """
@@ -842,29 +826,16 @@ def home_prompt(notice: str = "", listed: int = 0) -> tuple[str, str]:
     """The shared home prompt, as a (action, argument). It draws the body of
     the page - projects, commands, endpoints, the memory at work, the plugins -
     and reads the line. The mark above it is drawn by home_page()."""
-    out = Path.home() / ".pragma" / f"home-{os.getpid()}.json"
-    out.parent.mkdir(parents=True, exist_ok=True)
-    out.unlink(missing_ok=True)
-    argv = sys.argv
     probe = os.environ.get("PRAGMA_NO_ENDPOINT_PROBE")
     try:
-        sys.argv = ["pragma_home", "--out", str(out), "--page", "--listed", str(listed)] + (
-            ["--notice", notice] if notice else [])
-        home.main()
+        return home.prompt(notice, listed)
     finally:
-        sys.argv = argv
-        # And put the environment back as it was found, so nothing downstream
+        # Put the environment back as it was found, so nothing downstream
         # inherits a flag that belonged to one page.
         if probe is None:
             os.environ.pop("PRAGMA_NO_ENDPOINT_PROBE", None)
         else:
             os.environ["PRAGMA_NO_ENDPOINT_PROBE"] = probe
-    try:
-        data = json.loads(out.read_text(encoding="utf-8"))
-    except Exception:
-        data = {"action": "exit", "arg": ""}
-    out.unlink(missing_ok=True)
-    return str(data.get("action") or ""), str(data.get("arg") or "")
 
 
 # The fewest projects the home page lists for the sake of the mark. With room

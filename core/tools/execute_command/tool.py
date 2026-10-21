@@ -7,7 +7,6 @@ from __future__ import annotations
 import os
 import re
 import subprocess
-import sys
 from pathlib import Path
 
 # PRAGMA.md (the user-authored project contract) is read-only for the agent.
@@ -25,25 +24,16 @@ _PRAGMA_MD_SHELL_DENY = re.compile(
 
 
 def _kill_process_tree(proc: subprocess.Popen) -> None:
-    """Kill `proc` and ALL its descendants. Survives shell=True on Windows
-    (where Popen.kill() only kills cmd.exe, leaving the actual child orphaned)
-    and POSIX (where the shell may have spawned a process group)."""
+    """Kill `proc` and ALL its descendants: the shell may have spawned a whole
+    process group, and killing the shell alone leaves the children running."""
     if proc.poll() is not None:
         return  # already exited
-    pid = proc.pid
     try:
-        if sys.platform == "win32":
-            # /T = tree (all descendants), /F = force
-            subprocess.run(
-                ["taskkill", "/F", "/T", "/PID", str(pid)],
-                capture_output=True, timeout=5,
-            )
-        else:
-            import signal
-            try:
-                os.killpg(os.getpgid(pid), signal.SIGKILL)
-            except ProcessLookupError:
-                pass
+        import signal
+        try:
+            os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
+        except ProcessLookupError:
+            pass
     except Exception:
         # Last-resort fallback — kills only the direct child
         try: proc.kill()
@@ -64,15 +54,7 @@ def _run_detached(command: str, work_dir: str | None) -> str:
     log = Path(tempfile.gettempdir()) / f"pragma_bg_{stamp}_{os.getpid()}.log"
 
     popen_kwargs: dict = dict(shell=True, cwd=work_dir,
-                              stdin=subprocess.DEVNULL)
-    if sys.platform == "win32":
-        # CREATE_NEW_PROCESS_GROUP only. Adding DETACHED_PROCESS also detaches
-        # the child from the console, and the redirected handles then never
-        # reach the log file — verified: the log stays empty even after the
-        # process has exited. The new group is what taskkill /T needs anyway.
-        popen_kwargs["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP
-    else:
-        popen_kwargs["start_new_session"] = True
+                              stdin=subprocess.DEVNULL, start_new_session=True)
 
     # The child gets its own copy of the log's handle; this one is closed when
     # it has started, or every background command left one open for as long
@@ -84,14 +66,13 @@ def _run_detached(command: str, work_dir: str | None) -> str:
     except Exception as e:
         return f"ERROR starting background command: {e}"
 
-    stop = (f"taskkill /PID {proc.pid} /T /F" if sys.platform == "win32"
-            else f"kill -TERM -{proc.pid}")
+    stop = f"kill -TERM -{proc.pid}"
     return (
         f"STARTED in background\n"
         f"pid    : {proc.pid}\n"
         f"log    : {log}\n"
         f"stop   : {stop}\n"
-        f"Read the log with read_file to see how it is going. Note that most "
+        f"Read the log (`tail`, `cat`) to see how it is going. Note that most "
         f"programs buffer output when it goes to a file, so the log is often "
         f"empty until the process exits — an empty log does NOT mean the "
         f"command failed. Force live output where the tool allows it "
@@ -113,7 +94,7 @@ def execute_command(command: str, cwd: str = "", timeout: int = 60,
 
     Use background=True for anything meant to keep running — a dev server, a
     watcher, a long build. The call returns at once with a PID and a log file
-    path; read that file later with read_file to see how it is going, and stop
+    path; read that file later (`tail`, `cat`) to see how it is going, and stop
     it with a kill command. Without it, such a command can only ever end by
     hitting the timeout.
 
@@ -123,11 +104,6 @@ def execute_command(command: str, cwd: str = "", timeout: int = 60,
 
     The command has nothing on its input: a program that asks for some - an
     `input()` call - meets the end of it at once instead of waiting.
-
-    CROSS-PLATFORM NOTE: shell=True uses cmd.exe on Windows and /bin/sh on Linux.
-    Commands must be written for the target platform.
-    Portable commands: echo, cd, python, pip, git.
-    Not portable: ls (Linux) vs dir (Windows), cat vs type, etc.
     """
     # ── PRAGMA.md shell guard (see pattern above) ──
     if _PRAGMA_MD_SHELL_DENY.search(command or ""):
@@ -166,10 +142,7 @@ def execute_command(command: str, cwd: str = "", timeout: int = 60,
         text=True,
         cwd=work_dir,
     )
-    if sys.platform == "win32":
-        popen_kwargs["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP
-    else:
-        popen_kwargs["start_new_session"] = True  # detaches the shell + children
+    popen_kwargs["start_new_session"] = True  # detaches the shell + children
 
     try:
         proc = subprocess.Popen(command, **popen_kwargs)

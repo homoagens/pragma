@@ -182,8 +182,6 @@ def _reach(host: str) -> str:
 def autostart() -> list[str]:
     """Start every project that is on and not running: what /serve left on
     outlives a reboot. Lines saying what could not start."""
-    if os.name == "nt":
-        return []
     notes = []
     for name, entry in read_list().items():
         if entry.get("on") and not state_of(name):

@@ -256,31 +256,13 @@ def _now_block() -> str:
 
 def _os_environment(cwd: str) -> str:
     """Return the OS-specific environment block for the system prompt."""
-    system = platform.system()  # "Windows", "Linux", "Darwin"
+    system = platform.system()  # "Linux" or "Darwin"; Windows runs it in WSL
     release = platform.release()
 
-    if system == "Windows":
-        return f"""\
-- OS: Windows {release}; the shell of `execute_command` is cmd.exe.
-- Python is `python`, never `python3` — unless the project instructions name
-  another interpreter (a virtual environment, a path): then that one, for
-  every call, a quick check included.
-- Paths take backslashes `\\` in commands.
-- No Unix commands (`ls`, `cat`, `rm`, `cp`, `mv`, `grep`, `find`, `touch`,
-  `which`): `dir`, `type`, `del`, `copy`, `move`, `where`.
-- **Use the shell to run things**: tests, builds, `git`, a script, a one-off
-  `python -c`. The real output of a real command beats reasoning about what
-  it would have said.
-- **To look at files, use the file tools** (`list_dir`, `read_file`,
-  `glob_match`, `grep_search`): here they are better, because `dir` and
-  `type` output is worse to parse and cmd.exe mangles nested quotes.
-- Environment variables: `%VAR%`."""
-
-    else:  # Linux / macOS
-        py = "python3"
-        shell = "bash"
-        os_label = f"macOS {release}" if system == "Darwin" else f"Linux {release}"
-        return f"""\
+    py = "python3"
+    shell = "bash"
+    os_label = f"macOS {release}" if system == "Darwin" else f"Linux {release}"
+    return f"""\
 - OS: {os_label}; the shell of `execute_command` is {shell}.
 - Python is `{py}` — unless the project instructions name another
   interpreter (a virtual environment, a path): then that one, for every

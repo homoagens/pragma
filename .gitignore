@@ -33,10 +33,6 @@ site/
 # Pragma runtime / local files
 *.log
 
-# The endpoint list the monitor remembers: ports are a fact about one machine
-# (and over a tunnel they are the tunnel's, not the server's), never the project's
-terminal/endpoint_monitor.local.json
-
 # Local-only docs (not for publication)
 MANUAL.md
 

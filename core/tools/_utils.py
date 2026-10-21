@@ -5,8 +5,8 @@
 # Directories that are never the answer to a code search: dependencies, build
 # output, caches, VCS internals. Without skipping these, a search from a
 # project root walks the virtualenv and returns library internals instead of
-# the project's own code — measured on this repo at 28s and 92% noise for
-# grep_search, 97% for glob_match. Shared so both apply the same rule.
+# the project's own code — measured on this repo at 28s and 92% noise for a
+# search that walked everything. replace_in_files skips them.
 SKIP_DIRS = frozenset({
     ".git", ".hg", ".svn", "venv", ".venv", "env", "node_modules",
     "__pycache__", ".mypy_cache", ".pytest_cache", ".ruff_cache", ".tox",

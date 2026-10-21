@@ -1,6 +1,6 @@
 # Recover a memory that did not finish writing
 
-*For the terminal. Tried on Linux; [what differs on Windows](../explanation/interfaces.md).*
+*For the terminal on Linux; on Windows, inside WSL. [Where Pragma runs](../explanation/interfaces.md).*
 
 When you close a project, the conversation is turned into memory by a
 separate process, after the terminal has come back. If that process dies —

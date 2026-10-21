@@ -1,6 +1,6 @@
 # Serve a project to another program
 
-*For the terminal on Linux and macOS: the Windows launcher does not have it. [Where each interface stands](../explanation/interfaces.md).*
+*For the terminal on Linux; on Windows, inside WSL. [Where Pragma runs](../explanation/interfaces.md).*
 
 A program that talks to a model through an OpenAI-compatible endpoint — a
 chat panel, a presentation tool, a script — can talk to one of your projects

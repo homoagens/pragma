@@ -1,6 +1,6 @@
 # Use the agent without memory
 
-*For the terminal on Linux and macOS: the Windows launcher does not have it. [Where each interface stands](../explanation/interfaces.md).*
+*For the terminal on Linux; on Windows, inside WSL. [Where Pragma runs](../explanation/interfaces.md).*
 
 ```bash
 pragma --agent

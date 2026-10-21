@@ -2,7 +2,7 @@
 
 - **Date:** 2026-09-03
 - **Status:** accepted
-- **Where:** [`terminal/pragma_launcher.py`](../../terminal/pragma_launcher.py), [`terminal/Pragma.psm1`](../../terminal/Pragma.psm1)
+- **Where:** [`terminal/pragma_launcher.py`](../../terminal/pragma_launcher.py), `terminal/Pragma.psm1`
 
 ## Context
 

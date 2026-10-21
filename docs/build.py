@@ -408,10 +408,8 @@ def _summary(readme: Path) -> str:
 
 def skills(notes) -> str:
     base = ROOT / "core" / "tools"
-    rules = tables(base / "__init__.py", {"_NOT_AGENT_TOOLS", "_SHELL_DOES_THIS_BETTER",
-                                          "_CONVERSATION_ONLY"})
+    rules = tables(base / "__init__.py", {"_NOT_AGENT_TOOLS", "_CONVERSATION_ONLY"})
     internal = set(rules["_NOT_AGENT_TOOLS"])
-    shell = set(rules["_SHELL_DOES_THIS_BETTER"])
     conversation = set(rules["_CONVERSATION_ONLY"])
 
     offered, withheld = [], []
@@ -427,8 +425,7 @@ def skills(notes) -> str:
         if name in internal:
             withheld.append(row)
         else:
-            offered.append(row + ("Windows only" if name in shell
-                                  else "in a conversation" if name in conversation
+            offered.append(row + ("in a conversation" if name in conversation
                                   else "everywhere",))
 
     out = [BANNER, "# Tools\n",
@@ -441,12 +438,11 @@ def skills(notes) -> str:
            "Each name links to its README, which has the parameters, what comes "
            "back and examples.\n"]
 
-    left = sum(1 for row in offered if row[3] == "Windows only")
     out.append("## Offered to the agent\n")
-    out.append(f"On Linux and macOS {left} of these {len(offered)} are left to the "
-               "shell, which does the same job in one call: they are marked "
-               "*Windows only*. What needs a person watching the terminal is "
-               "offered only *in a conversation*.\n")
+    out.append("Reading, listing and searching files, and asking git, are left to "
+               "the shell, which does each in one call: there is no skill for "
+               "them. What needs a person watching the terminal is offered only "
+               "*in a conversation*.\n")
     out.append("| Skill | What it does | Call | Offered |")
     out.append("|---|---|---|---|")
     out += [f"| {a} | {_cell(b)} | {c} | {d} |" for a, b, c, d in offered]

@@ -126,14 +126,12 @@ how it samples. With one endpoint, it serves all four.
 
 | Way in | Start it with | Entry point | Where it stands |
 |---|---|---|---|
-| The terminal on Linux | `pragma`, or `pragma --agent` without memory | [`terminal/pragma_launcher.py`](../../terminal/pragma_launcher.py), then [`agent/chat.py`](../../agent/chat.py) | where Pragma is developed and tested |
-| The terminal on Windows | `pragma`, in PowerShell | [`terminal/Pragma.psm1`](../../terminal/Pragma.psm1), then [`agent/chat.py`](../../agent/chat.py) | follows Linux |
-| A project served to another program | `/serve`, on the home screen | [`terminal/pragma_serve.py`](../../terminal/pragma_serve.py), then [`agent/serve.py`](../../agent/serve.py) | Linux and macOS; [Serve a project](../how-to/serve-a-project.md) |
+| The terminal | `pragma`, or `pragma --agent` without memory | [`terminal/pragma_launcher.py`](../../terminal/pragma_launcher.py), then [`agent/chat.py`](../../agent/chat.py) | where Pragma is developed and tested |
+| A project served to another program | `/serve`, on the home screen | [`terminal/pragma_serve.py`](../../terminal/pragma_serve.py), then [`agent/serve.py`](../../agent/serve.py) | [Serve a project](../how-to/serve-a-project.md) |
 | One task, no interaction | `python -m agent.batch --task "..." --cwd DIR` | [`agent/batch.py`](../../agent/batch.py) | the same code everywhere |
 
-All four run the same loop, the same skills and the same memory.
-[The interfaces, and where each stands](interfaces.md) has what differs
-between the terminal on Linux and on Windows.
+All three run the same loop, the same skills and the same memory, on Linux
+— and on Windows inside WSL: [where Pragma runs](interfaces.md).
 
 ## Where state lives
 
@@ -148,7 +146,7 @@ The short version. [Files](../reference/files.md) has what is inside each.
 | A project's episodes | `~/.pragma/projects/NAME/episodes/`, with `dormant/` inside it | the memory worker |
 | A project's beliefs | `~/.pragma/projects/NAME/learnings.json` | the memory worker |
 | Memory work in flight, or that failed | `~/.pragma/projects/NAME/jobs/` | the conversation and the worker |
-| Snapshots of a project's memory | `~/.pragma/projects/backups/NAME/`, or `~/.pragma/backups/NAME/` on Windows | `/projects backups` |
+| Snapshots of a project's memory | `~/.pragma/projects/backups/NAME/` | `/projects backups` |
 | Plugins of the home screen | `~/.pragma/plugins/NAME/plugin.json` | you |
 | [Rules](../how-to/write-project-rules.md) the agent must follow in a project | `PRAGMA.md` in the workspace | you; the agent is refused |
 | What was said in every conversation held there | `.pragma_session.jsonl` in the workspace | the conversation |
@@ -198,8 +196,7 @@ The short version. [Files](../reference/files.md) has what is inside each.
 
 | File | What it is |
 |---|---|
-| [`pragma_launcher.py`](../../terminal/pragma_launcher.py) | The launcher on Linux and macOS: the registry of projects, opening one. |
-| [`Pragma.psm1`](../../terminal/Pragma.psm1), [`pragma-session.ps1`](../../terminal/pragma-session.ps1) | The same launcher for Windows PowerShell. [`Pragma.psd1`](../../terminal/Pragma.psd1) is its module manifest, and [`install.bat`](../../terminal/install.bat) runs the installer from a double-click. |
+| [`pragma_launcher.py`](../../terminal/pragma_launcher.py) | The launcher: the home screen, the projects, opening one. |
 | [`pragma_home.py`](../../terminal/pragma_home.py) | The home prompt, its commands, the plugins. |
 | [`pragma_configure.py`](../../terminal/pragma_configure.py) | The `/configure` pages. |
 | [`pragma_serve.py`](../../terminal/pragma_serve.py) | The `/serve` page, and starting and stopping what it serves. |
@@ -211,16 +208,13 @@ The short version. [Files](../reference/files.md) has what is inside each.
 | [`pragma_jobs.py`](../../terminal/pragma_jobs.py) | The record of background memory work, and `/jobs`. |
 | [`pragma_consolidate.py`](../../terminal/pragma_consolidate.py) | The memory worker. |
 | [`mem_map.py`](../../terminal/mem_map.py) | The views of a memory store behind `/memory`. |
-| [`pragma_endpoint.py`](../../terminal/pragma_endpoint.py) | Reports what an endpoint serves and how it samples. |
-| [`endpoint_monitor.py`](../../terminal/endpoint_monitor.py) | A dashboard for model servers. It stands alone and knows nothing of Pragma; [`monitor.ps1`](../../terminal/monitor.ps1) opens it on Windows. |
 
 ### The repository root
 
 | File | What it is |
 |---|---|
-| [`pragma`](../../pragma) | The command on Linux and macOS. |
-| [`install.sh`](../../install.sh), [`install.ps1`](../../install.ps1) | Build the Python environment and put `pragma` in every shell. |
-| [`start.bat`](../../start.bat) | The terminal interface from a double-click, on Windows. |
+| [`pragma`](../../pragma) | The command. |
+| [`install.sh`](../../install.sh) | Builds the Python environment and puts `pragma` in every shell. |
 | [`.env.example`](../../.env.example) | The few settings a new installation needs. |
 | [`docs/`](../README.md) | These pages, and the program that generates the reference. |
 | [`mkdocs.yml`](../../mkdocs.yml) | The menu and the theme of these pages as a site. |

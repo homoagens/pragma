@@ -5,7 +5,6 @@
 # tools/__init__.py
 from __future__ import annotations
 import importlib.util
-import os
 import sys
 from pathlib import Path
 
@@ -50,41 +49,29 @@ _NOT_AGENT_TOOLS = ("episode_consolidate",)
 # anywhere else they would be offered and do nothing.
 _CONVERSATION_ONLY = ("show_image",)
 
-# Skills a Unix shell already does, and does better - so on a Unix system they
-# are not offered at all.
+# THE SHELL READS, SEARCHES AND ASKS GIT. There are no skills for reading a
+# file, listing a folder, globbing, grepping or asking git: there were, and on
+# Linux and macOS they were never offered, because a tool that is offered is a
+# tool that gets used and the model kept reaching for them over `grep -rn`,
+# `find`, `sed -n`, `git status` and `ls`, which answer in one call what they
+# answered in five, and compose. They existed for cmd.exe, which has none of
+# that; Pragma runs on Windows inside WSL now.
 #
-# NOT because they are bad. Because a tool that is offered is a tool that gets
-# used: the prompt has said "the shell is a first-class tool here" for a while
-# and the model kept reaching for grep_search, which is the cheaper thought.
-# A policy written in prose loses to a palette every time, so the palette has
-# to agree with it. `grep -rn`, `find`, `sed -n`, `git status`, `ls` answer in
-# one call what these answered in five, and they compose - which is the thing
-# no fixed signature can offer.
-#
-# What is NOT in this list, and why. Everything that writes stays, because
-# `revert` is a snapshot taken by the dispatcher before a skill that names a
-# `path` runs, and execute_command never passes through it: an edit made with
-# `sed -i` cannot be undone. file_outline stays because `cat` on a file that
-# turns out to be four thousand lines costs the context the outline saves.
-#
-# On Windows the whole palette stays: cmd.exe has no grep, no usable find, no
-# wc, and the prompt there says the opposite for the same reason.
-_SHELL_DOES_THIS_BETTER = ("read_file", "list_dir", "glob_match",
-                           "grep_search", "git_status", "git_diff")
+# What stays, and why. Everything that writes, because `revert` is a snapshot
+# taken by the dispatcher before a skill that names a `path` runs, and
+# execute_command never passes through it: an edit made with `sed -i` cannot
+# be undone. file_outline, because `cat` on a file that turns out to be four
+# thousand lines costs the context the outline saves.
 
 
 def palette() -> dict:
     """The skills offered to the agent: everything in the registry but the
-    memory machinery (_NOT_AGENT_TOOLS). On a Unix system the shell-replaceable
-    half goes too: see _SHELL_DOES_THIS_BETTER. And what only a conversation
-    can do is left to the conversation to put back: see _CONVERSATION_ONLY.
+    memory machinery (_NOT_AGENT_TOOLS). What only a conversation can do is
+    left to the conversation to put back: see _CONVERSATION_ONLY.
     """
     out = dict(ALL_SKILLS)
     for name in _NOT_AGENT_TOOLS + _CONVERSATION_ONLY:
         out.pop(name, None)
-    if os.name != "nt":
-        for name in _SHELL_DOES_THIS_BETTER:
-            out.pop(name, None)
     return out
 
 

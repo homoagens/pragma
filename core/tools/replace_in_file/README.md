@@ -25,8 +25,8 @@ Replace an exact substring in a file (`old` must appear verbatim; `count=-1` for
 ## Examples
 
 ```json
-{ "action": "replace_in_file", "args": { "path": "C:\\proj\\config.py", "old": "DEBUG = True", "new": "DEBUG = False" } }
-{ "action": "replace_in_file", "args": { "path": "C:\\proj\\app.py", "old": "oldFunctionName", "new": "newFunctionName", "count": -1 } }
+{ "action": "replace_in_file", "args": { "path": "/home/me/proj/config.py", "old": "DEBUG = True", "new": "DEBUG = False" } }
+{ "action": "replace_in_file", "args": { "path": "/home/me/proj/app.py", "old": "oldFunctionName", "new": "newFunctionName", "count": -1 } }
 ```
 
 ## Do not

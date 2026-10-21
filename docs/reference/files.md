@@ -14,8 +14,7 @@ folder Pragma is installed in.
 | `endpoints.json` | The model servers, which role uses which, the optional faculties. | `/configure` |
 | `mcp.json` | The MCP servers whose tools the agent is offered. Optional. | `/configure` |
 | `projects/<name>/` | One project's memory. In it, `vectors/` is kept only when an embedding server is in use, and can be deleted: it is rebuilt. | the memory worker |
-| `projects/backups/<name>/` | Snapshots, on Linux and macOS. | `/projects backups` |
-| `backups/<name>/` | Snapshots, on Windows. | `/projects backups` |
+| `projects/backups/<name>/` | Snapshots. | `/projects backups` |
 | `plugins/<name>/plugin.json` | Commands added to the home screen. | you |
 | `serve.json` | The projects served to other programs: address, port, key, on or off. | `/serve` |
 | `serve/<name>.json`, `serve/<name>.log` | What a served project is doing while it runs, and its log. | the served project |

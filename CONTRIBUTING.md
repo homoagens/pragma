@@ -52,9 +52,8 @@ Open a GitHub issue with:
 1. Fork the repo and create a branch from `master`
 2. Make your changes
 3. Try them in the terminal on **Linux**: that is where Pragma is developed
-   and tested. The Windows terminal is aligned afterwards — see [where each
-   interface stands](docs/explanation/interfaces.md). If a change touches something
-   both launchers draw, say in the PR whether the Windows side was done too
+   and tested; on Windows it runs inside WSL — see [where Pragma
+   runs](docs/explanation/interfaces.md)
 4. Make sure the CI checks pass (see below)
 5. Open a PR with a short description of what and why
 

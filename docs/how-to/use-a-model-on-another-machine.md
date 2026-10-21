@@ -1,6 +1,6 @@
 # Use a model on another machine
 
-*For the terminal. Tried on Linux; [what differs on Windows](../explanation/interfaces.md).*
+*For the terminal on Linux; on Windows, inside WSL. [Where Pragma runs](../explanation/interfaces.md).*
 
 The model runs on a machine with a GPU; you work on a laptop. Two ways to
 join them, depending on what the network between them allows.

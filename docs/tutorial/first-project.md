@@ -1,6 +1,6 @@
 # Your first project
 
-*For the terminal. Written and tried on Linux; on Windows the same screens are drawn from PowerShell. [Where each interface stands](../explanation/interfaces.md).*
+*For the terminal. Written and tried on Linux; on Windows, inside WSL, it is the same. [Where Pragma runs](../explanation/interfaces.md).*
 
 Ten minutes, start to finish. You will point Pragma at a model, make a
 project, ask for two small things, close it, and come back to find that it

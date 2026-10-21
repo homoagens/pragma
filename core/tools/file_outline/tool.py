@@ -103,9 +103,9 @@ def file_outline(path: str, tail_lines: int = 5,
       - top-level keys (for JSON)
       - last `tail_lines` lines of the file (useful to know how it ends)
 
-    Use BEFORE read_file on any file you don't already know.
-    Lets you decide whether to read_file fully, read_file_section, or just
-    use insert_after/replace_in_file with the anchor of interest.
+    Use BEFORE reading any file you don't already know.
+    Lets you decide whether to read it whole, read a slice (`sed -n`), or
+    just use insert_after/replace_in_file with the anchor of interest.
 
     path       : file to summarize
     tail_lines : how many trailing lines to include verbatim (default 5)

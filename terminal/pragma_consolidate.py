@@ -11,8 +11,8 @@
 # the abstraction pass follow. Exactly what `/exit` used to do in front of you,
 # in its own process, so leaving a conversation takes as long as leaving takes.
 #
-# WHY A PROCESS AND NOT A THREAD. The harness is a PowerShell launcher running
-# a Python conversation: when the conversation returns, the launcher redraws the
+# WHY A PROCESS AND NOT A THREAD. The launcher runs the conversation as a
+# process of its own: when the conversation returns, the launcher redraws the
 # briefing. A thread would keep the interpreter alive, and the menu would not
 # come back until consolidation had finished - which is the thing being fixed.
 # Detached, the conversation exits at once and the work outlives it.

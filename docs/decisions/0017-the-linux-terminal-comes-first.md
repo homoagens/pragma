@@ -1,8 +1,8 @@
 # 17. The Linux terminal comes first
 
 - **Date:** 2026-10-06
-- **Status:** accepted; what it says of the browser interface superseded by [25](0025-what-is-not-used-is-removed.md)
-- **Where:** [`terminal/pragma_launcher.py`](../../terminal/pragma_launcher.py), [`terminal/Pragma.psm1`](../../terminal/Pragma.psm1), `agent/server.py`
+- **Status:** superseded: the browser part by [25](0025-what-is-not-used-is-removed.md), the rest by [26](0026-windows-runs-pragma-in-wsl.md)
+- **Where:** [`terminal/pragma_launcher.py`](../../terminal/pragma_launcher.py), `terminal/Pragma.psm1`, `agent/server.py`
 
 ## Context
 
