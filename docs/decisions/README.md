@@ -39,6 +39,7 @@ the file that makes them.
 | 24 | 2026-10-15 | [A project can be served to other programs](0024-a-project-can-be-served.md) | accepted |
 | 25 | 2026-10-21 | [What is not used is removed](0025-what-is-not-used-is-removed.md) | accepted |
 | 26 | 2026-10-21 | [Windows runs Pragma inside WSL](0026-windows-runs-pragma-in-wsl.md) | accepted |
+| 27 | 2026-10-21 | [One conversation, for the terminal and for /serve](0027-one-conversation-for-the-terminal-and-serve.md) | accepted |
 
 ## Adding one
 

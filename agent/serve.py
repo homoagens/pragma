@@ -67,11 +67,10 @@ for _p in (str(_ROOT), str(_ROOT / "core"), str(_ROOT / "terminal")):
 
 import config as baseline_config          # noqa: E402
 import llm_client                          # noqa: E402
-from react import AgentConfig, run_agent, _msg_chars   # noqa: E402
+from react import AgentConfig   # noqa: E402
 from tools import palette as skills_palette   # noqa: E402
 
 from agent import conversation             # noqa: E402
-from agent.batch import _make_on_step      # noqa: E402
 from agent.prompts import build_system_prompt, project_contract, session_block   # noqa: E402
 
 STATE_DIR = Path.home() / ".pragma" / "serve"
@@ -205,8 +204,16 @@ def _held_unless_allowed(run, root: str):
 
 # ── one conversation ──────────────────────────────────────────────────────────
 
-class Conversation:
-    """What a program and this project have said to each other since it began."""
+class Session:
+    """One conversation as a program holds it.
+
+    The conversation itself - the recall, the turn, the context and when it
+    is full, the memory at the end - is agent/conversation.py's, the same as
+    the terminal's. What is here is what a program adds to it: the words it
+    has sent so far, by which its next request is recognised as the same
+    conversation; one turn at a time; when it was last used; and the
+    program's context, cut to what the window can spare.
+    """
 
     def __init__(self, cwd: Path, memory: bool, max_steps: int):
         self.cwd = cwd
@@ -216,12 +223,6 @@ class Conversation:
         self.last_used = time.monotonic()
         self.lock = threading.Lock()
         self.said: list[str] = []            # the person's words, turn by turn
-        self.turns: list = []
-        self.turn_msgs: list[int] = []
-        self.history: list | None = None
-        self.desk_ids: set[str] = set()
-        self.desk_rules: set[str] = set()
-        self.reinforced: set[str] = set()
         self.closed = False
         self.relay = Relay()
 
@@ -232,7 +233,7 @@ class Conversation:
         import mcp_client
         for note in mcp_client.offer(skills):
             _say(note)
-        self.cfg = AgentConfig(
+        cfg = AgentConfig(
             name="Pragma",
             system_prompt=build_system_prompt(str(cwd), default_model=baseline_config.DEFAULT_MODEL,
                                               memory=memory)
@@ -242,115 +243,43 @@ class Conversation:
             temperature=None,
             max_steps=max_steps,
         )
-        try:
-            import checkpoint
-            checkpoint.begin_session(str(cwd))
-        except Exception:
-            pass
+        self.conv = conversation.Conversation(cwd, cfg, self.relay, memory)
+
+    @property
+    def turns(self) -> list:
+        return self.conv.turns
 
     def turn(self, text: str, context: str, out, stop: threading.Event) -> dict:
         """One turn. `out` receives the reasoning as it happens."""
+        cfg = self.conv.cfg
         self.relay.out = out
-        self.cfg.stop_event = stop
-        self.cfg.on_reasoning = out
-        peak = {"prompt": 0}
-
-        def on_step(ev: dict) -> None:
-            if ev.get("type") in ("thought", "final"):
-                peak["prompt"] = max(peak["prompt"],
-                                     int((getattr(llm_client, "LAST_STATS", {}) or {}).get("prompt") or 0))
-            inner(ev)
-
+        cfg.stop_event = stop
+        cfg.on_reasoning = out
         try:
-            turn = conversation.Turn(text)
-            inner = _make_on_step(self.relay, 0, turn.transcript,
-                                  text_limit=baseline_config.CHAT_TRANSCRIPT_CHARS)
-            core = text
-            if self.memory:
-                block = conversation.recall(text, self.cwd, self.desk_ids, self.desk_rules, self.reinforced,
-                                     self.relay, first_turn=not self.turns)
-                if block:
-                    core = f"{block}\n\n{text}"
-            prompt = core
-            window = int(baseline_config.CONTEXT_WINDOW or 0)
+            # The program's context, cut to a share of the agent's window: a
+            # whole deck can be hundreds of kilobytes, and a window spent on
+            # it is a window the conversation does not have.
+            shown = context
             if context:
+                window = int(baseline_config.CONTEXT_WINDOW or 0)
                 cap = max(1000, min(CONTEXT_CHARS, int(window * 4 * CONTEXT_SHARE))) if window else CONTEXT_CHARS
                 shown = context[:cap]
                 if len(context) > cap:
                     self.relay.say(f"[pragma] the program's context was cut from {len(context)} "
                                    f"to {cap} characters, to fit the model's window")
                     shown += "\n[... the rest was cut to fit the model's window]"
-                prompt = f"[PROGRAM CONTEXT]\n{shown}\n[/PROGRAM CONTEXT]\n\n{core}"
             # Counted before the turn runs: a turn that fails is still one the
             # program will send back as said, and the next request must match.
             self.said.append(text)
-            if stop.is_set():
-                return {"stopped": True}
-
-            before = len(self.history or [])
-            result = run_agent(self.cfg, prompt, on_step=on_step, history=self.history,
-                               request=text,
-                               compact_prefix=self._mid_turn)
+            done = self.conv.turn(text, context=shown)
             self.last_used = time.monotonic()
-            conversation.append_raw_log(self.cwd / ".pragma_session.jsonl", turn)
-            self.turns.append(turn)
-            if result is None:
+            if done.get("stopped"):
                 return {"stopped": True}
-
-            conclusion = result.get("conclusion", "") or ""
-            turn.transcript.append(f"FINAL: {conclusion[:2000]}")
-            self.history = result.get("messages") or self.history
-            # The context was for this turn. Left in the history it would be
-            # sent again with every later turn, one copy per question.
-            # (The request is the first user message the turn added; on the
-            # first turn the system prompt comes before it.)
-            if context and self.history:
-                for i in range(before, len(self.history)):
-                    m = self.history[i]
-                    if m.get("role") == "user" and m.get("content") == prompt:
-                        self.history[i] = dict(m, content=core)
-                        break
-            self.turn_msgs.append(max(len(self.history or []) - before, 1))
-            self._compact_if_full(peak["prompt"])
-            return {"conclusion": conclusion, "forced": bool(result.get("forced"))}
+            self.conv.compact_if_full()
+            return {"conclusion": done["conclusion"], "forced": done["forced"]}
         finally:
             self.relay.out = None
-            self.cfg.on_reasoning = None
-
-    def _mid_turn(self, prefix: list):
-        try:
-            new = conversation.compact_summary(prefix, self.relay, "", self.cfg.stop_event,
-                                        "the context is full - summarising the conversation before this request")
-        except llm_client.LLMInterrupted:
-            raise
-        except Exception as e:
-            self.relay.say(f"[COMPACTOR] not compacted - {str(e)[:100]}")
-            return None
-        if new is not None:
-            self.desk_ids.clear()
-            self.desk_rules.clear()
-        return new
-
-    def _compact_if_full(self, weighed: int) -> None:
-        if not self.history:
-            return
-        if weighed:
-            full = weighed > baseline_config.CHAT_COMPACT_TOKENS
-        else:
-            full = (sum(_msg_chars(m) for m in self.history)
-                    > baseline_config.CHAT_COMPACT_CHARS)
-        if not full:
-            return
-        try:
-            new = conversation.compact_summary(self.history, self.relay, "", None,
-                                        "the context is nearly full - summarising the conversation so far")
-        except Exception as e:
-            _say(f"not compacted - {type(e).__name__}: {str(e)[:100]}")
-            return
-        if new is not None:
-            self.history = new
-            self.desk_ids.clear()
-            self.desk_rules.clear()
+            cfg.on_reasoning = None
 
     def close(self, why: str) -> None:
         """Hand what was said to the memory, as ctrl+D does in the terminal."""
@@ -362,8 +291,7 @@ class Conversation:
         if not self.memory or not self.turns:
             return
         try:
-            if not conversation.consolidate_later(self.turns, self.cwd, note=f"served conversation {self.id}"):
-                conversation.consolidate(self.turns, self.cwd, self.relay)
+            self.conv.close(note=f"served conversation {self.id}")
         except Exception:
             traceback.print_exc()
 
@@ -391,7 +319,7 @@ class Server(http.server.ThreadingHTTPServer):
         self.memory = memory
         self.max_steps = max_steps
         self.local = address[0] in ("127.0.0.1", "localhost", "::1")
-        self.conversation: Conversation | None = None
+        self.conversation: Session | None = None
         self.guard = threading.Lock()
         self.online, self.detail = llm_client.ping_models()
         self.requests = 0
@@ -401,7 +329,7 @@ class Server(http.server.ThreadingHTTPServer):
     def model(self) -> str:
         return f"pragma:{self.project}"
 
-    def conversation_for(self, earlier: list[str]) -> Conversation:
+    def conversation_for(self, earlier: list[str]) -> Session:
         """The open conversation when this request continues it, or a new one."""
         with self.guard:
             c = self.conversation
@@ -410,7 +338,7 @@ class Server(http.server.ThreadingHTTPServer):
             if c and not c.closed:
                 threading.Thread(target=c.close, args=("the program started a new one",),
                                  daemon=False).start()
-            c = Conversation(self.cwd, self.memory, self.max_steps)
+            c = Session(self.cwd, self.memory, self.max_steps)
             self.conversation = c
             _say(f"conversation {c.id} opened")
             self.write_state()
@@ -535,7 +463,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
             c.last_used = time.monotonic()
             server.write_state()
 
-    def _run(self, c: Conversation, text: str, context: str, events: queue.Queue,
+    def _run(self, c: Session, text: str, context: str, events: queue.Queue,
              stop: threading.Event) -> None:
         try:
             res = c.turn(text, context, lambda t: events.put(("reasoning", t)), stop)
@@ -544,7 +472,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
             res = {"error": f"{type(e).__name__}: {str(e)[:200]}"}
         events.put(("done", res))
 
-    def _whole(self, c: Conversation, model: str, text: str, context: str) -> None:
+    def _whole(self, c: Session, model: str, text: str, context: str) -> None:
         events: queue.Queue = queue.Queue()
         stop = threading.Event()
         self._run(c, text, context, events, stop)
@@ -565,7 +493,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
                                      "reasoning_content": "".join(reasoning)}}],
         })
 
-    def _stream(self, c: Conversation, model: str, text: str, context: str) -> None:
+    def _stream(self, c: Session, model: str, text: str, context: str) -> None:
         cid = "chatcmpl-" + uuid.uuid4().hex[:24]
         created = int(time.time())
         self.send_response(200)
