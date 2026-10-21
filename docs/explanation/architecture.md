@@ -163,6 +163,7 @@ The short version. [Files](../reference/files.md) has what is inside each.
 | [`llm_client.py`](../../core/llm_client.py) | Every HTTP call to a model server: streaming, retries, the reasoning watchdog. |
 | [`endpoints.py`](../../core/endpoints.py) | Which server answers which role, and the catalogue file that says so. |
 | [`config.py`](../../core/config.py) | Every [setting](../reference/configuration.md), read from the environment. |
+| [`recall_levels.py`](../../core/recall_levels.py) | What few, medium and many mean for a recall, read by `config` and by the `/settings` page. |
 | [`tool_schema.py`](../../core/tool_schema.py) | Describes the skills as the `tools` a model is offered. |
 | [`json_parser.py`](../../core/json_parser.py) | Finds the JSON object in a model's reply. |
 | [`checkpoint.py`](../../core/checkpoint.py) | Undo for file edits. |

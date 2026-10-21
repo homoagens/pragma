@@ -1356,13 +1356,14 @@ EMBED_TIMEOUT = float(os.environ.get("PRAGMA_EMBED_TIMEOUT", "20"))
 # by kind, and the number that goes with each is only a ceiling. With both
 # kinds at `few` nothing is told differently and the ceiling is the old one,
 # CURATOR_MAX_FRAGMENTS in all.
-RECALL_LEVELS = ("few", "medium", "many")
-RECALL_OFFERED = {
-    "episodes":  {"few": 5, "medium": 10, "many": 20},
-    "recent":    {"few": 2, "medium": 3,  "many": 5},     # of those, the latest
-    "learnings": {"few": 4, "medium": 8,  "many": 16},
-}
-RECALL_TAKEN = {"few": 3, "medium": 5, "many": 8}
+#
+# The numbers themselves are in recall_levels.py, which the /settings page
+# reads too.
+import recall_levels as _levels  # noqa: E402
+
+RECALL_LEVELS = _levels.LEVELS
+RECALL_OFFERED = _levels.OFFERED
+RECALL_TAKEN = _levels.TAKEN
 
 
 def _recall_level(value) -> str:

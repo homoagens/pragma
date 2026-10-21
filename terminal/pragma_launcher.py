@@ -68,26 +68,29 @@ ENV_OF = {
 }
 
 # What a recall is offered and what it may take, each few, medium or many. The
-# numbers are config's (RECALL_OFFERED, RECALL_TAKEN), repeated here because
-# this page is drawn without importing it; what is written under a level is
-# what the page says, and the only place it is said.
+# numbers are core/recall_levels.py's, the same table config applies; what is
+# written under a level is what the page says, and the only place it is said.
+import recall_levels as _levels  # noqa: E402
+
+_E, _R, _L, _T = (_levels.OFFERED["episodes"], _levels.OFFERED["recent"],
+                  _levels.OFFERED["learnings"], _levels.TAKEN)
 RECALL = {
     "RecallMemoriesOffered": ("memories offered", "medium", [
-        ("few", "the 5 that fit the request best, 2 of them simply the latest"),
-        ("medium", "10, 3 of them the latest"),
-        ("many", "20, 5 of them the latest - a slower recall")]),
+        ("few", f"the {_E['few']} that fit the request best, {_R['few']} of them simply the latest"),
+        ("medium", f"{_E['medium']}, {_R['medium']} of them the latest"),
+        ("many", f"{_E['many']}, {_R['many']} of them the latest - a slower recall")]),
     "RecallBeliefsOffered": ("beliefs offered", "medium", [
-        ("few", "the 4 that fit the request best"),
-        ("medium", "8"),
-        ("many", "16 - a slower recall")]),
+        ("few", f"the {_L['few']} that fit the request best"),
+        ("medium", f"{_L['medium']}"),
+        ("many", f"{_L['many']} - a slower recall")]),
     "RecallMemoriesTaken": ("memories taken", "few", [
         ("few", "only what would change the next step"),
-        ("medium", "everything that bears on the request, up to 5"),
-        ("many", "anything on its subject, up to 8")]),
+        ("medium", f"everything that bears on the request, up to {_T['medium']}"),
+        ("many", f"anything on its subject, up to {_T['many']}")]),
     "RecallBeliefsTaken": ("beliefs taken", "few", [
         ("few", "only what would change the next step"),
-        ("medium", "everything that bears on the request, up to 5"),
-        ("many", "anything on its subject, up to 8")]),
+        ("medium", f"everything that bears on the request, up to {_T['medium']}"),
+        ("many", f"anything on its subject, up to {_T['many']}")]),
 }
 
 # The step budget a project runs at when it has never said. It is not a setting

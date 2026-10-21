@@ -616,21 +616,18 @@ _SEARCH_WARNED: list = []
 def _recall_says() -> str:
     """How much is offered to a recall and how readily it takes, in a line."""
     cfg = baseline_config
-    offered = getattr(cfg, "RECALL_OFFERED", {})
+    offered = cfg.RECALL_OFFERED
 
     def level(set_to: str, number: int, table: dict) -> str:
         if set_to:
             return set_to
         return next((k for k, v in table.items() if v == number), str(number))
 
-    def taken(name: str) -> str:
-        return getattr(cfg, name, "") or "few"
-
     return (f"memories: "
-            f"{level(getattr(cfg, 'CURATOR_OFFERED_EPISODES', ''), cfg.CURATOR_CANDIDATES_EPISODES, offered.get('episodes', {}))}"
-            f" offered, {taken('CURATOR_TAKEN_EPISODES')} taken · beliefs: "
-            f"{level(getattr(cfg, 'CURATOR_OFFERED_LEARNINGS', ''), cfg.CURATOR_CANDIDATES_LEARNINGS, offered.get('learnings', {}))}"
-            f" offered, {taken('CURATOR_TAKEN_LEARNINGS')} taken")
+            f"{level(cfg.CURATOR_OFFERED_EPISODES, cfg.CURATOR_CANDIDATES_EPISODES, offered['episodes'])}"
+            f" offered, {cfg.CURATOR_TAKEN_EPISODES or 'few'} taken · beliefs: "
+            f"{level(cfg.CURATOR_OFFERED_LEARNINGS, cfg.CURATOR_CANDIDATES_LEARNINGS, offered['learnings'])}"
+            f" offered, {cfg.CURATOR_TAKEN_LEARNINGS or 'few'} taken")
 
 
 def _settings_here() -> None:
