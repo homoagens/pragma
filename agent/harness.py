@@ -42,12 +42,16 @@ from __future__ import annotations
 
 import os
 import re
+import sys
 import threading
 import time
 
-# The accent, as the launcher set it: every process that draws a turn has
-# terminal/ on its path.
-from pragma_style import accent_hex  # noqa: F401  (pragma_jobs takes it from here)
+# The accent, as the launcher set it. terminal/ is put on the path here, not
+# assumed: `python -m agent.ledger` replays a turn with nothing else loaded.
+_TERMINAL = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "terminal")
+if _TERMINAL not in sys.path:
+    sys.path.append(_TERMINAL)
+from pragma_style import accent_hex  # noqa: E402,F401  (pragma_jobs takes it from here)
 
 # How much of the reasoning is shown while it is being written: the last
 # THINK_LINES lines of it, wrapped to the terminal. Enough to read a thought,
