@@ -70,6 +70,7 @@ from tools import palette as skills_palette   # noqa: E402
 from pragma_line import line as _line   # noqa: E402  a typed line, with the arrows
 # The prompt in the colour of the page it appears under.
 from pragma_style import accent as _accent   # noqa: E402
+import pragma_registry   # noqa: E402
 
 from agent.batch import (                  # noqa: E402
     _pool_line,
@@ -576,14 +577,7 @@ _CFG: list = []
 def _project_settings() -> dict:
     """What the open project has decided for itself, as the registry has it."""
     name = os.environ.get("PRAGMA_PROJECT", "").strip()
-    try:
-        data = json.loads((Path.home() / ".pragma" / "registry.json").read_text(encoding="utf-8-sig"))
-        for e in data if isinstance(data, list) else [data]:
-            if isinstance(e, dict) and e.get("name") == name:
-                return dict(e.get("settings") or {})
-    except Exception:
-        pass
-    return {}
+    return pragma_registry.settings_of(name) if name else {}
 
 
 # A project's words for how much its memory brings to a turn, and config's.
@@ -739,21 +733,8 @@ def _save_project_setting(key: str, value: str) -> bool:
     name = os.environ.get("PRAGMA_PROJECT", "").strip()
     if not name:
         return False
-    path = Path.home() / ".pragma" / "registry.json"
     try:
-        data = json.loads(path.read_text(encoding="utf-8-sig"))
-        entries = data if isinstance(data, list) else [data]
-        found = False
-        for e in entries:
-            if isinstance(e, dict) and e.get("name") == name:
-                e.setdefault("settings", {})[key] = value
-                found = True
-        if not found:
-            return False
-        tmp = path.with_suffix(".tmp")
-        tmp.write_text(json.dumps(entries, indent=2, ensure_ascii=False), encoding="utf-8")
-        os.replace(tmp, path)
-        return True
+        return pragma_registry.save_setting(name, key, value)
     except Exception:
         return False
 

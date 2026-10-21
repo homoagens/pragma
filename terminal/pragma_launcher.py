@@ -53,8 +53,8 @@ import pragma_home as home                     # noqa: E402  the home prompt, sh
 from pragma_menu import (SEP, accent, ask, choose, clear, columns, confirm, menu,   # noqa: E402,F401
                          pause, pick, read_key, row, say, title)
 from pragma_style import ESC, GREY, RESET   # noqa: E402
+import pragma_registry                       # noqa: E402
 
-REGISTRY = Path.home() / ".pragma" / "registry.json"
 PROJECTS = Path.home() / ".pragma" / "projects"
 
 # A project's settings, and the environment variable each one becomes. The
@@ -115,43 +115,8 @@ DEFAULT_STEPS = "50"
 
 # ── the registry ──────────────────────────────────────────────────────────────
 
-def read_registry() -> list[dict]:
-    try:
-        data = json.loads(REGISTRY.read_text(encoding="utf-8-sig"))
-    except Exception:
-        return []
-    if isinstance(data, dict):
-        data = [data]
-    return [e for e in data if isinstance(e, dict) and e.get("name")]
-
-
-def write_registry(entries: list[dict]) -> None:
-    REGISTRY.parent.mkdir(parents=True, exist_ok=True)
-    tmp = REGISTRY.with_suffix(".tmp")
-    tmp.write_text(json.dumps(entries, indent=2, ensure_ascii=False), encoding="utf-8")
-    os.replace(tmp, REGISTRY)
-
-
-def by_name(name: str) -> dict | None:
-    return next((e for e in read_registry() if e["name"].lower() == (name or "").lower()), None)
-
-
-def save_setting(name: str, key: str, value) -> None:
-    """One setting of one project. An empty value REMOVES it: absent means the
-    repository default, which is what someone clearing a field asked for. A
-    value is a string, or a list for the one setting that is one."""
-    entries = read_registry()
-    for e in entries:
-        if e["name"] != name:
-            continue
-        settings = dict(e.get("settings") or {})
-        if value in ("", []):
-            settings.pop(key, None)
-        else:
-            settings[key] = value
-        e["settings"] = settings
-    write_registry(entries)
-
+read_registry, write_registry = pragma_registry.read, pragma_registry.write
+by_name, save_setting = pragma_registry.by_name, pragma_registry.save_setting
 
 
 # ── the screen ────────────────────────────────────────────────────────────────

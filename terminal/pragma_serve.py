@@ -47,6 +47,7 @@ for _p in (str(HERE), str(ROOT), str(ROOT / "core")):
 
 from pragma_menu import (GREY, RESET, SEP, accent, ask, confirm, pause, pick,   # noqa: E402
                          say, title)
+import pragma_registry  # noqa: E402
 
 LIST = Path.home() / ".pragma" / "serve.json"
 STATE_DIR = Path.home() / ".pragma" / "serve"
@@ -106,15 +107,10 @@ def state_of(name: str) -> dict | None:
         return None
 
 
-def _registry_entry(name: str) -> dict | None:
-    import pragma_launcher
-    return pragma_launcher.by_name(name)
-
-
 def start(name: str, entry: dict) -> str:
     """Start serving a project. "" when it answers, or why it does not."""
     import pragma_launcher
-    project = _registry_entry(name)
+    project = pragma_registry.by_name(name)
     if not project:
         return "there is no such project any more"
     if not Path(str(project.get("workspace") or "")).is_dir():
@@ -283,8 +279,7 @@ def page() -> None:
 
 
 def add(listed: dict) -> str:
-    import pragma_launcher
-    projects = [e["name"] for e in pragma_launcher.read_registry() if e["name"] not in listed]
+    projects = [e["name"] for e in pragma_registry.read() if e["name"] not in listed]
     title("Serve", "add")
     if not projects:
         print()

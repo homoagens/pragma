@@ -53,7 +53,7 @@ import sys
 import time
 from pathlib import Path
 
-REGISTRY = Path.home() / ".pragma" / "registry.json"
+from pragma_registry import read as registry_entries  # noqa: E402
 from pragma_style import GREY, RESET, accent, columns  # noqa: E402
 GREEN, YELLOW = "\033[32m", "\033[33m"
 
@@ -264,17 +264,6 @@ def run_plugin(spec: dict, arg: str) -> int:
         return 1
     finally:
         print()
-
-
-def registry_entries() -> list[dict]:
-    """The registered projects, or nothing at all when the file cannot be read."""
-    try:
-        data = json.loads(REGISTRY.read_text(encoding="utf-8-sig"))
-    except Exception:
-        return []
-    if isinstance(data, dict):
-        data = [data]
-    return [e for e in data if isinstance(e, dict) and e.get("name")]
 
 
 def project_names() -> list[str]:
