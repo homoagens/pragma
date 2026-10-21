@@ -352,7 +352,7 @@ def compact_by_episodes(history: list, turns: list[Turn], turn_msgs: list[int],
 
 def recall(text: str, cwd, desk_ids: set[str], desk_rules: set[str],
             reinforced: set[str], renderer, first_turn: bool,
-            state: dict | None = None) -> str:
+            state: dict | None = None, stop_event=None) -> str:
     """The curator's contribution to one turn, or "".
 
     WHY ONCE PER TURN AND NOT ONCE PER SESSION. A conversation changes subject.
@@ -390,7 +390,7 @@ def recall(text: str, cwd, desk_ids: set[str], desk_rules: set[str],
         info = curator.curate_knowledge_detailed(
             text, workspace=str(cwd),
             exclude_ids=desk_ids, exclude_rules=desk_rules,
-            no_reinforce=reinforced)
+            no_reinforce=reinforced, stop_event=stop_event)
         took = f" · {_time.monotonic() - _t0:.0f}s"
         if state is not None and state.get("search"):
             # For the line under the prompt: whether the embedding server
@@ -412,6 +412,9 @@ def recall(text: str, cwd, desk_ids: set[str], desk_rules: set[str],
             say = getattr(renderer, "warning", None)
             if say:
                 say(note)
+    except llm_client.LLMInterrupted:
+        renderer.faculty("CURATOR", "stopped")
+        return ""
     except Exception as e:
         renderer.faculty("CURATOR", f"recall unavailable — {e}")
         return ""
@@ -580,7 +583,7 @@ class Conversation:
                 if self.memory:
                     block = recall(text, self.cwd, self.desk_ids, self.desk_rules,
                                    self.reinforced, renderer, first_turn=not self.turns,
-                                   state=self.state)
+                                   state=self.state, stop_event=stop)
                     if block:
                         core = f"{block}\n\n{text}"
                 prompt = core

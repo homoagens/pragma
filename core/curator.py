@@ -635,7 +635,7 @@ def _learning_card(ref: str, c: dict) -> str:
 
 
 def _ask_curator(task: str, eps: list[dict], lns: list[dict],
-                 model=None) -> tuple[list[str] | None, str, dict[str, str]]:
+                 model=None, stop_event=None) -> tuple[list[str] | None, str, dict[str, str]]:
     """Return (ordered selected refs, reason, ref -> use).
 
     refs is None on LLM failure. The use map is best effort: a ref missing from
@@ -669,8 +669,13 @@ def _ask_curator(task: str, eps: list[dict], lns: list[dict],
                 max_tokens=config.MEMORY_MAX_TOKENS,
                 **config.memory_call("select"),
                 response_schema=_CURATOR_SCHEMA,
+                stop_event=stop_event,
             )
         data = extract_json(raw)
+    except llm_client.LLMInterrupted:
+        # Stopped, not failed: the fallback below would pick - and
+        # reinforce - memories for a turn that is not going to run.
+        raise
     except Exception as e:
         # The reason travels with the failure. Swallowing it left the operator
         # with "curator unavailable" and nothing else - and the causes are very
@@ -890,7 +895,8 @@ def _placed(refs: list[str], eps: list[dict],
 def curate_knowledge_detailed(task: str, workspace: str = "", model=None,
                               exclude_ids: set[str] | None = None,
                               exclude_rules: set[str] | None = None,
-                              no_reinforce: set[str] | None = None) -> dict:
+                              no_reinforce: set[str] | None = None,
+                              stop_event=None) -> dict:
     """Compose the knowledge zone and report what the curator did.
 
     `exclude_ids` / `exclude_rules` name what the caller already has in front
@@ -937,7 +943,7 @@ def curate_knowledge_detailed(task: str, workspace: str = "", model=None,
         info["fallback"] = True
         return info
 
-    refs, reason, uses = _ask_curator(task, eps, lns, model=model)
+    refs, reason, uses = _ask_curator(task, eps, lns, model=model, stop_event=stop_event)
     if refs is None:                       # LLM failed → deterministic fallback
         info["reason"] = reason            # why, not only that it failed
         info["block"], refs = _fallback(eps, lns, workspace, no_reinforce)
