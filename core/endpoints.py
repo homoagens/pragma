@@ -225,6 +225,9 @@ class Endpoint:
 @dataclass
 class State:
     served_model: str = ""
+    # The model a reply said it came from, on an endpoint that names the
+    # model it asks for: see llm_client._note_answered.
+    answered_model: str = ""
     tools_unsupported: bool = False
     schema_unsupported: bool = False
     # chat_template_kwargs is llama.cpp's, not OpenAI's: a server that rejects
@@ -392,11 +395,14 @@ def problem(data) -> str:
 
 
 def _from_env() -> Endpoint:
+    # The model only when DEFAULT_MODEL is set, not config's fallback label
+    # ("llama3.2"): an endpoint that names a model is shown and recorded by
+    # that name, and a label nobody set would be taken for one.
     return Endpoint(
         name="default",
         base_url=(config.LLM_BASE_URL or DEFAULT_BASE_URL).rstrip("/"),
         api_key=config.LLM_API_KEY or "",
-        model=config.DEFAULT_MODEL or "",
+        model=os.environ.get("DEFAULT_MODEL", "").strip(),
     )
 
 
@@ -495,7 +501,8 @@ def probe(ep: Endpoint, timeout: float = 3.0) -> dict:
         # The model the endpoint names is the one every request asks for; the
         # first of the list is only right on a server that has one.
         listed = data.get("data") or []
-        out["served"] = model_name(ep.model or (listed[0].get("id", "") if listed else ""))
+        out["served"] = model_name((ep.model and state(ep.base_url).answered_model) or ep.model
+                                   or (listed[0].get("id", "") if listed else ""))
     except Exception:
         pass
     try:

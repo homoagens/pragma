@@ -31,7 +31,7 @@ Used until `/configure` writes its own file; the timeouts apply either way.
 |---|---|---|---|
 | `LLM_BASE_URL` | unset | Address of the OpenAI-compatible server, ending in `/v1`. *Project setting `Endpoint`.* | [`core/config.py`](../../core/config.py) |
 | `LLM_API_KEY` | unset | Key sent to that server. Local servers usually need none. | [`core/config.py`](../../core/config.py) |
-| `DEFAULT_MODEL` | `llama3.2` | Model name sent in the request. A single-model server ignores it. | [`core/config.py`](../../core/config.py) |
+| `DEFAULT_MODEL` | unset | Model name sent in the request, for a server that hosts several. Unset, the server is asked what it serves. | [`core/config.py`](../../core/config.py), [`core/endpoints.py`](../../core/endpoints.py) |
 | `PRAGMA_ENDPOINTS` | `~/.pragma/endpoints.json` | Another file to read the endpoint catalogue from. | [`core/endpoints.py`](../../core/endpoints.py) |
 | `PRAGMA_MCP` | `~/.pragma/mcp.json` | Another file to read the list of MCP servers from. | [`core/mcp_client.py`](../../core/mcp_client.py) |
 | `MCP_TIMEOUT` | `120` | Seconds before a call to a tool on an MCP server is abandoned. | [`core/mcp_client.py`](../../core/mcp_client.py) |

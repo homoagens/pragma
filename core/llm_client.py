@@ -387,7 +387,9 @@ def ping_models(base_url=None, api_key=None, timeout=5, model=None):
     try:
         data = (resp.json() or {}).get("data") or []
         if data or named:
-            raw = named or str(data[0].get("id", ""))
+            # What a reply has said beats what was asked for.
+            raw = (endpoints.state(url).answered_model if named else "") \
+                or named or str(data[0].get("id", ""))
             served = raw.replace("\\", "/").split("/")[-1]
             for ext in (".gguf", ".bin"):
                 if served.lower().endswith(ext):
@@ -405,6 +407,39 @@ def ping_models(base_url=None, api_key=None, timeout=5, model=None):
     except Exception:
         pass
     return True, f"{url} reachable" + (f" · serving {served}" if served else "")
+
+
+def _note_answered(url, asked, answered) -> None:
+    """Record the model a reply says it came from, and say so if it is not
+    the one asked for.
+
+    Only where the request named a model: on a hosted API the name chooses
+    it, and the reply's own `model` field is the endpoint's word on who
+    answered - which is what the screen and an episode's provenance should
+    carry, not the name typed into /configure. Where no model is named
+    (llama.cpp serving what it has loaded) /models already says, and the
+    field is not trusted: older llama.cpp builds put a placeholder there.
+
+    A dated snapshot of the name asked for (claude-x-5 -> claude-x-5-20261001)
+    is the same model. Anything else is warned about once, when it changes.
+    """
+    if not asked or not answered:
+        return
+    base = str(url).rstrip("/")
+    if base.endswith("/chat/completions"):
+        base = base[: -len("/chat/completions")]
+    name = endpoints.model_name(str(answered))
+    known = endpoints.state(base)
+    if known.answered_model == name:
+        return
+    known.answered_model = known.served_model = name
+    try:
+        if base == endpoints.for_role("agent").base_url:
+            config.SERVED_MODEL = name
+    except endpoints.EndpointError:
+        pass
+    if name != asked and not name.startswith(asked + "-"):
+        _warn(f"asked for {asked}, but the reply says {name} answered")
 
 
 # ── HTTP helpers ───────────────────────────────────────────────────────────────
@@ -901,6 +936,7 @@ def _post_streamed(url, headers, payload, timeout, label, stop_event):
         except Exception:
             status = None
     content, reasoning, finish, usage = "", "", "", {}
+    answered = ""
     guard = _make_loop_guard()
     # The cap is for the faculties only: the agent may think long on purpose,
     # and its own loop has the step budget and the watchdogs. The recall
@@ -935,6 +971,7 @@ def _post_streamed(url, headers, payload, timeout, label, stop_event):
             except ValueError:
                 continue
             usage = chunk.get("usage") or usage
+            answered = chunk.get("model") or answered
             choice = (chunk.get("choices") or [{}])[0]
             delta = choice.get("delta") or {}
             piece = delta.get("reasoning_content") or ""
@@ -982,6 +1019,7 @@ def _post_streamed(url, headers, payload, timeout, label, stop_event):
                 end()
             except Exception:
                 pass
+    _note_answered(url, payload.get("model"), answered)
     return {"content": content, "reasoning_content": reasoning}, finish, usage, time.time() - t0
 
 
@@ -1034,6 +1072,7 @@ def _call_openai_compatible(messages, model, temperature, max_tokens, timeout, b
         choice = data["choices"][0]
         msg    = choice.get("message", {})
         finish = choice.get("finish_reason", "")
+        _note_answered(base_url, model, data.get("model"))
     LAST_STATS = {
         "prompt":     usage.get("prompt_tokens", 0) or 0,
         "completion": usage.get("completion_tokens", 0) or 0,
@@ -1078,6 +1117,7 @@ def _stream_openai_compatible(messages, model, temperature, max_tokens, timeout,
     text = ""
     reasoning_buf = ""
     finish = ""
+    answered = ""
     guard = _make_loop_guard()
     with requests.Session() as session:
         with session.post(
@@ -1112,6 +1152,7 @@ def _stream_openai_compatible(messages, model, temperature, max_tokens, timeout,
                     chunk = _json.loads(data)
                 except Exception:
                     continue
+                answered = chunk.get("model") or answered
                 choice = chunk.get("choices", [{}])[0]
                 delta = choice.get("delta") or {}
                 reasoning = delta.get("reasoning_content") or ""
@@ -1128,6 +1169,7 @@ def _stream_openai_compatible(messages, model, temperature, max_tokens, timeout,
                 fin = choice.get("finish_reason")
                 if fin:
                     finish = fin
+    _note_answered(base_url, model, answered)
 
     # Some reasoning models end the reply inside the <think> block, so the
     # whole of it arrives as reasoning_content and no content ever comes. That
@@ -1205,6 +1247,7 @@ def _stream_tools_openai_compatible(payload, headers, timeout, base_url,
         return None
 
     content, reasoning, finish, usage = "", "", "", {}
+    answered = ""
     calls: dict = {}
     guard = _make_loop_guard()
     try:
@@ -1224,6 +1267,7 @@ def _stream_tools_openai_compatible(payload, headers, timeout, base_url,
             except ValueError:
                 continue
             usage = chunk.get("usage") or usage
+            answered = chunk.get("model") or answered
             progress = _progress_of(chunk) if on_progress is not None else None
             if progress is not None:
                 try:
@@ -1258,6 +1302,7 @@ def _stream_tools_openai_compatible(payload, headers, timeout, base_url,
                 finish = choice["finish_reason"]
     finally:
         resp.close()
+    _note_answered(base_url, payload.get("model"), answered)
 
     parsed = []
     for i in sorted(calls):
@@ -1388,6 +1433,7 @@ def _call_llm_tools_once(messages, tools, model=None, temperature=None,
 
     data  = resp.json()
     usage = data.get("usage") or {}
+    _note_answered(base_url, model, data.get("model"))
     LAST_STATS = {
         "prompt":     usage.get("prompt_tokens", 0) or 0,
         "completion": usage.get("completion_tokens", 0) or 0,

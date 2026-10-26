@@ -75,7 +75,9 @@ CONFIG = {
     "LLM_API_KEY": ("endpoint",
         "Key sent to that server. Local servers usually need none."),
     "DEFAULT_MODEL": ("endpoint",
-        "Model name sent in the request. A single-model server ignores it."),
+        "Model name sent in the request, for a server that hosts several. "
+        "Unset, the server is asked what it serves.",
+        "unset"),
     "PRAGMA_ENDPOINTS": ("endpoint",
         "Another file to read the endpoint catalogue from.",
         "`~/.pragma/endpoints.json`"),
