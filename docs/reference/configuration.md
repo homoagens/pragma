@@ -172,7 +172,7 @@ Both are off unless turned on in `/configure`; the variables override that for o
 |---|---|---|---|
 | `SUGGEST_NEXT` | the choice made in `/configure` | `on` or `off`: whether the line you will probably type next is offered, in grey. | [`core/config.py`](../../core/config.py) |
 | `SUGGEST_TIMEOUT` | `20` | Seconds after which that guess is given up on. | [`core/suggest.py`](../../core/suggest.py) |
-| `CRITIC` | the choice made in `/configure` | `on` or `off`: whether a turn that changed something is checked against the request before the answer is delivered. | [`core/config.py`](../../core/config.py) |
+| `CRITIC` | each project's choice, in `/settings` > helpers | `on` or `off`: whether a turn that changed something is checked against the request before the answer is delivered. Set, it outranks every project's choice for the run. | [`core/config.py`](../../core/config.py), [`terminal/pragma_launcher.py`](../../terminal/pragma_launcher.py) |
 | `CRITIC_MAX_ROUNDS` | `2` | Times that check may send the same turn back. | [`core/config.py`](../../core/config.py) |
 | `CRITIC_EVIDENCE_CHARS` | `24000` | Characters of the turn's record the check is shown. | [`core/config.py`](../../core/config.py) |
 

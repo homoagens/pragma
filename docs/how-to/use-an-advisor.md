@@ -26,7 +26,7 @@ never allow for you what cannot be undone.
 
 ## Turn it on
 
-Inside the project, `/settings`, then `advisor`:
+Inside the project, `/settings`, then `helpers`, then `advisor`:
 
 | Choice | What happens |
 |---|---|
@@ -43,10 +43,10 @@ next one.
 
 ## Choose the model
 
-`/configure`, the page of the endpoint that should advise, `serves`, and
-Enter on `advisor`. An endpoint that reasons is asked to reason for it. With
-no endpoint given the role, the agent's own model plans for itself — which
-already gives it the plan's `Done when`, but not a second mind.
+`/configure`, the `advisor` row at the top, then `server`. On a model that
+reasons it is asked to reason; on Claude, its `effort` is on the same page.
+With no server of its own, the agent's model plans for itself — which already
+gives it the plan's `Done when`, but not a second mind.
 
 ## Read what it said
 

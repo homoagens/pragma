@@ -325,9 +325,17 @@ def commands(notes) -> str:
     out.append("\n## `/configure`\n")
     out.append("Reached from either screen. A page walked with the arrows "
                "rather than typed.\n")
-    out.append("Its rows are the endpoints: each with the roles it serves and, "
-               "under its name, what answers there, where, and what it is. "
-               "Under them:\n")
+    out.append(f"Its first rows are who does what: one for each of the "
+               f"{len(conf['ROLE_BLURB'])} roles, with the server that answers it "
+               f"and how it thinks there.\n")
+    out += _rows(("Role", "The calls it answers"),
+                 ((f"`{r}`", b) for r, b in conf["ROLE_BLURB"].items()))
+    out.append("\nEnter on a role opens its page: `server`, which endpoint "
+               "answers it (any role but the agent's can follow the agent's), "
+               "and `reasons`, on a model that can - or `effort`, `low` to "
+               "`max`, on Claude through Anthropic's API.\n")
+    out.append("Then the endpoints: each with the roles it serves and, under "
+               "its name, what answers there, where, and what it is. Under them:\n")
     rows = []
     for name, blurb in actions:
         if name in conf["OPTION_BLURB"]:
@@ -335,15 +343,10 @@ def commands(notes) -> str:
         rows.append((f"`{name}`", blurb))
     out += _rows(("Choice", "What it is"), rows)
     out.append("\nEnter on an endpoint opens its own page. Every row there is "
-               "one question, and says its answer beside its name:\n")
+               "one question about the machine, and says its answer beside its name:\n")
     out += _rows(("Row", "What it is"), ((f"`{n}`", b) for n, b in endpoint_rows))
-    out.append("\n`serves` is there when there is more than one endpoint, and "
-               "`who reasons` for a model that reasons. On Anthropic's API "
-               "`effort` takes the place of `what it is`, `what it is for`, "
-               "`who reasons` and `sampling`.")
-    out.append(f"\nAn endpoint serves one or more of {len(conf['ROLE_BLURB'])} roles:\n")
-    out += _rows(("Role", "The calls it answers"),
-                 ((f"`{r}`", b) for r, b in conf["ROLE_BLURB"].items()))
+    out.append("\nOn Anthropic's API `what it is`, `what it is for` and "
+               "`sampling` are not asked: Claude takes an effort per role instead.")
 
     out.append("\n## Keys\n")
     out += _rows(("Key", "What it does"), notes.KEYS)

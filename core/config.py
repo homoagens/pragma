@@ -764,7 +764,9 @@ _CRITIC_RAW = os.environ.get("CRITIC", "").strip().lower()
 
 
 def critic_on() -> bool:
-    """Does the critic judge the work before it is delivered?"""
+    """Does the critic judge the work before it is delivered, where no project
+    says? CRITIC in the environment, else the switch /configure used to have -
+    still read, so that a machine that had it on keeps it on."""
     if _CRITIC_RAW in ("on", "1", "true", "yes"):
         return True
     if _CRITIC_RAW in ("off", "0", "false", "no"):
@@ -774,6 +776,23 @@ def critic_on() -> bool:
         return endpoints.option("critic", False)
     except Exception:
         return False
+
+
+# The project setting that turns the critic on or off for one project.
+CRITIC_SETTING = "Critic"
+
+
+def critic_for(settings: dict | None) -> bool:
+    """Does the critic judge this project's work? A project decides, in
+    /settings: whether its work is checked depends on what the work is, not
+    on the machine. CRITIC in the environment still wins, for one run; a
+    project that never chose follows critic_on()."""
+    if _CRITIC_RAW in ("on", "1", "true", "yes", "off", "0", "false", "no"):
+        return critic_on()
+    got = str((settings or {}).get(CRITIC_SETTING) or "").strip().lower()
+    if got in ("on", "off"):
+        return got == "on"
+    return critic_on()
 
 
 # How many times the critic may send the same turn back. The bound is for the

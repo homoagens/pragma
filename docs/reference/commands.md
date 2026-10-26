@@ -79,35 +79,7 @@ These belong to the home screen. Typed inside a project they say where they went
 
 Reached from either screen. A page walked with the arrows rather than typed.
 
-Its rows are the endpoints: each with the roles it serves and, under its name, what answers there, where, and what it is. Under them:
-
-| Choice | What it is |
-|---|---|
-| `add` | a server: its address, its name, what it is |
-| `prediction` | on or off: the line you will probably type next, in grey; tab takes it |
-| `critic` | on or off: the work checked against your request before it is delivered |
-| `meaning` | the memory searched by meaning, with an embedding server |
-| `mcp` | servers whose tools the agent is offered |
-
-Enter on an endpoint opens its own page. Every row there is one question, and says its answer beside its name:
-
-| Row | What it is |
-|---|---|
-| `serves` | the roles that ask this server |
-| `what it is` | a reasoning model, or one that answers at once |
-| `what it is for` | conversation, or writing code |
-| `who reasons` | each role, on or off |
-| `effort` | how much it thinks, for each role |
-| `sampling` | the knobs every request carries |
-| `name` | what these pages call it |
-| `address` | where the server listens |
-| `model` | which one, where a server hosts several |
-| `API key` | typed, or left in an environment variable |
-| `remove` | take it off the list |
-
-`serves` is there when there is more than one endpoint, and `who reasons` for a model that reasons. On Anthropic's API `effort` takes the place of `what it is`, `what it is for`, `who reasons` and `sampling`.
-
-An endpoint serves one or more of 5 roles:
+Its first rows are who does what: one for each of the 5 roles, with the server that answers it and how it thinks there.
 
 | Role | The calls it answers |
 |---|---|
@@ -116,6 +88,32 @@ An endpoint serves one or more of 5 roles:
 | `memory` | episodes and beliefs, in the background |
 | `critic` | the CRITIC, before the answer is delivered |
 | `advisor` | the ADVISOR: a plan before each turn, advice when the agent is stuck |
+
+Enter on a role opens its page: `server`, which endpoint answers it (any role but the agent's can follow the agent's), and `reasons`, on a model that can - or `effort`, `low` to `max`, on Claude through Anthropic's API.
+
+Then the endpoints: each with the roles it serves and, under its name, what answers there, where, and what it is. Under them:
+
+| Choice | What it is |
+|---|---|
+| `add` | a server: its address, its name, what it is |
+| `prediction` | on or off: the line you will probably type next, in grey; tab takes it |
+| `meaning` | the memory searched by meaning, with an embedding server |
+| `mcp` | servers whose tools the agent is offered |
+
+Enter on an endpoint opens its own page. Every row there is one question about the machine, and says its answer beside its name:
+
+| Row | What it is |
+|---|---|
+| `what it is` | a reasoning model, or one that answers at once |
+| `what it is for` | conversation, or writing code |
+| `sampling` | the knobs every request carries |
+| `name` | what these pages call it |
+| `address` | where the server listens |
+| `model` | which one, where a server hosts several |
+| `API key` | typed, or left in an environment variable |
+| `remove` | take it off the list |
+
+On Anthropic's API `what it is`, `what it is for` and `sampling` are not asked: Claude takes an effort per role instead.
 
 ## Keys
 

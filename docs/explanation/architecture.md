@@ -74,13 +74,15 @@ Four things watch the loop while it runs:
 - When the steps of a long turn approach the context window, the older ones
   are summarised by [`core/memory.py`](../../core/memory.py).
 
-Two optional faculties sit at the end of a turn, both off unless turned on in
-`/configure`: a check of the work against the request
-([`core/critic.py`](../../core/critic.py)), and a guess at the line you will
-type next ([`core/suggest.py`](../../core/suggest.py)). One more sits at the
-start and in the middle, off unless a project turns it on in `/settings`: an
-[advisor](../how-to/use-an-advisor.md) that plans the turn and advises an agent
-that has stopped making progress ([`core/advisor.py`](../../core/advisor.py)).
+Two optional faculties sit at the end of a turn, both off unless turned on: a
+check of the work against the request
+([`core/critic.py`](../../core/critic.py)), turned on per project in
+`/settings`, and a guess at the line you will type next
+([`core/suggest.py`](../../core/suggest.py)), for the whole machine in
+`/configure`. One more sits at the start and in the middle, off unless a
+project turns it on in `/settings`: an [advisor](../how-to/use-an-advisor.md)
+that plans the turn and advises an agent that has stopped making progress
+([`core/advisor.py`](../../core/advisor.py)).
 
 [`agent/ledger.py`](../../agent/ledger.py) is what all of this looks like on
 screen while it happens, and [`agent/picture.py`](../../agent/picture.py)

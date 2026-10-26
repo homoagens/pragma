@@ -545,11 +545,12 @@ class Conversation:
         inner = _make_on_step(renderer, 0, turn.transcript,
                               text_limit=baseline_config.CHAT_TRANSCRIPT_CHARS)
 
-        # The advisor is the project's choice, read at every turn: turned on in
-        # /settings, it plans the next one.
+        # The advisor and the critic are the project's choice, read at every
+        # turn: changed in /settings, they apply to the next one.
         settings = project_settings()
         cfg.advisor = advisor.mode_of(settings)
         cfg.advisor_consults = advisor.consults_of(settings)
+        cfg.critic = baseline_config.critic_for(settings)
         self.advice = []
 
         def on_step(ev: dict) -> None:

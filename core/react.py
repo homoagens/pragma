@@ -65,6 +65,8 @@ class AgentConfig:
     # and the advice; how many times a turn may ask for advice.
     advisor:       str = ""
     advisor_consults: int = 2
+    # Whether the critic checks this turn; None leaves it to config.critic_on().
+    critic:        Optional[bool] = None
 
 
 def _log_step(log_path: Path, entry: dict):
@@ -583,7 +585,7 @@ def run_agent(cfg: AgentConfig, user_task: str, log_path: Optional[Path] = None,
     # rewrites those: what each step did and got back, whole, and - through
     # checkpoint - each file as it was before this turn first touched it.
     # Read once: a switch flipped in /configure applies from the next turn.
-    _critic_on = config.critic_on()
+    _critic_on = cfg.critic if cfg.critic is not None else config.critic_on()
     _ledger: list[dict] = []
     _reviews: list = []
     _t_start = time.time()

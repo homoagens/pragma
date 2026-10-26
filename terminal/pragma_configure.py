@@ -17,22 +17,23 @@ set of numbers worth sending it. None of that changes when a project opens, so
 none of it is a project's setting - it is written here, once, beside the
 address, and every project that talks to that endpoint inherits it.
 
-THE PAGE IS ITS ENDPOINTS. Each is a row: its name, the roles it serves, and
-under it what answers there, where, and what it is. Enter on one opens it,
-and every row of ITS page is one question -
+THE PAGE IS WHO DOES WHAT, THEN THE SERVERS. First one row per role: the
+server that answers it and how it thinks there. Enter opens the role's page -
+which server, and whether it reasons (an effort, on Claude). Then one row per
+endpoint: its name, the roles it serves, and under it what answers there,
+where, and what it is. Enter on one opens it, and every row of ITS page is one
+question about the machine -
 
-    serves           the roles that ask this server
     what it is       a model that reasons, or one that answers at once
     what it is for   conversation, or code
-    who reasons      which roles are asked to, on a model that can
     sampling         the knobs every request carries
     name, address, model, API key
     remove
 
-Under the endpoints, `add` and the three switches that are the harness's
-rather than one server's - and `mcp`, the servers that publish tools rather
-than a model. Those are kept in a file of their own, ~/.pragma/mcp.json
-(core/mcp_client.py reads it), and have a page of their own.
+Under the endpoints, `add` and the switches that are the whole machine's
+rather than one server's or one project's - and `mcp`, the servers that publish
+tools rather than a model. Those are kept in a file of their own,
+~/.pragma/mcp.json (core/mcp_client.py reads it), and have a page of their own.
 
 The five roles are agent (the conversation), recall (the CURATOR, before each
 turn), memory (the faculties that write episodes and beliefs), critic (the
@@ -196,7 +197,7 @@ def config_base_url() -> str:
 def nature(entry: dict) -> str:
     """One line: what this endpoint is, what it is for, what it sends."""
     if endpoints.is_anthropic(entry.get("url", "")):
-        return f"Claude · effort: {effort_text(entry)}"
+        return "Claude, through Anthropic's API · each role's effort is set on its own page"
     kind, work = entry.get("kind"), entry.get("work")
     if not kind and not work and not entry.get("sampling"):
         return "not tuned yet - what it is, and how it samples"
@@ -308,6 +309,14 @@ def front(state: dict, at: tuple) -> tuple | None:
         print()
         print(f"    {eps[0].base_url}  {ok_bad(p.get('up'))}{endpoints.status_text(p)}{off()}")
     dim = GREY if accent() else ""
+    # WHO DOES WHAT, first: what a person comes here to change is usually
+    # which model does a job, not a server's address. One row per role.
+    if cat["endpoints"]:
+        for role in roles_here():
+            name, _ = role_target(cat, role)
+            put(f"{role:<10}{name} · {thinks_text(cat, role)}", role_says(ROLE_BLURB, role),
+                means=("role", role))
+        put()
     for ep in (eps if cat["endpoints"] else []):
         p = found.get(ep.base_url, {})
         entry = cat["endpoints"][ep.name]
@@ -321,7 +330,7 @@ def front(state: dict, at: tuple) -> tuple | None:
         tail = f"  ({', '.join(extra)})" if extra else ""
         # Three lines under the name, each wrapped under itself: what answers
         # there, where it is, what it is.
-        put(ep.name, roles_of(cat, ep.name) or "no role",
+        put(ep.name, ("serves " + roles_of(cat, ep.name)) if roles_of(cat, ep.name) else "no role",
             wrapped(endpoints.status_text(p), ok_bad(p.get("up")))
             + wrapped(endpoints.short_url(ep.base_url) + tail, dim)
             + wrapped(nature(entry), dim),
@@ -1003,87 +1012,134 @@ EFFORT_BLURB = {
 }
 
 
-def effort_text(entry: dict) -> str:
-    """The effort of each role on this endpoint, as one line."""
-    roles = roles_here()
-    got = {r: endpoints.effort_for(entry, r) for r in roles}
-    if not any(got.values()):
-        return "the model's own"
-    return ", ".join(f"{r} {got[r] or 'own'}" for r in roles)
+# -- who does what: one page per role ------------------------------------------
+#
+# WHO DOES WHAT IS ASKED PER ROLE, NOT PER SERVER. It was asked on each
+# server's page - `serves`, `who reasons`, `effort` - so the question "which
+# model plans, and does it reason?" had its answer spread over two servers'
+# pages, each listing every role. A role now has one row at the top of the
+# page and one small page: which server answers it, and how it thinks there.
+# What is stored has not changed: the roles map, and `reasons` and `effort`
+# beside the server, per role.
+
+def serving(cat: dict, role: str) -> tuple[str, dict]:
+    """(name, catalogue entry) of the server that answers a role."""
+    name, _ = role_target(cat, role)
+    return name, (cat.get("endpoints") or {}).get(name) or {}
 
 
-def ask_effort(state: dict, name: str) -> bool:
-    """One effort per role, on an Anthropic endpoint: see endpoints.EFFORTS.
-    Written only where one is set, so an endpoint that takes the model's own
-    has no `effort` key at all."""
-    entry = state["cat"]["endpoints"][name]
+def thinks_text(cat: dict, role: str) -> str:
+    """How a role thinks on its server, in a few words."""
+    _name, entry = serving(cat, role)
+    if endpoints.is_anthropic(entry.get("url", "")):
+        return f"effort {endpoints.effort_for(entry, role) or 'its own'}"
+    return "reasons" if endpoints.reasons_for(entry, role) else "answers at once"
+
+
+def set_reasons(entry: dict, role: str, on: bool) -> None:
+    """Whether a role reasons on this server. Written only where the roles
+    differ from the default - the agent, the memory and the advisor reason,
+    the recall and the critic answer at once - so a server that takes the
+    default has no `reasons` key at all."""
+    now = {r: endpoints.reasons_for(entry, r) for r in endpoints.ROLES}
+    now[role] = on
+    # Compared against what a server that says nothing gets, not against "all
+    # true": turning the recall ON would otherwise remove the table and
+    # switch it straight back off.
+    if now == {r: endpoints._REASONS_BY_DEFAULT[r] for r in endpoints.ROLES}:
+        entry.pop("reasons", None)
+    else:
+        entry["reasons"] = now
+
+
+def set_effort(entry: dict, role: str, level: str) -> None:
+    """A role's effort on a Claude server: see endpoints.EFFORTS. Written only
+    where one is set, so the model's own leaves no `effort` key."""
+    table = dict(entry.get("effort") or {})
+    if level in endpoints.EFFORTS:
+        table[role] = level
+    else:
+        table.pop(role, None)
+    if table:
+        entry["effort"] = table
+    else:
+        entry.pop("effort", None)
+
+
+def ask_server(state: dict, role: str) -> bool:
+    """Which server answers a role. Any role but the agent's can follow the
+    agent's instead."""
+    cat = state["cat"]
+    now, own = role_target(cat, role)
+    names = list(cat["endpoints"])
+    pairs = [(n, nature(cat["endpoints"][n])) for n in names]
+    if role != "agent":
+        pairs.insert(0, (FOLLOWS, "whichever server the agent uses, now and later"))
+    step(f"{role} > server")
+    got = choose(f"Which server answers the {role}?", pairs,
+                 now if (own or role == "agent") else FOLLOWS)
+    if not got:
+        return False
+    if got == FOLLOWS:
+        cat["roles"].pop(role, None)
+    else:
+        cat["roles"][role] = got
+    return True
+
+
+FOLLOWS = "the agent's"
+
+
+def role_page(state: dict, role: str) -> bool:
+    """One role: the server that answers it, and how it thinks there."""
     changed = False
     at = 0
     while True:
-        step(f"{name} > effort")
+        cat = state["cat"]
+        name, entry = serving(cat, role)
+        _, own = role_target(cat, role)
+        step(role)
         print()
-        print("  " + grey("A Claude model decides for itself when to think; the effort"))
-        print("  " + grey("says how much it may. Each role can ask for its own."))
-        roles = roles_here()
-        rows = [f"{role:<8}{endpoints.effort_for(entry, role) or OWN}" for role in roles]
-        i = pick("", rows, [role_says(ROLE_BLURB, r) for r in roles], min(at, len(roles) - 1))
+        print("  " + grey(role_says(ROLE_BLURB, role)))
+        rows = [f"{'server':<10}{name}" + ("" if own or role == "agent" else f"  ({FOLLOWS})")]
+        notes = ["which server answers it"]
+        acts = ["server"]
+        claude = endpoints.is_anthropic(entry.get("url", ""))
+        if claude:
+            rows.append(f"{'effort':<10}{endpoints.effort_for(entry, role) or OWN}")
+            notes.append("how much a Claude model may think")
+            acts.append("effort")
+        elif entry.get("kind") == "thinking":
+            rows.append(f"{'reasons':<10}{'yes' if endpoints.reasons_for(entry, role) else 'no - answers at once'}")
+            notes.append(role_says(REASONS_BLURB, role))
+            acts.append("reasons")
+        else:
+            print("  " + grey(f"{name} answers at once: nothing to switch here. Whether it can"))
+            print("  " + grey("reason is said on its own page, under `what it is`."))
+        i = pick("", rows, notes, min(at, len(rows) - 1))
         if i is None:
             return changed
         at = i
-        role = roles[i]
-        step(f"{name} > effort > {role}")
-        got = choose(f"How much should the {role} think?",
-                     [(level or OWN, EFFORT_BLURB[level]) for level in ("",) + endpoints.EFFORTS],
-                     endpoints.effort_for(entry, role) or OWN)
-        if not got:
-            continue
-        table = dict(entry.get("effort") or {})
-        if got in endpoints.EFFORTS:
-            table[role] = got
+        act = acts[i]
+        if act == "server":
+            done = run_action(state, lambda st: ask_server(st, role))
+        elif act == "reasons":
+            def flip(st, entry=entry):
+                set_reasons(entry, role, not endpoints.reasons_for(entry, role))
+                return True
+            done = run_action(state, flip)
         else:
-            table.pop(role, None)
-        if table:
-            entry["effort"] = table
-        else:
-            entry.pop("effort", None)
-        changed = True
-
-
-def who_reasons(entry: dict, name: str) -> bool:
-    """One switch per role. Written only when they differ from the
-    default - the agent and the memory reason, the recall answers at once -
-    so an endpoint that takes the default has no `reasons` key at all.
-    """
-    changed = False
-    # WHERE THE CURSOR IS WHEN THE PAGE COMES BACK. A switch is flipped by
-    # pressing Enter on it, and the page redraws to show the new answer - so
-    # landing back on the first row means the one you are working on walks
-    # away from you every time you press it. It stays where you left it.
-    at = 0
-    while True:
-        step(f"{name} > who reasons")
-        print()
-        print("  " + grey("This model reasons. Each role can be asked"))
-        print("  " + grey("to use it, or to answer at once instead."))
-        roles = roles_here()
-        rows = [f"{role:<8}{'reasons' if endpoints.reasons_for(entry, role) else 'answers at once'}"
-                for role in roles]
-        i = pick("", rows, [role_says(REASONS_BLURB, r) for r in roles], min(at, len(roles) - 1))
-        if i is None:
-            return changed
-        at = i
-        role = roles[i]
-        now = {r: endpoints.reasons_for(entry, r) for r in endpoints.ROLES}
-        now[role] = not now[role]
-        # Written only when it differs from what an endpoint that says nothing
-        # gets - which is no longer "all three": the recall answers at once
-        # by default. Compared against "all true", turning the recall ON would
-        # have removed the table and switched it straight back off.
-        if now == {r: endpoints._REASONS_BY_DEFAULT[r] for r in endpoints.ROLES}:
-            entry.pop("reasons", None)
-        else:
-            entry["reasons"] = now
-        changed = True
+            def level(st, entry=entry):
+                step(f"{role} > effort")
+                got = choose(f"How much should the {role} think?",
+                             [(lv or OWN, EFFORT_BLURB[lv]) for lv in ("",) + endpoints.EFFORTS],
+                             endpoints.effort_for(entry, role) or OWN)
+                if not got:
+                    return False
+                set_effort(entry, role, got)
+                return True
+            done = run_action(state, level)
+        changed = done or changed
 
 
 def cmd_add(state: dict) -> bool:
@@ -1113,40 +1169,11 @@ def cmd_add(state: dict) -> bool:
         for role in endpoints.ROLES:
             cat["roles"][role] = name
     state["note"] = (f"{name} added - the first endpoint, so every role uses it"
-                     if first else f"{name} added - it serves nothing until a role is given to it")
+                     if first else f"{name} added - it serves nothing until a role at the"
+                                   f" top of /configure is given to it")
     # Its own page is where it goes next: what it is has not been said yet.
     state["open"] = name
     return True
-
-
-def ask_serves(state: dict, name: str) -> bool:
-    """The roles and who answers each: Enter gives one to this endpoint.
-
-    It asked "what should it serve?" over a list of the roles alone, so the
-    answer was given without seeing what it took the role away from.
-    """
-    cat = state["cat"]
-    changed = False
-    at = 0
-    while True:
-        step(f"{name} > serves")
-        print()
-        print("  " + grey(f"Who answers each role now. Enter gives it to {name};"))
-        print("  " + grey("to take one away, give it to another endpoint from its page."))
-        # "everything" is a row only where there is more than one thing, and
-        # it means the roles on this page: one that is not shown is not moved.
-        roles = roles_here()
-        every = ["everything"] if len(roles) > 1 else []
-        rows = every + [f"{role:<8}{role_target(cat, role)[0]}" for role in roles]
-        i = pick("", rows, ["every role - what most setups are"][:len(every)]
-                 + [role_says(ROLE_BLURB, r) for r in roles], min(at, len(rows) - 1))
-        if i is None:
-            return changed
-        at = i
-        for role in (roles if every and i == 0 else (roles[i - len(every)],)):
-            if cat["roles"].get(role) != name:
-                cat["roles"][role] = name
-                changed = True
 
 
 def ask_kind(state: dict, name: str) -> bool:
@@ -1169,10 +1196,6 @@ def ask_work(state: dict, name: str) -> bool:
         return False
     entry["work"] = got
     return True
-
-
-def ask_who(state: dict, name: str) -> bool:
-    return who_reasons(state["cat"]["endpoints"][name], name)
 
 
 def ask_sampling(state: dict, name: str) -> bool:
@@ -1286,8 +1309,9 @@ def ask_remove(state: dict, name: str) -> bool:
     cat = state["cat"]
     users = [role for role, n in cat["roles"].items() if n == name]
     if users and len(cat["endpoints"]) > 1:
-        raise ValueError(f"'{name}' serves {', '.join(users)} - open the endpoint that should "
-                         f"take {'it' if len(users) == 1 else 'them'} over, and say so under `serves`")
+        raise ValueError(f"'{name}' serves {', '.join(users)} - give "
+                         f"{'it' if len(users) == 1 else 'them'} to another server first, from the"
+                         f" roles at the top of /configure")
     step(f"{name} > remove")
     print()
     print("  " + grey(cat["endpoints"][name].get("url", "")))
@@ -1305,12 +1329,12 @@ def ask_remove(state: dict, name: str) -> bool:
 # pages - use, tune, edit - reached by choosing the verb first and the
 # endpoint second; and `edit` asked its four questions in a row, whichever of
 # them you had come to change.
+#
+# Which roles it serves and how each thinks there are not among them: they are
+# asked on the role's own page (role_page), from the top of /configure.
 ENDPOINT_ROWS = [
-    ("serves",         "the roles that ask this server", ask_serves),
     ("what it is",     "a reasoning model, or one that answers at once", ask_kind),
     ("what it is for", "conversation, or writing code", ask_work),
-    ("who reasons",    "each role, on or off", ask_who),
-    ("effort",         "how much it thinks, for each role", ask_effort),
     ("sampling",       "the knobs every request carries", ask_sampling),
     ("name",           "what these pages call it", ask_name),
     ("address",        "where the server listens", ask_address),
@@ -1340,12 +1364,12 @@ def endpoint_page(state: dict, name: str) -> bool:
         if told:
             print()
             say(f"  {told}", "good")
+        serves = roles_of(cat, name)
+        print("  " + grey(f"serves: {serves}" if serves else
+                          "serves no role yet: give it one from the roles at the top of /configure"))
         says = {
-            "serves": roles_of(cat, name) or "no role",
             "what it is": entry.get("kind") or "not set",
             "what it is for": entry.get("work") or "general",
-            "who reasons": reasons_text(entry),
-            "effort": effort_text(entry),
             "sampling": ("the server's own numbers" if not entry.get("sampling")
                          else knob_text(endpoints.sampling_row(entry)) or "nothing set yet"),
             "name": name,
@@ -1354,21 +1378,11 @@ def endpoint_page(state: dict, name: str) -> bool:
             "API key": key_text(entry),
             "remove": "",
         }
-        # Only what can change something. With one endpoint there is nobody
-        # else to serve a role; on a model that answers at once there is no
-        # reasoning to switch. A row that cannot change anything is a row that
-        # has to be explained.
+        # Only what can change something: Claude takes an effort per role, not
+        # the kind and the sampling numbers of a llama.cpp model.
         absent = set()
-        if len(cat["endpoints"]) < 2:
-            absent.add("serves")
-        if entry.get("kind") != "thinking":
-            absent.add("who reasons")
-        # Claude takes an effort, not the switch and the sampling numbers of a
-        # llama.cpp model (endpoints.EFFORTS); every other server the reverse.
         if endpoints.is_anthropic(entry.get("url", "")):
-            absent.update(("what it is", "what it is for", "who reasons", "sampling"))
-        else:
-            absent.add("effort")
+            absent.update(("what it is", "what it is for", "sampling"))
         options, notes, what = [], [], []
         for label, blurb, handler in ENDPOINT_ROWS:
             if label in absent:
@@ -1409,10 +1423,6 @@ def _flip(state: dict, key: str) -> bool:
 
 def cmd_prediction(state: dict) -> bool:
     return _flip(state, "prediction")
-
-
-def cmd_critic(state: dict) -> bool:
-    return _flip(state, "critic")
 
 
 def cmd_meaning(state: dict) -> bool:
@@ -1840,9 +1850,11 @@ def cmd_mcp(state: dict) -> bool:
 
 
 # What each switch IS, beside its name - the row says it, not a page.
+#
+# The critic is not among them: whether a project's work is checked is the
+# project's to say, in /settings (config.critic_for).
 OPTION_BLURB = {
     "prediction": "the line you will probably type next, in grey; tab takes it",
-    "critic":     "the work checked against your request before it is delivered",
 }
 
 
@@ -1851,7 +1863,6 @@ OPTION_BLURB = {
 ACTIONS = [
     ("add",       "a server: its address, its name, what it is", cmd_add),
     ("prediction", "", cmd_prediction),
-    ("critic", "", cmd_critic),
     ("meaning", "the memory searched by meaning, with an embedding server", cmd_meaning),
     ("mcp", "servers whose tools the agent is offered", cmd_mcp),
 ]
@@ -1954,6 +1965,10 @@ def main() -> int:
         kind, name = chosen
         if kind == "endpoint":
             if endpoint_page(state, name):
+                changed = True
+            continue
+        if kind == "role":
+            if role_page(state, name):
                 changed = True
             continue
         if run_action(state, handlers[name]):

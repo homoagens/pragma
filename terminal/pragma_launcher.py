@@ -72,6 +72,7 @@ ENV_OF = {
 # written under a level is what the page says, and the only place it is said.
 import recall_levels as _levels  # noqa: E402
 import advisor  # noqa: E402
+import config  # noqa: E402
 import rule_packs  # noqa: E402
 
 _E, _R, _L, _T = (_levels.OFFERED["episodes"], _levels.OFFERED["recent"],
@@ -407,29 +408,20 @@ def choices_page(entry: dict) -> bool:
     while True:
         settings = (by_name(name) or entry).get("settings") or {}
         steps = str(settings.get("MaxSteps", "") or DEFAULT_STEPS)
-        # How much the memory brings to a turn is not asked of an agent that
-        # runs without one.
-        recall = {} if home.agent_alone() else RECALL
         allowed = allowed_commands(settings)
         packs = rule_packs.chosen(settings)
-        mode = advisor.mode_of(settings)
-        keys = ["MaxSteps", "AllowedCommands", rule_packs.SETTING, advisor.SETTING]
-        options = ["steps per turn", "commands allowed", "rule packs", "advisor"]
+        keys = ["MaxSteps", "AllowedCommands", rule_packs.SETTING, "helpers"]
+        options = ["steps per turn", "commands allowed", "rule packs", "helpers"]
         notes = [steps, (f"{len(allowed)} without asking" if allowed
                          else "none - every command that cannot be undone asks"),
                  ", ".join(packs) if packs else "none - the agent's own way of working",
-                 dict(ADVISOR_LEVELS)[ADVISOR_SHOWN.get(mode, "off")]]
-        # How many times a turn may ask, only where it may ask at all.
-        if mode == "consult":
-            keys.append(advisor.CONSULTS_SETTING)
-            options.append("advice per turn")
-            notes.append(f"{advisor.consults_of(settings)}{SEP}at most, when the agent"
-                         f" stops making progress")
-        keys += list(recall)
-        for key, (label, default, levels) in recall.items():
-            level = str(settings.get(key, "") or default)
-            options.append(label)
-            notes.append(f"{level}{SEP}{dict(levels).get(level, '')}")
+                 helpers_text(settings)]
+        # How much the memory brings to a turn is not asked of an agent that
+        # runs without one.
+        if not home.agent_alone():
+            keys.append("recall")
+            options.append("memory recall")
+            notes.append(recall_text(settings))
         title("Settings", name)
         chosen = pick("", options, notes, at)
         if chosen is None:
@@ -438,19 +430,107 @@ def choices_page(entry: dict) -> bool:
         key = keys[chosen]
         if key == "MaxSteps":
             changed = steps_question(name, steps) or changed
-            continue
-        if key == "AllowedCommands":
+        elif key == "AllowedCommands":
             changed = allowed_page(name) or changed
-            continue
-        if key == rule_packs.SETTING:
+        elif key == rule_packs.SETTING:
             changed = packs_page(name) or changed
-            continue
+        elif key == "helpers":
+            changed = helpers_page(name) or changed
+        else:
+            changed = recall_page(name) or changed
+
+
+# THE HELPERS: the second minds a project can have look over its agent's work
+# - the advisor before and during a turn, the critic at its end. A project's
+# own, because whether work wants planning or checking depends on the work.
+
+def helpers_text(settings: dict) -> str:
+    mode = advisor.mode_of(settings)
+    said = "advisor " + ADVISOR_SHOWN.get(mode, "off")
+    if mode == "consult":
+        said += f" ({advisor.consults_of(settings)})"
+    return f"{said}{SEP}critic {'on' if config.critic_for(settings) else 'off'}"
+
+
+def helpers_page(name: str) -> bool:
+    """The advisor and the critic of one project. Whether anything changed."""
+    changed = False
+    at = 0
+    while True:
+        settings = (by_name(name) or {}).get("settings") or {}
+        mode = advisor.mode_of(settings)
+        critic = config.critic_for(settings)
+        keys = [advisor.SETTING]
+        options = [f"{'advisor':<17}{ADVISOR_SHOWN.get(mode, 'off')}"]
+        notes = [dict(ADVISOR_LEVELS)[ADVISOR_SHOWN.get(mode, "off")]]
+        # How many times a turn may ask, only where it may ask at all.
+        if mode == "consult":
+            keys.append(advisor.CONSULTS_SETTING)
+            options.append(f"{'advice per turn':<17}{advisor.consults_of(settings)}")
+            notes.append("at most, when the agent stops making progress")
+        keys.append(config.CRITIC_SETTING)
+        options.append(f"{'critic':<17}{'on' if critic else 'off'}")
+        notes.append("the work checked against your request before it is delivered"
+                     + (" - CRITIC in this window's environment decides" if CRITIC_ENV else ""))
+        title("Settings", f"{name} > helpers")
+        print()
+        for line in HELPERS_SAYS:
+            say(f"  {line}" if line else "", "dim")
+        chosen = pick("", options, notes, min(at, len(options) - 1))
+        if chosen is None:
+            return changed
+        at = chosen
+        key = keys[chosen]
         if key == advisor.SETTING:
             changed = advisor_question(name, mode) or changed
-            continue
-        if key == advisor.CONSULTS_SETTING:
+        elif key == advisor.CONSULTS_SETTING:
             changed = consults_question(name, str(advisor.consults_of(settings))) or changed
-            continue
+        else:
+            # One press, on or off, written either way: a project that chose
+            # stays chosen whatever the machine's default becomes.
+            save_setting(name, config.CRITIC_SETTING, "off" if critic else "on")
+            changed = True
+
+
+HELPERS_SAYS = (
+    "Second minds on the agent's work, in this project only. The advisor",
+    "plans each turn and says what to do when the agent stops making",
+    "progress; the critic checks the work against what you asked before the",
+    "answer reaches you. Each costs calls to a model, and time.",
+    "",
+    "Which model each one is: /configure, its row at the top.",
+)
+
+# CRITIC set in the environment outranks the project, for one run.
+CRITIC_ENV = os.environ.get("CRITIC", "").strip()
+
+
+def recall_text(settings: dict) -> str:
+    """How much the memory brings to a turn, in one line: what differs from
+    what Pragma comes with, or that nothing does."""
+    differ = [f"{label} {settings[key]}" for key, (label, default, _levels) in RECALL.items()
+              if str(settings.get(key, "") or default) != default]
+    return ", ".join(differ) if differ else "as Pragma comes"
+
+
+def recall_page(name: str) -> bool:
+    """The four levels of how much the memory brings to a turn."""
+    changed = False
+    at = 0
+    while True:
+        settings = (by_name(name) or {}).get("settings") or {}
+        keys, options, notes = [], [], []
+        for key, (label, default, levels) in RECALL.items():
+            level = str(settings.get(key, "") or default)
+            keys.append(key)
+            options.append(f"{label:<18}{level}")
+            notes.append(dict(levels).get(level, ""))
+        title("Settings", f"{name} > memory recall")
+        chosen = pick("", options, notes, at)
+        if chosen is None:
+            return changed
+        at = chosen
+        key = keys[chosen]
         label, default, levels = RECALL[key]
         now = str(settings.get(key, "") or default)
         title("Settings", f"{name} > {label}")
@@ -595,8 +675,8 @@ ADVISOR_SAYS = (
     "did when it stops making progress, and says what to do next. It never",
     "acts and never answers you. Each plan costs a call, before the first step.",
     "",
-    "Which model it is: /configure, an endpoint's `serves`, the advisor role.",
-    "With none given, the agent's own model plans for it.",
+    "Which model it is: /configure, the advisor row at the top. With no",
+    "server of its own, the agent's model plans for itself.",
 )
 
 

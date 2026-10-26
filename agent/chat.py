@@ -683,6 +683,9 @@ def _settings_here() -> None:
         said.append({"": "the advisor off", "plan": "the advisor: a plan before each turn",
                      "consult": f"the advisor: a plan, and up to {advisor.consults_of(settings)} "
                                 f"pieces of advice a turn"}[mode])
+    if baseline_config.critic_for(settings) != baseline_config.critic_for(was):
+        said.append("the critic " + ("on: the work is checked before it is delivered"
+                                     if baseline_config.critic_for(settings) else "off"))
     packs = _packs_here(settings)
     if said:
         for line in said:
@@ -1243,7 +1246,7 @@ def _status_lines() -> list[tuple[str, str]]:
                                   " on the prompt; tab takes it  (one recall call"
                                   " per turn, and the prompt waits for it)"))
     try:
-        critic_on = cfg.critic_on()
+        critic_on = cfg.critic_for(settings)
     except Exception:
         critic_on = False
     if critic_on:

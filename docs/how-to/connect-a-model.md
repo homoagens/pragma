@@ -26,43 +26,44 @@ The first endpoint you add serves everything. You can stop here.
 ## Say what the model is
 
 Adding an endpoint leaves you on its own page. To come back to it later:
-`/configure`, and Enter on its name. Every row of that page is one question,
-with its answer beside it; these four say what the model is:
+`/configure`, and Enter on its name. Every row of that page is one question
+about the machine, with its answer beside it; these three say what the model
+is:
 
 | Row | What to answer |
 |---|---|
 | `what it is` | `thinking` if the model reasons before it answers, `instruct` if it answers at once. |
 | `what it is for` | `general`, or `coding` if this endpoint is used for writing and fixing code. |
-| `who reasons` | Only for a `thinking` model: which roles are asked to reason. |
 | `sampling` | `standard` sends nothing and the server keeps the numbers it was started with. `advanced` lets you type them. `ask it` has the model read its own card and fill them in. |
 
 These answers belong to the endpoint, not to a project: every project that
 talks to this server inherits them.
 
 **Claude, through Anthropic's API**, is asked differently, and its page says
-so: the four rows above give way to one, `effort`. A Claude model decides for
-itself when to think; the effort - `low` to `max`, for each role - says how
-much it may, as Claude Code does. A role with none set gets the model's own.
-The address is `https://api.anthropic.com/v1`, `model` the model's name
-(`claude-haiku-5-5`), and the key is best left in an environment variable.
-The model's reasoning is not shown while it runs: that API does not return it.
+so: the three rows above are not asked. A Claude model decides for itself when
+to think; how much it may - its effort, `low` to `max` - is set for each role
+that uses it (below), as Claude Code does. The address is
+`https://api.anthropic.com/v1`, `model` the model's name (`claude-haiku-5-5`),
+and the key is best left in an environment variable. The model's reasoning is
+not shown while it runs: that API does not return it.
 
-## Use a second server for part of the work
+## Who does what
 
-A model call is made in one of five roles, listed under
-[`/configure`](../reference/commands.md#configure) in the commands reference.
-One endpoint can serve them all, or each can have its own — a small fast model
-for the recall that runs before every turn, a larger one for the agent, or a
-more capable one as the [advisor](use-an-advisor.md) of a small agent.
+A model call is made in one of five roles, and the top of `/configure` has a
+row for each: the server that answers it, and how it thinks there. One server
+can answer them all, or each can have its own — a small fast model for the
+recall that runs before every turn, a larger one for the agent, or a more
+capable one as the [advisor](use-an-advisor.md) of a small agent.
 
-1. `/configure`, then `add`, for the second server. You are left on its page.
-2. Press Enter on `serves`. The page lists the roles and who answers
-   each one now.
-3. Press Enter on a role to give it to this endpoint, or on `everything`.
-   **ctrl+D** when you are done.
+1. `/configure`, then `add`, for the second server, if it is not there yet.
+2. Enter on the role, at the top of the page. Its page has two rows.
+3. `server`: which endpoint answers it. Any role but the agent's can be set to
+   follow the agent's, whichever that is.
+4. `reasons`: on a model that reasons, whether this role is asked to — the
+   recall and the critic answer at once unless you say otherwise. On Claude
+   the row is `effort` instead.
 
-To take a role away from an endpoint, give it to another one from that
-endpoint's page. A role that has no endpoint of its own follows the agent's.
+A role that has no server of its own follows the agent's.
 
 ## Change an address, a name or a key
 
