@@ -6,8 +6,8 @@
 
 ## Context
 
-A small model run as the agent does the work and misjudges it. Asked for a
-snake game, Qwen3.6-35B-A3B delivered one that worked, after 85 steps: some 65
+A model run as the agent does the work and misjudges it. Asked for a snake
+game, Qwen3.8 Flash Next delivered one that worked, after 85 steps: some 65
 of them went on six variants of the same throwaway terminal script, and at no
 point did it stop to ask whether it was getting anywhere.
 

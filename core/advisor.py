@@ -7,7 +7,7 @@
 WHAT IT IS FOR. A small model run as the agent is good at doing what it is
 told and poor at three things: knowing what "done" looks like, noticing that
 it is going round in circles, and knowing when to stop and ask. One snake game
-on Qwen3.6-35B-A3B took 85 steps; the game worked, and some 65 of them went on
+on Qwen3.8 Flash Next took 85 steps; the game worked, and some 65 of them went on
 six variants of the same throwaway terminal script, never once asking whether
 they were getting anywhere. The advisor is another model - usually a more
 capable one, on its own endpoint (the `advisor` role) - that does those three
