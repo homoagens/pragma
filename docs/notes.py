@@ -305,7 +305,7 @@ CONFIG = {
     "CRITIC": ("options",
         "`on` or `off`: whether a turn that changed something is checked against the request before the "
         "answer is delivered. Set, it outranks every project's choice for the run.",
-        "each project's choice, in `/settings` > helpers"),
+        "each project's choice, in `/settings`"),
     "CRITIC_MAX_ROUNDS": ("options",
         "Times that check may send the same turn back."),
     "CRITIC_EVIDENCE_CHARS": ("options",

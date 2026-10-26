@@ -42,7 +42,7 @@ the file that makes them.
 | 27 | 2026-10-21 | [One conversation, for the terminal and for /serve](0027-one-conversation-for-the-terminal-and-serve.md) | accepted |
 | 28 | 2026-10-21 | [Rule packs are turned on by the person](0028-rule-packs-are-turned-on-by-the-person.md) | accepted |
 | 29 | 2026-10-26 | [The advisor is called by Pragma, not by the agent](0029-the-advisor-is-called-by-pragma-not-by-the-agent.md) | accepted |
-| 30 | 2026-10-26 | [Who does what is asked per role, and helpers are a project's](0030-who-does-what-is-asked-per-role.md) | accepted |
+| 30 | 2026-10-26 | [One rule for every page: ←→ changes, Enter opens](0030-who-does-what-is-asked-per-role.md) | accepted |
 
 ## Adding one
 

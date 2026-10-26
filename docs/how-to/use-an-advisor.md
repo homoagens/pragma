@@ -26,7 +26,8 @@ never allow for you what cannot be undone.
 
 ## Turn it on
 
-Inside the project, `/settings`, then `helpers`, then `advisor`:
+Inside the project, `/settings`, the `advisor` row; ←→ moves it through the
+three, Enter shows them with what each means:
 
 | Choice | What happens |
 |---|---|
@@ -34,19 +35,20 @@ Inside the project, `/settings`, then `helpers`, then `advisor`:
 | `plan` | A plan before each turn that needs work. |
 | `plan + consult` | A plan, and advice when the agent stops making progress. |
 
-With `plan + consult` a second line appears, `advice per turn`: how many
-times one turn may ask, 2 unless you say otherwise. Each plan and each piece
-of advice is a call to a model, and a wait.
+With `plan + consult` a row appears under it, `consults per turn`: how many
+times one turn may ask, 2 unless you say otherwise; ←→ changes it. Each plan
+and each piece of advice is a call to a model, and a wait.
 
 The conversation reads the setting at every turn, so a change counts from the
 next one.
 
 ## Choose the model
 
-`/configure`, the `advisor` row at the top, then `server`. On a model that
-reasons it is asked to reason; on Claude, its `effort` is on the same page.
-With no server of its own, the agent's model plans for itself — which already
-gives it the plan's `Done when`, but not a second mind.
+`/configure`, the `advisor` row of the table: Enter chooses its model from the
+servers that are up, ←→ how it thinks there - `reasons` or `at once`, or on
+Claude its effort, from `low` to `max`. With no server of its own, the agent's
+model plans for itself — which already gives it the plan's `Done when`, but
+not a second mind.
 
 ## Read what it said
 

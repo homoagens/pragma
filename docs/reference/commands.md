@@ -79,28 +79,21 @@ These belong to the home screen. Typed inside a project they say where they went
 
 Reached from either screen. A page walked with the arrows rather than typed.
 
-Its first rows are who does what: one for each of the 5 roles, with the server that answers it and how it thinks there.
+One rule on every row: ↑↓ chooses it, ←→ changes its value where it has one, Enter opens what is a list or has to be typed.
 
-| Role | The calls it answers |
+The page is a table of who does what - one row for each of the 5 roles, with its model and how it thinks there - and two rows under it, `servers` and `this machine`.
+
+| Role | What it does |
 |---|---|
-| `agent` | the conversation |
-| `recall` | the CURATOR, before each turn |
-| `memory` | episodes and beliefs, in the background |
-| `critic` | the CRITIC, before the answer is delivered |
-| `advisor` | the ADVISOR: a plan before each turn, advice when the agent is stuck |
+| `agent` | does the work |
+| `recall` | picks what to remember, before each turn |
+| `memory` | writes what happened, afterwards |
+| `critic` | checks the work, where a project wants it |
+| `advisor` | plans the turn, where a project wants it |
 
-Enter on a role opens its page: `server`, which endpoint answers it (any role but the agent's can follow the agent's), and `reasons`, on a model that can - or `effort`, `low` to `max`, on Claude through Anthropic's API.
+On a role, ←→ changes how it thinks: `reasons` or `at once` on a model that can reason, the effort from `low` to `max` on Claude through Anthropic's API. Enter chooses its model from the servers that are up; any role but the agent's can be the same as the agent's.
 
-Then the endpoints: each with the roles it serves and, under its name, what answers there, where, and what it is. Under them:
-
-| Choice | What it is |
-|---|---|
-| `add` | a server: its address, its name, what it is |
-| `prediction` | on or off: the line you will probably type next, in grey; tab takes it |
-| `meaning` | the memory searched by meaning, with an embedding server |
-| `mcp` | servers whose tools the agent is offered |
-
-Enter on an endpoint opens its own page. Every row there is one question about the machine, and says its answer beside its name:
+`servers` lists those that are up, then `add a server`, then those that are down. Enter on one opens its page, where every row is one question about the machine:
 
 | Row | What it is |
 |---|---|
@@ -113,7 +106,15 @@ Enter on an endpoint opens its own page. Every row there is one question about t
 | `API key` | typed, or left in an environment variable |
 | `remove` | take it off the list |
 
-On Anthropic's API `what it is`, `what it is for` and `sampling` are not asked: Claude takes an effort per role instead.
+On Anthropic's API `what it is`, `what it is for` and `sampling` are not asked.
+
+`this machine` holds the switches that are the whole machine's:
+
+| Choice | What it is |
+|---|---|
+| `prediction` | on or off: the line you will probably type next, in grey; tab takes it |
+| `meaning` | the memory searched by meaning, with an embedding server |
+| `mcp` | servers whose tools the agent is offered |
 
 ## Keys
 

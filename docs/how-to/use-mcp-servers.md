@@ -11,7 +11,7 @@ prompts or resources — and only what they return as text.
 
 ## Add a server
 
-1. `/configure`, and Enter on `mcp`. The page lists the servers already
+1. `/configure`, `this machine`, and Enter on `mcp`. The page lists the servers already
    there, and `add`.
 2. Enter on `add`, and type the whole address of the server, path included:
    `127.0.0.1:8000/mcp`. `/mcp` is only the usual path; the server's own

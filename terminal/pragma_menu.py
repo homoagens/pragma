@@ -357,6 +357,7 @@ def keyboard():
 # in application-cursor mode sends ESC O A where the others send ESC [ A.
 _SEQUENCES = {
     b"[A": "up", b"OA": "up", b"[B": "down", b"OB": "down",
+    b"[C": "right", b"OC": "right", b"[D": "left", b"OD": "left",
     b"[H": "home", b"OH": "home", b"[1~": "home", b"[7~": "home",
     b"[F": "end", b"OF": "end", b"[4~": "end", b"[8~": "end",
     b"[5~": "pageup", b"[6~": "pagedown",
@@ -364,8 +365,8 @@ _SEQUENCES = {
 
 
 def read_key(timeout: float | None = None) -> str:
-    """One keypress, as a word: up, down, home, end, pageup, pagedown, enter,
-    back - or the character, lower-cased.
+    """One keypress, as a word: up, down, left, right, home, end, pageup,
+    pagedown, enter, back - or the character, lower-cased.
 
     ctrl+C is `back`, as ctrl+D and Esc are. It used to raise, and nothing
     above a menu caught it: ctrl+C on the projects page or in /configure ended
@@ -409,8 +410,14 @@ def read_key(timeout: float | None = None) -> str:
 
 def menu(options: list[str], notes: list[str] | None = None, start: int = 0,
          hint: str = "", under: list[list[str]] | None = None,
-         live=None, every: float = 0.0) -> int | None:
+         live=None, every: float = 0.0, sideways=None) -> int | None:
     """The list, walked with the arrows.
+
+    ←→ CHANGES A ROW IN PLACE, where the page gives `sideways`: called with
+    the row and -1 or +1, it changes what the row stands for and returns the
+    rows and notes as they now read, which are drawn over the old ones - or
+    None, where that row has nothing to change. The value of a setting moves
+    without a page being opened for it.
 
     Drawn once and then redrawn over itself from where the drawing ended: a
     menu that scrolls the page is not a menu.
@@ -579,6 +586,11 @@ def menu(options: list[str], notes: list[str] | None = None, start: int = 0,
                 sel = rows[min(len(rows) - 1, at + max(1, end - top))]
             elif key == "enter":
                 return sel
+            elif key in ("left", "right"):
+                if sideways is not None:
+                    got = sideways(sel, -1 if key == "left" else 1)
+                    if got:
+                        options, notes = list(got[0]), got[1]
             elif key.isdigit() and 1 <= int(key) <= min(9, len(rows)):
                 return rows[int(key) - 1]
             else:
@@ -592,12 +604,13 @@ def menu(options: list[str], notes: list[str] | None = None, start: int = 0,
 
 def pick(title: str, options: list[str], notes: list[str] | None = None,
          start: int = 0, hint: str = "", under: list[list[str]] | None = None,
-         live=None, every: float = 0.0) -> int | None:
+         live=None, every: float = 0.0, sideways=None) -> int | None:
     """A list to choose from: walked with the arrows where the terminal allows
     it, numbered where it does not - a pipe, a log, a test.
 
-    `under`, the gaps and `live` are menu()'s. Numbered, a page that is still
-    happening is shown as it stands when it is asked for.
+    `under`, the gaps, `live` and `sideways` are menu()'s. Numbered, a page
+    that is still happening is shown as it stands when it is asked for, and
+    nothing changes in place: a row is opened to be changed.
     """
     if not options and not live:
         return None
@@ -606,7 +619,7 @@ def pick(title: str, options: list[str], notes: list[str] | None = None,
         say(f"  {title}", "accent")
         print()
     if sys.stdin.isatty() and sys.stdout.isatty():
-        return menu(options, notes, start, hint, under, live, every)
+        return menu(options, notes, start, hint, under, live, every, sideways)
     if live:
         news = live() or {}
         for line in news.get("body", []):

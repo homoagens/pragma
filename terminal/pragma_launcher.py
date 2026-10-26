@@ -390,10 +390,10 @@ def talk(entry: dict, env: dict) -> str:
 # ── the pages ─────────────────────────────────────────────────────────────────
 
 def choices_page(entry: dict) -> bool:
-    """What a project decides for itself: how many steps a turn may take, which
-    commands may run without asking, which rule packs the agent follows,
-    whether an advisor plans its turns, and how much its memory brings to a
-    turn.
+    """What a project decides for itself: how many steps a turn may take,
+    whether an advisor plans its turns and a critic checks them, how much its
+    memory brings to a turn, which rule packs the agent follows, and which
+    commands may run without asking.
 
     Everything else a project used to decide - whether the agent reasons, how
     it samples, whether Pragma guesses your next question - belongs to the
@@ -403,118 +403,153 @@ def choices_page(entry: dict) -> bool:
     Returns whether anything was changed.
     """
     name = entry["name"]
-    changed = False
+    changed = [False]
     at = 0
     while True:
         settings = (by_name(name) or entry).get("settings") or {}
-        steps = str(settings.get("MaxSteps", "") or DEFAULT_STEPS)
-        allowed = allowed_commands(settings)
-        packs = rule_packs.chosen(settings)
-        keys = ["MaxSteps", "AllowedCommands", rule_packs.SETTING, "helpers"]
-        options = ["steps per turn", "commands allowed", "rule packs", "helpers"]
-        notes = [steps, (f"{len(allowed)} without asking" if allowed
-                         else "none - every command that cannot be undone asks"),
-                 ", ".join(packs) if packs else "none - the agent's own way of working",
-                 helpers_text(settings)]
-        # How much the memory brings to a turn is not asked of an agent that
-        # runs without one.
-        if not home.agent_alone():
-            keys.append("recall")
-            options.append("memory recall")
-            notes.append(recall_text(settings))
+        rows = settings_rows(settings)
         title("Settings", name)
-        chosen = pick("", options, notes, at)
+
+        def sideways(sel: int, step_by: int):
+            now = (by_name(name) or entry).get("settings") or {}
+            if not turn_setting(name, rows[sel][0], now, step_by):
+                return None
+            changed[0] = True
+            rows[:] = settings_rows((by_name(name) or entry).get("settings") or {})
+            return [r[1] for r in rows], [r[2] for r in rows]
+
+        chosen = pick("", [r[1] for r in rows], [r[2] for r in rows], min(at, len(rows) - 1),
+                      hint=f"↑↓ move{SEP}←→ change{SEP}enter open{SEP}ctrl+D done",
+                      sideways=sideways)
         if chosen is None:
-            return changed
+            return changed[0]
         at = chosen
-        key = keys[chosen]
+        key = rows[chosen][0]
         if key == "MaxSteps":
-            changed = steps_question(name, steps) or changed
-        elif key == "AllowedCommands":
-            changed = allowed_page(name) or changed
-        elif key == rule_packs.SETTING:
-            changed = packs_page(name) or changed
-        elif key == "helpers":
-            changed = helpers_page(name) or changed
-        else:
-            changed = recall_page(name) or changed
-
-
-# THE HELPERS: the second minds a project can have look over its agent's work
-# - the advisor before and during a turn, the critic at its end. A project's
-# own, because whether work wants planning or checking depends on the work.
-
-def helpers_text(settings: dict) -> str:
-    mode = advisor.mode_of(settings)
-    said = "advisor " + ADVISOR_SHOWN.get(mode, "off")
-    if mode == "consult":
-        said += f" ({advisor.consults_of(settings)})"
-    return f"{said}{SEP}critic {'on' if config.critic_for(settings) else 'off'}"
-
-
-def helpers_page(name: str) -> bool:
-    """The advisor and the critic of one project. Whether anything changed."""
-    changed = False
-    at = 0
-    while True:
-        settings = (by_name(name) or {}).get("settings") or {}
-        mode = advisor.mode_of(settings)
-        critic = config.critic_for(settings)
-        keys = [advisor.SETTING]
-        options = [f"{'advisor':<17}{ADVISOR_SHOWN.get(mode, 'off')}"]
-        notes = [dict(ADVISOR_LEVELS)[ADVISOR_SHOWN.get(mode, "off")]]
-        # How many times a turn may ask, only where it may ask at all.
-        if mode == "consult":
-            keys.append(advisor.CONSULTS_SETTING)
-            options.append(f"{'advice per turn':<17}{advisor.consults_of(settings)}")
-            notes.append("at most, when the agent stops making progress")
-        keys.append(config.CRITIC_SETTING)
-        options.append(f"{'critic':<17}{'on' if critic else 'off'}")
-        notes.append("the work checked against your request before it is delivered"
-                     + (" - CRITIC in this window's environment decides" if CRITIC_ENV else ""))
-        title("Settings", f"{name} > helpers")
-        print()
-        for line in HELPERS_SAYS:
-            say(f"  {line}" if line else "", "dim")
-        chosen = pick("", options, notes, min(at, len(options) - 1))
-        if chosen is None:
-            return changed
-        at = chosen
-        key = keys[chosen]
-        if key == advisor.SETTING:
-            changed = advisor_question(name, mode) or changed
+            done = steps_question(name, str(settings.get("MaxSteps", "") or DEFAULT_STEPS))
+        elif key == advisor.SETTING:
+            done = advisor_question(name, advisor.mode_of(settings))
         elif key == advisor.CONSULTS_SETTING:
-            changed = consults_question(name, str(advisor.consults_of(settings))) or changed
+            done = consults_question(name, str(advisor.consults_of(settings)))
+        elif key == config.CRITIC_SETTING:
+            done = turn_setting(name, key, settings, 1)
+        elif key == "memory":
+            done = recall_page(name)
+        elif key == rule_packs.SETTING:
+            done = packs_page(name)
         else:
-            # One press, on or off, written either way: a project that chose
-            # stays chosen whatever the machine's default becomes.
-            save_setting(name, config.CRITIC_SETTING, "off" if critic else "on")
-            changed = True
+            done = allowed_page(name)
+        changed[0] = done or changed[0]
 
 
-HELPERS_SAYS = (
-    "Second minds on the agent's work, in this project only. The advisor",
-    "plans each turn and says what to do when the agent stops making",
-    "progress; the critic checks the work against what you asked before the",
-    "answer reaches you. Each costs calls to a model, and time.",
-    "",
-    "Which model each one is: /configure, its row at the top.",
-)
+# THE PAGE IS ITS ROWS, one per thing the project decides, each with its value
+# beside it and what it means after that. ←→ moves a value that has a next one
+# - the steps by ten, the advisor through its three ways, the advice per turn,
+# the critic on and off, the memory from few to many - and Enter opens what
+# is a list or has to be typed. Nothing is entered that has to be left to
+# change the next thing.
+_W = 19
+
+
+def settings_rows(settings: dict) -> list[tuple[str, str, str]]:
+    """(key, row, note) for every row of the page, as the settings now say."""
+    mode = advisor.mode_of(settings)
+    allowed = allowed_commands(settings)
+    packs = rule_packs.chosen(settings)
+    rows = [("MaxSteps", f"{'steps per turn':<{_W}}{settings.get('MaxSteps', '') or DEFAULT_STEPS}",
+             "actions before it must answer"),
+            (advisor.SETTING, f"{'advisor':<{_W}}{ADVISOR_SHOWN.get(mode, 'off')}",
+             dict(ADVISOR_LEVELS)[ADVISOR_SHOWN.get(mode, "off")])]
+    # How many times a turn may ask, only where it may ask at all.
+    if mode == "consult":
+        rows.append((advisor.CONSULTS_SETTING,
+                     f"{'consults per turn':<{_W}}{advisor.consults_of(settings)}",
+                     "at most, when the agent stops making progress"))
+    rows.append((config.CRITIC_SETTING,
+                 f"{'critic':<{_W}}{'on' if config.critic_for(settings) else 'off'}",
+                 "checks the work before you get it"
+                 + (" - CRITIC in this window's environment decides" if CRITIC_ENV else "")))
+    # How much the memory brings to a turn is not asked of an agent that runs
+    # without one.
+    if not home.agent_alone():
+        rows.append(("memory", f"{'memory':<{_W}}{memory_level(settings)}",
+                     "how much of what it remembers comes to each turn"))
+    rows.append((rule_packs.SETTING,
+                 f"{'rule packs':<{_W}}{', '.join(packs) if packs else 'none'}",
+                 "rules for a kind of work"))
+    rows.append(("AllowedCommands",
+                 f"{'commands allowed':<{_W}}{len(allowed) if allowed else 'none'}",
+                 "commands that cannot be undone, run without asking"))
+    return rows
+
+
+def turn_setting(name: str, key: str, settings: dict, step_by: int) -> bool:
+    """←→ on a row: its next value, saved. Whether it had one to move to."""
+    if key == "MaxSteps":
+        # To the next ten up or down: 50 goes to 60 or 40, 55 to 60 or 50.
+        now = int(str(settings.get("MaxSteps", "") or DEFAULT_STEPS) or 0)
+        new = (now // 10 + 1) * 10 if step_by > 0 else ((now - 1) // 10) * 10
+        new = max(1, min(1000, new))
+        if new == now:
+            return False
+        save_setting(name, "MaxSteps", str(new))
+        return True
+    if key == advisor.SETTING:
+        ways = ("", "plan", "consult")
+        now = ways.index(advisor.mode_of(settings))
+        new = max(0, min(len(ways) - 1, now + step_by))
+        if new == now:
+            return False
+        save_setting(name, advisor.SETTING, ways[new])
+        return True
+    if key == advisor.CONSULTS_SETTING:
+        now = advisor.consults_of(settings)
+        new = max(0, min(advisor.MOST_CONSULTS, now + step_by))
+        if new == now:
+            return False
+        save_setting(name, advisor.CONSULTS_SETTING,
+                     "" if new == advisor.DEFAULT_CONSULTS else str(new))
+        return True
+    if key == config.CRITIC_SETTING:
+        # Written either way: a project that chose stays chosen, whatever the
+        # machine's default becomes.
+        save_setting(name, config.CRITIC_SETTING, "off" if config.critic_for(settings) else "on")
+        return True
+    if key == "memory":
+        order = list(MEMORY_LEVELS)
+        level = memory_level(settings)
+        now = order.index(level) if level in order else order.index("medium")
+        new = max(0, min(len(order) - 1, now + (step_by if level in order else 0)))
+        if level in order and new == now:
+            return False
+        for k, value in MEMORY_LEVELS[order[new]].items():
+            # Absent where it is what Pragma comes with: see recall_page.
+            save_setting(name, k, "" if value == RECALL[k][1] else value)
+        return True
+    return False
+
+
+# How much the memory brings to a turn, said once for its four levels: few,
+# what Pragma comes with, and many. Four levels that are none of those are
+# `custom`, set one by one from Enter.
+MEMORY_LEVELS = {
+    "few":    {k: "few" for k in RECALL},
+    "medium": {k: default for k, (_label, default, _levels) in RECALL.items()},
+    "many":   {k: "many" for k in RECALL},
+}
+
+
+def memory_level(settings: dict) -> str:
+    now = {k: str(settings.get(k, "") or default) for k, (_l, default, _v) in RECALL.items()}
+    return next((level for level, values in MEMORY_LEVELS.items() if values == now), "custom")
+
 
 # CRITIC set in the environment outranks the project, for one run.
 CRITIC_ENV = os.environ.get("CRITIC", "").strip()
 
 
-def recall_text(settings: dict) -> str:
-    """How much the memory brings to a turn, in one line: what differs from
-    what Pragma comes with, or that nothing does."""
-    differ = [f"{label} {settings[key]}" for key, (label, default, _levels) in RECALL.items()
-              if str(settings.get(key, "") or default) != default]
-    return ", ".join(differ) if differ else "as Pragma comes"
-
-
 def recall_page(name: str) -> bool:
-    """The four levels of how much the memory brings to a turn."""
+    """The four levels of how much the memory brings to a turn, one by one."""
     changed = False
     at = 0
     while True:

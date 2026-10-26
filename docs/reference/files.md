@@ -111,7 +111,7 @@ It is never part of a snapshot, so no address or key ends up in a zip.
 | `off` | `true` leaves the server out without removing the entry. |
 | `tools_off` | The tools of this server that are not offered, by the names the server gives them. The rest are. |
 
-Written from the `mcp` row of `/configure`, or by hand. The file is read
+Written from the `mcp` row of `/configure` > `this machine`, or by hand. The file is read
 when a conversation or a run starts. A server that does not
 answer then has its tools left out, and a line says so. Only tools are used,
 and only what they return as text. `PRAGMA_MCP` names another file.

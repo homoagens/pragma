@@ -7,12 +7,13 @@ endpoint — llama.cpp, LM Studio, Ollama, vLLM, or a hosted one. This is how
 to point Pragma at it, and how to change that later.
 
 Everything here is done in `/configure`, which opens from the home screen and
-from inside a project. It is a page walked with the arrows; **ctrl+D** goes
-back one step, everywhere.
+from inside a project. It is a page walked with the arrows: ↑↓ chooses a row,
+←→ changes its value where it has one, Enter opens what is a list or has to
+be typed, and **ctrl+D** goes back one step, everywhere.
 
 ## Add the first endpoint
 
-1. Type `/configure`, and press Enter on `add`.
+1. Type `/configure`, then Enter on `servers`, then on `add a server`.
 2. Type the address of the server. A host and a port are enough:
    `127.0.0.1:8080`. The `/v1` is added if you leave it out.
 3. Pragma asks the server what it is serving and shows the answer. If the
@@ -26,7 +27,8 @@ The first endpoint you add serves everything. You can stop here.
 ## Say what the model is
 
 Adding an endpoint leaves you on its own page. To come back to it later:
-`/configure`, and Enter on its name. Every row of that page is one question
+`/configure`, `servers`, and Enter on its name: those that are up come
+first, those that are down last. Every row of that page is one question
 about the machine, with its answer beside it; these three say what the model
 is:
 
@@ -42,32 +44,43 @@ talks to this server inherits them.
 **Claude, through Anthropic's API**, is asked differently, and its page says
 so: the three rows above are not asked. A Claude model decides for itself when
 to think; how much it may - its effort, `low` to `max` - is set for each role
-that uses it (below), as Claude Code does. The address is
+that uses it, with ←→ in the table below, as Claude Code does. The address is
 `https://api.anthropic.com/v1`, `model` the model's name (`claude-haiku-5-5`),
 and the key is best left in an environment variable. The model's reasoning is
 not shown while it runs: that API does not return it.
 
 ## Who does what
 
-A model call is made in one of five roles, and the top of `/configure` has a
-row for each: the server that answers it, and how it thinks there. One server
-can answer them all, or each can have its own — a small fast model for the
-recall that runs before every turn, a larger one for the agent, or a more
-capable one as the [advisor](use-an-advisor.md) of a small agent.
+A model call is made in one of five roles, and `/configure` opens on a table
+of them: each role, its model, and how it thinks there.
 
-1. `/configure`, then `add`, for the second server, if it is not there yet.
-2. Enter on the role, at the top of the page. Its page has two rows.
-3. `server`: which endpoint answers it. Any role but the agent's can be set to
-   follow the agent's, whichever that is.
-4. `reasons`: on a model that reasons, whether this role is asked to — the
-   recall and the critic answer at once unless you say otherwise. On Claude
-   the row is `effort` instead.
+```
+    role          model         thinks
+  ❯ agent         exec          reasons        does the work
+    recall        exec          at once        picks what to remember, before each turn
+    memory        exec          reasons        writes what happened, afterwards
+    critic        exec          at once        checks the work, where a project wants it
+    advisor       haiku         effort high    plans the turn, where a project wants it
+```
 
-A role that has no server of its own follows the agent's.
+One server can answer them all, or each can have its own — a small fast
+model for the recall that runs before every turn, a larger one for the agent,
+or a more capable one as the [advisor](use-an-advisor.md) of a small agent.
+
+- **Enter on a role** chooses its model, from the servers that are up, and
+  comes back to the table. Any role but the agent's can be the same as the
+  agent's, whichever that is.
+- **←→ on a role** changes how it thinks: `reasons` or `at once` on a model
+  that can reason — the recall and the critic answer at once unless you say
+  otherwise — and on Claude the effort, from `low` to `max`, so that the same
+  Claude can think little as the recall and hard as the advisor.
+
+A role that has no server of its own follows the agent's. A server that is
+down is not offered; the table says so on any role it still answers.
 
 ## Change an address, a name or a key
 
-`/configure`, and Enter on the endpoint. `name`, `address`, `model` and
+`/configure`, `servers`, and Enter on the endpoint. `name`, `address`, `model` and
 `API key` are each a row: Enter on the one you came to change. `model` is
 only for a server that hosts several.
 
@@ -95,7 +108,7 @@ talk to. With llama.cpp, for example:
 llama-server -m bge-m3-Q8_0.gguf --embedding --port 7190
 ```
 
-Then, in `/configure`, choose `meaning` and type its address. The page says
+Then, in `/configure`, `this machine`, choose `meaning` and type its address. The page says
 whether it answers. From then on the home screen says so too, on the line
 under the endpoint, and inside a project the bar under the prompt says
 `embedding on`. `/status` says how the memory is being searched.

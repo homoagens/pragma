@@ -325,28 +325,33 @@ def commands(notes) -> str:
     out.append("\n## `/configure`\n")
     out.append("Reached from either screen. A page walked with the arrows "
                "rather than typed.\n")
-    out.append(f"Its first rows are who does what: one for each of the "
-               f"{len(conf['ROLE_BLURB'])} roles, with the server that answers it "
-               f"and how it thinks there.\n")
-    out += _rows(("Role", "The calls it answers"),
+    out.append("One rule on every row: ↑↓ chooses it, ←→ changes its value "
+               "where it has one, Enter opens what is a list or has to be typed.\n")
+    out.append(f"The page is a table of who does what - one row for each of the "
+               f"{len(conf['ROLE_BLURB'])} roles, with its model and how it thinks "
+               f"there - and two rows under it, `servers` and `this machine`.\n")
+    out += _rows(("Role", "What it does"),
                  ((f"`{r}`", b) for r, b in conf["ROLE_BLURB"].items()))
-    out.append("\nEnter on a role opens its page: `server`, which endpoint "
-               "answers it (any role but the agent's can follow the agent's), "
-               "and `reasons`, on a model that can - or `effort`, `low` to "
-               "`max`, on Claude through Anthropic's API.\n")
-    out.append("Then the endpoints: each with the roles it serves and, under "
-               "its name, what answers there, where, and what it is. Under them:\n")
+    out.append("\nOn a role, ←→ changes how it thinks: `reasons` or `at once` on "
+               "a model that can reason, the effort from `low` to `max` on Claude "
+               "through Anthropic's API. Enter chooses its model from the servers "
+               "that are up; any role but the agent's can be the same as the "
+               "agent's.\n")
+    out.append("`servers` lists those that are up, then `add a server`, then "
+               "those that are down. Enter on one opens its page, where every "
+               "row is one question about the machine:\n")
+    out += _rows(("Row", "What it is"), ((f"`{n}`", b) for n, b in endpoint_rows))
+    out.append("\nOn Anthropic's API `what it is`, `what it is for` and "
+               "`sampling` are not asked.\n")
+    out.append("`this machine` holds the switches that are the whole machine's:\n")
     rows = []
     for name, blurb in actions:
+        if name == "add":
+            continue
         if name in conf["OPTION_BLURB"]:
             blurb = "on or off: " + conf["OPTION_BLURB"][name]
         rows.append((f"`{name}`", blurb))
     out += _rows(("Choice", "What it is"), rows)
-    out.append("\nEnter on an endpoint opens its own page. Every row there is "
-               "one question about the machine, and says its answer beside its name:\n")
-    out += _rows(("Row", "What it is"), ((f"`{n}`", b) for n, b in endpoint_rows))
-    out.append("\nOn Anthropic's API `what it is`, `what it is for` and "
-               "`sampling` are not asked: Claude takes an effort per role instead.")
 
     out.append("\n## Keys\n")
     out += _rows(("Key", "What it does"), notes.KEYS)
