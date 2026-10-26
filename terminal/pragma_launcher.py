@@ -73,6 +73,7 @@ ENV_OF = {
 import recall_levels as _levels  # noqa: E402
 import advisor  # noqa: E402
 import config  # noqa: E402
+import endpoints  # noqa: E402
 import rule_packs  # noqa: E402
 
 _E, _R, _L, _T = (_levels.OFFERED["episodes"], _levels.OFFERED["recent"],
@@ -322,6 +323,24 @@ def show_brief(entry: dict, data: dict) -> None:
         row("serving", "the model server is down" + (f" - {why}" if why and why != "up" else ""),
             ESC + "[31m")
         row("", "/configure points Pragma at another one")
+    # The advisor, under the agent's model, where this project has one: the
+    # second model the work will go through, named as the first one is.
+    settings = entry.get("settings") or {}
+    mode = advisor.mode_of(settings)
+    elsewhere = {r.get("role"): r for r in data.get("roles") or []}
+    if mode:
+        how = ADVISOR_SHOWN.get(mode, mode)
+        adv = elsewhere.get("advisor")
+        if adv is None:
+            row("advisor", f"the agent's own model{SEP}{how}")
+        elif adv.get("up"):
+            said = adv.get("served") or adv.get("name") or ""
+            if adv.get("n_ctx"):
+                said += f" · {endpoints.human_tokens(int(adv['n_ctx']))} context"
+            row("advisor", f"{said}{SEP}{how}", ESC + "[32m")
+        else:
+            row("advisor", f"{adv.get('name')} is down - {adv.get('status')}{SEP}/configure",
+                ESC + "[31m")
 
     attention = []
     if int(data.get("working") or 0) > 0:
@@ -332,8 +351,11 @@ def show_brief(entry: dict, data: dict) -> None:
     window, served = int(data.get("context_window") or 0), int(data.get("n_ctx") or 0)
     if window and data.get("context_source") != "endpoint" and served and served < window:
         attention.append(f"context {window} tokens, but the server has {served} - requests will be refused")
+    # A server down for a role this project does not use is not news here; the
+    # advisor's, when it is used, has its own line above.
+    unused = {"advisor"} | (set() if config.critic_for(settings) else {"critic"})
     for role in data.get("roles") or []:
-        if not role.get("up"):
+        if not role.get("up") and role.get("role") not in unused:
             attention.append(f"{role['role']} endpoint {role['name']} - {role['status']} - /configure")
     for line in attention:
         row("", line, ESC + "[33m")

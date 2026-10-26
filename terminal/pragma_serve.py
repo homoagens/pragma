@@ -205,16 +205,16 @@ def home_rows() -> list[tuple[str, str]]:
         return []
     width = min(24, max(len(n) for n in listed))
     out = []
+    # Where each one listens is /serve's to say: here, whether it runs.
     for name, entry in listed.items():
-        where = f"{entry.get('host')}:{entry.get('port')}"
         lead = f"{name:<{width}}  "
         state = state_of(name)
         if not entry.get("on"):
-            out.append((lead + f"off{SEP}{where}", GREY))
+            out.append((lead + "off", GREY))
         elif state is None:
             out.append((lead + f"on, but not running{SEP}/serve", "\033[33m"))
         else:
-            out.append((lead + f"{where}{SEP}{talking(state)}"
+            out.append((lead + talking(state)
                         + ("" if entry.get("memory", True) else f"{SEP}memory off"), "\033[32m"))
     return out
 

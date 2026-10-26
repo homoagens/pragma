@@ -209,7 +209,11 @@ def brief(store: Path, since: str = "") -> dict:
             found = endpoints.probe_all([ep for _r, ep in others])
             out["roles"] = [{"role": r, "name": ep.name,
                              "status": endpoints.status_text(found[ep.base_url]),
-                             "up": bool(found[ep.base_url].get("up"))}
+                             "up": bool(found[ep.base_url].get("up")),
+                             # What the page says of a role that has a line of
+                             # its own - the advisor: the model and its window.
+                             "served": endpoints.display_model(found[ep.base_url].get("served") or ""),
+                             "n_ctx": int(found[ep.base_url].get("n_ctx") or 0)}
                             for r, ep in others]
     except Exception:
         pass                    # a broken catalogue is already on the serving line

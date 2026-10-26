@@ -328,9 +328,11 @@ def show_jobs() -> str | None:
 
 
 def memory_line(jobs_running: list[tuple[str, str]], grey: str, reset: str) -> None:
+    # "writing the memory of X", not "X - writing": a project named like a
+    # role - advisor, critic - read as that role at work.
     for project, step in jobs_running:
         busy = "\033[33m" if grey else ""
-        print(f"  {grey}{'memory':<12}{reset}{busy}{project} - writing{reset}"
+        print(f"  {grey}{'memory':<12}{reset}{busy}writing the memory of {project}{reset}"
               f"  {grey}{step}{reset}")
     if jobs_running:
         print(f"  {grey}{'':<12}/jobs to watch it{reset}")
@@ -409,7 +411,13 @@ def read_line(session) -> str:
 
 
 def endpoint_lines() -> list[tuple[str, str, bool]]:
-    """(label, text, up) for the endpoint, or one per role when they differ.
+    """(label, text, up): one line per server, with the roles it answers.
+
+    THE NAME, NOT THE ADDRESS. A line per role, each with the model, its
+    context and its address, made five lines that said the same thing four
+    times. The servers are grouped, each named as /configure names it, with
+    its roles beside it; where it is and what it serves are /configure's to
+    say. Green when it answers, yellow when it does not.
 
     A bare connection test first, so a missing server costs a second and the
     prompt appears anyway; only a server that answers is asked what it serves.
@@ -428,21 +436,25 @@ def endpoint_lines() -> list[tuple[str, str, bool]]:
     from pragma_menu import roles_here
     roles = {role: ep for role, ep in roles.items() if role in roles_here()}
     found = endpoints.probe_all(list(roles.values()))
+    groups: dict[str, tuple] = {}
+    for role, ep in roles.items():
+        groups.setdefault(ep.base_url, (ep, []))[1].append(role)
 
-    # What is served first, where it is last: the model is what someone came
-    # to check, the address is what they check when it is wrong.
-    def text(ep):
-        p = found[ep.base_url]
-        where = endpoints.short_url(ep.base_url)
-        if p.get("up"):
-            return f"{endpoints.status_text(p)}{SEP}{where}"
-        return f"{where}{SEP}{endpoints.status_text(p)}{SEP}/configure"
+    def name(ep) -> str:
+        # The one in .env has no name of its own: its address is what it is.
+        return ep.name if ep.name != "default" else endpoints.short_url(ep.base_url)
 
-    if len({ep.base_url for ep in roles.values()}) == 1:
-        ep = roles["agent"]
-        return [("endpoint", text(ep), found[ep.base_url].get("up", False))]
-    return [(role, f"{ep.name} · {text(ep)}", found[ep.base_url].get("up", False))
-            for role, ep in roles.items()]
+    def down(ep) -> str:
+        return "" if found[ep.base_url].get("up") else f"{SEP}down{SEP}/configure"
+
+    if len(groups) == 1:
+        ep, _ = next(iter(groups.values()))
+        return [("model", name(ep) + down(ep), bool(found[ep.base_url].get("up")))]
+    width = max(len(name(ep)) for ep, _ in groups.values())
+    return [("models" if i == 0 else "",
+             f"{name(ep):<{width}}  {' · '.join(rs)}{down(ep)}",
+             bool(found[ep.base_url].get("up")))
+            for i, (ep, rs) in enumerate(groups.values())]
 
 
 def embedding_line(found: dict | None) -> tuple[str, str]:
@@ -459,11 +471,9 @@ def embedding_line(found: dict | None) -> tuple[str, str]:
     import endpoints
     if found is None:
         return f"none - the memory is searched by words{SEP}/configure", GREY
-    where = endpoints.short_url(found["url"])
     if found.get("up"):
-        served = endpoints.model_name(found.get("model") or "") or "answering"
-        return f"{served}{SEP}{where}", "\033[32m"
-    return f"{where}{SEP}not answering - the memory is searched by words{SEP}/configure", "\033[33m"
+        return endpoints.model_name(found.get("model") or "") or "answering", "\033[32m"
+    return f"down - the memory is searched by words{SEP}/configure", "\033[33m"
 
 
 def mcp_rows(wait: float = 3.0) -> list[tuple[str, str]]:
