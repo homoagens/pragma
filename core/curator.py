@@ -831,11 +831,15 @@ def _assemble(refs: list[str], eps: list[dict], lns: list[dict],
     # episodes from yesterday in front of it, it went and read the journal
     # instead. What a memory says about the CURRENT state of the files is the
     # part that goes stale, and that part still deserves the warning.
+    #
+    # And it is the agent's own memory, not fragments a curator selected: said
+    # that way, Claude kept it at arm's length as somebody else's notes (see
+    # agent/prompts._MEMORY_DESK).
     lines = [
-        "[Relevant memory — fragments the context curator selected for this "
-        "task. What happened in a past session is a record: it is dated, and "
-        "no file confirms or denies it. What a fragment claims about the "
-        "CURRENT state of the files may be out of date — check that part.]"
+        "[What you remember that bears on this, from your own memory. What "
+        "happened is a record of what you lived: dated, and no file confirms "
+        "or denies it. What it says about the CURRENT state of the files may "
+        "have changed since — check that part.]"
     ]
     for r in refs:
         if r.startswith("E"):
