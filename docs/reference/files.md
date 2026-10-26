@@ -81,6 +81,7 @@ The same file is read by the launcher on every system.
 | `kind` | `thinking` or `instruct`: whether the model reasons before it answers. |
 | `work` | `general` or `coding`: what the endpoint is used for. |
 | `reasons` | For a `thinking` endpoint, which roles are asked to reason. Absent means the defaults. |
+| `effort` | For Anthropic's API only, how much each role may think: `low`, `medium`, `high`, `xhigh` or `max`, per role. A role left out gets the model's own. There `kind`, `reasons` and `sampling` are not sent: Claude decides when to think, and refuses sampling numbers. |
 | `sampling` | The numbers sent with a request, one row per `kind` and `work`. Absent means the server keeps its own. The knobs are `temperature`, `top_p`, `top_k`, `min_p`, `presence_penalty`, `repeat_penalty`. |
 | `roles` | Which endpoint answers each role. A role left out follows `agent`. |
 | `options` | The optional faculties, on or off for the whole machine. |

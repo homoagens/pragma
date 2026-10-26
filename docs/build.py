@@ -338,7 +338,9 @@ def commands(notes) -> str:
                "one question, and says its answer beside its name:\n")
     out += _rows(("Row", "What it is"), ((f"`{n}`", b) for n, b in endpoint_rows))
     out.append("\n`serves` is there when there is more than one endpoint, and "
-               "`who reasons` for a model that reasons.")
+               "`who reasons` for a model that reasons. On Anthropic's API "
+               "`effort` takes the place of `what it is`, `what it is for`, "
+               "`who reasons` and `sampling`.")
     out.append("\nAn endpoint serves one or more of four roles:\n")
     out += _rows(("Role", "The calls it answers"),
                  ((f"`{r}`", b) for r, b in conf["ROLE_BLURB"].items()))

@@ -804,10 +804,40 @@ def _warn_if_not_thinking(template_kwargs, has_reasoning: bool) -> None:
 
 
 def _template_for(base_url, template_kwargs):
-    """The template variables to send to this endpoint, or None."""
+    """The template variables to send to this endpoint, or None.
+
+    None for Anthropic's API, which has no chat template: there the effort
+    stands in for the switch (_for_server), and with nothing asked the
+    warnings about a switch not honoured have nothing to warn about."""
     if not template_kwargs or endpoints.state(base_url).template_unsupported:
         return None
+    if endpoints.is_anthropic(base_url):
+        return None
     return template_kwargs
+
+
+# What a llama.cpp request may carry and Anthropic's API must not: its current
+# models answer a temperature below 1 (or any other sampling number) with a 400,
+# and the rest are llama.cpp's own.
+_NOT_FOR_ANTHROPIC = endpoints.KNOBS + ("frequency_penalty", "seed", "chat_template_kwargs",
+                                        "id_slot", "return_progress")
+
+
+def _for_server(payload: dict, base_url: str) -> dict:
+    """The request as this server takes it.
+
+    For Anthropic's API: no sampling numbers and no llama.cpp fields, and the
+    role's effort, if the endpoint sets one (endpoints.EFFORTS). Every other
+    server gets the payload as it was built."""
+    if not endpoints.is_anthropic(base_url):
+        return payload
+    for key in _NOT_FOR_ANTHROPIC:
+        payload.pop(key, None)
+    role = endpoints.role_of(current_faculty())
+    effort = endpoints.effort_for(endpoints.entry_for_role(role), role)
+    if effort:
+        payload["output_config"] = {"effort": effort}
+    return payload
 
 
 def _refused(e) -> bool:
@@ -1054,6 +1084,7 @@ def _call_openai_compatible(messages, model, temperature, max_tokens, timeout, b
                                        if k != "__name__"},
                             "strict": True},
         }
+    _for_server(payload, base_url)
     headers = {"Content-Type": "application/json"}
     if api_key:
         headers["Authorization"] = f"Bearer {api_key}"
@@ -1110,6 +1141,7 @@ def _stream_openai_compatible(messages, model, temperature, max_tokens, timeout,
     payload.update(_slot_for(base_url, api_key))
     if template_kwargs:
         payload["chat_template_kwargs"] = template_kwargs
+    _for_server(payload, base_url)
     headers = {"Content-Type": "application/json"}
     if api_key:
         headers["Authorization"] = f"Bearer {api_key}"
@@ -1394,6 +1426,7 @@ def _call_llm_tools_once(messages, tools, model=None, temperature=None,
     payload.update(_slot_for(base_url, api_key))
     if template_kwargs:
         payload["chat_template_kwargs"] = template_kwargs
+    _for_server(payload, base_url)
     headers = {"Content-Type": "application/json"}
     if api_key:
         headers["Authorization"] = f"Bearer {api_key}"

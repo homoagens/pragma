@@ -39,6 +39,14 @@ with its answer beside it; these four say what the model is:
 These answers belong to the endpoint, not to a project: every project that
 talks to this server inherits them.
 
+**Claude, through Anthropic's API**, is asked differently, and its page says
+so: the four rows above give way to one, `effort`. A Claude model decides for
+itself when to think; the effort - `low` to `max`, for each role - says how
+much it may, as Claude Code does. A role with none set gets the model's own.
+The address is `https://api.anthropic.com/v1`, `model` the model's name
+(`claude-haiku-5-5`), and the key is best left in an environment variable.
+The model's reasoning is not shown while it runs: that API does not return it.
+
 ## Use a second server for part of the work
 
 A model call is made in one of four roles, listed under

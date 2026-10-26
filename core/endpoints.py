@@ -166,6 +166,32 @@ def reasons_for(entry: dict, role: str = "agent") -> bool:
     return bool(table.get(role, _REASONS_BY_DEFAULT[role]))
 
 
+# HOW MUCH A CLAUDE MODEL THINKS. Claude does not take the thinking switch:
+# that is a variable of llama.cpp's chat template, and Anthropic has no
+# template to give it to. Its current models reason adaptively, on by
+# default, deciding for themselves when and how much; what is asked of them
+# is an effort, sent as output_config.effort, and Anthropic's
+# OpenAI-compatible endpoint passes it on (MEASURED 2026-10-26, Haiku 5.5, one
+# question: 192 completion tokens at low, 513 at high). So on an Anthropic
+# endpoint each role has an effort instead of an on/off - the way Claude Code
+# sets it - and none set is the model's own default.
+EFFORTS = ("low", "medium", "high", "xhigh", "max")
+
+
+def is_anthropic(url: str) -> bool:
+    """Is this Anthropic's API, where effort replaces the thinking switch?"""
+    from urllib.parse import urlparse
+    host = (urlparse(str(url or "")).hostname or "").lower()
+    return host == "anthropic.com" or host.endswith(".anthropic.com")
+
+
+def effort_for(entry: dict, role: str = "agent") -> str:
+    """The effort `role` asks of this endpoint, or "" for the model's own."""
+    table = (entry or {}).get("effort")
+    got = table.get(role if role in ROLES else "agent") if isinstance(table, dict) else ""
+    return got if got in EFFORTS else ""
+
+
 # WHAT THE HARNESS DOES, as opposed to what a model is. These sit beside the
 # endpoints rather than in a project's settings because they are answered once
 # for the machine: /configure is the page you open when you set Pragma up, and
@@ -337,6 +363,16 @@ def _problem(data) -> str:
         bad = _reasons_problem(e.get("reasons"))
         if bad:
             return f"endpoint \"{name}\": {bad}"
+        effort = e.get("effort")
+        if effort is not None:
+            if not isinstance(effort, dict):
+                return f"endpoint \"{name}\": \"effort\" must be an object of roles"
+            for role, level in effort.items():
+                if role not in ROLES:
+                    return f"endpoint \"{name}\": \"effort\" has \"{role}\"; the roles are {', '.join(ROLES)}"
+                if level not in EFFORTS:
+                    return (f"endpoint \"{name}\": \"effort.{role}\" is \"{level}\";"
+                            f" it is {', '.join(EFFORTS)}")
     for role, name in roles.items():
         if role not in ROLES:
             return f"\"{role}\" is not a role; the roles are {', '.join(ROLES)}"

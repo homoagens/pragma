@@ -96,6 +96,7 @@ Enter on an endpoint opens its own page. Every row there is one question, and sa
 | `what it is` | a reasoning model, or one that answers at once |
 | `what it is for` | conversation, or writing code |
 | `who reasons` | each role, on or off |
+| `effort` | how much it thinks, for each role |
 | `sampling` | the knobs every request carries |
 | `name` | what these pages call it |
 | `address` | where the server listens |
@@ -103,7 +104,7 @@ Enter on an endpoint opens its own page. Every row there is one question, and sa
 | `API key` | typed, or left in an environment variable |
 | `remove` | take it off the list |
 
-`serves` is there when there is more than one endpoint, and `who reasons` for a model that reasons.
+`serves` is there when there is more than one endpoint, and `who reasons` for a model that reasons. On Anthropic's API `effort` takes the place of `what it is`, `what it is for`, `who reasons` and `sampling`.
 
 An endpoint serves one or more of four roles:
 

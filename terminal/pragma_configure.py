@@ -192,6 +192,8 @@ def config_base_url() -> str:
 
 def nature(entry: dict) -> str:
     """One line: what this endpoint is, what it is for, what it sends."""
+    if endpoints.is_anthropic(entry.get("url", "")):
+        return f"Claude · effort: {effort_text(entry)}"
     kind, work = entry.get("kind"), entry.get("work")
     if not kind and not work and not entry.get("sampling"):
         return "not tuned yet - what it is, and how it samples"
@@ -987,6 +989,63 @@ def reasons_text(entry: dict) -> str:
     return ", ".join(on) if on else "nobody"
 
 
+OWN = "the model's own"
+EFFORT_BLURB = {
+    "":       "its default, whatever the model is",
+    "low":    "thinks little: fastest, fewest tokens - a curator, a quick answer",
+    "medium": "thinks where it helps",
+    "high":   "thinks more: harder problems, more tokens",
+    "xhigh":  "more still - long coding and agent work",
+    "max":    "as much as it takes, cost aside",
+}
+
+
+def effort_text(entry: dict) -> str:
+    """The effort of each role on this endpoint, as one line."""
+    roles = roles_here()
+    got = {r: endpoints.effort_for(entry, r) for r in roles}
+    if not any(got.values()):
+        return "the model's own"
+    return ", ".join(f"{r} {got[r] or 'own'}" for r in roles)
+
+
+def ask_effort(state: dict, name: str) -> bool:
+    """One effort per role, on an Anthropic endpoint: see endpoints.EFFORTS.
+    Written only where one is set, so an endpoint that takes the model's own
+    has no `effort` key at all."""
+    entry = state["cat"]["endpoints"][name]
+    changed = False
+    at = 0
+    while True:
+        step(f"{name} > effort")
+        print()
+        print("  " + grey("A Claude model decides for itself when to think; the effort"))
+        print("  " + grey("says how much it may. Each role can ask for its own."))
+        roles = roles_here()
+        rows = [f"{role:<8}{endpoints.effort_for(entry, role) or OWN}" for role in roles]
+        i = pick("", rows, [role_says(ROLE_BLURB, r) for r in roles], min(at, len(roles) - 1))
+        if i is None:
+            return changed
+        at = i
+        role = roles[i]
+        step(f"{name} > effort > {role}")
+        got = choose(f"How much should the {role} think?",
+                     [(level or OWN, EFFORT_BLURB[level]) for level in ("",) + endpoints.EFFORTS],
+                     endpoints.effort_for(entry, role) or OWN)
+        if not got:
+            continue
+        table = dict(entry.get("effort") or {})
+        if got in endpoints.EFFORTS:
+            table[role] = got
+        else:
+            table.pop(role, None)
+        if table:
+            entry["effort"] = table
+        else:
+            entry.pop("effort", None)
+        changed = True
+
+
 def who_reasons(entry: dict, name: str) -> bool:
     """One switch per role. Written only when they differ from the
     default - the agent and the memory reason, the recall answers at once -
@@ -1248,6 +1307,7 @@ ENDPOINT_ROWS = [
     ("what it is",     "a reasoning model, or one that answers at once", ask_kind),
     ("what it is for", "conversation, or writing code", ask_work),
     ("who reasons",    "each role, on or off", ask_who),
+    ("effort",         "how much it thinks, for each role", ask_effort),
     ("sampling",       "the knobs every request carries", ask_sampling),
     ("name",           "what these pages call it", ask_name),
     ("address",        "where the server listens", ask_address),
@@ -1282,6 +1342,7 @@ def endpoint_page(state: dict, name: str) -> bool:
             "what it is": entry.get("kind") or "not set",
             "what it is for": entry.get("work") or "general",
             "who reasons": reasons_text(entry),
+            "effort": effort_text(entry),
             "sampling": ("the server's own numbers" if not entry.get("sampling")
                          else knob_text(endpoints.sampling_row(entry)) or "nothing set yet"),
             "name": name,
@@ -1299,6 +1360,12 @@ def endpoint_page(state: dict, name: str) -> bool:
             absent.add("serves")
         if entry.get("kind") != "thinking":
             absent.add("who reasons")
+        # Claude takes an effort, not the switch and the sampling numbers of a
+        # llama.cpp model (endpoints.EFFORTS); every other server the reverse.
+        if endpoints.is_anthropic(entry.get("url", "")):
+            absent.update(("what it is", "what it is for", "who reasons", "sampling"))
+        else:
+            absent.add("effort")
         options, notes, what = [], [], []
         for label, blurb, handler in ENDPOINT_ROWS:
             if label in absent:
