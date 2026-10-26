@@ -243,8 +243,10 @@ def _clean(raw: str) -> str:
     return text
 
 
-def _ask(system: str, payload: str, stop_event=None) -> tuple[str, float]:
+def _ask(system: str, payload: str, stop_event=None) -> tuple[str, float, int]:
+    """(what it said, seconds, tokens read and written)."""
     t0 = time.monotonic()
+    llm_client.LAST_STATS = {}
     with llm_client.faculty("ADVISOR"):
         raw = llm_client.call_llm(
             messages=[{"role": "system", "content": system},
@@ -253,15 +255,62 @@ def _ask(system: str, payload: str, stop_event=None) -> tuple[str, float]:
             **config.memory_call("write"),
             stop_event=stop_event,
         )
-    return _clean(raw), time.monotonic() - t0
+    stats = llm_client.LAST_STATS or {}
+    tokens = int(stats.get("total") or 0) or (int(stats.get("prompt") or 0)
+                                              + int(stats.get("completion") or 0))
+    return _clean(raw), time.monotonic() - t0, tokens
+
+
+def tok(n: int) -> str:
+    """Tokens as the screen says them. Read and written together: on a paid
+    endpoint both are paid for."""
+    return f"{n / 1000:.1f}k tok" if n >= 1000 else f"{n} tok"
+
+
+def _cost(took: float, tokens: int) -> str:
+    return f"{took:.0f}s" + (f" · {tok(tokens)}" if tokens else "")
+
+
+# How much of a plan the turn shows: `Done when` whole, then the steps, one
+# line each. Check, the risk and when to ask are for /plan.
+_SHOWN_STEPS = 6
+_STEP_CHARS = 100
+
+
+def _plan_details(text: str) -> list[str]:
+    out = []
+    done = re.search(r"^\s*Done when:\s*(.+)$", text, flags=re.MULTILINE | re.IGNORECASE)
+    if done:
+        out.append(f"done when: {done.group(1).strip()}")
+    steps = re.findall(r"^\s*(\d+)[.)]\s+(.+)$", text, flags=re.MULTILINE)
+    for number, step in steps[:_SHOWN_STEPS]:
+        step = step.strip()
+        out.append(f"{number}. {step[:_STEP_CHARS]}{'…' if len(step) > _STEP_CHARS else ''}")
+    if len(steps) > _SHOWN_STEPS:
+        out.append(f"… {len(steps) - _SHOWN_STEPS} more · /plan shows them")
+    return out
+
+
+def _advice_details(text: str) -> list[str]:
+    """The diagnosis, and what to do next with the lines that spell it out."""
+    lines = [ln.strip() for ln in text.splitlines() if ln.strip()]
+    at = next((i for i, ln in enumerate(lines) if ln.lower().startswith("diagnosis:")), None)
+    nxt = next((i for i, ln in enumerate(lines) if ln.lower().startswith("next:")), None)
+    if at is None and nxt is None:
+        return lines[:3]
+    out = [lines[at]] if at is not None else []
+    if nxt is not None:
+        out += lines[nxt:nxt + 3]
+    return out[:4]
 
 
 def plan(task: str, history: list | None, root, stop_event=None) -> dict:
     """The plan for this turn.
 
     {"text": the plan, or "" for NO PLAN, "line": what the screen says,
-     "seconds", "error": "" or why there is none}. Never raises but for a stop
-    (llm_client.LLMInterrupted): a turn must not fail because its advisor did.
+     "details": the lines under it, "seconds", "tokens", "error": "" or why
+    there is none}. Never raises but for a stop (llm_client.LLMInterrupted):
+    a turn must not fail because its advisor did.
     """
     parts = ["[The request, with what the agent remembers in front of it]", task.strip()]
     recent = _recent(history)
@@ -272,24 +321,19 @@ def plan(task: str, history: list | None, root, stop_event=None) -> dict:
         parts += ["", "[PRAGMA.md - the person's rules for this project]", rules]
     parts += ["", f"[The folder: {root}]", listing(root)]
     try:
-        text, took = _ask(_PLAN_SYSTEM, "\n".join(parts), stop_event)
+        text, took, tokens = _ask(_PLAN_SYSTEM, "\n".join(parts), stop_event)
     except llm_client.LLMInterrupted:
         raise
     except Exception as e:
         return {"text": "", "line": f"no plan - {type(e).__name__}: {str(e)[:80]}",
-                "seconds": 0.0, "error": str(e)[:200]}
+                "details": [], "seconds": 0.0, "tokens": 0, "error": str(e)[:200]}
     if not text or text.upper().startswith("NO PLAN"):
-        return {"text": "", "line": f"no plan needed · {took:.0f}s", "seconds": took, "error": ""}
+        return {"text": "", "line": f"no plan needed · {_cost(took, tokens)}", "details": [],
+                "seconds": took, "tokens": tokens, "error": ""}
     steps = len(re.findall(r"^\s*\d+[.)]\s", text, flags=re.MULTILINE))
-    done = re.search(r"^\s*Done when:\s*(.+)$", text, flags=re.MULTILINE | re.IGNORECASE)
-    line = "plan"
-    if steps:
-        line += f" · {steps} step{'s' if steps != 1 else ''}"
-    if done:
-        what = done.group(1).strip()
-        line += f" · done when: {what[:70]}{'…' if len(what) > 70 else ''}"
-    return {"text": text, "line": f"{line} · {took:.0f}s · /plan shows it",
-            "seconds": took, "error": ""}
+    line = "plan" + (f" · {steps} step{'s' if steps != 1 else ''}" if steps else "")
+    return {"text": text, "line": f"{line} · {_cost(took, tokens)}",
+            "details": _plan_details(text), "seconds": took, "tokens": tokens, "error": ""}
 
 
 def consult(request: str, plan_text: str, ledger: list[dict], signal: str,
@@ -302,59 +346,89 @@ def consult(request: str, plan_text: str, ledger: list[dict], signal: str,
     parts += ["", f"[Why you are called] {signal}",
               "", "[What the agent has done, step by step]", record(ledger)]
     try:
-        text, took = _ask(_CONSULT_SYSTEM, "\n".join(parts), stop_event)
+        text, took, tokens = _ask(_CONSULT_SYSTEM, "\n".join(parts), stop_event)
     except llm_client.LLMInterrupted:
         raise
     except Exception as e:
         return {"text": "", "line": f"no advice - {type(e).__name__}: {str(e)[:80]}",
-                "seconds": 0.0, "error": str(e)[:200]}
+                "details": [], "seconds": 0.0, "tokens": 0, "error": str(e)[:200]}
+    why = signal if len(signal) <= 70 else signal[:69] + "…"
     if not text:
-        return {"text": "", "line": f"no advice given · {took:.0f}s", "seconds": took, "error": ""}
-    nxt = re.search(r"^\s*Next:\s*(.*)$", text, flags=re.MULTILINE | re.IGNORECASE)
-    said = (nxt.group(1).strip() if nxt else "") or "advice"
-    return {"text": text,
-            "line": f"{signal} → {said[:60]}{'…' if len(said) > 60 else ''} · {took:.0f}s",
-            "seconds": took, "error": ""}
+        return {"text": "", "line": f"no advice given ({why}) · {_cost(took, tokens)}",
+                "details": [], "seconds": took, "tokens": tokens, "error": ""}
+    return {"text": text, "line": f"advice · {why} · {_cost(took, tokens)}",
+            "details": _advice_details(text), "seconds": took, "tokens": tokens, "error": ""}
 
 
 # ── when to ask ───────────────────────────────────────────────────────────────
 
-class Watch:
-    """The two signals of a run going nowhere that the loop does not already
-    watch for: half the steps spent with nothing delivered, and nearly the
-    same thing done three times over. (The other two - the same call failing
-    over and over, most calls failing - are react.py's watchdogs, which tell
-    this one when they fire.)
+# Skills that change files: a command run again after one of these is checking
+# the change, not going round in circles.
+_EDITS = {"write_file", "append_file", "replace_in_file", "replace_in_files",
+          "insert_after", "insert_before", "apply_patch", "revert"}
 
-    The repetition is counted by what a step is ABOUT, not by its exact
-    arguments: the snake run's six terminal scripts each differed by a line,
-    and each began the same way."""
+
+def _inline(command: str) -> bool:
+    """Does the command carry its own program - a script written into it, not
+    a file it runs? `python3 - <<EOF`, `python3 -c "..."`, `cat > x <<EOF`."""
+    return "<<" in command or bool(re.search(r"(^|\s)-c\s", command))
+
+
+class Watch:
+    """The signals of a run going nowhere that the loop does not already watch
+    for. (The same call failing over and over and most calls failing are
+    react.py's watchdogs, which tell this one when they fire.)
+
+    - HALF THE STEPS spent with nothing delivered.
+    - THE SAME THROWAWAY SCRIPT written into a command a third time. Counted
+      by how it begins, not by its exact text: the snake run's six terminal
+      scripts each differed by a line, and each began the same way - and
+      between them the game was edited, so an edit does not excuse these.
+    - THE SAME COMMAND run a third time with nothing changed in between. A
+      command run again AFTER an edit is the edit being checked: three
+      `py_compile snake.py` around two changes are the work done right, and
+      counting them sent a careful run to the advisor for being careful.
+    - THE SAME FILE written whole a third time.
+    """
 
     REPEATS = 3
 
     def __init__(self, max_steps: int):
         self.half = max(2, int(max_steps or 0) // 2)
-        self.counts: dict[str, int] = {}
+        self.edits = 0                    # file changes so far in the turn
+        self.scripts: dict[str, int] = {}
+        self.writes: dict[str, int] = {}
+        # A command -> (times in a row with no edit between, edits when last run)
+        self.runs: dict[str, tuple[int, int]] = {}
         self.half_said = False
-
-    @staticmethod
-    def _about(action: str, args: dict) -> str:
-        args = args or {}
-        if action == "execute_command":
-            return "run: " + " ".join(str(args.get("command", "")).split())[:60]
-        if action == "write_file":
-            return f"write: {args.get('path', '')}"
-        return ""
 
     def after(self, step: int, action: str, args: dict) -> str:
         """The signal this step gives, or ""."""
-        about = self._about(action, args)
-        if about:
-            self.counts[about] = self.counts.get(about, 0) + 1
-            if self.counts[about] == self.REPEATS:
-                what = about.split(": ", 1)[1]
-                verb = "run" if about.startswith("run") else "written"
-                return f"nearly the same thing {verb} {self.REPEATS} times ({what[:50]})"
+        args = args or {}
+        said = ""
+        if action == "execute_command":
+            command = " ".join(str(args.get("command", "")).split())
+            about = command[:60]
+            if _inline(command):
+                self.scripts[about] = self.scripts.get(about, 0) + 1
+                if self.scripts[about] == self.REPEATS:
+                    said = f"the same throwaway script written {self.REPEATS} times ({about[:45]})"
+            else:
+                times, at = self.runs.get(command, (0, -1))
+                times = times + 1 if at == self.edits else 1
+                self.runs[command] = (times, self.edits)
+                if times == self.REPEATS:
+                    said = (f"the same command run {self.REPEATS} times with nothing changed"
+                            f" between ({about[:40]})")
+        elif action in _EDITS:
+            self.edits += 1
+            if action == "write_file":
+                path = str(args.get("path", ""))
+                self.writes[path] = self.writes.get(path, 0) + 1
+                if self.writes[path] == self.REPEATS:
+                    said = f"the same file written whole {self.REPEATS} times ({path[-45:]})"
+        if said:
+            return said
         if step >= self.half and not self.half_said:
             self.half_said = True
             return "half the steps are spent and nothing is delivered"

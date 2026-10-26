@@ -184,13 +184,19 @@ def pretty_model(served: str, quant: bool = False) -> str:
 
 
 def summary_line(steps: int, tools: int, seconds: float, out_tokens: int,
-                 ctx_pct: int | None, touched: list[str], dot: str) -> str:
+                 ctx_pct: int | None, touched: list[str], dot: str,
+                 advisor_tokens: int = 0) -> str:
     parts = [plural(steps, "step")]
     if tools:
         parts.append(plural(tools, "tool"))
     parts.append(f"{seconds:.0f}s")
     if out_tokens:
         parts.append(f"{out_tokens / 1000:.1f}k tok" if out_tokens >= 1000 else f"{out_tokens} tok")
+    # Apart from the agent's, and read and written together: the advisor is
+    # often a paid endpoint, where what it reads is paid for too.
+    if advisor_tokens:
+        parts.append("advisor " + (f"{advisor_tokens / 1000:.1f}k tok" if advisor_tokens >= 1000
+                                   else f"{advisor_tokens} tok"))
     if ctx_pct is not None:
         parts.append(f"ctx {ctx_pct}%" if ctx_pct else "ctx <1%")
     if touched:
@@ -893,6 +899,10 @@ class Harness:
         # estimating from characters - see config.CHAT_COMPACT_TOKENS.
         self._turn["prompt_tokens"] = int(stats.get("prompt") or 0)
 
+    def note_advisor(self, tokens: int) -> None:
+        """What one plan or piece of advice cost, for the closing line."""
+        self._turn["advisor_tokens"] = int(self._turn.get("advisor_tokens") or 0) + int(tokens or 0)
+
     def context_reset(self) -> None:
         """The conversation was emptied or compacted: what the last request
         weighed describes a list that no longer exists."""
@@ -1011,7 +1021,8 @@ class Harness:
         seconds = elapsed or (time.monotonic() - self._turn.get("t0", time.monotonic()))
         touched = sorted(set(self._files()) - set(self._turn.get("files") or []))
         line = summary_line(self._turn.get("steps", 0), self._turn.get("tools", 0), seconds,
-                            self._turn.get("out_tokens", 0), self.ctx_pct(), touched, self.g["dot"])
+                            self._turn.get("out_tokens", 0), self.ctx_pct(), touched, self.g["dot"],
+                            self._turn.get("advisor_tokens", 0))
         self.console.print()
         if forced:
             self.console.print(Text(f"  {self.g['note']} step budget exhausted - the answer was forced",

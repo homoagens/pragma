@@ -24,10 +24,13 @@ An advisor role, served by any endpoint, and turned on per project in
 - **The plan** is asked for before the first step of every turn, in a fixed
   form with `Done when` first; the advisor answers NO PLAN for a turn that
   needs no work. It is added to the request, which compression never touches.
-- **Advice** is asked for by Pragma, on four signals it measures: the same
-  call failing again and again, most calls failing, nearly the same command
-  run three times, half the steps spent with nothing delivered. A project sets
-  how many times a turn may ask; 2 by default.
+- **Advice** is asked for by Pragma, on signals it measures: the same call
+  failing again and again, most calls failing, the same throwaway script
+  written into a command a third time, the same command run a third time with
+  nothing changed in between, the same file written whole a third time, half
+  the steps spent with nothing delivered. A command run again after a change
+  does not count: that is the change being checked. A project sets how many
+  times a turn may ask; 2 by default.
 
 What the advisor says reaches the agent as a message beginning `[ADVISOR]`,
 with its standing in the message itself rather than in the system prompt,
@@ -42,5 +45,6 @@ advisor the start and the middle, and neither sees what the other said.
 - Each plan costs a call before the first step, on every turn - also on turns
   that turn out to need none, where the advisor says so in a few tokens.
 - With no endpoint given the role, the agent's own model plans for itself.
-- On the screen each plan and piece of advice is one line; `/plan` shows them
-  whole.
+- On the screen a plan shows `Done when` and its steps, a piece of advice its
+  diagnosis and what to do next, each with what it cost in tokens; `/plan`
+  shows them whole.

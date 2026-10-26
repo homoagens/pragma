@@ -1459,7 +1459,10 @@ def _show_plan() -> bool:
         return True
     for item in said:
         head = "plan" if item.get("kind") == "plan" else f"advice · {item.get('signal', '')}"
-        print(f"  {a}{head}{r}  {item.get('seconds', 0):.0f}s")
+        cost = f"{item.get('seconds', 0):.0f}s"
+        if item.get("tokens"):
+            cost += f" · {advisor.tok(item['tokens'])}"
+        print(f"  {a}{head}{r}  {cost}")
         text = item.get("text") or item.get("line") or ""
         for line in str(text).splitlines():
             print(f"    {line}")

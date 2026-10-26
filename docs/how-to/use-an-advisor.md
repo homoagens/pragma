@@ -12,10 +12,13 @@ acts and never answers you: it writes for the agent.
   like first — or answers that the turn needs none, for a greeting or a
   question answered in words.
 - **When the agent stops making progress** — the same call failing again and
-  again, most calls failing, nearly the same command run three times, half
-  the steps spent with nothing delivered — it reads what the agent did and
-  says what to do next. Pragma decides when, from what it measures: the agent
-  is exactly the one that does not know it is stuck.
+  again, most calls failing, the same throwaway script written into a command
+  a third time, the same command run a third time with nothing changed in
+  between, the same file written whole a third time, half the steps spent
+  with nothing delivered — it reads what the agent did and says what to do
+  next. Pragma decides when, from what it measures: the agent is exactly the
+  one that does not know it is stuck. A command run again after a change is
+  the change being checked, and does not count.
 
 The agent reads what the advisor says as a message on your side, not as yours:
 it follows the plan unless what it finds contradicts it, and the advisor can
@@ -47,14 +50,24 @@ already gives it the plan's `Done when`, but not a second mind.
 
 ## Read what it said
 
-Each plan and each piece of advice takes one line of the turn:
+A plan shows what "done" will be and its steps, under one line that says what
+it cost; a piece of advice, why it was asked for, the diagnosis and what to do
+next:
 
 ```
-  advisor  plan · 4 steps · done when: python3 snake.py runs and the tests pass · 31s · /plan shows it
+  advisor  plan · 4 steps · 4s · 2.1k tok
+           · done when: python3 snake.py runs, and the tests of its logic pass
+           · 1. snake.py: the rules apart from the curses screen
+           · 2. tests for the rules
+           · 3. run the tests
+           · 4. start it once, quit with q
 ```
 
-`/plan` shows the last turn's in full. `/status` says whether the advisor is
-on and who it is.
+The tokens are what the advisor read and wrote, together: on a paid endpoint
+both are paid for. The line that closes the turn adds them up apart from the
+agent's (`advisor 3.4k tok`). `/plan` shows the last turn's plan and advice in
+full, with how to check it and when to stop and ask. `/status` says whether
+the advisor is on and who it is.
 
 ## A single task
 

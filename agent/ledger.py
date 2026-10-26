@@ -642,7 +642,7 @@ class Ledger(Harness):
         touched = sorted(set(self._files()) - set(self._turn.get("files") or []))
         line = summary_line(self._turn.get("steps", 0), self._turn.get("tools", 0), seconds,
                             self._turn.get("out_tokens", 0), self.ctx_pct(), touched,
-                            self.g["dot"])
+                            self.g["dot"], self._turn.get("advisor_tokens", 0))
         if self._gap("closing"):
             self.console.print()
         if forced:

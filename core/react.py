@@ -625,7 +625,7 @@ def run_agent(cfg: AgentConfig, user_task: str, log_path: Optional[Path] = None,
         _plan_text = got["text"]
         _advice.append({"kind": "plan", "signal": "", **got})
         _emit({"type": "faculty", "tag": "ADVISOR", "content": got["line"],
-               "advice": _advice[-1]})
+               "details": got.get("details") or [], "advice": _advice[-1]})
         if log_path is not None:
             _log_step(log_path, {"step": 0, "advisor": _advice[-1]})
         if _plan_text:
@@ -1324,7 +1324,10 @@ def run_agent(cfg: AgentConfig, user_task: str, log_path: Optional[Path] = None,
 
         # ── The advisor, when the run has stopped making progress ──
         if _watch is not None:
-            _stuck = _stuck or _watch.after(step, action, args)
+            # Asked on every step, also when a watchdog has already spoken:
+            # it counts the edits between commands.
+            _seen = _watch.after(step, action, args)
+            _stuck = _stuck or _seen
             if _stuck and _consults < max(0, int(cfg.advisor_consults)):
                 _consults += 1
                 _emit({"type": "faculty_running", "tag": "ADVISOR",
@@ -1337,7 +1340,7 @@ def run_agent(cfg: AgentConfig, user_task: str, log_path: Optional[Path] = None,
                     return None
                 _advice.append({"kind": "consult", "signal": _stuck, **got})
                 _emit({"type": "faculty", "tag": "ADVISOR", "content": got["line"],
-                       "advice": _advice[-1]})
+                       "details": got.get("details") or [], "advice": _advice[-1]})
                 if log_path is not None:
                     _log_step(log_path, {"step": step, "advisor": _advice[-1]})
                 if got["text"]:

@@ -555,6 +555,9 @@ class Conversation:
         def on_step(ev: dict) -> None:
             if ev.get("advice"):
                 self.advice.append(ev["advice"])
+                note = getattr(renderer, "note_advisor", None)
+                if note:
+                    note(ev["advice"].get("tokens") or 0)
             # The token counts of the call that just ended, before the adapter
             # consumes them: the renderer adds them up for its closing line,
             # and the last prompt says whether the conversation is full.
