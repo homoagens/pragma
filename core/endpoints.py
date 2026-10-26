@@ -443,6 +443,13 @@ def model_name(raw: str) -> str:
     return name
 
 
+# Sent with every GET /models. Anthropic's OpenAI-compatible API answers
+# chat/completions with the bearer key alone, but its /models refuses a request
+# without this header (HTTP 400) - and a failed /models is a backend down,
+# which keeps the chat from sending a turn. Other servers ignore it.
+MODELS_HEADERS = {"anthropic-version": "2023-06-01"}
+
+
 def probe(ep: Endpoint, timeout: float = 3.0) -> dict:
     """Ask an endpoint what it is, quickly. Never raises.
 
@@ -462,7 +469,7 @@ def probe(ep: Endpoint, timeout: float = 3.0) -> dict:
         return out
 
     def get(url):
-        req = urllib.request.Request(url)
+        req = urllib.request.Request(url, headers=MODELS_HEADERS)
         if ep.api_key:
             req.add_header("Authorization", f"Bearer {ep.api_key}")
         with urllib.request.urlopen(req, timeout=timeout) as r:
@@ -485,8 +492,10 @@ def probe(ep: Endpoint, timeout: float = 3.0) -> dict:
         return out
     out["up"] = True
     try:
+        # The model the endpoint names is the one every request asks for; the
+        # first of the list is only right on a server that has one.
         listed = data.get("data") or []
-        out["served"] = model_name(listed[0].get("id", "")) if listed else ""
+        out["served"] = model_name(ep.model or (listed[0].get("id", "") if listed else ""))
     except Exception:
         pass
     try:

@@ -332,7 +332,7 @@ def served_model(role: str) -> str:
         return ""
     known = endpoints.state(ep.base_url)
     if not known.served_model:
-        ping_models(ep.base_url, ep.api_key, timeout=5)
+        ping_models(ep.base_url, ep.api_key, timeout=5, model=ep.model)
     return known.served_model or ep.model
 
 
@@ -349,7 +349,7 @@ def _resolved_endpoint(base_url, api_key):
     return url, key
 
 
-def ping_models(base_url=None, api_key=None, timeout=5):
+def ping_models(base_url=None, api_key=None, timeout=5, model=None):
     """Health check: GET {BASE_URL}/models on the OpenAI-compatible endpoint.
 
     Returns (ok: bool, detail: str). Never raises — used at startup and by the
@@ -359,9 +359,14 @@ def ping_models(base_url=None, api_key=None, timeout=5):
     serving (llama.cpp reports the loaded model in /models) into
     config.SERVED_MODEL, so banners and provenance can show the truth instead
     of trusting the DEFAULT_MODEL label — which lies as soon as you swap
-    models on the same port."""
+    models on the same port.
+
+    Except where the endpoint names its model (`model`, or the calling role's
+    endpoint when no URL is given): a hosted API lists everything it has, and
+    the first of the list is not the one every request asks for."""
     try:
         url, key = _resolved_endpoint(base_url, api_key)
+        named = model or ("" if base_url else current_endpoint().model)
     except endpoints.EndpointError as e:
         return False, f"endpoint catalogue - {e}"
     # The quick test first: with nothing listening, a plain GET waits out the
@@ -369,7 +374,7 @@ def ping_models(base_url=None, api_key=None, timeout=5):
     # asks would wait with it.
     if not config.endpoint_reachable(url):
         return False, f"cannot reach {url} - not connected"
-    headers = {}
+    headers = dict(endpoints.MODELS_HEADERS)
     if key:
         headers["Authorization"] = f"Bearer {key}"
     try:
@@ -381,8 +386,8 @@ def ping_models(base_url=None, api_key=None, timeout=5):
     served = ""
     try:
         data = (resp.json() or {}).get("data") or []
-        if data:
-            raw = str(data[0].get("id", ""))
+        if data or named:
+            raw = named or str(data[0].get("id", ""))
             served = raw.replace("\\", "/").split("/")[-1]
             for ext in (".gguf", ".bin"):
                 if served.lower().endswith(ext):
