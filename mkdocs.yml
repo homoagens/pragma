@@ -32,6 +32,7 @@ nav:
       - Write rules for a project: how-to/write-project-rules.md
       - Allow commands: how-to/allow-commands.md
       - Turn on rule packs: how-to/use-rule-packs.md
+      - Let an advisor plan the work: how-to/use-an-advisor.md
       - Use MCP servers: how-to/use-mcp-servers.md
       - Use the agent without memory: how-to/use-the-agent-alone.md
       - Serve a project: how-to/serve-a-project.md

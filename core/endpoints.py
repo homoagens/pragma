@@ -87,7 +87,7 @@ DEFAULT_BASE_URL = "http://127.0.0.1:8080/v1"
 # should be: unassigned, it follows the agent, and the same model judging what
 # it produced - invoked apart, with another mandate - is the design. Another
 # model in that seat is an experiment, and this is what makes it one setting.
-ROLES = ("agent", "recall", "memory", "critic")
+ROLES = ("agent", "recall", "memory", "critic", "advisor")
 
 # WHAT A MODEL IS, AND WHAT IT IS FOR. Both are properties of the server, not
 # of a project: the machine at the end of the address is running one model,
@@ -120,6 +120,7 @@ _ROLE_OF_FACULTY = {
     # belongs where the curator is, on the role you are free to keep fast.
     "SUGGESTER":      "recall",
     "CRITIC":         "critic",
+    "ADVISOR":        "advisor",
 }
 
 
@@ -152,7 +153,9 @@ _ROLE_OF_FACULTY = {
 # a turn, with the person waiting for the answer it is judging, and the bench
 # says time is what a run runs out of. Whether its judgement is worth the
 # seconds of reasoning is a question for the bench, asked as its own arm.
-_REASONS_BY_DEFAULT = {"agent": True, "recall": False, "memory": True, "critic": False}
+# The advisor reasons: thinking the work through is the reason it is there.
+_REASONS_BY_DEFAULT = {"agent": True, "recall": False, "memory": True, "critic": False,
+                       "advisor": True}
 
 
 def reasons_for(entry: dict, role: str = "agent") -> bool:

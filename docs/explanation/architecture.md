@@ -77,7 +77,10 @@ Four things watch the loop while it runs:
 Two optional faculties sit at the end of a turn, both off unless turned on in
 `/configure`: a check of the work against the request
 ([`core/critic.py`](../../core/critic.py)), and a guess at the line you will
-type next ([`core/suggest.py`](../../core/suggest.py)).
+type next ([`core/suggest.py`](../../core/suggest.py)). One more sits at the
+start and in the middle, off unless a project turns it on in `/settings`: an
+[advisor](../how-to/use-an-advisor.md) that plans the turn and advises an agent
+that has stopped making progress ([`core/advisor.py`](../../core/advisor.py)).
 
 [`agent/ledger.py`](../../agent/ledger.py) is what all of this looks like on
 screen while it happens, and [`agent/picture.py`](../../agent/picture.py)
@@ -117,10 +120,10 @@ memory](../how-to/use-the-agent-alone.md).
 
 No part of the code names a server. Every model call goes through
 [`core/llm_client.py`](../../core/llm_client.py) and says only who is asking.
-[`core/endpoints.py`](../../core/endpoints.py) turns that into one of four
-roles — `agent`, `recall`, `memory`, `critic` — and the catalogue written by
-`/configure` says which endpoint serves each role, whether it reasons, and
-how it samples. With one endpoint, it serves all four.
+[`core/endpoints.py`](../../core/endpoints.py) turns that into one of five
+roles — `agent`, `recall`, `memory`, `critic`, `advisor` — and the catalogue
+written by `/configure` says which endpoint serves each role, whether it
+reasons, and how it samples. With one endpoint, it serves all five.
 
 ## The ways in
 
@@ -170,6 +173,7 @@ The short version. [Files](../reference/files.md) has what is inside each.
 | [`checkpoint.py`](../../core/checkpoint.py) | Undo for file edits. |
 | [`command_gate.py`](../../core/command_gate.py) | Which shell commands cannot be undone, and so wait for the person. |
 | [`rule_packs.py`](../../core/rule_packs.py) | The rule packs: which there are, and the words a project's packs add to the agent's instructions. |
+| [`advisor.py`](../../core/advisor.py) | The advisor: the plan before a turn's first step, the advice when the agent stops making progress, and the signals that call for it. |
 | [`memory.py`](../../core/memory.py) | Summarises the older steps of a long turn. Not the long-term memory, despite the name. |
 | [`curator.py`](../../core/curator.py) | Recall: chooses what memory brings to a turn. |
 | [`embed.py`](../../core/embed.py) | Texts as vectors, for searching the memory by meaning. Used only when an embedding server is named. |

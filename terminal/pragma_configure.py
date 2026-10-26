@@ -34,10 +34,11 @@ rather than one server's - and `mcp`, the servers that publish tools rather
 than a model. Those are kept in a file of their own, ~/.pragma/mcp.json
 (core/mcp_client.py reads it), and have a page of their own.
 
-The four roles are agent (the conversation), recall (the CURATOR, before each
-turn), memory (the faculties that write episodes and beliefs) and critic (the
-CRITIC, which judges the work before it is delivered). A role nobody assigns
-follows the agent.
+The five roles are agent (the conversation), recall (the CURATOR, before each
+turn), memory (the faculties that write episodes and beliefs), critic (the
+CRITIC, which judges the work before it is delivered) and advisor (the
+ADVISOR, which plans a turn and advises an agent that is stuck). A role nobody
+assigns follows the agent.
 
 TUNING HAS THREE WAYS IN, because the three are different amounts of knowing:
 
@@ -90,6 +91,7 @@ ROLE_BLURB = {
     "recall": "the CURATOR, before each turn",
     "memory": "episodes and beliefs, in the background",
     "critic": "the CRITIC, before the answer is delivered",
+    "advisor": "the ADVISOR: a plan before each turn, advice when the agent is stuck",
 }
 KIND_BLURB = {
     "thinking": "it reasons before it answers: slower, better on problems",
@@ -112,6 +114,7 @@ REASONS_BLURB = {
     "recall": "choosing what to bring back from memory, every turn",
     "memory": "writing and revising what is remembered, after the turn",
     "critic": "judging the work against what was asked, before the answer",
+    "advisor": "planning the turn, and advising the agent when it is stuck",
 }
 
 
@@ -1117,7 +1120,7 @@ def cmd_add(state: dict) -> bool:
 
 
 def ask_serves(state: dict, name: str) -> bool:
-    """The four roles and who answers each: Enter gives one to this endpoint.
+    """The roles and who answers each: Enter gives one to this endpoint.
 
     It asked "what should it serve?" over a list of the roles alone, so the
     answer was given without seeing what it took the role away from.

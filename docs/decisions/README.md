@@ -41,6 +41,7 @@ the file that makes them.
 | 26 | 2026-10-21 | [Windows runs Pragma inside WSL](0026-windows-runs-pragma-in-wsl.md) | accepted |
 | 27 | 2026-10-21 | [One conversation, for the terminal and for /serve](0027-one-conversation-for-the-terminal-and-serve.md) | accepted |
 | 28 | 2026-10-21 | [Rule packs are turned on by the person](0028-rule-packs-are-turned-on-by-the-person.md) | accepted |
+| 29 | 2026-10-26 | [The advisor is called by Pragma, not by the agent](0029-the-advisor-is-called-by-pragma-not-by-the-agent.md) | accepted |
 
 ## Adding one
 

@@ -396,7 +396,7 @@ PROMPTS_INTRO = """\
 Every instruction Pragma gives a model is written in the code, in English,
 and this is where each one is. To read one, open the file.
 
-A call is made in one of four roles, and the role decides which server
+A call is made in one of five roles, and the role decides which server
 answers it: see [Architecture](../explanation/architecture.md#which-server-answers-which-call).
 """
 
@@ -456,6 +456,10 @@ PROMPTS = {
 
     "core/critic.py:_SYSTEM": ("critic",
         "Checks the work of a turn against what was asked. Optional."),
+    "core/advisor.py:_PLAN_SYSTEM": ("advisor",
+        "Writes the plan of a turn before its first step, `Done when` first, or answers NO PLAN. Optional."),
+    "core/advisor.py:_CONSULT_SYSTEM": ("advisor",
+        "Tells an agent that has stopped making progress what to do next. Optional."),
 }
 
 # What the keyboard does. Not in any table the code keeps, so it is written

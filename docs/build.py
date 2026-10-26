@@ -341,7 +341,7 @@ def commands(notes) -> str:
                "`who reasons` for a model that reasons. On Anthropic's API "
                "`effort` takes the place of `what it is`, `what it is for`, "
                "`who reasons` and `sampling`.")
-    out.append("\nAn endpoint serves one or more of four roles:\n")
+    out.append(f"\nAn endpoint serves one or more of {len(conf['ROLE_BLURB'])} roles:\n")
     out += _rows(("Role", "The calls it answers"),
                  ((f"`{r}`", b) for r, b in conf["ROLE_BLURB"].items()))
 

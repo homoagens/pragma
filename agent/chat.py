@@ -64,6 +64,7 @@ for p in (str(_ROOT), str(_CORE), str(_TOOLS)):
         sys.path.insert(0, p)
 
 import config as baseline_config          # noqa: E402
+import advisor                            # noqa: E402
 import llm_client                          # noqa: E402
 import rule_packs                          # noqa: E402
 from react import AgentConfig   # noqa: E402
@@ -107,6 +108,7 @@ _COMMANDS = {
     "/memory":    ("memory",    ""),      # the views fill the blurb in
     "/settings":  ("settings",  "how many steps a turn may take, and how much the memory brings to one"),
     "/status":    ("status",    "how this project is set up right now"),
+    "/plan":      ("plan",      "what the advisor said in the last turn, in full"),
     "/jobs":      ("jobs",      "what the memory is writing in the background: follow it, stop it, run it again"),
     "/configure": ("configure", "point Pragma at an LLM endpoint"),
     "/compact":   ("compact",   "summarise the conversation so far and go on from the summary"),
@@ -647,6 +649,7 @@ def _settings_here() -> None:
     name = os.environ.get("PRAGMA_PROJECT", "").strip()
     if not name or not tool.is_file():
         return _steps_here()
+    was = conversation.project_settings()
     try:
         subprocess.run([sys.executable, str(tool), "--settings", name], check=False)
     except Exception as e:
@@ -673,6 +676,13 @@ def _settings_here() -> None:
         print(f"  the recall was not changed - {type(e).__name__}: {str(e)[:100]}")
     if _recall_says() != before:
         said.append(_recall_says())
+    # Read by the conversation at every turn: only said here.
+    if (advisor.mode_of(settings), advisor.consults_of(settings)) != \
+            (advisor.mode_of(was), advisor.consults_of(was)):
+        mode = advisor.mode_of(settings)
+        said.append({"": "the advisor off", "plan": "the advisor: a plan before each turn",
+                     "consult": f"the advisor: a plan, and up to {advisor.consults_of(settings)} "
+                                f"pieces of advice a turn"}[mode])
     packs = _packs_here(settings)
     if said:
         for line in said:
@@ -1153,6 +1163,9 @@ def _status_lines() -> list[tuple[str, str]]:
             # but for the recall's, when it is also guessing your next line.
             if not _memory_on() and (role == "memory" or (role == "recall" and not _suggesting(cfg))):
                 continue
+            # Asked something only where the project has turned it on.
+            if role == "advisor" and not advisor.mode_of(conversation.project_settings()):
+                continue
             p = found.get(ep.base_url, {})
             same = role != "agent" and ep.base_url == agent.base_url
             out.append((role, f"{ep.name} · {endpoints.status_text(p)} · "
@@ -1217,6 +1230,12 @@ def _status_lines() -> list[tuple[str, str]]:
     out.append(("steps", f"{_STATE.get('max_steps') or getattr(cfg, 'MAX_STEPS', 0)} per turn"))
     if _PROMPT.get("packs"):
         out.append(("rule packs", ", ".join(_PROMPT["packs"]) + " · /settings"))
+    settings = conversation.project_settings()
+    mode = advisor.mode_of(settings)
+    if mode:
+        out.append(("advisor", "a plan before each turn" if mode == "plan" else
+                    f"a plan before each turn, and advice when the agent stops making"
+                    f" progress, {advisor.consults_of(settings)} at most  · /plan shows it"))
     # Only when it is on. A line saying a thing is off, on a page read to find
     # out what IS on, is a line to skip past every time.
     if _suggesting(cfg):
@@ -1418,9 +1437,33 @@ def _show_status() -> bool:
         for more in parts[1:]:
             print(f"    {'':<11}{more}")
     print()
-    print(f"  {grey}/configure changes the endpoints · /settings the steps per turn, the rule packs"
-          f"{' and how much is recalled' if _memory_on() else ''}{r}")
+    print(f"  {grey}/configure changes the endpoints · /settings the steps per turn, the rule packs,"
+          f" the advisor{' and how much is recalled' if _memory_on() else ''}{r}")
     print()
+    return True
+
+
+def _show_plan() -> bool:
+    """The advisor's plan and advice for the last turn, whole.
+
+    The turn gives each of them one line, because the screen is the
+    conversation's; this is where they are read. Nothing to show says why."""
+    a, r = _accent(), ("\033[0m" if _accent() else "")
+    said = list(_CONV[0].advice) if _CONV else []
+    print()
+    if not said:
+        mode = advisor.mode_of(conversation.project_settings())
+        print("  the advisor said nothing in the last turn" if mode
+              else "  the advisor is off in this project - /settings turns it on")
+        print()
+        return True
+    for item in said:
+        head = "plan" if item.get("kind") == "plan" else f"advice · {item.get('signal', '')}"
+        print(f"  {a}{head}{r}  {item.get('seconds', 0):.0f}s")
+        text = item.get("text") or item.get("line") or ""
+        for line in str(text).splitlines():
+            print(f"    {line}")
+        print()
     return True
 
 
@@ -1463,6 +1506,8 @@ def _run_slash(line: str) -> bool:
         return _show_memory(view)
     if action == "status":
         return _show_status()
+    if action == "plan":
+        return _show_plan()
     if action == "settings":
         _settings_here()
         return True

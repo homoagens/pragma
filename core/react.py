@@ -29,6 +29,7 @@ from typing import Callable, Optional
 from rich.console import Console
 from rich.panel import Panel
 
+import advisor
 import config
 import critic
 import endpoints
@@ -60,6 +61,10 @@ class AgentConfig:
     # called with (processed, total, cached) prompt tokens while the server
     # reads the prompt, and once with zeros as the request goes out
     on_progress:   Optional[Callable] = None
+    # The advisor (core/advisor.py): "" off, "plan", or "consult" for the plan
+    # and the advice; how many times a turn may ask for advice.
+    advisor:       str = ""
+    advisor_consults: int = 2
 
 
 def _log_step(log_path: Path, entry: dict):
@@ -602,6 +607,31 @@ def run_agent(cfg: AgentConfig, user_task: str, log_path: Optional[Path] = None,
     original_max_steps = max_steps
     step = 1
 
+    # ── The advisor's plan, before the first step ──
+    # Added to the request rather than sent as a message of its own: the
+    # request is fenced off from compression, and so the plan is too.
+    _advice: list[dict] = []
+    _plan_text = ""
+    _advisor_on = cfg.advisor in advisor.MODES
+    _consults = 0
+    _watch = advisor.Watch(max_steps) if cfg.advisor == "consult" else None
+    if _advisor_on:
+        _emit({"type": "faculty_running", "tag": "ADVISOR", "content": "planning the turn…"})
+        try:
+            got = advisor.plan(user_task, history, _workspace(), stop_event=cfg.stop_event)
+        except llm_client.LLMInterrupted:
+            _emit({"type": "stopped", "content": "Task interrupted by user."})
+            return None
+        _plan_text = got["text"]
+        _advice.append({"kind": "plan", "signal": "", **got})
+        _emit({"type": "faculty", "tag": "ADVISOR", "content": got["line"],
+               "advice": _advice[-1]})
+        if log_path is not None:
+            _log_step(log_path, {"step": 0, "advisor": _advice[-1]})
+        if _plan_text:
+            messages[-1] = dict(messages[-1], content=f"{messages[-1]['content']}\n\n"
+                                                      f"{advisor.plan_message(_plan_text)}")
+
     # ── Action-loop watchdog state ──
     # Tracks (action_name, args_hash, was_error) for the most recent steps.
     # When N identical entries in a row all return ERROR, we inject a coercive
@@ -993,6 +1023,8 @@ def run_agent(cfg: AgentConfig, user_task: str, log_path: Optional[Path] = None,
             response["forced"]   = False
             if _reviews:
                 response["critic"] = [r.as_dict() for r in _reviews]
+            if _advice:
+                response["advisor"] = _advice
             # The answer joins the conversation before it is handed back.
             # Without this the history keeps every user turn and none of the
             # replies, so a live session shows the model a run of unanswered
@@ -1191,6 +1223,11 @@ def run_agent(cfg: AgentConfig, user_task: str, log_path: Optional[Path] = None,
                 "content": f"[OBSERVATION]: {stored_obs}",
             })
 
+        # Why the advisor should be asked after this step, if it should: the
+        # two watchdogs below say so when they fire, the advisor's own watch
+        # after them.
+        _stuck = ""
+
         # ── Action-loop watchdog ──
         # Record this (action, args, was_error) triple and check if the
         # model is hammering the same failing call. If yes, append a coercive
@@ -1241,6 +1278,7 @@ def run_agent(cfg: AgentConfig, user_task: str, log_path: Optional[Path] = None,
                 })
                 # Reset so we don't fire on EVERY subsequent step indefinitely.
                 _recent_actions.clear()
+                _stuck = f"the same call failed {threshold} times in a row"
 
         # ── Error-rate watchdog ──
         # Complements the strict (action,args) loop above. Detects the
@@ -1282,6 +1320,35 @@ def run_agent(cfg: AgentConfig, user_task: str, log_path: Optional[Path] = None,
                     })
                     # Clear so we don't re-fire every step
                     _recent_actions.clear()
+                    _stuck = _stuck or f"{err_n} of the last {window} calls failed"
+
+        # ── The advisor, when the run has stopped making progress ──
+        if _watch is not None:
+            _stuck = _stuck or _watch.after(step, action, args)
+            if _stuck and _consults < max(0, int(cfg.advisor_consults)):
+                _consults += 1
+                _emit({"type": "faculty_running", "tag": "ADVISOR",
+                       "content": "reading what was done…"})
+                try:
+                    got = advisor.consult(request or user_task, _plan_text, _ledger,
+                                          _stuck, stop_event=cfg.stop_event)
+                except llm_client.LLMInterrupted:
+                    _emit({"type": "stopped", "content": "Task interrupted by user."})
+                    return None
+                _advice.append({"kind": "consult", "signal": _stuck, **got})
+                _emit({"type": "faculty", "tag": "ADVISOR", "content": got["line"],
+                       "advice": _advice[-1]})
+                if log_path is not None:
+                    _log_step(log_path, {"step": step, "advisor": _advice[-1]})
+                if got["text"]:
+                    said = advisor.consult_message(got["text"], _stuck)
+                    # After a watchdog's own message, in the same one: two
+                    # messages from the user side in a row read as two turns.
+                    if messages and messages[-1].get("role") == "user":
+                        messages[-1] = dict(messages[-1],
+                                            content=f"{messages[-1]['content']}\n\n{said}")
+                    else:
+                        messages.append({"role": "user", "content": said})
 
         step += 1  # advance step counter for the while loop
 
@@ -1341,6 +1408,8 @@ def run_agent(cfg: AgentConfig, user_task: str, log_path: Optional[Path] = None,
     response["forced"]   = True
     if _reviews:
         response["critic"] = [r.as_dict() for r in _reviews]
+    if _advice:
+        response["advisor"] = _advice
     # Same as the clean exit: a forced verdict is still what the agent said,
     # and a session that continues after one must see it.
     messages.append({"role": "assistant",

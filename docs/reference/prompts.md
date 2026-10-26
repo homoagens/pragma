@@ -6,7 +6,7 @@
 Every instruction Pragma gives a model is written in the code, in English,
 and this is where each one is. To read one, open the file.
 
-A call is made in one of four roles, and the role decides which server
+A call is made in one of five roles, and the role decides which server
 answers it: see [Architecture](../explanation/architecture.md#which-server-answers-which-call).
 
 ## Sent in the `agent` role
@@ -45,6 +45,13 @@ answers it: see [Architecture](../explanation/architecture.md#which-server-answe
 | Prompt | In | What it is for |
 |---|---|---|
 | `_SYSTEM` | [`core/critic.py`](../../core/critic.py) | Checks the work of a turn against what was asked. Optional. |
+
+## Sent in the `advisor` role
+
+| Prompt | In | What it is for |
+|---|---|---|
+| `_PLAN_SYSTEM` | [`core/advisor.py`](../../core/advisor.py) | Writes the plan of a turn before its first step, `Done when` first, or answers NO PLAN. Optional. |
+| `_CONSULT_SYSTEM` | [`core/advisor.py`](../../core/advisor.py) | Tells an agent that has stopped making progress what to do next. Optional. |
 
 The agent's prompt is not one string. It is put together when a conversation
 or a run starts: `build_system_prompt`, then what the way of running adds,

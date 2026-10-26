@@ -71,6 +71,7 @@ ENV_OF = {
 # numbers are core/recall_levels.py's, the same table config applies; what is
 # written under a level is what the page says, and the only place it is said.
 import recall_levels as _levels  # noqa: E402
+import advisor  # noqa: E402
 import rule_packs  # noqa: E402
 
 _E, _R, _L, _T = (_levels.OFFERED["episodes"], _levels.OFFERED["recent"],
@@ -389,8 +390,9 @@ def talk(entry: dict, env: dict) -> str:
 
 def choices_page(entry: dict) -> bool:
     """What a project decides for itself: how many steps a turn may take, which
-    commands may run without asking, which rule packs the agent follows, and
-    how much its memory brings to a turn.
+    commands may run without asking, which rule packs the agent follows,
+    whether an advisor plans its turns, and how much its memory brings to a
+    turn.
 
     Everything else a project used to decide - whether the agent reasons, how
     it samples, whether Pragma guesses your next question - belongs to the
@@ -410,11 +412,20 @@ def choices_page(entry: dict) -> bool:
         recall = {} if home.agent_alone() else RECALL
         allowed = allowed_commands(settings)
         packs = rule_packs.chosen(settings)
-        keys = ["MaxSteps", "AllowedCommands", rule_packs.SETTING] + list(recall)
-        options = ["steps per turn", "commands allowed", "rule packs"]
+        mode = advisor.mode_of(settings)
+        keys = ["MaxSteps", "AllowedCommands", rule_packs.SETTING, advisor.SETTING]
+        options = ["steps per turn", "commands allowed", "rule packs", "advisor"]
         notes = [steps, (f"{len(allowed)} without asking" if allowed
                          else "none - every command that cannot be undone asks"),
-                 ", ".join(packs) if packs else "none - the agent's own way of working"]
+                 ", ".join(packs) if packs else "none - the agent's own way of working",
+                 dict(ADVISOR_LEVELS)[ADVISOR_SHOWN.get(mode, "off")]]
+        # How many times a turn may ask, only where it may ask at all.
+        if mode == "consult":
+            keys.append(advisor.CONSULTS_SETTING)
+            options.append("advice per turn")
+            notes.append(f"{advisor.consults_of(settings)}{SEP}at most, when the agent"
+                         f" stops making progress")
+        keys += list(recall)
         for key, (label, default, levels) in recall.items():
             level = str(settings.get(key, "") or default)
             options.append(label)
@@ -433,6 +444,12 @@ def choices_page(entry: dict) -> bool:
             continue
         if key == rule_packs.SETTING:
             changed = packs_page(name) or changed
+            continue
+        if key == advisor.SETTING:
+            changed = advisor_question(name, mode) or changed
+            continue
+        if key == advisor.CONSULTS_SETTING:
+            changed = consults_question(name, str(advisor.consults_of(settings))) or changed
             continue
         label, default, levels = RECALL[key]
         now = str(settings.get(key, "") or default)
@@ -560,6 +577,61 @@ def packs_page(name: str) -> bool:
         now = [p for p in on if p != n] if n in on else on + [n]
         save_setting(name, rule_packs.SETTING, now)
         changed = True
+
+
+# The advisor (core/advisor.py): what each way of having one means. Written
+# to the settings as "", "plan" or "consult".
+ADVISOR_LEVELS = (
+    ("off", "the agent works alone"),
+    ("plan", "a plan before each turn that needs work"),
+    ("plan + consult", "a plan, and advice when the agent stops making progress"),
+)
+# The setting's value, as the page names it.
+ADVISOR_SHOWN = {"plan": "plan", "consult": "plan + consult"}
+ADVISOR_SAYS = (
+    "The advisor is a second model - usually a more capable one - that thinks",
+    "the work through for the agent: before each turn it writes a plan, what",
+    "\"done\" will look like first; with consult, it also reads what the agent",
+    "did when it stops making progress, and says what to do next. It never",
+    "acts and never answers you. Each plan costs a call, before the first step.",
+    "",
+    "Which model it is: /configure, an endpoint's `serves`, the advisor role.",
+    "With none given, the agent's own model plans for it.",
+)
+
+
+def advisor_question(name: str, mode: str) -> bool:
+    """Off, a plan, or a plan and advice. Whether it was changed."""
+    title("Settings", f"{name} > advisor")
+    print()
+    for line in ADVISOR_SAYS:
+        say(f"  {line}" if line else "", "dim")
+    now = ADVISOR_SHOWN.get(mode, "off")
+    got = choose("", ADVISOR_LEVELS, now)
+    if got is None or got == now:
+        return False
+    save_setting(name, advisor.SETTING,
+                 next((value for value, shown in ADVISOR_SHOWN.items() if shown == got), ""))
+    return True
+
+
+def consults_question(name: str, shown: str) -> bool:
+    """How many times a turn may ask the advisor. Whether it was changed."""
+    title("Settings", f"{name} > advice per turn")
+    print()
+    say("  How many times, in one turn, the advisor may be asked what to do", "dim")
+    say("  next when the agent stops making progress. Each one is a call, and", "dim")
+    say(f"  a wait. {advisor.DEFAULT_CONSULTS} unless you say otherwise.", "dim")
+    print()
+    while True:
+        value = ask("advice per turn", shown, hint="enter keeps it · ctrl+D goes back")
+        if value is None or value == shown:
+            return False
+        if value.isdigit() and 0 <= int(value) <= advisor.MOST_CONSULTS:
+            save_setting(name, advisor.CONSULTS_SETTING,
+                         "" if int(value) == advisor.DEFAULT_CONSULTS else value)
+            return True
+        say(f"    a number from 0 to {advisor.MOST_CONSULTS}", "warn")
 
 
 # What the two questions about a recall mean, said once above the three levels.

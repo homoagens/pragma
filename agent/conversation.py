@@ -21,6 +21,7 @@ import time
 from datetime import datetime, timezone
 from pathlib import Path
 
+import advisor
 import config as baseline_config
 import llm_client
 from react import _msg_chars, run_agent
@@ -504,6 +505,9 @@ class Conversation:
         self.weighed_at: tuple | None = None
         self.prompt_tokens = 0
         self.notes: list[str] = []
+        # What the advisor said in the last turn - its plan, its advice - for
+        # /plan to show whole: the screen gives each one line.
+        self.advice: list[dict] = []
         # The undo net for this conversation: without it `revert` is offered
         # with nothing behind it.
         try:
@@ -541,7 +545,16 @@ class Conversation:
         inner = _make_on_step(renderer, 0, turn.transcript,
                               text_limit=baseline_config.CHAT_TRANSCRIPT_CHARS)
 
+        # The advisor is the project's choice, read at every turn: turned on in
+        # /settings, it plans the next one.
+        settings = project_settings()
+        cfg.advisor = advisor.mode_of(settings)
+        cfg.advisor_consults = advisor.consults_of(settings)
+        self.advice = []
+
         def on_step(ev: dict) -> None:
+            if ev.get("advice"):
+                self.advice.append(ev["advice"])
             # The token counts of the call that just ended, before the adapter
             # consumes them: the renderer adds them up for its closing line,
             # and the last prompt says whether the conversation is full.
@@ -637,10 +650,14 @@ class Conversation:
         if context and self.history:
             # The request is the first user message the turn added; on the
             # first turn the system prompt comes before it.
+            # By how it begins: the advisor's plan may follow it in the same
+            # message, and stays.
             for i in range(before, len(self.history)):
                 m = self.history[i]
-                if m.get("role") == "user" and m.get("content") == prompt:
-                    self.history[i] = dict(m, content=core)
+                content = m.get("content")
+                if (m.get("role") == "user" and isinstance(content, str)
+                        and content.startswith(prompt)):
+                    self.history[i] = dict(m, content=core + content[len(prompt):])
                     break
         self.turn_msgs.append(max(len(self.history or []) - before, 1))
         return {"conclusion": conclusion, "forced": bool(result.get("forced")),

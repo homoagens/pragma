@@ -135,6 +135,12 @@ edits are undone.
 turned on per project in `/settings`, and only then: the agent never decides
 to load them. [Turn on rule packs](docs/how-to/use-rule-packs.md).
 
+**A second mind, when you want one.** A small, fast model can do the work
+while a more capable one plans it: before each turn the advisor writes what
+"done" will look like and how to get there, and when the agent stops making
+progress it reads what was done and says what to do next. Turned on per
+project in `/settings`. [Let an advisor plan the work](docs/how-to/use-an-advisor.md).
+
 **It can show you a picture.** A chart or an image it made is drawn in the
 terminal, under the step that showed it — coarse, but there, with nothing to
 install.

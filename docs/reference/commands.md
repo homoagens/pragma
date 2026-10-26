@@ -41,6 +41,7 @@ Alone it opens the page; followed by one of these it goes straight there.
 | `/memory` | look at the store: `map`, `beliefs`, `last`, `diff`, `dormant`, `sizes`, `vectors` |
 | `/settings` | how many steps a turn may take, and how much the memory brings to one |
 | `/status` | how this project is set up right now |
+| `/plan` | what the advisor said in the last turn, in full |
 | `/jobs` | what the memory is writing in the background: follow it, stop it, run it again |
 | `/configure` | point Pragma at an LLM endpoint |
 | `/compact` | summarise the conversation so far and go on from the summary |
@@ -106,7 +107,7 @@ Enter on an endpoint opens its own page. Every row there is one question, and sa
 
 `serves` is there when there is more than one endpoint, and `who reasons` for a model that reasons. On Anthropic's API `effort` takes the place of `what it is`, `what it is for`, `who reasons` and `sampling`.
 
-An endpoint serves one or more of four roles:
+An endpoint serves one or more of 5 roles:
 
 | Role | The calls it answers |
 |---|---|
@@ -114,6 +115,7 @@ An endpoint serves one or more of four roles:
 | `recall` | the CURATOR, before each turn |
 | `memory` | episodes and beliefs, in the background |
 | `critic` | the CRITIC, before the answer is delivered |
+| `advisor` | the ADVISOR: a plan before each turn, advice when the agent is stuck |
 
 ## Keys
 

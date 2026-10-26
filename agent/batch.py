@@ -665,6 +665,14 @@ def main() -> int:
                         help="enable memory: inject relevant episodes and "
                              "learnings at start, consolidate this session "
                              "into an episode at the end")
+    parser.add_argument("--advisor", choices=("off", "plan", "consult"), default="off",
+                        help="a second model plans the task before the first step "
+                             "(plan), and advises when the agent stops making "
+                             "progress (consult); the advisor role's endpoint, or "
+                             "the agent's when it has none. Off by default")
+    parser.add_argument("--advisor-consults", type=int, default=2,
+                        help="with --advisor consult, how many times the advisor "
+                             "may be asked (default 2)")
     fmt = parser.add_mutually_exclusive_group()
     fmt.add_argument("--plain", action="store_true",
                      help="force the flat [HH:MM:SS] format (grep-stable)")
@@ -846,6 +854,8 @@ confirmed mid-task. Therefore:
         final_keys=("conclusion",),
         temperature=args.temperature,
         max_steps=args.max_steps,
+        advisor="" if args.advisor == "off" else args.advisor,
+        advisor_consults=max(0, args.advisor_consults),
     )
 
     log_path = Path(args.log) if args.log else None

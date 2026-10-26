@@ -119,7 +119,9 @@ def roles_here() -> tuple:
     if not agent_alone():
         return endpoints.ROLES
     used = {"agent": True, "recall": endpoints.option("prediction", False),
-            "critic": endpoints.option("critic", False)}
+            "critic": endpoints.option("critic", False),
+            # Turned on per project, so it may be asked something in any run.
+            "advisor": True}
     return tuple(r for r in endpoints.ROLES if used.get(r))
 
 

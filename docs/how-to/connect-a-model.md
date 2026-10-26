@@ -49,13 +49,14 @@ The model's reasoning is not shown while it runs: that API does not return it.
 
 ## Use a second server for part of the work
 
-A model call is made in one of four roles, listed under
+A model call is made in one of five roles, listed under
 [`/configure`](../reference/commands.md#configure) in the commands reference.
 One endpoint can serve them all, or each can have its own — a small fast model
-for the recall that runs before every turn, a larger one for the agent.
+for the recall that runs before every turn, a larger one for the agent, or a
+more capable one as the [advisor](use-an-advisor.md) of a small agent.
 
 1. `/configure`, then `add`, for the second server. You are left on its page.
-2. Press Enter on `serves`. The page lists the four roles and who answers
+2. Press Enter on `serves`. The page lists the roles and who answers
    each one now.
 3. Press Enter on a role to give it to this endpoint, or on `everything`.
    **ctrl+D** when you are done.
