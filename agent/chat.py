@@ -1678,9 +1678,11 @@ The person is reading as the turn goes, and answers between turns.
     # The rule packs the project has on go after its own rules and before the
     # session block: see core/rule_packs.py.
     packs = rule_packs.active(conversation.project_settings())
+    # The model the agent's endpoint serves or names, not DEFAULT_MODEL: that
+    # is a label, "llama3.2" unless set, and the model read it as its own name.
     _PROMPT.update(
         head=build_system_prompt(
-            str(cwd), default_model=baseline_config.DEFAULT_MODEL, memory=bool(args.memory),
+            str(cwd), default_model=llm_client.served_model("agent"), memory=bool(args.memory),
         ) + chat_policy + mcp_client.prompt_block() + project_contract(cwd),
         tail=session_block(cwd), packs=packs, read=list(packs), handing=[])
     system_prompt = _PROMPT["head"] + rule_packs.block(packs) + _PROMPT["tail"]

@@ -236,7 +236,7 @@ class Session:
             _say(note)
         cfg = AgentConfig(
             name="Pragma",
-            system_prompt=build_system_prompt(str(cwd), default_model=baseline_config.DEFAULT_MODEL,
+            system_prompt=build_system_prompt(str(cwd), default_model=llm_client.served_model("agent"),
                                               memory=memory)
             + SERVE_POLICY + mcp_client.prompt_block() + project_contract(cwd)
             # The rule packs the project has on, as in the terminal: read when
