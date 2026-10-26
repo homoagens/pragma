@@ -45,7 +45,7 @@ next one.
 ## Choose the model
 
 `/configure`, the `advisor` row of the table: Enter chooses its model from the
-servers that are up, ←→ how it thinks there - `reasons` or `at once`, or on
+servers that are up, ←→ how it thinks there - `think` or `no-think`, or on
 Claude its effort, from `low` to `max`. With no server of its own, the agent's
 model plans for itself — which already gives it the plan's `Done when`, but
 not a second mind.

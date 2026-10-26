@@ -91,7 +91,7 @@ The page is a table of who does what - one row for each of the 5 roles, with its
 | `critic` | checks the work, where a project wants it |
 | `advisor` | plans the turn, where a project wants it |
 
-On a role, ←→ changes how it thinks: `reasons` or `at once` on a model that can reason, the effort from `low` to `max` on Claude through Anthropic's API. Enter chooses its model from the servers that are up; any role but the agent's can be the same as the agent's.
+On a role, ←→ changes how it thinks: `think` or `no-think` on a model that can reason, the effort from `low` to `max` on Claude through Anthropic's API. Enter chooses its model from the servers that are up; any role but the agent's can be the same as the agent's.
 
 `servers` lists those that are up, then `add a server`, then those that are down. Enter on one opens its page, where every row is one question about the machine:
 

@@ -24,7 +24,7 @@ one, Enter opens what is a list or has to be typed.** Every change is one key,
 and nothing is entered that has to be left to change the next thing.
 
 - `/configure` is a table of **who does what**: each role, its model, how it
-  thinks. ←→ changes how it thinks - `reasons` or `at once`, or on Claude the
+  thinks. ←→ changes how it thinks - `think` or `no-think`, or on Claude the
   effort, `low` to `max`, per role, so the same Claude can think little as the
   recall and hard as the advisor. Enter chooses its model from the servers
   that are **up**, and comes back to the table. Under it, `servers` - up first,

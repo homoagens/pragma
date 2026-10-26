@@ -332,7 +332,7 @@ def commands(notes) -> str:
                f"there - and two rows under it, `servers` and `this machine`.\n")
     out += _rows(("Role", "What it does"),
                  ((f"`{r}`", b) for r, b in conf["ROLE_BLURB"].items()))
-    out.append("\nOn a role, ←→ changes how it thinks: `reasons` or `at once` on "
+    out.append("\nOn a role, ←→ changes how it thinks: `think` or `no-think` on "
                "a model that can reason, the effort from `low` to `max` on Claude "
                "through Anthropic's API. Enter chooses its model from the servers "
                "that are up; any role but the agent's can be the same as the "

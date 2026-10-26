@@ -263,7 +263,7 @@ def thinks_short(cat: dict, role: str) -> str:
     _name, entry = serving(cat, role)
     if endpoints.is_anthropic(entry.get("url", "")):
         return f"effort {endpoints.effort_for(entry, role) or 'own'}"
-    return "reasons" if endpoints.reasons_for(entry, role) else "at once"
+    return "think" if endpoints.reasons_for(entry, role) else "no-think"
 
 
 def turn_thinking(cat: dict, role: str, step_by: int) -> bool:
@@ -276,10 +276,18 @@ def turn_thinking(cat: dict, role: str, step_by: int) -> bool:
         now = levels.index(endpoints.effort_for(entry, role))
         set_effort(entry, role, levels[(now + step_by) % len(levels)])
         return True
-    if entry.get("kind") == "thinking":
-        set_reasons(entry, role, not endpoints.reasons_for(entry, role))
+    if entry.get("kind") != "thinking":
+        # A server not said to reason has every role at no-think. Asked to
+        # think for one, it is marked as one that can, and the others stay
+        # as they were: it used to do nothing at all, and say nothing.
+        was = {r: False for r in endpoints.ROLES}
+        entry["kind"] = "thinking"
+        entry["reasons"] = dict(was, **{role: True})
+        if entry["reasons"] == endpoints._REASONS_BY_DEFAULT:
+            entry.pop("reasons", None)
         return True
-    return False
+    set_reasons(entry, role, not endpoints.reasons_for(entry, role))
+    return True
 
 
 def machine_text(cat: dict) -> str:
@@ -316,15 +324,18 @@ def front(state: dict, at: tuple) -> tuple | None:
         print()
         print("  " + grey("No server yet: `servers`, then `add a server`, is the way in."))
     roles = roles_here() if cat["endpoints"] else ()
+    # The model column as wide as its longest name: a fixed width ran a long
+    # one into the column after it.
+    wide = max([_COL] + [len(serving(cat, r)[0]) + 2 for r in roles])
     if roles:
         print()
-        print("    " + grey(f"{'role':<{_COL}}{'model':<{_COL}}thinks"))
+        print("    " + grey(f"{'role':<{_COL}}{'model':<{wide}}thinks"))
 
     def rows():
         options, notes, what = [], [], []
         for role in roles:
             name, entry = serving(cat, role)
-            options.append(f"{role:<{_COL}}{name:<{_COL}}{thinks_short(cat, role)}")
+            options.append(f"{role:<{_COL}}{name:<{wide}}{thinks_short(cat, role)}")
             notes.append(role_says(ROLE_BLURB, role) if is_up(found, entry) else
                          f"{name} is down - enter chooses another model")
             what.append(("role", role))

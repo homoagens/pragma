@@ -70,7 +70,7 @@ or a more capable one as the [advisor](use-an-advisor.md) of a small agent.
 - **Enter on a role** chooses its model, from the servers that are up, and
   comes back to the table. Any role but the agent's can be the same as the
   agent's, whichever that is.
-- **←→ on a role** changes how it thinks: `reasons` or `at once` on a model
+- **←→ on a role** changes how it thinks: `think` or `no-think` on a model
   that can reason — the recall and the critic answer at once unless you say
   otherwise — and on Claude the effort, from `low` to `max`, so that the same
   Claude can think little as the recall and hard as the advisor.
