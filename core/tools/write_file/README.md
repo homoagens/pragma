@@ -1,6 +1,6 @@
 # write_file
 
-Create a NEW file. It refuses an existing one unless `overwrite=true`, which is for a small file regenerated whole and nothing else: change an existing file with replace_in_file, insert_after, insert_before, append_file or apply_patch. Build a large new file (a long list, a page with data, many functions) in parts: the scaffolding here, then one append_file per section; content over the size limit is refused with an error that says so.
+Create a NEW file. It refuses an existing one unless `overwrite=true`, which is for a small file regenerated whole and nothing else: change an existing file with replace_in_file, insert_after, insert_before, append_file or apply_patch. A new file is written whole in one call; if a call is cut off because the reply ran out of room, nothing is written and the error says so - then write the first part here and append_file the rest.
 
 ---
 
@@ -16,13 +16,13 @@ Create a NEW file. It refuses an existing one unless `overwrite=true`, which is 
 
 - `"OK: written N bytes to <path>"` on success. When N exceeds `WRITE_FILE_SOFT_LIMIT` a soft warning is appended advising future edits to use the surgical skills.
 - `"ERROR: file already exists at <path> ..."` when the target exists and `overwrite` is `False`. The error lists the recommended surgical skills.
-- `"ERROR: content too large ..."` when the supplied content exceeds `WRITE_FILE_HARD_LIMIT` (default 6000 bytes). The error explains the incremental-build pattern (scaffolding + append_file per section).
+- `"ERROR: content too large ..."` only when `WRITE_FILE_HARD_LIMIT` is set (it is `0`, no limit, by default) and the content exceeds it.
 - `"ERROR writing ..."` on I/O failure.
 
 ## Notes
 
 - Default behavior is intentionally restrictive: rewriting an existing file ships the whole new content inside the JSON action and is the #1 cause of `finish_reason=length` truncation. Surgical skills are cheaper and safer.
-- For large NEW files the same problem applies — a single write of ~8 KB can truncate the LLM's JSON response mid-string. The hard limit forces incremental construction.
+- A large NEW file costs its whole length in one reply. A call cut off by the output limit (`MAX_TOKENS`, reasoning included) does not run, and the agent is told it was cut off rather than that its arguments were invalid.
 - Parent directories are created by default.
 
 ## Examples

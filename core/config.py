@@ -798,24 +798,17 @@ CRITIC_SNAPSHOT_DIR = os.environ.get("PRAGMA_CRITIC_SNAPSHOT", "").strip()
 # this many bytes — the agent learns to prefer incremental edits.
 WRITE_FILE_SOFT_LIMIT = int(os.environ.get("WRITE_FILE_SOFT_LIMIT", "8000"))
 
-# write_file REFUSES content larger than this in a single call. Above this
-# size, the JSON-encoded args of the LLM response are likely to exceed
-# MAX_TOKENS and truncate, breaking the call.
+# write_file REFUSES content larger than this many bytes in a single call.
+# 0, the default, is no limit.
 #
-# Auto-scales with MAX_TOKENS by default: bigger output budget → bigger
-# files can travel through the JSON layer safely. Formula:
-#     default = min(MAX_TOKENS * 2 bytes, 20_000)
-# Rationale: HTML/code content escapes to ~1.5x JSON bytes; at ~3.5 bytes
-# per token we get ~50% of MAX_TOKENS as safe content bytes. Hard ceiling
-# at 20 KB so we never let a single write try to ship a hundred-KB blob
-# (which would risk truncation regardless of formal budget). At the default
-# MAX_TOKENS the ceiling is what binds, and that is on purpose: past 20 KB
-# the right move is several writes, not a bigger budget. Override with
-# WRITE_FILE_HARD_LIMIT in .env if you really want a different value.
-_default_write_hard = min(int(MAX_TOKENS * 2), 20_000)
-WRITE_FILE_HARD_LIMIT = int(os.environ.get(
-    "WRITE_FILE_HARD_LIMIT", str(_default_write_hard),
-))
+# It used to be min(MAX_TOKENS * 2, 20000), from the text protocol, where a
+# reply cut short inside a file's content could be repaired into a call that
+# looked whole and wrote half a file. With tool calling there is no such
+# call: arguments cut short do not parse, nothing runs, and the model is told
+# its call was cut off (react._call_skill). So content that reaches write_file
+# has already crossed the reply whole, and refusing it only threw away a
+# file already paid for and had it rebuilt from a dozen appends.
+WRITE_FILE_HARD_LIMIT = int(os.environ.get("WRITE_FILE_HARD_LIMIT", "0"))
 
 # Observations longer than this get summarized in the conversation history
 # (the actual return value is unaffected — only the message stored for

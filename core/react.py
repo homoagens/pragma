@@ -324,13 +324,20 @@ def _native_action_text(cfg: AgentConfig, messages, model, temperature,
                       f"[{len(calls)} tools requested; running the first, " \
                       f"ignoring: {', '.join(names[1:])}]"
 
+    args = first.get("arguments") or {}
+    if "__unparsed_arguments__" in args and r.get("finish_reason") == "length":
+        # The arguments did not parse because the reply ran out of budget
+        # mid-call: _call_skill tells the model so, instead of calling them
+        # invalid.
+        args = dict(args, __cut_short__=True)
+
     # The call id travels with the action so the loop can write the exchange
     # back into the history in native shape (assistant tool_calls + a tool
     # message), instead of as text the model would then imitate.
     return _json.dumps({
         "thought": thought or f"Calling {first.get('name', '')}.",
         "action":  first.get("name", ""),
-        "args":    first.get("arguments") or {},
+        "args":    args,
         "__tool_call_id__": first.get("id") or "",
         "__assistant_content__": said,
     }, ensure_ascii=False)
@@ -393,6 +400,19 @@ def _call_skill(cfg: AgentConfig, action: str, args: dict) -> str:
     traceback that mentions internal wrapper names."""
     if action not in cfg.skills:
         return f"ERROR: skill '{action}' does not exist. Available: {list(cfg.skills)}"
+    if args and "__unparsed_arguments__" in args:
+        # A call whose arguments never parsed is never run: with native tool
+        # calling this is how a write too long for one reply shows up.
+        if args.get("__cut_short__"):
+            return (
+                f"ERROR: your call to `{action}` was cut off - the reply reached "
+                f"its output limit ({config.MAX_TOKENS} tokens, reasoning "
+                f"included) before the arguments were complete, so nothing was "
+                f"run. Send less in one call: for a long file, write_file the "
+                f"first part, then append_file the rest, a section per call."
+            )
+        return (f"ERROR: the arguments of your call to `{action}` were not "
+                f"valid JSON, so nothing was run. Send the call again.")
     fn = cfg.skills[action]
     kwargs = dict(args) if args else {}
     # A tool on an MCP server takes what its own schema names and nothing else.

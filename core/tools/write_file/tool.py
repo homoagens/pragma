@@ -62,12 +62,9 @@ def write_file(path: str, content: str, encoding: str = "utf-8",
             f"call write_file again with overwrite=True."
         )
 
-    # ── Refuse single writes larger than the hard limit ──
-    # Above this size the JSON-encoded args of the LLM response are likely
-    # to exceed MAX_TOKENS and truncate mid-string (often inside a \uXXXX
-    # escape sequence). The right pattern is incremental construction:
-    # write the scaffolding, then append each section. Force the agent into
-    # that pattern by refusing oversized single writes.
+    # ── Refuse single writes larger than the hard limit, when one is set ──
+    # Off by default (config.WRITE_FILE_HARD_LIMIT says why): content that
+    # arrives here has already crossed the reply whole.
     try:
         import config as _cfg
         hard = getattr(_cfg, "WRITE_FILE_HARD_LIMIT", 0)
