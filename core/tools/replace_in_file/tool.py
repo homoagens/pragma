@@ -6,6 +6,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from tools._utils import unchanged
+
 
 def replace_in_file(path: str, old: str, new: str, count: int = 1,
                     encoding: str = "utf-8") -> str:
@@ -52,6 +54,8 @@ def replace_in_file(path: str, old: str, new: str, count: int = 1,
     else:
         new_text = text.replace(old, new, count)
         replaced = min(count, occurrences)
+    if new_text == text:
+        return unchanged(path)
 
     try:
         p.write_text(new_text, encoding=encoding)

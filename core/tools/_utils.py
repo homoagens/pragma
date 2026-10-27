@@ -16,3 +16,13 @@ SKIP_DIRS = frozenset({
     # the very files the agent is editing.
     ".pragma_checkpoints",
 })
+
+
+# An edit that leaves the file exactly as it was is not an edit: answered OK,
+# a model that could not see why its change was not taking made the same
+# no-op nine times in a row, and nothing that watches for failures saw it.
+def unchanged(path) -> str:
+    """The refusal for an edit whose result is the file as it already was."""
+    return (f"ERROR: nothing changed: {path} would be exactly as it already is. "
+            "The text you meant may already be there, or the new text may be the "
+            "same as the old: look at the lines again before trying another edit.")

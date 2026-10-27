@@ -6,6 +6,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from tools._utils import unchanged
+
 
 def write_file(path: str, content: str, encoding: str = "utf-8",
                create_parents: bool = True, overwrite: bool = False) -> str:
@@ -61,6 +63,13 @@ def write_file(path: str, content: str, encoding: str = "utf-8",
             f"If you truly need to rewrite the whole file from scratch, "
             f"call write_file again with overwrite=True."
         )
+
+    if p.is_file():
+        try:
+            if p.read_text(encoding=encoding) == content:
+                return unchanged(path)
+        except Exception:
+            pass
 
     # ── Refuse single writes larger than the hard limit, when one is set ──
     # Off by default (config.WRITE_FILE_HARD_LIMIT says why): content that

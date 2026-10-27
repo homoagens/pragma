@@ -505,11 +505,21 @@ class Watch:
                                 "test not once")
                 elif args.get("path"):
                     self.test_edits = 0
-            if action == "write_file":
+            # A refused write wrote nothing: "written whole three times" once
+            # counted a write_file that failed because the file existed, and
+            # spent a consult on two writes.
+            if action == "write_file" and ok:
                 path = str(args.get("path", ""))
                 self.writes[path] = self.writes.get(path, 0) + 1
                 if self.writes[path] == self.REPEATS:
                     said = f"the same file written whole {self.REPEATS} times ({path[-45:]})"
+            # The tools refuse an edit that changes nothing (tools._utils.
+            # unchanged): it fails, and is counted here as what it is.
+            if (out or "").lstrip().startswith("ERROR: nothing changed"):
+                self.idle += 1
+                if self.idle == 2:
+                    said = said or (f"two edits that changed nothing "
+                                    f"({str(args.get('path', ''))[-45:]})")
             # Always taken, so the record of states has no gaps.
             state = self._state(str(args.get("path", ""))) if ok else ""
             said = said or state

@@ -6,6 +6,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from tools._utils import unchanged
+
 
 def insert_before(path: str, anchor: str, content: str,
                   encoding: str = "utf-8") -> str:
@@ -66,6 +68,9 @@ def insert_before(path: str, anchor: str, content: str,
 
     # Anchor starts at a line boundary.
     new_text = text[:idx] + content + text[idx:]
+
+    if new_text == text:
+        return unchanged(path)
 
     try:
         p.write_text(new_text, encoding=encoding)

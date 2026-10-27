@@ -6,6 +6,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from tools._utils import unchanged
+
 
 def insert_after(path: str, anchor: str, content: str,
                  encoding: str = "utf-8") -> str:
@@ -71,6 +73,9 @@ def insert_after(path: str, anchor: str, content: str,
     # Anchor ends at a line boundary (with or without the newline itself).
     sep = "" if cut == len(text) or text[cut - 1] == "\n" else "\n"
     new_text = text[:cut] + sep + content + text[cut:]
+
+    if new_text == text:
+        return unchanged(path)
 
     try:
         p.write_text(new_text, encoding=encoding)
