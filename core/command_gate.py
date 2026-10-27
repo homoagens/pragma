@@ -254,9 +254,71 @@ def held(command: str, allowed=(), where: str = "", root: str = "") -> str:
         if not raw:
             continue
         why = _segment(raw)
-        if why and not free(raw):
+        if why and not free(raw) and not (why == "deletes files"
+                                          and _leftovers(raw, where, root)):
             return why
     return ""
+
+
+# ── what deleting takes away nothing of ───────────────────────────────────────
+#
+# Three questions in one tetris turn were for `rm -rf __pycache__` and for
+# files in /tmp the agent had written a few steps before - and one waited 211
+# seconds for an answer. A question that is always answered yes teaches the
+# person to answer yes without reading. So an `rm` asks nothing when every
+# path it names is one of these, and asks as before when even one is not:
+#
+#   a cache Python rebuilds by itself, inside the project's folder;
+#   a file under the system's temporary folder written since the turn began.
+#
+# The second needs to know when the turn began: begin_turn() says so. Before
+# it is called nothing in the temporary folder is let through.
+
+_CACHES = {"__pycache__", ".pytest_cache", ".mypy_cache", ".ruff_cache"}
+_TURN_BEGAN: float | None = None
+
+
+def begin_turn(when: float | None = None) -> None:
+    """A turn starts now: files the agent writes from here are its own."""
+    global _TURN_BEGAN
+    import time
+    # A second early: a file's time is read from a coarser clock than
+    # time.time(), and one written at once can look older than the turn.
+    _TURN_BEGAN = (time.time() if when is None else when) - 1.0
+
+
+def _inside(path: str, folder: str) -> bool:
+    try:
+        folder = os.path.realpath(folder)
+        return os.path.commonpath([os.path.realpath(path), folder]) == folder
+    except ValueError:
+        return False
+
+
+def _leftovers(raw: str, where: str, root: str) -> bool:
+    """Is this command an `rm` of nothing but caches and the turn's own
+    temporary files? See above."""
+    import tempfile
+    words = _words(raw)
+    if not words or words[0].rsplit("/", 1)[-1].lower() not in ("rm", "rmdir"):
+        return False
+    paths = [w for w in words[1:] if w != "--" and not w.startswith("-")]
+    if not paths:
+        return False
+    temps = {os.path.realpath(tempfile.gettempdir()), "/tmp"}
+    for w in paths:
+        if ".." in w.replace("\\", "/").split("/") or w.startswith("~"):
+            return False
+        full = w if os.path.isabs(w) else os.path.join(where or root or ".", w)
+        name = os.path.basename(w.rstrip("/"))
+        if (name in _CACHES or name.endswith(".pyc")) and root and _inside(full, root):
+            continue
+        if (_TURN_BEGAN is not None and any(_inside(full, t) for t in temps)
+                and not any(c in w for c in "*?[") and os.path.isfile(full)
+                and not os.path.islink(full) and os.path.getmtime(full) >= _TURN_BEGAN):
+            continue
+        return False
+    return True
 
 
 def held_in(text: str) -> str:

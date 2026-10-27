@@ -13,7 +13,10 @@ A file the agent changes with its own tools is copied aside first, so the
 session's edits can be undone. A command run through the shell passes no
 such point, so these are held until you allow them:
 
-- deleting files;
+- deleting files - except, when every path an `rm` names is one of them,
+  Python's own caches inside the project (`__pycache__`, `.pytest_cache`,
+  `.mypy_cache`, `.ruff_cache`, `*.pyc`) and files in the temporary folder
+  written since the turn began, which the agent made and may clear away;
 - git that throws history away or sends it: `push`, `reset --hard`, `clean`,
   `checkout --`, `restore`, `branch -D`, `stash drop`;
 - installing or removing software, with any package manager;

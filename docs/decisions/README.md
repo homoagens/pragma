@@ -43,7 +43,8 @@ the file that makes them.
 | 28 | 2026-10-21 | [Rule packs are turned on by the person](0028-rule-packs-are-turned-on-by-the-person.md) | accepted |
 | 29 | 2026-10-26 | [The advisor is called by Pragma, not by the agent](0029-the-advisor-is-called-by-pragma-not-by-the-agent.md) | accepted; amended by [31](0031-the-critic-holds-the-work-to-the-plan.md) |
 | 30 | 2026-10-26 | [One rule for every page: ←→ changes, Enter opens](0030-who-does-what-is-asked-per-role.md) | accepted |
-| 31 | 2026-10-27 | [The critic holds the work to the plan, and its revise calls the advisor](0031-the-critic-holds-the-work-to-the-plan.md) | accepted; amends [29](0029-the-advisor-is-called-by-pragma-not-by-the-agent.md) |
+| 31 | 2026-10-27 | [The critic holds the work to the plan, and its revise calls the advisor](0031-the-critic-holds-the-work-to-the-plan.md) | accepted; amends [29](0029-the-advisor-is-called-by-pragma-not-by-the-agent.md); amended by [32](0032-a-send-back-has-its-own-consult.md) |
+| 32 | 2026-10-27 | [A send-back has its own consult](0032-a-send-back-has-its-own-consult.md) | accepted; amends [31](0031-the-critic-holds-the-work-to-the-plan.md) |
 
 ## Adding one
 

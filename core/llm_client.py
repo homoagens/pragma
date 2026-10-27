@@ -109,15 +109,18 @@ class LLMLooped(Exception):
     Both used to be reported as "the reasoning went in circles", so a faculty
     that had thought hard for six minutes and been cut off was described as
     having gone in circles, and the number to change was nowhere on the
-    screen. `said` is the half-sentence the pages print.
+    screen. `said` is the half-sentence the pages print, and `kind` which of
+    the three it was - "loop", "long" or "empty" - so that the one told to
+    recover is told the right thing.
 
     The caller (agent loop) catches this and injects a recovery hint so the
     model can change strategy on the next turn.
     """
 
-    def __init__(self, message: str, said: str = ""):
+    def __init__(self, message: str, said: str = "", kind: str = "loop"):
         super().__init__(message)
         self.said = said or "the reasoning had to be cut short"
+        self.kind = kind
 
 
 class ContextOverflow(RuntimeError):
@@ -173,10 +176,11 @@ def _no_answer(finish: str) -> LLMLooped:
     if finish == "length":
         return LLMLooped(
             "the reasoning used the whole token budget without starting an answer",
-            said="it reasoned until the token limit without starting an answer")
+            said="it reasoned until the token limit without starting an answer",
+            kind="long")
     return LLMLooped(
         "the reply ended inside the reasoning, with no answer",
-        said="it ended its reply inside the reasoning, with no answer")
+        said="it ended its reply inside the reasoning, with no answer", kind="empty")
 
 
 # Marker prepended to text that came back as a truncated partial. The agent
@@ -1017,7 +1021,7 @@ def _post_streamed(url, headers, payload, timeout, label, stop_event):
                     raise LLMLooped(
                         f"reasoning passed {budget} characters without an answer",
                         said=f"it reasoned past {budget} characters without "
-                             f"starting an answer ({knob})")
+                             f"starting an answer ({knob})", kind="long")
             text = delta.get("content") or ""
             if text:
                 content += text

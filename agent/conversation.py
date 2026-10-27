@@ -22,6 +22,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 import advisor
+import command_gate
 import config as baseline_config
 import llm_client
 from react import _msg_chars, run_agent
@@ -613,6 +614,9 @@ class Conversation:
                 if context:
                     prompt = f"[PROGRAM CONTEXT]\n{context}\n[/PROGRAM CONTEXT]\n\n{core}"
                 renderer.turn_begin()
+                # Files the agent writes to the temporary folder from here
+                # are its own to delete without asking: command_gate.
+                command_gate.begin_turn()
                 self.prompt_tokens = 0
                 t0 = time.monotonic()
                 if stop is not None and stop.is_set():

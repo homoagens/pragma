@@ -384,6 +384,28 @@ def consult(request: str, plan_text: str, ledger: list[dict], signal: str,
 
 # ── when to ask ───────────────────────────────────────────────────────────────
 
+_TIMEOUT_N = re.compile(r"(?:^|[\s;&|(])timeout\s+(?:-\S+\s+)*(\d+)")
+
+
+def _timed_out(command: str, out: str) -> bool:
+    """Did this command run into a time limit long enough to mean it hung?"""
+    out = (out or "").lstrip()
+    if out.startswith("ERROR: command timed out"):
+        return True
+    if not out.startswith("returncode: 124"):
+        return False
+    m = _TIMEOUT_N.search(command)
+    return bool(m) and int(m.group(1)) >= 20
+
+
+def _is_test(path: str) -> bool:
+    """A test file, by the names test runners look for."""
+    p = Path(path)
+    name = p.name
+    return (name.startswith("test_") or name.endswith(("_test.py", ".test.js", ".spec.js"))
+            or "tests" in p.parts or "test" in p.parts)
+
+
 # Skills that change files: a command run again after one of these is checking
 # the change, not going round in circles.
 _EDITS = {"write_file", "append_file", "replace_in_file", "replace_in_files",
@@ -416,6 +438,15 @@ class Watch:
       tetris turn added seven lines and took them out again four times over,
       and every signal above saw a different command each time.
     - EDITS THAT CHANGED NOTHING, a second time.
+    - COMMANDS THAT RAN INTO THEIR TIMEOUT, twice: Pragma's own, or a
+      `timeout N` of twenty seconds or more that ended in 124. A test that
+      waited on a terminal sat out two minutes twice before anything noticed.
+      A short `timeout 3` is a program being shown to start, and its 124 is
+      the expected answer.
+    - THE TESTS EDITED OVER AND OVER and nothing else: six edits in a row to
+      test files with no change to the code they test. On a turn where the
+      tests failed, twenty-five edits went to the tests and two to the logic:
+      tests bent until they pass, the oldest way to look finished.
     """
 
     REPEATS = 3
@@ -427,6 +458,9 @@ class Watch:
         self.states: dict[str, list[str]] = {}
         self.back: set[str] = set()
         self.idle = 0
+        self.timeouts = 0
+        self.test_edits = 0
+        self.tests_said = False
         self.edits = 0                    # file changes so far in the turn
         self.scripts: dict[str, int] = {}
         self.writes: dict[str, int] = {}
@@ -434,28 +468,43 @@ class Watch:
         self.runs: dict[str, tuple[int, int]] = {}
         self.half_said = False
 
-    def after(self, step: int, action: str, args: dict, ok: bool = True) -> str:
+    def after(self, step: int, action: str, args: dict, ok: bool = True,
+              out: str = "") -> str:
         """The signal this step gives, or "". `ok` is False for a call that
         failed: a refused edit left the file as it was, and is not an edit
-        that changed nothing."""
+        that changed nothing. `out` is what the call returned."""
         args = args or {}
         said = ""
         if action == "execute_command":
             command = " ".join(str(args.get("command", "")).split())
             about = command[:60]
+            if _timed_out(command, out):
+                self.timeouts += 1
+                if self.timeouts == 2:
+                    said = f"commands ran into their timeout twice ({about[:45]})"
             if _inline(command):
                 self.scripts[about] = self.scripts.get(about, 0) + 1
                 if self.scripts[about] == self.REPEATS:
-                    said = f"the same throwaway script written {self.REPEATS} times ({about[:45]})"
+                    said = said or (f"the same throwaway script written {self.REPEATS} "
+                                    f"times ({about[:45]})")
             else:
                 times, at = self.runs.get(command, (0, -1))
                 times = times + 1 if at == self.edits else 1
                 self.runs[command] = (times, self.edits)
                 if times == self.REPEATS:
-                    said = (f"the same command run {self.REPEATS} times with nothing changed"
-                            f" between ({about[:40]})")
+                    said = said or (f"the same command run {self.REPEATS} times with nothing "
+                                    f"changed between ({about[:40]})")
         elif action in _EDITS:
             self.edits += 1
+            if ok:
+                if _is_test(str(args.get("path", ""))):
+                    self.test_edits += 1
+                    if self.test_edits == 6 and not self.tests_said:
+                        self.tests_said = True
+                        said = ("the tests edited 6 times in a row and the code they "
+                                "test not once")
+                elif args.get("path"):
+                    self.test_edits = 0
             if action == "write_file":
                 path = str(args.get("path", ""))
                 self.writes[path] = self.writes.get(path, 0) + 1

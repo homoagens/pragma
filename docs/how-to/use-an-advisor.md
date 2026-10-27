@@ -16,8 +16,10 @@ acts and never answers you: it writes for the agent.
   a third time, the same command run a third time with nothing changed in
   between, the same file written whole a third time, an edit undone - a file
   back to what an earlier edit had made it - or a second edit that changed
-  nothing, half the steps spent with nothing delivered — it reads what the agent did and says what to do
-  next. Pragma decides when, from what it measures: the agent is exactly the
+  nothing, commands running into their timeout twice, the tests edited six
+  times in a row while the code they test is not touched, half the steps
+  spent with nothing delivered — it reads what the agent did and says what
+  to do next. Pragma decides when, from what it measures: the agent is exactly the
   one that does not know it is stuck. A command run again after a change is
   the change being checked, and does not count.
 
@@ -51,7 +53,8 @@ both on, the critic reads the plan beside your request: what the plan said
 held to - but only as far as your request goes. When the critic sends the
 work back and the advisor is on `plan + consult` with consults left, the
 advisor reads what the critic found and says whether a step went wrong or the
-plan did; that counts as one of the turn's consults. Any consult after it in
+plan did. That is not one of the turn's consults: those are for getting
+stuck, and the critic's own limit on send-backs bounds these. Any consult after it in
 the same turn reads what the critic found as well, and your request outranks
 the plan for both of them.
 

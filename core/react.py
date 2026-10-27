@@ -854,6 +854,22 @@ def run_agent(cfg: AgentConfig, user_task: str, log_path: Optional[Path] = None,
                 console.print(f"[red]Reasoning cut short at step {step}: {err_str}[/red]")
             _emit({"type": "error",
                    "content": f"Reasoning cut short at step {step}: {said}."})
+            if getattr(e, "kind", "loop") != "loop":
+                # It ran long, or ended inside itself: not a loop. Seen on a
+                # 27B that wrote a whole test file in its reasoning and met
+                # the token limit before writing any of it down.
+                messages.append({
+                    "role": "user",
+                    "content": (
+                        f"[SYSTEM]: Your reasoning ran out of room ({said}) and "
+                        "nothing was done. Do not work it all out in your head: "
+                        "take the next step now with a tool call - write a file, "
+                        "or a piece of one, run a check - and keep the next "
+                        "`thought` to one sentence. Reply now with a SINGLE action."
+                    ),
+                })
+                step += 1
+                continue
             messages.append({
                 "role": "user",
                 "content": (
@@ -1020,12 +1036,14 @@ def run_agent(cfg: AgentConfig, user_task: str, log_path: Optional[Path] = None,
             if rv.verdict == "revise" and not rv.left and sends < most:
                 said = critic.sent_back(rv, sends + 1, most)
                 _found = said
-                # A revise is a reason to plan again: with consults on and left,
-                # the advisor reads what the critic found and says whether one
-                # step went wrong or the plan did. Its advice rides in the same
-                # message, after the critic's.
-                if _watch is not None and _consults < max(0, int(cfg.advisor_consults)):
-                    _consults += 1
+                # A revise is a reason to plan again: with consults on, the
+                # advisor reads what the critic found and says whether one step
+                # went wrong or the plan did. Its advice rides in the same
+                # message, after the critic's. It is not one of the turn's
+                # consults: those are for getting stuck, and a long turn had
+                # spent both by the time the critic spoke. The critic's own
+                # cap on send-backs bounds these.
+                if _watch is not None:
                     why = "the critic sent the work back"
                     _emit({"type": "faculty_running", "tag": "ADVISOR",
                            "content": "reading what the critic found…"})
@@ -1385,7 +1403,8 @@ def run_agent(cfg: AgentConfig, user_task: str, log_path: Optional[Path] = None,
             # it counts the edits between commands.
             _seen = _watch.after(step, action, args,
                                  ok=not (isinstance(observation, str)
-                                         and observation.lstrip().startswith("ERROR")))
+                                         and observation.lstrip().startswith("ERROR")),
+                                 out=observation if isinstance(observation, str) else "")
             _stuck = _stuck or _seen
             if _stuck and _consults < max(0, int(cfg.advisor_consults)):
                 _consults += 1

@@ -1,7 +1,7 @@
 # 31. The critic holds the work to the plan, and its revise calls the advisor
 
 - **Date:** 2026-10-27
-- **Status:** accepted; amends [29](0029-the-advisor-is-called-by-pragma-not-by-the-agent.md)
+- **Status:** accepted; amends [29](0029-the-advisor-is-called-by-pragma-not-by-the-agent.md); amended by [32](0032-a-send-back-has-its-own-consult.md)
 - **Where:** [`core/critic.py`](../../core/critic.py), [`core/advisor.py`](../../core/advisor.py), [`core/react.py`](../../core/react.py)
 
 ## Context
