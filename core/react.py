@@ -397,6 +397,11 @@ def _prompt_tokens(messages, counted) -> Optional[int]:
     return tokens + int(max(0, grown) / per)
 
 
+# Calls whose output is stored as a pointer when it repeats: see
+# config.SAME_OUTPUT_MIN_CHARS.
+_SAME_OUTPUT_SKILLS = frozenset({"execute_command", "file_outline"})
+
+
 def _call_skill(cfg: AgentConfig, action: str, args: dict) -> str:
     """Execute a skill with error handling. Always returns a string.
 
@@ -619,7 +624,11 @@ def run_agent(cfg: AgentConfig, user_task: str, log_path: Optional[Path] = None,
     # What the critic last sent back for, so that a later consult in the same
     # turn does not advise against what the critic asked.
     _found = ""
-    _watch = advisor.Watch(max_steps) if cfg.advisor == "consult" else None
+    # What each read-only call printed this turn, by its arguments: (step, a
+    # fingerprint of the output). Emptied whenever the steps are summarised,
+    # since the earlier copy may be gone.
+    _outputs: dict[str, tuple[int, str]] = {}
+    _watch = advisor.Watch(max_steps, _workspace()) if cfg.advisor == "consult" else None
     if _advisor_on:
         _emit({"type": "faculty_running", "tag": "ADVISOR", "content": "planning the turn…"})
         try:
@@ -785,7 +794,10 @@ def run_agent(cfg: AgentConfig, user_task: str, log_path: Optional[Path] = None,
         if queued is None:
             # ── Memory compression ──────────────────────────────────────
             try:
+                _before = len(messages)
                 messages = _fit(messages, f"loop {cfg.name}")
+                if len(messages) < _before:
+                    _outputs.clear()
             except llm_client.LLMInterrupted:
                 # Stopped while a summary was being written: the turn ends as
                 # any stopped turn does, not with a traceback.
@@ -1221,6 +1233,23 @@ def run_agent(cfg: AgentConfig, user_task: str, log_path: Optional[Path] = None,
         else:
             stored_obs = observation
 
+        # The same command, printing exactly what it printed earlier in the
+        # turn, is stored as a pointer to that step: the copy above is still in
+        # the window, and a second one only fills it. The screen and the log
+        # still get the whole output; a failure is always stored whole.
+        _least = config.SAME_OUTPUT_MIN_CHARS
+        if (_least > 0 and action in _SAME_OUTPUT_SKILLS
+                and isinstance(observation, str) and len(stored_obs) >= _least
+                and not observation.lstrip().startswith("ERROR")):
+            _key = f"{action}:{_hash_args(args)}"
+            _print = _hash_args(stored_obs)
+            _was = _outputs.get(_key)
+            if _was and _was[1] == _print:
+                stored_obs = (f"[Same output as step {_was[0]}, word for word. "
+                              "It is still above; read it there.]")
+            else:
+                _outputs[_key] = (step, _print)
+
         # Write the exchange back in the shape the model produced it.
         #
         # WHY THIS MATTERS. Rendering a native tool call as protocol text and
@@ -1354,7 +1383,9 @@ def run_agent(cfg: AgentConfig, user_task: str, log_path: Optional[Path] = None,
         if _watch is not None:
             # Asked on every step, also when a watchdog has already spoken:
             # it counts the edits between commands.
-            _seen = _watch.after(step, action, args)
+            _seen = _watch.after(step, action, args,
+                                 ok=not (isinstance(observation, str)
+                                         and observation.lstrip().startswith("ERROR")))
             _stuck = _stuck or _seen
             if _stuck and _consults < max(0, int(cfg.advisor_consults)):
                 _consults += 1

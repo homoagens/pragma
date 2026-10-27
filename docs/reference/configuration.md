@@ -75,6 +75,7 @@ How large a context, an answer and a single action may be.
 | `WRITE_FILE_HARD_LIMIT` | `0` | Bytes above which `write_file` refuses a single call. `0` is no limit. | [`core/config.py`](../../core/config.py) |
 | `OBSERVATION_SOFT_LIMIT` | `12000` | Characters above which a tool's output is shortened in the history. `0` disables. | [`core/config.py`](../../core/config.py) |
 | `MCP_OBSERVATION_LIMIT` | `0` | The same limit for what a tool on an MCP server returns. `0` keeps it whole. | [`core/config.py`](../../core/config.py) |
+| `SAME_OUTPUT_MIN_CHARS` | `200` | A command run again in a turn that prints the same output, at least this long, is stored as a pointer to the earlier step. `0` stores every copy. | [`core/config.py`](../../core/config.py) |
 | `PRAGMA_MD_MAX_CHARS` | `4000` | Characters of the workspace's `PRAGMA.md` that are passed to the agent. | [`core/config.py`](../../core/config.py) |
 
 ## When the conversation outgrows the window

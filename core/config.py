@@ -838,6 +838,12 @@ OBSERVATION_SOFT_LIMIT = int(os.environ.get("OBSERVATION_SOFT_LIMIT", "12000"))
 # cannot, so it is kept whole and costs what it costs in the window.
 MCP_OBSERVATION_LIMIT = int(os.environ.get("MCP_OBSERVATION_LIMIT", "0"))
 
+# A command run again in the same turn that prints exactly what it printed
+# before is stored as a pointer to the earlier step, not as a second copy: a
+# tetris turn read the same 50 lines of screen.py three times and filled its
+# window. Only outputs at least this long; 0 stores every copy, as before.
+SAME_OUTPUT_MIN_CHARS = int(os.environ.get("SAME_OUTPUT_MIN_CHARS", "200"))
+
 # Reasoning loop watchdog: reasoning-capable models occasionally get stuck
 # in their <think> block, repeating the same paragraph forever without
 # converging. The watchdog fingerprints recent reasoning chunks and aborts

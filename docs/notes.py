@@ -149,6 +149,9 @@ CONFIG = {
         "Characters above which a tool's output is shortened in the history. `0` disables."),
     "MCP_OBSERVATION_LIMIT": ("budgets",
         "The same limit for what a tool on an MCP server returns. `0` keeps it whole."),
+    "SAME_OUTPUT_MIN_CHARS": ("budgets",
+        "A command run again in a turn that prints the same output, at least this long, is stored "
+        "as a pointer to the earlier step. `0` stores every copy."),
     "PRAGMA_MD_MAX_CHARS": ("budgets",
         "Characters of the workspace's `PRAGMA.md` that are passed to the agent."),
 

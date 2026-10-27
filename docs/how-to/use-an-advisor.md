@@ -14,8 +14,9 @@ acts and never answers you: it writes for the agent.
 - **When the agent stops making progress** — the same call failing again and
   again, most calls failing, the same throwaway script written into a command
   a third time, the same command run a third time with nothing changed in
-  between, the same file written whole a third time, half the steps spent
-  with nothing delivered — it reads what the agent did and says what to do
+  between, the same file written whole a third time, an edit undone - a file
+  back to what an earlier edit had made it - or a second edit that changed
+  nothing, half the steps spent with nothing delivered — it reads what the agent did and says what to do
   next. Pragma decides when, from what it measures: the agent is exactly the
   one that does not know it is stuck. A command run again after a change is
   the change being checked, and does not count.

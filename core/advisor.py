@@ -38,6 +38,7 @@ plan and the advice. A single task takes --advisor.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import re
 import time
@@ -410,12 +411,22 @@ class Watch:
       `py_compile snake.py` around two changes are the work done right, and
       counting them sent a careful run to the advisor for being careful.
     - THE SAME FILE written whole a third time.
+    - A FILE BROUGHT BACK to what it was after an earlier edit of this turn:
+      the edit undone, which is going round in circles with edits between. A
+      tetris turn added seven lines and took them out again four times over,
+      and every signal above saw a different command each time.
+    - EDITS THAT CHANGED NOTHING, a second time.
     """
 
     REPEATS = 3
 
-    def __init__(self, max_steps: int):
+    def __init__(self, max_steps: int, root=None):
         self.half = max(2, int(max_steps or 0) // 2)
+        self.root = Path(root) if root else None
+        # A file -> the fingerprints it has had after each edit this turn.
+        self.states: dict[str, list[str]] = {}
+        self.back: set[str] = set()
+        self.idle = 0
         self.edits = 0                    # file changes so far in the turn
         self.scripts: dict[str, int] = {}
         self.writes: dict[str, int] = {}
@@ -423,8 +434,10 @@ class Watch:
         self.runs: dict[str, tuple[int, int]] = {}
         self.half_said = False
 
-    def after(self, step: int, action: str, args: dict) -> str:
-        """The signal this step gives, or ""."""
+    def after(self, step: int, action: str, args: dict, ok: bool = True) -> str:
+        """The signal this step gives, or "". `ok` is False for a call that
+        failed: a refused edit left the file as it was, and is not an edit
+        that changed nothing."""
         args = args or {}
         said = ""
         if action == "execute_command":
@@ -448,9 +461,35 @@ class Watch:
                 self.writes[path] = self.writes.get(path, 0) + 1
                 if self.writes[path] == self.REPEATS:
                     said = f"the same file written whole {self.REPEATS} times ({path[-45:]})"
+            # Always taken, so the record of states has no gaps.
+            state = self._state(str(args.get("path", ""))) if ok else ""
+            said = said or state
         if said:
             return said
         if step >= self.half and not self.half_said:
             self.half_said = True
             return "half the steps are spent and nothing is delivered"
         return ""
+
+    def _state(self, path: str) -> str:
+        """What the file now holds says about the edit just made, or ""."""
+        if not path or self.root is None:
+            return ""
+        p = Path(path)
+        p = p if p.is_absolute() else self.root / p
+        try:
+            now = hashlib.md5(p.read_bytes()).hexdigest()
+        except OSError:
+            return ""
+        seen = self.states.setdefault(str(p), [])
+        said = ""
+        if seen and seen[-1] == now:
+            self.idle += 1
+            if self.idle == 2:
+                said = f"two edits that changed nothing ({path[-45:]})"
+        elif now in seen and str(p) not in self.back:
+            self.back.add(str(p))
+            said = (f"an edit undone: {path[-45:]} is back to what it was "
+                    f"{len(seen) - seen.index(now)} edits ago")
+        seen.append(now)
+        return said
