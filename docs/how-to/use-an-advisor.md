@@ -50,7 +50,9 @@ both on, the critic reads the plan beside your request: what the plan said
 held to - but only as far as your request goes. When the critic sends the
 work back and the advisor is on `plan + consult` with consults left, the
 advisor reads what the critic found and says whether a step went wrong or the
-plan did; that counts as one of the turn's consults.
+plan did; that counts as one of the turn's consults. Any consult after it in
+the same turn reads what the critic found as well, and your request outranks
+the plan for both of them.
 
 ## Choose the model
 

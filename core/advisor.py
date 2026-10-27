@@ -100,9 +100,12 @@ something that can be checked>
 Steps:
 1. ...
 2. ...
-Check: <how to show it works - what to run, with what input. For a program \
-that waits for keys or takes over the terminal: the parts that can be called \
-and checked on their own, not the whole program driven from outside>
+Check: <how to show it works - what to run, with what input. When the \
+answer will give the person a command to start something, that exact command \
+is run once, with a timeout: whatever else it does, it must start. For a \
+program that waits for keys or takes over the terminal: its logic tested on \
+its own, and its key handling driven through a fake screen fed scripted keys \
+- what each key does, observed, not only that the code imports>
 Watch out: <the risk you see, two lines at most>
 Stop and ask if: <the condition in which guessing is worse than asking>
 
@@ -117,12 +120,15 @@ in this form and nothing else, ten lines at most:
 
 Diagnosis: <what is going wrong, one or two lines. When the critic sent the \
 work back: whether one step went wrong, or the plan itself did>
-Next: <exactly one of these three>
-  - the next one to three actions, concrete
-  - deliver what you have, and say what is missing
-  - stop and ask the person: <the question>
+Next: <one of three things, written out: the next one to three concrete \
+actions, numbered; or "deliver what you have, and say what is missing"; or \
+"stop and ask the person:" and the question>
 
-A line or two of code at most."""
+The person's request is the measure, not your plan: where the plan asked for \
+less than the request, or a critic asked for what the request asks, follow \
+the request. Never tell the agent to delete, revert or throw away work it has \
+done; if something it wrote is wrong, say what to change. A line or two of \
+code at most."""
 
 # How what it says is put in front of the agent. The standing goes with the
 # words, not in the agent's system prompt: that prompt is fixed for a

@@ -100,6 +100,11 @@ requirement, and what the plan adds beyond the request is not one.
    program that must keep working over time, respond to input or produce a
    particular result is met only by a step that observed exactly that. If no
    step did, it is unverified, however sound the code looks.
+   A command the ANSWER gives the user to start what was built is a
+   requirement of its own: met only if the RECORD shows that exact command
+   run at least once, missing if it was never run. A program that waits for
+   keys can still be started with a timeout and seen to start, so this is
+   never one that cannot be checked from here.
 3. Give a verdict:
    accept      every requirement is met; or what is left unverified cannot be
                checked from here, and the answer says so honestly

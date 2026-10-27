@@ -616,6 +616,9 @@ def run_agent(cfg: AgentConfig, user_task: str, log_path: Optional[Path] = None,
     _plan_text = ""
     _advisor_on = cfg.advisor in advisor.MODES
     _consults = 0
+    # What the critic last sent back for, so that a later consult in the same
+    # turn does not advise against what the critic asked.
+    _found = ""
     _watch = advisor.Watch(max_steps) if cfg.advisor == "consult" else None
     if _advisor_on:
         _emit({"type": "faculty_running", "tag": "ADVISOR", "content": "planning the turn…"})
@@ -1004,6 +1007,7 @@ def run_agent(cfg: AgentConfig, user_task: str, log_path: Optional[Path] = None,
                 _log_step(log_path, {"step": step, "critic": rv.as_dict()})
             if rv.verdict == "revise" and not rv.left and sends < most:
                 said = critic.sent_back(rv, sends + 1, most)
+                _found = said
                 # A revise is a reason to plan again: with consults on and left,
                 # the advisor reads what the critic found and says whether one
                 # step went wrong or the plan did. Its advice rides in the same
@@ -1358,7 +1362,7 @@ def run_agent(cfg: AgentConfig, user_task: str, log_path: Optional[Path] = None,
                        "content": "reading what was done…"})
                 try:
                     got = advisor.consult(request or user_task, _plan_text, _ledger,
-                                          _stuck, stop_event=cfg.stop_event)
+                                          _stuck, stop_event=cfg.stop_event, found=_found)
                 except llm_client.LLMInterrupted:
                     _emit({"type": "stopped", "content": "Task interrupted by user."})
                     return None
