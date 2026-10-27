@@ -14,15 +14,19 @@
 # WHEN. At delivery, and only for a turn that changed something - a file
 # written through a skill, or a command run. A turn that only read and
 # answered is thought, and thought needs no inspector. Judging each step needs
-# a success criterion for each step, which is a plan, and Pragma does not plan
-# yet; until it does, the request is the only measure there is, and delivery is
-# the one moment it can be held against the whole of the work.
+# a success criterion for each step, which is a plan. Where a project has an
+# advisor (core/advisor.py) there is one, written before the work: its "Done
+# when" and its "Check" are the measure fixed in advance, and the critic holds
+# the work to them as well as to the request. Without one the request is the
+# only measure there is. Either way delivery is the one moment the measure can
+# be held against the whole of the work.
 #
 # WHAT IT SEES. The request in the user's own words, the project's PRAGMA.md,
-# a record of what was done built from the steps themselves - no model in
-# between - the diffs of what the turn changed on disk, and the answer,
-# labelled as a claim. NOT the agent's reasoning: a judge handed the producer's
-# argument is a judge being argued with.
+# the advisor's plan when there is one, a record of what was done built from
+# the steps themselves - no model in between - the diffs of what the turn
+# changed on disk, and the answer, labelled as a claim. NOT the agent's
+# reasoning: a judge handed the producer's argument is a judge being argued
+# with.
 #
 # WHAT IT SAYS. The requirements the request states, each met, missing or
 # unverified with the evidence for it; a verdict; and when it sends the work
@@ -71,6 +75,13 @@ You are given the REQUEST in the user's own words, the project's standing
 INSTRUCTIONS, a RECORD of every step the agent took with what each returned,
 the CHANGES on disk, and the agent's ANSWER. The answer is a claim. The record
 and the changes are the evidence.
+
+There may also be a PLAN, written before the work by an advisor that read the
+request first. Its "Done when" and its "Check" are the measure fixed in
+advance: count them among the requirements, and a Check the record does not
+show carried out is unverified. The plan serves the REQUEST and does not
+replace it: what the request asks and the plan left out is still a
+requirement, and what the plan adds beyond the request is not one.
 
 1. List the requirements the REQUEST states or plainly implies: each explicit
    instruction, constraint and deliverable, in the user's words where you can.
@@ -349,21 +360,25 @@ def _project_instructions(root: Path | None) -> str:
 
 
 def evidence(request: str, claim: str, ledger: list[dict], before: dict,
-             root: Path | None, since: float, previous: "Review | None" = None) -> str:
+             root: Path | None, since: float, previous: "Review | None" = None,
+             plan: str = "") -> str:
     """The material the critic reads, within config.CRITIC_EVIDENCE_CHARS."""
     total = int(getattr(config, "CRITIC_EVIDENCE_CHARS", 24000))
     request = _clip(request, 4000, 1000)
     claim = _clip(claim, 3000, 800)
     rules = _clip(_project_instructions(root), 2000)
-    room = max(4000, total - len(request) - len(claim) - len(rules) - 1200)
+    plan = _clip((plan or "").strip(), 3000)
+    room = max(4000, total - len(request) - len(claim) - len(rules) - len(plan) - 1200)
     diffs, covered = _diffs(before, root, int(room * 0.4))
     others = _written_by_commands(root, since, covered, int(room * 0.1))
     record = _record(ledger, room - len(diffs) - len(others))
 
     parts = [f"REQUEST (the user's own words):\n{request}",
-             f"INSTRUCTIONS (the project's PRAGMA.md):\n{rules or '(none)'}",
-             f"RECORD (every step of this turn, in order; outputs clipped):\n{record}",
-             "CHANGES ON DISK:\n" + (diffs or "(no file was changed through the file tools)")]
+             f"INSTRUCTIONS (the project's PRAGMA.md):\n{rules or '(none)'}"]
+    if plan:
+        parts.append(f"PLAN (the advisor's, written before the work):\n{plan}")
+    parts += [f"RECORD (every step of this turn, in order; outputs clipped):\n{record}",
+              "CHANGES ON DISK:\n" + (diffs or "(no file was changed through the file tools)")]
     if others:
         parts.append("ALSO CHANGED DURING THE TURN (by commands; before-state unknown):\n" + others)
     parts.append(f"ANSWER (the agent's claim, to be checked against the above):\n{claim}")
@@ -414,10 +429,11 @@ def _parse(raw) -> Review:
 
 def review(request: str, claim: str, ledger: list[dict], before: dict,
            root: Path | None, since: float, round_no: int = 1,
-           previous: Review | None = None, model=None, stop_event=None) -> Review:
+           previous: Review | None = None, model=None, stop_event=None,
+           plan: str = "") -> Review:
     """Judge one delivery. Never raises, except to let a stop through."""
     t0 = time.monotonic()
-    text = evidence(request, claim, ledger, before, root, since, previous)
+    text = evidence(request, claim, ledger, before, root, since, previous, plan)
     # The agent's loop reads the last call's token counts to decide when to
     # compress, and the harness adds them up for the turn. The critic's call is
     # neither, so what it leaves behind is put back.

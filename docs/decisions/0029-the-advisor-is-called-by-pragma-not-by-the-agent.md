@@ -1,7 +1,7 @@
 # 29. The advisor is called by Pragma, not by the agent
 
 - **Date:** 2026-10-26
-- **Status:** accepted
+- **Status:** accepted; amended by [31](0031-the-critic-holds-the-work-to-the-plan.md)
 - **Where:** [`core/advisor.py`](../../core/advisor.py), [`core/react.py`](../../core/react.py), [`terminal/pragma_launcher.py`](../../terminal/pragma_launcher.py), [`agent/chat.py`](../../agent/chat.py)
 
 ## Context

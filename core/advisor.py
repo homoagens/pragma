@@ -24,9 +24,13 @@ It does not act and does not answer the person. What it says reaches the
 agent as a message beginning [ADVISOR], with the same standing as a [CRITIC]:
 a second reader on the person's side, not the person.
 
-It is not the critic either. The critic judges the finished work against the
-request before it is delivered; the advisor works at the start and in the
-middle. Neither sees what the other said.
+It is not the critic either. The critic judges the finished work before it is
+delivered; the advisor works at the start and in the middle. They are the two
+ends of one loop: the plan fixes what "done" means and the critic holds the
+work to it, reading the plan beside the request; and when the critic sends the
+work back, with `consult` on and consults left, the advisor is called again to
+say whether one step went wrong or the plan did - a revise is a reason to plan
+again. Neither sees the other's reasoning, only what it wrote.
 
 Off unless a project turns it on (/settings): `plan`, or `consult` for the
 plan and the advice. A single task takes --advisor.
@@ -107,11 +111,12 @@ it. Do not write code."""
 
 _CONSULT_SYSTEM = _ROLE + """
 
-The agent has stopped making progress, and Pragma has called you. Read what \
-it has done and tell it what to do next, in this form and nothing else, ten \
-lines at most:
+The agent has stopped making progress, or a critic has sent its work back, \
+and Pragma has called you. Read what it has done and tell it what to do next, \
+in this form and nothing else, ten lines at most:
 
-Diagnosis: <what is going wrong, one or two lines>
+Diagnosis: <what is going wrong, one or two lines. When the critic sent the \
+work back: whether one step went wrong, or the plan itself did>
 Next: <exactly one of these three>
   - the next one to three actions, concrete
   - deliver what you have, and say what is missing
@@ -139,6 +144,13 @@ def consult_message(text: str, signal: str) -> str:
     return (f"[ADVISOR] You have stopped making progress - {signal} - and your "
             f"advisor has read what you did. Its advice, which you should follow "
             f"unless what you find contradicts it. {_STANDING}\n\n{text}")
+
+
+def revision_message(text: str) -> str:
+    """Advice after the critic sent the work back, as it reaches the agent."""
+    return ("[ADVISOR] Your advisor has read what you did and what the critic found. "
+            "Its advice, which you should follow unless what you find contradicts it. "
+            f"{_STANDING}\n\n{text}")
 
 
 # ── what the advisor is shown ─────────────────────────────────────────────────
@@ -337,14 +349,17 @@ def plan(task: str, history: list | None, root, stop_event=None) -> dict:
 
 
 def consult(request: str, plan_text: str, ledger: list[dict], signal: str,
-            stop_event=None) -> dict:
-    """Advice for an agent that has stopped making progress. Same shape as
+            stop_event=None, found: str = "") -> dict:
+    """Advice for an agent that has stopped making progress, or whose work the
+    critic sent back - `found` is then what the critic said. Same shape as
     plan(); never raises but for a stop."""
     parts = ["[What the person asked]", (request or "").strip()]
     if plan_text:
         parts += ["", "[Your plan for it]", plan_text]
-    parts += ["", f"[Why you are called] {signal}",
-              "", "[What the agent has done, step by step]", record(ledger)]
+    parts += ["", f"[Why you are called] {signal}"]
+    if found:
+        parts += ["", "[What the critic found]", found.strip()]
+    parts += ["", "[What the agent has done, step by step]", record(ledger)]
     try:
         text, took, tokens = _ask(_CONSULT_SYSTEM, "\n".join(parts), stop_event)
     except llm_client.LLMInterrupted:

@@ -42,6 +42,16 @@ and each piece of advice is a call to a model, and a wait.
 The conversation reads the setting at every turn, so a change counts from the
 next one.
 
+## With the critic
+
+The two are the ends of one loop, and each can be on without the other. With
+both on, the critic reads the plan beside your request: what the plan said
+"done" would be, and how it said to check it, count among what the work is
+held to - but only as far as your request goes. When the critic sends the
+work back and the advisor is on `plan + consult` with consults left, the
+advisor reads what the critic found and says whether a step went wrong or the
+plan did; that counts as one of the turn's consults.
+
 ## Choose the model
 
 `/configure`, the `advisor` row of the table: Enter chooses its model from the

@@ -990,7 +990,7 @@ def run_agent(cfg: AgentConfig, user_task: str, log_path: Optional[Path] = None,
                     checkpoint.turn_before() if checkpoint else {},
                     _workspace(), _t_start, round_no=len(_reviews) + 1,
                     previous=_reviews[-1] if _reviews else None,
-                    stop_event=cfg.stop_event)
+                    stop_event=cfg.stop_event, plan=_plan_text)
             except llm_client.LLMInterrupted:
                 _emit({"type": "stopped", "content": "Task interrupted by user."})
                 return None
@@ -1003,9 +1003,31 @@ def run_agent(cfg: AgentConfig, user_task: str, log_path: Optional[Path] = None,
             if log_path is not None:
                 _log_step(log_path, {"step": step, "critic": rv.as_dict()})
             if rv.verdict == "revise" and not rv.left and sends < most:
+                said = critic.sent_back(rv, sends + 1, most)
+                # A revise is a reason to plan again: with consults on and left,
+                # the advisor reads what the critic found and says whether one
+                # step went wrong or the plan did. Its advice rides in the same
+                # message, after the critic's.
+                if _watch is not None and _consults < max(0, int(cfg.advisor_consults)):
+                    _consults += 1
+                    why = "the critic sent the work back"
+                    _emit({"type": "faculty_running", "tag": "ADVISOR",
+                           "content": "reading what the critic found…"})
+                    try:
+                        got = advisor.consult(request or user_task, _plan_text, _ledger, why,
+                                              stop_event=cfg.stop_event, found=said)
+                    except llm_client.LLMInterrupted:
+                        _emit({"type": "stopped", "content": "Task interrupted by user."})
+                        return None
+                    _advice.append({"kind": "consult", "signal": why, **got})
+                    _emit({"type": "faculty", "tag": "ADVISOR", "content": got["line"],
+                           "details": got.get("details") or [], "advice": _advice[-1]})
+                    if log_path is not None:
+                        _log_step(log_path, {"step": step, "advisor": _advice[-1]})
+                    if got["text"]:
+                        said = f"{said}\n\n{advisor.revision_message(got['text'])}"
                 messages.append({"role": "assistant", "content": claim})
-                messages.append({"role": "user",
-                                 "content": critic.sent_back(rv, sends + 1, most)})
+                messages.append({"role": "user", "content": said})
                 step += 1
                 continue
             note = critic.closing_note(rv, sends, claim)
