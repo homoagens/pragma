@@ -30,6 +30,31 @@
 
 ---
 
+## Two editions of this README
+
+Pick your century.
+
+### Modern
+
+Don't read it. Give this repository to your coding agent (Claude Code, or
+whatever you've got) and ask:
+
+> Read https://github.com/homoagens/pragma and tell me what it does, how to
+> install it on my machine, and whether it's worth my time. Be honest.
+
+It will answer your questions. It will also read the code, which is more than
+most people do with a README.
+
+Pragma would be glad to explain itself, but it refuses to work on its own
+source. On principle.
+
+In a hurry? `git clone https://github.com/homoagens/pragma.git && cd pragma && ./install.sh`
+
+### Classic
+
+<details>
+<summary>For those who still read documentation by hand</summary>
+
 Pragma runs on your machine, against a model you serve yourself. It works in
 a folder of yours — reads, writes, runs commands — and **remembers between
 sessions**: not by keeping a transcript, but by writing down what happened,
@@ -258,6 +283,16 @@ autonomous agents, local inference, and a simple thesis:
 > The model matters less than the architecture around it.
 > Memory, tools, transparency and execution control are what turn an LLM into
 > something that gets things done.
+
+</details>
+
+---
+
+## Links
+
+- [Documentation](https://homoagens.github.io/pragma/), with [your first project](docs/tutorial/first-project.md) in ten minutes
+- [Use Pragma from another program](docs/how-to/use-pragma-from-a-program.md)
+- [Homo Agens](https://github.com/homoagens)
 
 ---
 
